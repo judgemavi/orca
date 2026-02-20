@@ -24,10 +24,10 @@ type Record struct {
 
 // ToolSummary aggregates cost data per tool.
 type ToolSummary struct {
-	Tool         string
-	InputTokens  int64
-	OutputTokens int64
-	Cost         float64
+	Tool         string  `json:"tool"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	Cost         float64 `json:"cost"`
 }
 
 // Tracker records and queries cost data.

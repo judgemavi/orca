@@ -1,10 +1,12 @@
 package worker
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/pod/internal/tasklog"
 )
 
 // InteractiveAdapter runs a CLI tool in a pseudo-terminal for full interactive capability.
@@ -21,8 +24,10 @@ type InteractiveAdapter struct {
 	Binary      string
 	Args        []string
 	Timeout     time.Duration
+	Model       string
 	CmdCallback func(*exec.Cmd)
 	PromptMode  string
+	OutputChan  chan<- OutputLine
 
 	mu   sync.Mutex
 	ptmx *os.File
@@ -39,6 +44,7 @@ func NewInteractiveAdapter(toolCfg config.ToolConfig) (*InteractiveAdapter, erro
 		Binary:     toolCfg.Binary,
 		Args:       toolCfg.InteractiveArgs,
 		Timeout:    timeout,
+		Model:      toolCfg.Model,
 		PromptMode: toolCfg.PromptMode,
 	}, nil
 }
@@ -55,6 +61,9 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 		arg = strings.ReplaceAll(arg, "{{prompt}}", prompt)
 		arg = strings.ReplaceAll(arg, "{{context}}", contextContent)
 		args[i] = arg
+	}
+	if a.Model != "" {
+		args = append(args, "--model", a.Model)
 	}
 
 	cmd := exec.CommandContext(ctx, a.Binary, args...)
@@ -82,9 +91,19 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 	}()
 
 	var output bytes.Buffer
+	logWriter, err := tasklog.NewWriter(resolveLogRoot(worktreePath), taskID)
+	if err != nil {
+		return nil, fmt.Errorf("open task log: %w", err)
+	}
+	defer func() {
+		if closeErr := logWriter.Close(); closeErr != nil {
+			log.Printf("close task log for %s: %v", taskID, closeErr)
+		}
+	}()
+
 	copyDone := make(chan struct{})
 	go func() {
-		_, _ = io.Copy(&output, ptmx)
+		streamPTY(taskID, ptmx, &output, a.OutputChan, logWriter)
 		close(copyDone)
 	}()
 
@@ -150,10 +169,45 @@ func (a *InteractiveAdapter) Cancel() {
 // SetCmdCallback sets the pre-start callback.
 func (a *InteractiveAdapter) SetCmdCallback(cb func(*exec.Cmd)) { a.CmdCallback = cb }
 
+// SetModel sets/overrides the model passed to the CLI.
+func (a *InteractiveAdapter) SetModel(model string) { a.Model = model }
+
+// SetOutputChan sets the live output stream channel.
+func (a *InteractiveAdapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }
+
 func loadContextFromWorktree(worktreePath string) string {
 	data, err := os.ReadFile(filepath.Join(worktreePath, ".pod", "context.md"))
 	if err != nil {
 		return ""
 	}
 	return string(data)
+}
+
+func streamPTY(taskID string, r io.Reader, outBuf *bytes.Buffer, outputChan chan<- OutputLine, logWriter *tasklog.Writer) {
+	reader := bufio.NewReader(r)
+	for {
+		chunk, err := reader.ReadBytes('\n')
+		if len(chunk) > 0 {
+			outBuf.Write(chunk)
+			line := strings.ToValidUTF8(strings.TrimRight(string(chunk), "\r\n"), "?")
+			if logErr := logWriter.WriteLine("stdout", line); logErr != nil {
+				log.Printf("task log write (%s): %v", taskID, logErr)
+			}
+			if outputChan != nil {
+				outputChan <- OutputLine{
+					TaskID: taskID,
+					Stream: "stdout",
+					Line:   line,
+					Time:   time.Now().UTC(),
+				}
+			}
+		}
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			log.Printf("stream PTY (%s): %v", taskID, err)
+			return
+		}
+	}
 }

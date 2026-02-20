@@ -19,16 +19,16 @@ import (
 
 // TaskResult holds the outcome of a single task execution.
 type TaskResult struct {
-	TaskID       string
-	ToolName     string
-	Status       string // "completed" or "failed"
-	ExitCode     int
-	Diff         string
-	FilesChanged []string
-	Stdout       string
-	Stderr       string
-	Duration     time.Duration
-	WorktreePath string
+	TaskID       string        `json:"task_id"`
+	ToolName     string        `json:"tool_name"`
+	Status       string        `json:"status"` // "completed" or "failed"
+	ExitCode     int           `json:"exit_code"`
+	Diff         string        `json:"diff,omitempty"`
+	FilesChanged []string      `json:"files_changed,omitempty"`
+	Stdout       string        `json:"stdout,omitempty"`
+	Stderr       string        `json:"stderr,omitempty"`
+	Duration     time.Duration `json:"duration"`
+	WorktreePath string        `json:"worktree_path,omitempty"`
 }
 
 // Executor orchestrates sprint execution: worktree creation, parallel worker
@@ -47,6 +47,9 @@ type Executor struct {
 	mu       sync.Mutex
 	running  map[string]*exec.Cmd
 	sprintID string // set during Run for Cancel to reference
+
+	outputHook func(worker.OutputLine)
+	doneHook   func(taskID string, exitCode int)
 }
 
 // NewExecutor creates an Executor wired to the given planner, worktree manager,
@@ -64,12 +67,30 @@ func NewExecutor(planner *Planner, wm *worktree.Manager, cfg *config.Config, rep
 // SetCostTracker sets the cost tracker for recording per-task spend.
 func (e *Executor) SetCostTracker(ct *cost.Tracker) { e.costTracker = ct }
 
+// SetOutputHook configures a callback for live worker output lines.
+func (e *Executor) SetOutputHook(hook func(worker.OutputLine)) { e.outputHook = hook }
+
+// SetDoneHook configures a callback for worker completion notifications.
+func (e *Executor) SetDoneHook(hook func(taskID string, exitCode int)) { e.doneHook = hook }
+
 // Worktrees returns the underlying worktree manager.
 func (e *Executor) Worktrees() *worktree.Manager { return e.worktrees }
+
+// IsTaskRunning reports whether a task process is currently running.
+func (e *Executor) IsTaskRunning(taskID string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	_, ok := e.running[taskID]
+	return ok
+}
 
 // Run executes all tasks in a sprint: transitions to running, creates worktrees,
 // runs workers in parallel, collects results, updates task statuses, stores artifacts.
 func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
+	if err := e.worktrees.EnsureIntegrationBranch(e.config.Project.IntegrationBranch); err != nil {
+		return nil, fmt.Errorf("ensure integration branch: %w", err)
+	}
+
 	if err := e.planner.Start(s.ID); err != nil {
 		return nil, fmt.Errorf("start sprint: %w", err)
 	}
@@ -85,6 +106,7 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 		toolCfg      config.ToolConfig
 		worktreePath string
 		prompt       string
+		model        string
 	}
 
 	// Load codebase context if available.
@@ -119,6 +141,9 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 		if prompt == "" {
 			prompt = t.Title + "\n\n" + t.Description
 		}
+		if t.Plan != "" {
+			prompt = "## Implementation Plan\n\n" + t.Plan + "\n\n---\n\n## Task\n\n" + prompt
+		}
 		if contextPrefix != "" {
 			prompt = contextPrefix + prompt
 		}
@@ -129,6 +154,7 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 			toolCfg:      toolCfg,
 			worktreePath: wtPath,
 			prompt:       prompt,
+			model:        t.Model,
 		})
 	}
 
@@ -136,6 +162,39 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 	// so no mutex needed on the results slice.
 	results := make([]TaskResult, len(prepared))
 	var wg sync.WaitGroup
+	outputCh := make(chan worker.OutputLine, 4096)
+	outputDone := make(chan struct{})
+
+	go func() {
+		defer close(outputDone)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		batch := make([]worker.OutputLine, 0, 128)
+		flush := func() {
+			if e.outputHook == nil || len(batch) == 0 {
+				batch = batch[:0]
+				return
+			}
+			for _, line := range batch {
+				e.outputHook(line)
+			}
+			batch = batch[:0]
+		}
+
+		for {
+			select {
+			case line, ok := <-outputCh:
+				if !ok {
+					flush()
+					return
+				}
+				batch = append(batch, line)
+			case <-ticker.C:
+				flush()
+			}
+		}
+	}()
 
 	for i, ti := range prepared {
 		wg.Add(1)
@@ -156,6 +215,7 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 						Stderr:       fmt.Sprintf("worker panic: %v", r),
 						WorktreePath: info.worktreePath,
 					}
+					e.emitDone(info.taskID, -1)
 				}
 			}()
 
@@ -169,8 +229,13 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 					Stderr:       fmt.Sprintf("create adapter: %v", err),
 					WorktreePath: info.worktreePath,
 				}
+				e.emitDone(info.taskID, -1)
 				return
 			}
+			if info.model != "" {
+				workerAdapter.SetModel(info.model)
+			}
+			workerAdapter.SetOutputChan(outputCh)
 
 			// Register running cmd for cancel tracking.
 			workerAdapter.SetCmdCallback(func(cmd *exec.Cmd) {
@@ -189,6 +254,7 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 					Stderr:       fmt.Sprintf("execute: %v", err),
 					WorktreePath: info.worktreePath,
 				}
+				e.emitDone(info.taskID, -1)
 				return
 			}
 
@@ -209,10 +275,13 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 				Duration:     res.Duration,
 				WorktreePath: info.worktreePath,
 			}
+			e.emitDone(info.taskID, res.ExitCode)
 		}(i, ti)
 	}
 
 	wg.Wait()
+	close(outputCh)
+	<-outputDone
 
 	// Update task statuses and store artifacts.
 	for _, r := range results {
@@ -241,6 +310,12 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 	}
 
 	return results, nil
+}
+
+func (e *Executor) emitDone(taskID string, exitCode int) {
+	if e.doneHook != nil {
+		e.doneHook(taskID, exitCode)
+	}
 }
 
 // Cancel stops all running workers.

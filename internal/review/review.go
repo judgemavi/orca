@@ -38,18 +38,18 @@ Or if rejecting:
 
 // ReviewResult holds the outcome of a single task review.
 type ReviewResult struct {
-	TaskID   string
-	Approved bool
-	Feedback string
-	Tool     string
+	TaskID   string `json:"task_id"`
+	Approved bool   `json:"approved"`
+	Feedback string `json:"feedback"`
+	Tool     string `json:"tool"`
 }
 
 // ReviewInput is the data needed to review a single task.
 type ReviewInput struct {
-	TaskID      string
-	Title       string
-	Description string
-	Diff        string
+	TaskID      string `json:"task_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Diff        string `json:"diff"`
 }
 
 // Reviewer runs headless code reviews against diffs.

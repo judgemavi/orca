@@ -27,11 +27,18 @@ Keep it under 500 lines. Focus on what another developer (or AI agent) needs to 
 type Explorer struct {
 	toolCfg config.ToolConfig
 	repoDir string
+	goal    string
 }
 
 // New creates an Explorer with the given tool config and repo directory.
 func New(toolCfg config.ToolConfig, repoDir string) *Explorer {
 	return &Explorer{toolCfg: toolCfg, repoDir: repoDir}
+}
+
+// WithGoal sets an optional user goal to guide exploration context.
+func (e *Explorer) WithGoal(goal string) *Explorer {
+	e.goal = goal
+	return e
 }
 
 // Run executes the exploration and writes results to .pod/context.md.
@@ -41,7 +48,12 @@ func (e *Explorer) Run() (string, error) {
 		return "", fmt.Errorf("create adapter: %w", err)
 	}
 
-	result, err := adapter.Execute(context.Background(), "explore", metaPrompt, e.repoDir)
+	prompt := metaPrompt
+	if e.goal != "" {
+		prompt += "\n\n## User Goal\n\n" + e.goal + "\n\nIncorporate this goal into your analysis - note what exists that supports it and what's missing."
+	}
+
+	result, err := adapter.Execute(context.Background(), "explore", prompt, e.repoDir)
 	if err != nil {
 		return "", fmt.Errorf("execute explorer: %w", err)
 	}

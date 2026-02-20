@@ -5,6 +5,7 @@ package integrator
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -53,80 +54,148 @@ func (i *Integrator) Merge(taskID string) error {
 	if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
 		_ = i.git("merge", "--abort")
 
-		// Attempt rebase: checkout task branch, rebase onto integration, retry merge.
-		if rebaseErr := i.git("checkout", branch); rebaseErr != nil {
-			return fmt.Errorf("merge %s: %w (checkout for rebase failed: %v)", branch, err, rebaseErr)
-		}
+		// Attempt rebase inside the worktree (where the branch is already checked out).
+		wtPath := filepath.Join(i.worktreeDir, "task-"+taskID)
+		_, wtStatErr := os.Stat(wtPath)
+		if i.worktreeDir != "" && wtStatErr == nil {
+			rebaseCmd := exec.Command("git", "rebase", i.integrationBranch)
+			rebaseCmd.Dir = wtPath
+			if out, rebaseErr := rebaseCmd.CombinedOutput(); rebaseErr != nil {
+				abortCmd := exec.Command("git", "rebase", "--abort")
+				abortCmd.Dir = wtPath
+				_ = abortCmd.Run()
+				return fmt.Errorf("merge %s: conflict unresolvable after rebase attempt: %s", branch, strings.TrimSpace(string(out)))
+			}
 
-		if rebaseErr := i.git("rebase", i.integrationBranch); rebaseErr != nil {
-			_ = i.git("rebase", "--abort")
-			// Return to integration branch.
-			_ = i.git("checkout", i.integrationBranch)
-			return fmt.Errorf("merge %s: conflict unresolvable after rebase attempt", branch)
-		}
+			msg := fmt.Sprintf("pod: merge task-%s (after rebase)", taskID)
+			if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
+				_ = i.git("merge", "--abort")
+				return fmt.Errorf("merge %s after rebase: %w", branch, err)
+			}
+		} else {
+			// No worktree — fallback to checkout/rebase in the main repository.
+			if rebaseErr := i.git("checkout", branch); rebaseErr != nil {
+				return fmt.Errorf("merge %s: %w (checkout for rebase failed: %v)", branch, err, rebaseErr)
+			}
+			if rebaseErr := i.git("rebase", i.integrationBranch); rebaseErr != nil {
+				_ = i.git("rebase", "--abort")
+				_ = i.git("checkout", i.integrationBranch)
+				return fmt.Errorf("merge %s: conflict unresolvable after rebase attempt", branch)
+			}
+			if err := i.git("checkout", i.integrationBranch); err != nil {
+				return fmt.Errorf("checkout %s after rebase: %w", i.integrationBranch, err)
+			}
 
-		// Rebase succeeded — back to integration and retry merge.
-		if err := i.git("checkout", i.integrationBranch); err != nil {
-			return fmt.Errorf("checkout %s after rebase: %w", i.integrationBranch, err)
-		}
-
-		msg := fmt.Sprintf("pod: merge task-%s (after rebase)", taskID)
-		if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
-			_ = i.git("merge", "--abort")
-			return fmt.Errorf("merge %s after rebase: %w", branch, err)
+			msg := fmt.Sprintf("pod: merge task-%s (after rebase)", taskID)
+			if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
+				_ = i.git("merge", "--abort")
+				return fmt.Errorf("merge %s after rebase: %w", branch, err)
+			}
 		}
 	}
 
 	return nil
 }
 
-// MergeWithRerun tries Merge, and if it fails and rerun config is set,
-// re-runs the worker to fix conflicts then retries merge one final time.
+// MergeWithRerun tries Merge, and if it fails with a conflict, starts a rebase
+// in the worktree leaving conflict markers in place, runs a tool to resolve them,
+// then continues the rebase and retries the merge.
 func (i *Integrator) MergeWithRerun(taskID string) error {
-	err := i.Merge(taskID)
-	if err == nil {
+	// Try clean merge first.
+	if err := i.Merge(taskID); err == nil {
 		return nil
 	}
 
 	if i.worktreeDir == "" || i.toolResolver == nil {
-		return err
-	}
-
-	toolCfg, resolveErr := i.toolResolver(taskID)
-	if resolveErr != nil {
-		return fmt.Errorf("%w (tool resolve failed: %v)", err, resolveErr)
-	}
-
-	adapter, adapterErr := worker.NewAdapter(toolCfg)
-	if adapterErr != nil {
-		return fmt.Errorf("%w (create adapter: %v)", err, adapterErr)
+		return fmt.Errorf("merge conflict for task-%s and no rerun config set", taskID)
 	}
 
 	wtPath := filepath.Join(i.worktreeDir, "task-"+taskID)
-	prompt := "The previous implementation had merge conflicts after rebasing onto the integration branch. " +
-		"Please resolve any issues and ensure the code works correctly. " +
-		"The branch has been rebased — review the current state and fix any problems."
+	branch := "pod/task-" + taskID
 
-	_, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath)
-	if execErr != nil {
-		return fmt.Errorf("%w (re-run failed: %v)", err, execErr)
+	// Ensure we're on integration branch in the main repo.
+	_ = i.git("checkout", i.integrationBranch)
+
+	// Start rebase in the worktree — do NOT abort on conflict.
+	// This leaves conflict markers in the files for the tool to resolve.
+	rebaseCmd := exec.Command("git", "rebase", i.integrationBranch)
+	rebaseCmd.Dir = wtPath
+	rebaseCmd.CombinedOutput() // ignore error — conflict is expected
+
+	// Resolve tool.
+	toolCfg, err := i.toolResolver(taskID)
+	if err != nil {
+		i.abortRebaseInWorktree(wtPath)
+		return fmt.Errorf("resolve tool for conflict resolution: %w", err)
 	}
 
-	// Stage and amend the commit in the worktree.
-	gitAmend := exec.Command("git", "add", "-A")
-	gitAmend.Dir = wtPath
-	_ = gitAmend.Run()
+	adapter, err := worker.NewAdapter(toolCfg)
+	if err != nil {
+		i.abortRebaseInWorktree(wtPath)
+		return fmt.Errorf("create adapter for conflict resolution: %w", err)
+	}
 
-	gitCommit := exec.Command("git", "commit", "--amend", "--no-edit")
-	gitCommit.Dir = wtPath
-	_ = gitCommit.Run()
+	prompt := "This file has git merge/rebase conflict markers (<<<<<<< HEAD, =======, >>>>>>>). " +
+		"Resolve ALL conflicts by choosing the correct code and removing ALL conflict markers. " +
+		"Do not leave any <<<<<<< or ======= or >>>>>>> markers in any file. " +
+		"After resolving, make sure the code compiles and works correctly."
 
-	// Final merge attempt.
-	if finalErr := i.Merge(taskID); finalErr != nil {
-		return fmt.Errorf("merge %s failed after re-run: %w", "pod/task-"+taskID, finalErr)
+	if _, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath); execErr != nil {
+		i.abortRebaseInWorktree(wtPath)
+		return fmt.Errorf("tool failed to resolve conflicts: %w", execErr)
+	}
+
+	// Stage resolved files and continue rebase.
+	addCmd := exec.Command("git", "add", "-A")
+	addCmd.Dir = wtPath
+	if out, err := addCmd.CombinedOutput(); err != nil {
+		i.abortRebaseInWorktree(wtPath)
+		return fmt.Errorf("git add after resolve: %s", strings.TrimSpace(string(out)))
+	}
+
+	// Loop: rebase --continue may hit more commits with conflicts.
+	for attempt := 0; attempt < 10; attempt++ {
+		contCmd := exec.Command("git", "-c", "core.editor=true", "rebase", "--continue")
+		contCmd.Dir = wtPath
+		out, contErr := contCmd.CombinedOutput()
+		if contErr == nil {
+			// Rebase complete — do the final merge.
+			break
+		}
+
+		outStr := string(out)
+		if !strings.Contains(strings.ToLower(outStr), "conflict") {
+			// Non-conflict error during rebase continue.
+			i.abortRebaseInWorktree(wtPath)
+			return fmt.Errorf("rebase --continue failed: %s", strings.TrimSpace(outStr))
+		}
+
+		// Another commit has conflicts — run tool again.
+		if _, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath); execErr != nil {
+			i.abortRebaseInWorktree(wtPath)
+			return fmt.Errorf("tool failed to resolve conflicts (attempt %d): %w", attempt+2, execErr)
+		}
+
+		addCmd2 := exec.Command("git", "add", "-A")
+		addCmd2.Dir = wtPath
+		_ = addCmd2.Run()
+	}
+
+	// Final merge — should be clean now.
+	msg := fmt.Sprintf("pod: merge task-%s (after rebase)", taskID)
+	if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
+		_ = i.git("merge", "--abort")
+		return fmt.Errorf("merge %s failed after conflict resolution: %w", branch, err)
 	}
 
 	return nil
+}
+
+// abortRebaseInWorktree safely aborts a rebase in progress inside a worktree.
+func (i *Integrator) abortRebaseInWorktree(wtPath string) {
+	cmd := exec.Command("git", "rebase", "--abort")
+	cmd.Dir = wtPath
+	_ = cmd.Run()
 }
 
 // Validate runs each validation command sequentially. Returns on first failure.

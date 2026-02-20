@@ -3,6 +3,7 @@ package sprint
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,16 +12,19 @@ import (
 )
 
 type Sprint struct {
-	ID          string
-	Status      string
-	TaskIDs     []string
-	CreatedAt   time.Time
-	CompletedAt *time.Time
+	ID          string     `json:"id"`
+	Status      string     `json:"status"`
+	TaskIDs     []string   `json:"task_ids"`
+	CreatedAt   time.Time  `json:"created_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
+type EventFunc func(eventType string, id string)
+
 type Planner struct {
-	db    *state.DB
-	tasks *task.Store
+	db      *state.DB
+	tasks   *task.Store
+	onEvent EventFunc
 }
 
 func NewPlanner(db *state.DB) *Planner {
@@ -32,6 +36,14 @@ func NewPlanner(db *state.DB) *Planner {
 
 // DB returns the underlying database for direct queries.
 func (p *Planner) DB() *state.DB { return p.db }
+
+func (p *Planner) SetEventHook(fn EventFunc) { p.onEvent = fn }
+
+func (p *Planner) emit(eventType, id string) {
+	if p.onEvent != nil {
+		p.onEvent(eventType, id)
+	}
+}
 
 // Plan creates a new sprint from up to maxParallel ready tasks.
 func (p *Planner) Plan(maxParallel int) (*Sprint, error) {
@@ -68,6 +80,7 @@ func (p *Planner) Plan(maxParallel int) (*Sprint, error) {
 			return nil, fmt.Errorf("update task %s: %w", t.ID, err)
 		}
 	}
+	p.emit("sprint.planned", id)
 
 	return &Sprint{
 		ID:        id,
@@ -75,6 +88,122 @@ func (p *Planner) Plan(maxParallel int) (*Sprint, error) {
 		TaskIDs:   taskIDs,
 		CreatedAt: now,
 	}, nil
+}
+
+// CreateEmpty creates a sprint in "planning" status with no tasks.
+func (p *Planner) CreateEmpty() (*Sprint, error) {
+	id := uuid.New().String()
+	now := time.Now().UTC()
+
+	_, err := p.db.Exec(
+		`INSERT INTO sprints (id, status, created_at) VALUES (?, 'planning', ?)`,
+		id, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create sprint: %w", err)
+	}
+
+	return &Sprint{
+		ID:        id,
+		Status:    "planning",
+		TaskIDs:   []string{},
+		CreatedAt: now,
+	}, nil
+}
+
+// AddTaskToSprint moves a task into an existing planning sprint.
+func (p *Planner) AddTaskToSprint(sprintID, taskID string) error {
+	sp, err := p.Get(sprintID)
+	if err != nil {
+		return fmt.Errorf("get sprint: %w", err)
+	}
+	if sp.Status != "planning" {
+		return fmt.Errorf("sprint %s is %s, must be planning", sprintID, sp.Status)
+	}
+
+	tk, err := p.tasks.Get(taskID)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+	if tk.Status != "pending" && tk.Status != "failed" {
+		return fmt.Errorf("task %s status %q cannot be added to sprint", taskID, tk.Status)
+	}
+	if tk.SprintID != "" {
+		return fmt.Errorf("task %s is already in sprint %s", taskID, tk.SprintID)
+	}
+
+	depsMet, unmet, err := p.tasks.DepsMetOrInSprint(taskID, sprintID)
+	if err != nil {
+		return fmt.Errorf("check dependencies: %w", err)
+	}
+	if !depsMet {
+		return fmt.Errorf("task %s has unmet dependencies: %s", taskID, strings.Join(unmet, ", "))
+	}
+
+	if err := p.tasks.Update(taskID, map[string]interface{}{
+		"status":    "in_sprint",
+		"sprint_id": sprintID,
+	}); err != nil {
+		return fmt.Errorf("update task %s: %w", taskID, err)
+	}
+
+	return nil
+}
+
+// RemoveTaskFromSprint removes a task from a planning sprint and reverts it to pending.
+func (p *Planner) RemoveTaskFromSprint(sprintID, taskID string) error {
+	sp, err := p.Get(sprintID)
+	if err != nil {
+		return fmt.Errorf("get sprint: %w", err)
+	}
+	if sp.Status != "planning" {
+		return fmt.Errorf("sprint %s is %s, must be planning", sprintID, sp.Status)
+	}
+
+	tk, err := p.tasks.Get(taskID)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+	if tk.SprintID != sprintID {
+		return fmt.Errorf("task %s is not in sprint %s", taskID, sprintID)
+	}
+
+	rows, err := p.db.Query(
+		`SELECT t.id
+		 FROM tasks t
+		 JOIN task_deps d ON d.task_id = t.id
+		 WHERE t.sprint_id = ? AND d.depends_on = ?
+		 ORDER BY t.created_at`,
+		sprintID, taskID,
+	)
+	if err != nil {
+		return fmt.Errorf("query dependent tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var dependentTaskIDs []string
+	for rows.Next() {
+		var dependentTaskID string
+		if err := rows.Scan(&dependentTaskID); err != nil {
+			return fmt.Errorf("scan dependent task id: %w", err)
+		}
+		dependentTaskIDs = append(dependentTaskIDs, dependentTaskID)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate dependent tasks: %w", err)
+	}
+	if len(dependentTaskIDs) > 0 {
+		return fmt.Errorf("cannot remove task %s; dependent tasks in sprint: %s", taskID, strings.Join(dependentTaskIDs, ", "))
+	}
+
+	if err := p.tasks.Update(taskID, map[string]interface{}{
+		"status":    "pending",
+		"sprint_id": nil,
+	}); err != nil {
+		return fmt.Errorf("update task %s: %w", taskID, err)
+	}
+
+	return nil
 }
 
 // Start transitions a sprint from "planning" to "running" and marks its tasks as running.
@@ -94,6 +223,7 @@ func (p *Planner) Start(sprintID string) error {
 	if err != nil {
 		return fmt.Errorf("start sprint tasks: %w", err)
 	}
+	p.emit("sprint.started", sprintID)
 	return nil
 }
 
@@ -107,6 +237,7 @@ func (p *Planner) Complete(sprintID string) error {
 	if err != nil {
 		return fmt.Errorf("complete sprint: %w", err)
 	}
+	p.emit("sprint.completed", sprintID)
 	return nil
 }
 
@@ -119,6 +250,7 @@ func (p *Planner) Fail(sprintID string) error {
 	if err != nil {
 		return fmt.Errorf("fail sprint: %w", err)
 	}
+	p.emit("sprint.failed", sprintID)
 	return nil
 }
 
@@ -210,6 +342,7 @@ func (p *Planner) CompleteTask(sprintID, taskID, status string) error {
 	}); err != nil {
 		return fmt.Errorf("update task: %w", err)
 	}
+	p.emit("task.updated", taskID)
 
 	// Check if all tasks in this sprint are done.
 	var remaining int

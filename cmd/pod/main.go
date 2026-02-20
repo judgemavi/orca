@@ -1,31 +1,44 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"io/fs"
+	"net/http"
+
+	"github.com/google/uuid"
+	"github.com/jasjeetmavi/pod/internal/api"
 	"github.com/jasjeetmavi/pod/internal/autopilot"
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/cost"
 	"github.com/jasjeetmavi/pod/internal/decompose"
 	"github.com/jasjeetmavi/pod/internal/explore"
 	"github.com/jasjeetmavi/pod/internal/integrator"
+	"github.com/jasjeetmavi/pod/internal/model"
+	planpkg "github.com/jasjeetmavi/pod/internal/plan"
 	"github.com/jasjeetmavi/pod/internal/review"
 	"github.com/jasjeetmavi/pod/internal/sprint"
 	"github.com/jasjeetmavi/pod/internal/state"
 	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/pod/internal/tasklog"
 	"github.com/jasjeetmavi/pod/internal/tui"
 	"github.com/jasjeetmavi/pod/internal/worktree"
+	"github.com/jasjeetmavi/pod/web"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -84,11 +97,22 @@ func main() {
 	}
 
 	// pod init
-	root.AddCommand(&cobra.Command{
+	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize Pod in current git repo",
 		RunE:  runInit,
-	})
+	}
+	initCmd.Flags().BoolP("yes", "y", false, "Accept defaults and skip prompts")
+	root.AddCommand(initCmd)
+
+	// pod models
+	modelsCmd := &cobra.Command{
+		Use:   "models [tool]",
+		Short: "List available models for configured tools",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runModels,
+	}
+	root.AddCommand(modelsCmd)
 
 	// pod explore
 	exploreCmd := &cobra.Command{
@@ -141,6 +165,7 @@ func main() {
 	addCmd.Flags().String("parent", "", "Parent task ID")
 	addCmd.Flags().StringSlice("depends-on", nil, "Task IDs this task depends on")
 	addCmd.Flags().String("tool", "", "Assigned tool")
+	addCmd.Flags().String("model", "", "Assigned model")
 	backlog.AddCommand(addCmd)
 
 	// pod backlog list
@@ -162,7 +187,47 @@ func main() {
 	editCmd.Flags().String("prompt", "", "New prompt")
 	editCmd.Flags().String("status", "", "New status")
 	editCmd.Flags().String("tool", "", "Assigned tool")
+	editCmd.Flags().String("model", "", "Assigned model")
 	backlog.AddCommand(editCmd)
+	deleteCmd := &cobra.Command{
+		Use:   "delete [task-id]",
+		Short: "Delete a backlog task",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runBacklogDelete,
+	}
+	deleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
+	backlog.AddCommand(deleteCmd)
+	mergeBacklogCmd := &cobra.Command{
+		Use:   "merge [task-id]",
+		Short: "Merge a completed backlog task into integration branch",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runBacklogMerge,
+	}
+	mergeBacklogCmd.Flags().Bool("auto", false, "Auto-resolve merge conflicts by rerunning task in worktree")
+	backlog.AddCommand(mergeBacklogCmd)
+	planBacklogCmd := &cobra.Command{
+		Use:   "plan [task-id]",
+		Short: "Generate an implementation plan for a backlog task",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runBacklogPlan,
+	}
+	planBacklogCmd.Flags().Bool("save", false, "Save generated plan to the task")
+	planBacklogCmd.Flags().Bool("edit", false, "Open generated plan in $EDITOR and save edits")
+	planBacklogCmd.Flags().String("tool", "", "Tool to use for plan generation")
+	planBacklogCmd.Flags().String("model", "", "Model to use for plan generation")
+	backlog.AddCommand(planBacklogCmd)
+	backlog.AddCommand(&cobra.Command{
+		Use:   "show [task-id]",
+		Short: "Show full task details",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runBacklogShow,
+	})
+	backlog.AddCommand(&cobra.Command{
+		Use:   "reopen [task-id...]",
+		Short: "Move failed tasks back to pending",
+		Args:  cobra.MinimumNArgs(1),
+		RunE:  runBacklogReopen,
+	})
 
 	root.AddCommand(backlog)
 
@@ -188,6 +253,18 @@ func main() {
 		Use:   "status",
 		Short: "Check worker progress",
 		RunE:  runSprintStatus,
+	})
+	sprintCmd.AddCommand(&cobra.Command{
+		Use:   "assign [task-id...]",
+		Short: "Add tasks to the current sprint",
+		Args:  cobra.MinimumNArgs(1),
+		RunE:  runSprintAssign,
+	})
+	sprintCmd.AddCommand(&cobra.Command{
+		Use:   "unassign [task-id...]",
+		Short: "Remove tasks from the current sprint",
+		Args:  cobra.MinimumNArgs(1),
+		RunE:  runSprintUnassign,
 	})
 	reviewCmd := &cobra.Command{
 		Use:   "review",
@@ -228,6 +305,18 @@ func main() {
 	cleanupCmd.Flags().Bool("dry-run", false, "Show what would be removed without removing")
 	root.AddCommand(cleanupCmd)
 
+	// pod logs
+	logsCmd := &cobra.Command{
+		Use:   "logs [task-id]",
+		Short: "Show per-task worker logs",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runLogs,
+	}
+	logsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
+	logsCmd.Flags().IntP("tail", "n", 0, "Show last N lines")
+	logsCmd.Flags().Bool("all", false, "List all available task log files")
+	root.AddCommand(logsCmd)
+
 	// pod log
 	logCmd := &cobra.Command{
 		Use:   "log",
@@ -252,6 +341,13 @@ func main() {
 	}
 	costsCmd.Flags().String("sprint", "", "Show costs for specific sprint (prefix ID)")
 	root.AddCommand(costsCmd)
+	opsCmd := &cobra.Command{
+		Use:   "ops",
+		Short: "List tracked operations",
+		RunE:  runOps,
+	}
+	opsCmd.Flags().Bool("all", false, "Include historical completed/failed operations")
+	root.AddCommand(opsCmd)
 
 	// pod config
 	configCmd := &cobra.Command{
@@ -284,7 +380,24 @@ func main() {
 	autopilotCmd.Flags().Int("max-sprints", 0, "Maximum number of sprints (0=unlimited)")
 	autopilotCmd.Flags().Bool("pause-review", true, "Pause after each review for approval")
 	autopilotCmd.Flags().Bool("unattended", false, "Run without any pauses (overrides pause-review)")
+	autopilotRespondCmd := &cobra.Command{
+		Use:   "respond",
+		Short: "Respond to a running web autopilot prompt",
+		RunE:  runAutopilotRespond,
+	}
+	autopilotRespondCmd.Flags().Bool("continue", true, "Send continue=true (set false to decline)")
+	autopilotRespondCmd.Flags().String("addr", "http://127.0.0.1:8080", "Pod server base URL")
+	autopilotCmd.AddCommand(autopilotRespondCmd)
 	root.AddCommand(autopilotCmd)
+
+	// pod serve
+	serveCmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the Pod web server",
+		RunE:  runServe,
+	}
+	serveCmd.Flags().String("addr", ":8080", "Listen address")
+	root.AddCommand(serveCmd)
 
 	// pod tui
 	root.AddCommand(&cobra.Command{
@@ -303,25 +416,120 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
-
-	// Check this is a git repo.
-	if _, err := os.Stat(filepath.Join(cwd, ".git")); os.IsNotExist(err) {
-		return fmt.Errorf("not a git repository (no .git/ found)")
-	}
-
-	// Check if repo has at least one commit.
-	headCheck := exec.Command("git", "rev-parse", "HEAD")
-	headCheck.Dir = cwd
-	if err := headCheck.Run(); err != nil {
-		return fmt.Errorf("git repo has no commits — make an initial commit before running 'pod init'")
-	}
+	yes, _ := cmd.Flags().GetBool("yes")
+	scanner := bufio.NewScanner(os.Stdin)
 
 	podDir := filepath.Join(cwd, ".pod")
 
-	// If already initialized, exit early.
+	// If already initialized, do not overwrite unless user confirms.
 	if _, err := os.Stat(podDir); err == nil {
-		fmt.Println("Pod already initialized")
-		return nil
+		fmt.Println("Pod already initialized. Run 'pod config' to view settings.")
+		reinit := false
+		if !yes {
+			ok, promptErr := promptYesNo(scanner, "Reinitialize? This will reset your config. [y/N] ", false)
+			if promptErr != nil {
+				return promptErr
+			}
+			reinit = ok
+		}
+		if !reinit {
+			return nil
+		}
+	}
+
+	if _, err := os.Stat(filepath.Join(cwd, ".git")); os.IsNotExist(err) {
+		initRepo := yes
+		if !yes {
+			ok, promptErr := promptYesNo(scanner, "No git repository found. Initialize one? [Y/n] ", true)
+			if promptErr != nil {
+				return promptErr
+			}
+			initRepo = ok
+		}
+		if !initRepo {
+			return fmt.Errorf("pod init requires a git repository")
+		}
+		initCmd := exec.Command("git", "init")
+		initCmd.Dir = cwd
+		if err := initCmd.Run(); err != nil {
+			return fmt.Errorf("git init: %w", err)
+		}
+	}
+
+	// Ensure repo has at least one commit.
+	headCheck := exec.Command("git", "rev-parse", "HEAD")
+	headCheck.Dir = cwd
+	if err := headCheck.Run(); err != nil {
+		fmt.Println("Git repo has no commits. Creating initial commit...")
+		addCmd := exec.Command("git", "add", "-A")
+		addCmd.Dir = cwd
+		if err := addCmd.Run(); err != nil {
+			return fmt.Errorf("git add -A: %w", err)
+		}
+
+		hasStaged := exec.Command("git", "diff", "--cached", "--quiet")
+		hasStaged.Dir = cwd
+		commitArgs := []string{"commit", "-m", "Initial commit"}
+		if err := hasStaged.Run(); err == nil {
+			commitArgs = []string{"commit", "--allow-empty", "-m", "Initial commit"}
+		}
+		commitCmd := exec.Command("git", commitArgs...)
+		commitCmd.Dir = cwd
+		if err := commitCmd.Run(); err != nil {
+			return fmt.Errorf("create initial commit: %w", err)
+		}
+	}
+
+	projectNameDefault := filepath.Base(cwd)
+	integrationBranchDefault := "pod/integration"
+	maxParallelDefault := 2
+
+	projectName, err := promptString(scanner, yes, fmt.Sprintf("Project name [%s]: ", projectNameDefault), projectNameDefault)
+	if err != nil {
+		return err
+	}
+	integrationBranch, err := promptString(scanner, yes, fmt.Sprintf("Integration branch [%s]: ", integrationBranchDefault), integrationBranchDefault)
+	if err != nil {
+		return err
+	}
+
+	// Detect installed tools.
+	fmt.Println("Detecting tools...")
+	available := detectTools()
+	if len(available) == 0 {
+		return fmt.Errorf("no supported tools found on PATH (need at least one of: claude, codex, aider)")
+	}
+	for _, name := range []string{"claude", "codex", "aider"} {
+		found := false
+		for _, a := range available {
+			if a == name {
+				found = true
+				break
+			}
+		}
+		if found {
+			fmt.Printf("  ✓ %s\n", name)
+		} else {
+			fmt.Printf("  ✗ %s (not found)\n", name)
+		}
+	}
+	fmt.Printf("Enabled tools: %s\n", strings.Join(available, ", "))
+
+	// Pick default from detected tools.
+	defaultToolDefault := available[0]
+	defaultTool, err := promptTool(
+		scanner,
+		yes,
+		fmt.Sprintf("Default tool (%s) [%s]: ", strings.Join(available, "/"), defaultToolDefault),
+		defaultToolDefault,
+		available...,
+	)
+	if err != nil {
+		return err
+	}
+	maxParallel, err := promptInt(scanner, yes, fmt.Sprintf("Max parallel workers [%d]: ", maxParallelDefault), maxParallelDefault)
+	if err != nil {
+		return err
 	}
 
 	// Create .pod/ directory.
@@ -329,24 +537,278 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create .pod directory: %w", err)
 	}
 
-	// Write default config.
+	cfgPath := filepath.Join(podDir, "pod.yaml")
+	dbPath := filepath.Join(podDir, "state.db")
+
 	cfg := config.Default()
-	cfg.Project.Name = filepath.Base(cwd)
-	if err := cfg.Save(filepath.Join(podDir, "pod.yaml")); err != nil {
+	cfg.Project.Name = projectName
+	cfg.Project.IntegrationBranch = integrationBranch
+	cfg.Workers.MaxParallel = maxParallel
+	// Keep only detected tools in config.
+	detected := make(map[string]config.ToolConfig)
+	for _, name := range available {
+		if tc, ok := cfg.Tools[name]; ok {
+			detected[name] = tc
+		}
+	}
+	if len(detected) == 0 {
+		return fmt.Errorf("none of the detected tools are present in config defaults")
+	}
+	if _, ok := detected[defaultTool]; !ok {
+		return fmt.Errorf("default tool %q not present in detected tool config", defaultTool)
+	}
+	cfg.Tools = detected
+
+	if !yes {
+		fmt.Println("Set default model per tool (press Enter to skip):")
+		for _, toolName := range available {
+			tc := cfg.Tools[toolName]
+			models := model.FromConfig(toolName, tc)
+			if len(models) > 0 {
+				preview := make([]string, 0, 3)
+				for i := 0; i < len(models) && i < 3; i++ {
+					preview = append(preview, models[i].ID)
+				}
+				fmt.Printf("  %s models: %s\n", toolName, strings.Join(preview, ", "))
+			}
+
+			value, promptErr := promptString(scanner, false, fmt.Sprintf("  Default model for %s []: ", toolName), "")
+			if promptErr != nil {
+				return promptErr
+			}
+			tc.Model = strings.TrimSpace(value)
+			cfg.Tools[toolName] = tc
+		}
+	}
+
+	if err := cfg.Save(cfgPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	// Create SQLite DB.
-	db, err := state.Open(filepath.Join(podDir, "state.db"))
-	if err != nil {
-		return fmt.Errorf("create database: %w", err)
+	// Create SQLite DB if missing.
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		db, err := state.Open(dbPath)
+		if err != nil {
+			return fmt.Errorf("create database: %w", err)
+		}
+		db.Close()
 	}
-	db.Close()
 
-	// Create integration branch (ignore error if exists).
-	_ = exec.Command("git", "branch", "pod/integration").Run()
+	// Create integration branch from HEAD.
+	branchCmd := exec.Command("git", "branch", integrationBranch)
+	branchCmd.Dir = cwd
+	if err := branchCmd.Run(); err != nil {
+		checkCmd := exec.Command("git", "rev-parse", "--verify", integrationBranch)
+		checkCmd.Dir = cwd
+		if checkCmd.Run() != nil {
+			return fmt.Errorf("failed to create integration branch: %w", err)
+		}
+	}
 
-	fmt.Printf("Initialized Pod in %s\n", cwd)
+	if err := ensurePodIgnored(cwd); err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Pod initialized in %s\n\n", cwd)
+	fmt.Println("Getting started:")
+	fmt.Println("  pod backlog add \"task title\"     Add tasks to the backlog")
+	fmt.Println("  pod backlog                      View all tasks")
+	fmt.Println("  pod backlog edit <id> --tool codex  Assign a tool")
+	fmt.Println("  pod sprint plan                  Plan a sprint from ready tasks")
+	fmt.Println("  pod sprint assign <id>           Manually add task to sprint")
+	fmt.Println("  pod start                        Execute the sprint")
+	fmt.Println("  pod review                       Review completed work")
+	fmt.Println("  pod integrate                    Merge into integration branch")
+	fmt.Println("  pod serve                        Open web UI at localhost:8080")
+	fmt.Println()
+	fmt.Println("Tip: Run 'pod explore' to analyze your codebase before planning.")
+	return nil
+}
+
+func promptString(scanner *bufio.Scanner, yes bool, prompt, defaultValue string) (string, error) {
+	if yes {
+		return defaultValue, nil
+	}
+	fmt.Print(prompt)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return "", fmt.Errorf("read input: %w", err)
+		}
+		return defaultValue, nil
+	}
+	input := strings.TrimSpace(scanner.Text())
+	if input == "" {
+		return defaultValue, nil
+	}
+	return input, nil
+}
+
+func detectTools() []string {
+	candidates := []string{"claude", "codex", "aider"}
+	var found []string
+	for _, name := range candidates {
+		if _, err := exec.LookPath(name); err == nil {
+			found = append(found, name)
+		}
+	}
+	return found
+}
+
+func promptTool(scanner *bufio.Scanner, yes bool, prompt, defaultValue string, valid ...string) (string, error) {
+	validSet := map[string]bool{}
+	for _, v := range valid {
+		validSet[v] = true
+	}
+	for {
+		value, err := promptString(scanner, yes, prompt, defaultValue)
+		if err != nil {
+			return "", err
+		}
+		if validSet[value] {
+			return value, nil
+		}
+		if yes {
+			return "", fmt.Errorf("invalid default tool %q", value)
+		}
+		fmt.Printf("Please enter one of: %s\n", strings.Join(valid, ", "))
+	}
+}
+
+func promptInt(scanner *bufio.Scanner, yes bool, prompt string, defaultValue int) (int, error) {
+	for {
+		value, err := promptString(scanner, yes, prompt, strconv.Itoa(defaultValue))
+		if err != nil {
+			return 0, err
+		}
+		n, parseErr := strconv.Atoi(value)
+		if parseErr != nil || n <= 0 {
+			if yes {
+				return 0, fmt.Errorf("invalid integer %q", value)
+			}
+			fmt.Println("Please enter a positive integer.")
+			continue
+		}
+		return n, nil
+	}
+}
+
+func promptYesNo(scanner *bufio.Scanner, prompt string, defaultYes bool) (bool, error) {
+	fmt.Print(prompt)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return false, fmt.Errorf("read input: %w", err)
+		}
+		return defaultYes, nil
+	}
+	value := strings.ToLower(strings.TrimSpace(scanner.Text()))
+	if value == "" {
+		return defaultYes, nil
+	}
+	switch value {
+	case "y", "yes":
+		return true, nil
+	case "n", "no":
+		return false, nil
+	default:
+		return defaultYes, nil
+	}
+}
+
+func ensurePodIgnored(cwd string) error {
+	gitignorePath := filepath.Join(cwd, ".gitignore")
+	existing, err := os.ReadFile(gitignorePath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read .gitignore: %w", err)
+	}
+
+	entries := []string{".pod/state.db", ".pod/state.db-wal", ".pod/state.db-shm", ".pod/prompts/", ".pod/logs/"}
+	var needed []string
+	for _, e := range entries {
+		if !containsIgnoreEntry(existing, e) {
+			needed = append(needed, e)
+		}
+	}
+	if len(needed) == 0 {
+		return nil
+	}
+
+	f, err := os.OpenFile(gitignorePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open .gitignore: %w", err)
+	}
+	defer f.Close()
+
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+		if _, err := f.WriteString("\n"); err != nil {
+			return fmt.Errorf("update .gitignore: %w", err)
+		}
+	}
+	if _, err := f.WriteString("# Pod orchestrator\n"); err != nil {
+		return fmt.Errorf("update .gitignore: %w", err)
+	}
+	for _, e := range needed {
+		if _, err := f.WriteString(e + "\n"); err != nil {
+			return fmt.Errorf("update .gitignore: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func containsIgnoreEntry(data []byte, entry string) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == entry {
+			return true
+		}
+	}
+	return false
+}
+
+func runModels(cmd *cobra.Command, args []string) error {
+	cfgPath := filepath.Join(".pod", "pod.yaml")
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("pod not initialized — run 'pod init' first")
+		}
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	var toolNames []string
+	if len(args) == 1 {
+		toolName := args[0]
+		if _, ok := cfg.Tools[toolName]; !ok {
+			return fmt.Errorf("tool %q not found in config", toolName)
+		}
+		toolNames = []string{toolName}
+	} else {
+		toolNames = make([]string, 0, len(cfg.Tools))
+		for name := range cfg.Tools {
+			toolNames = append(toolNames, name)
+		}
+		sort.Strings(toolNames)
+	}
+
+	multi := len(toolNames) > 1
+	for i, toolName := range toolNames {
+		tc := cfg.Tools[toolName]
+		models := model.FromConfig(toolName, tc)
+
+		if multi {
+			if i > 0 {
+				fmt.Println()
+			}
+			fmt.Printf("%s\n", toolName)
+		}
+		fmt.Printf("%-40s %s\n", "MODEL ID", "PROVIDER")
+		for _, m := range models {
+			fmt.Printf("%-40s %s\n", m.ID, m.Provider)
+		}
+		if len(models) == 0 {
+			fmt.Println("(no models configured)")
+		}
+	}
+
 	return nil
 }
 
@@ -579,6 +1041,7 @@ func runBacklogAdd(cmd *cobra.Command, args []string) error {
 	parentID, _ := cmd.Flags().GetString("parent")
 	dependsOn, _ := cmd.Flags().GetStringSlice("depends-on")
 	toolName, _ := cmd.Flags().GetString("tool")
+	modelName, _ := cmd.Flags().GetString("model")
 
 	// Resolve prefix IDs for --depends-on
 	for i, dep := range dependsOn {
@@ -593,6 +1056,11 @@ func runBacklogAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create task: %w", err)
 	}
+	if modelName != "" {
+		if err := store.Update(t.ID, map[string]interface{}{"model": modelName}); err != nil {
+			return fmt.Errorf("set model: %w", err)
+		}
+	}
 
 	for _, depID := range dependsOn {
 		if err := store.AddDependency(t.ID, depID); err != nil {
@@ -603,6 +1071,9 @@ func runBacklogAdd(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Created task %s: %s\n", short(t.ID), title)
 	if toolName != "" {
 		fmt.Printf("  tool: %s\n", toolName)
+	}
+	if modelName != "" {
+		fmt.Printf("  model: %s\n", modelName)
 	}
 	if len(dependsOn) > 0 {
 		shortened := make([]string, len(dependsOn))
@@ -643,6 +1114,9 @@ func runBacklogList(cmd *cobra.Command, args []string) error {
 		if t.AssignedTool != "" {
 			extras = append(extras, "tool: "+t.AssignedTool)
 		}
+		if t.Model != "" {
+			extras = append(extras, "model: "+t.Model)
+		}
 		if len(extras) > 0 {
 			line += "      " + strings.Join(extras, "  ")
 		}
@@ -681,9 +1155,13 @@ func runBacklogEdit(cmd *cobra.Command, args []string) error {
 		v, _ := cmd.Flags().GetString("tool")
 		fields["assigned_tool"] = v
 	}
+	if cmd.Flags().Changed("model") {
+		v, _ := cmd.Flags().GetString("model")
+		fields["model"] = v
+	}
 
 	if len(fields) == 0 {
-		fmt.Println("No fields to update. Use --title, --description, --prompt, --status, or --tool.")
+		fmt.Println("No fields to update. Use --title, --description, --prompt, --status, --tool, or --model.")
 		return nil
 	}
 
@@ -692,6 +1170,360 @@ func runBacklogEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Updated task %s\n", short(id))
+	return nil
+}
+
+func runBacklogDelete(cmd *cobra.Command, args []string) error {
+	db, store := openStore()
+	defer db.Close()
+
+	id, err := resolveTaskID(store, args[0])
+	if err != nil {
+		return err
+	}
+	t, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+
+	yes, _ := cmd.Flags().GetBool("yes")
+	if !yes {
+		scanner := bufio.NewScanner(os.Stdin)
+		ok, err := promptYesNo(scanner, fmt.Sprintf("Delete task %s (%s)? [y/N] ", short(t.ID), t.Title), false)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	if err := store.Delete(id); err != nil {
+		return fmt.Errorf("delete task: %w", err)
+	}
+	fmt.Printf("Deleted task %s: %s\n", short(t.ID), t.Title)
+	return nil
+}
+
+func runBacklogMerge(cmd *cobra.Command, args []string) error {
+	db, cfg, _, executor, err := loadRuntime()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	auto, _ := cmd.Flags().GetBool("auto")
+	store := task.NewStore(db)
+
+	id, err := resolveTaskID(store, args[0])
+	if err != nil {
+		return err
+	}
+	tk, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+	if tk.Status != "completed" {
+		return fmt.Errorf("only completed tasks can be merged (task %s is %s)", short(id), tk.Status)
+	}
+	for _, depID := range tk.DependsOn {
+		dep, err := store.Get(depID)
+		if err != nil {
+			return fmt.Errorf("check dependency %s: %w", short(depID), err)
+		}
+		if dep.Status != "merged" {
+			return fmt.Errorf("dependency %q (%s) must be merged first", dep.Title, short(dep.ID))
+		}
+	}
+
+	if err := ensureOperationsTable(db); err != nil {
+		return fmt.Errorf("ensure operations table: %w", err)
+	}
+	opID, err := createOperation(db, "merge", id)
+	if err != nil {
+		return fmt.Errorf("create operation: %w", err)
+	}
+
+	repoDir, _ := os.Getwd()
+	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
+	if auto {
+		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (config.ToolConfig, error) {
+			taskRow, err := store.Get(taskID)
+			if err != nil {
+				return config.ToolConfig{}, err
+			}
+			if taskRow.AssignedTool != "" {
+				if tc, ok := cfg.Tools[taskRow.AssignedTool]; ok {
+					return tc, nil
+				}
+				return config.ToolConfig{}, fmt.Errorf("tool %q not found", taskRow.AssignedTool)
+			}
+			for _, tc := range cfg.Tools {
+				return tc, nil
+			}
+			return config.ToolConfig{}, fmt.Errorf("no tools configured")
+		})
+	}
+
+	fmt.Printf("Merging task %s (op %s)\n", short(id), short(opID))
+	if auto {
+		fmt.Println("Auto-resolving conflicts is enabled.")
+	}
+
+	var mergeErr error
+	if auto {
+		mergeErr = ig.MergeWithRerun(id)
+	} else {
+		mergeErr = ig.MergeAndValidate(id)
+	}
+	if mergeErr != nil {
+		_ = failOperation(db, opID, mergeErr.Error())
+		if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
+			worktreePath := filepath.Join(cfg.Project.WorktreeDir, "task-"+id)
+			return fmt.Errorf("merge conflict for task %s (worktree: %s): %w", short(id), worktreePath, mergeErr)
+		}
+		return fmt.Errorf("merge task %s: %w", short(id), mergeErr)
+	}
+
+	if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+		_ = failOperation(db, opID, err.Error())
+		return fmt.Errorf("set merged status: %w", err)
+	}
+	if err := executor.Worktrees().Remove(id); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cleanup worktree after merge %s: %v\n", short(id), err)
+	}
+	if err := completeOperation(db, opID, map[string]string{"status": "merged", "task_id": id}); err != nil {
+		return fmt.Errorf("complete operation: %w", err)
+	}
+
+	fmt.Printf("Merged task %s\n", short(id))
+	return nil
+}
+
+func runBacklogPlan(cmd *cobra.Command, args []string) error {
+	db, store := openStore()
+	defer db.Close()
+
+	cfg, err := config.Load(filepath.Join(".pod", "pod.yaml"))
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	id, err := resolveTaskID(store, args[0])
+	if err != nil {
+		return err
+	}
+	t, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+
+	save, _ := cmd.Flags().GetBool("save")
+	edit, _ := cmd.Flags().GetBool("edit")
+	toolOverride, _ := cmd.Flags().GetString("tool")
+	modelOverride, _ := cmd.Flags().GetString("model")
+
+	toolName := toolOverride
+	if toolName == "" {
+		toolName = t.AssignedTool
+	}
+	if toolName == "" {
+		toolNames := make([]string, 0, len(cfg.Tools))
+		for name := range cfg.Tools {
+			toolNames = append(toolNames, name)
+		}
+		sort.Strings(toolNames)
+		if len(toolNames) == 0 {
+			return fmt.Errorf("no tools configured")
+		}
+		toolName = toolNames[0]
+	}
+
+	toolCfg, ok := cfg.Tools[toolName]
+	if !ok {
+		return fmt.Errorf("tool %q not found in config", toolName)
+	}
+
+	modelName := modelOverride
+	if modelName == "" && t.Model != "" {
+		modelName = t.Model
+	}
+
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	generator := planpkg.New(toolCfg, repoDir)
+	if err := ensureOperationsTable(db); err != nil {
+		return fmt.Errorf("ensure operations table: %w", err)
+	}
+	opID, err := createOperation(db, "plan_generate", id)
+	if err != nil {
+		return fmt.Errorf("create operation: %w", err)
+	}
+
+	fmt.Printf("Generating plan for task %s (op %s)\n", short(id), short(opID))
+	var planContent string
+	spinDone := make(chan struct{})
+	go renderSpinner("Generating plan", spinDone)
+	if modelName != "" {
+		planContent, err = generator.GenerateWithModel(t.Title, t.Description, modelName)
+	} else {
+		planContent, err = generator.Generate(t.Title, t.Description)
+	}
+	close(spinDone)
+	fmt.Print("\r")
+	if err != nil {
+		_ = failOperation(db, opID, err.Error())
+		return fmt.Errorf("generate plan: %w", err)
+	}
+	if err := completeOperation(db, opID, map[string]string{"task_id": id, "plan": planContent}); err != nil {
+		return fmt.Errorf("complete operation: %w", err)
+	}
+
+	fmt.Println(planContent)
+
+	shouldSave := save || edit
+	if shouldSave {
+		if err := store.SetPlan(id, planContent); err != nil {
+			return fmt.Errorf("save plan: %w", err)
+		}
+		if save && !edit {
+			fmt.Printf("\nSaved plan to task %s\n", short(id))
+		}
+	}
+
+	if !edit {
+		return nil
+	}
+
+	editor := strings.TrimSpace(os.Getenv("EDITOR"))
+	if editor == "" {
+		return fmt.Errorf("EDITOR is not set")
+	}
+
+	tmpFile, err := os.CreateTemp("", "pod-plan-*.md")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	if _, err := tmpFile.WriteString(planContent); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write temp plan: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temp plan: %w", err)
+	}
+	defer os.Remove(tmpPath)
+
+	editCmd := exec.Command("sh", "-c", fmt.Sprintf("%s %q", editor, tmpPath))
+	editCmd.Stdin = os.Stdin
+	editCmd.Stdout = os.Stdout
+	editCmd.Stderr = os.Stderr
+	if err := editCmd.Run(); err != nil {
+		return fmt.Errorf("open editor: %w", err)
+	}
+
+	edited, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return fmt.Errorf("read edited plan: %w", err)
+	}
+
+	if err := store.SetPlan(id, strings.TrimSpace(string(edited))); err != nil {
+		return fmt.Errorf("save edited plan: %w", err)
+	}
+
+	fmt.Printf("\nSaved edited plan to task %s\n", short(id))
+	return nil
+}
+
+func runBacklogShow(cmd *cobra.Command, args []string) error {
+	db, store := openStore()
+	defer db.Close()
+
+	id, err := resolveTaskID(store, args[0])
+	if err != nil {
+		return err
+	}
+	t, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+
+	fmt.Printf("ID: %s\n", t.ID)
+	fmt.Printf("Title: %s\n", t.Title)
+	fmt.Printf("Description: %s\n", t.Description)
+	fmt.Printf("Status: %s\n", t.Status)
+	if t.AssignedTool != "" {
+		fmt.Printf("Tool: %s\n", t.AssignedTool)
+	} else {
+		fmt.Println("Tool: (none)")
+	}
+	if t.Model != "" {
+		fmt.Printf("Model: %s\n", t.Model)
+	} else {
+		fmt.Println("Model: (none)")
+	}
+
+	if len(t.DependsOn) == 0 {
+		fmt.Println("Dependencies: (none)")
+	} else {
+		shortened := make([]string, len(t.DependsOn))
+		for i, dep := range t.DependsOn {
+			shortened[i] = short(dep)
+		}
+		fmt.Printf("Dependencies: %s\n", strings.Join(shortened, ", "))
+	}
+
+	fmt.Println("Plan:")
+	if strings.TrimSpace(t.Plan) == "" {
+		fmt.Println("(none)")
+	} else {
+		fmt.Println(t.Plan)
+	}
+	return nil
+}
+
+func runBacklogReopen(cmd *cobra.Command, args []string) error {
+	db, store := openStore()
+	defer db.Close()
+
+	var reopened int
+	var lastReopenedID string
+	for _, arg := range args {
+		id, err := resolveTaskID(store, arg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			continue
+		}
+
+		t, err := store.Get(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: get task %s: %v\n", short(id), err)
+			continue
+		}
+		if t.Status != "failed" {
+			fmt.Fprintf(os.Stderr, "Error: task %s is %q, not %q\n", short(id), t.Status, "failed")
+			continue
+		}
+
+		if err := store.Update(id, map[string]interface{}{"status": "pending", "sprint_id": nil}); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: reopen task %s: %v\n", short(id), err)
+			continue
+		}
+		reopened++
+		lastReopenedID = id
+	}
+
+	if reopened == 1 {
+		fmt.Printf("Reopened task %s -> pending\n", short(lastReopenedID))
+		return nil
+	}
+	if reopened > 1 {
+		fmt.Printf("Reopened %d tasks -> pending\n", reopened)
+	}
 	return nil
 }
 
@@ -721,6 +1553,126 @@ func resolveTaskID(store *task.Store, prefix string) (string, error) {
 		return "", fmt.Errorf("resolve %q: %w", prefix, err)
 	}
 	return id, nil
+}
+
+type operationRow struct {
+	ID        string
+	Type      string
+	TargetID  string
+	Status    string
+	Result    string
+	Error     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func ensureOperationsTable(db *state.DB) error {
+	_, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS operations (
+	id TEXT PRIMARY KEY,
+	type TEXT NOT NULL,
+	target_id TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'running',
+	result TEXT,
+	error TEXT,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`)
+	return err
+}
+
+func createOperation(db *state.DB, opType, targetID string) (string, error) {
+	id := uuid.New().String()
+	now := time.Now().UTC()
+	_, err := db.Exec(
+		`INSERT INTO operations (id, type, target_id, status, created_at, updated_at) VALUES (?, ?, ?, 'running', ?, ?)`,
+		id, opType, targetID, now, now,
+	)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func completeOperation(db *state.DB, id string, result interface{}) error {
+	resultJSON, err := marshalOperationResult(result)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(
+		`UPDATE operations SET status = 'completed', result = ?, error = NULL, updated_at = ? WHERE id = ?`,
+		resultJSON, time.Now().UTC(), id,
+	)
+	return err
+}
+
+func failOperation(db *state.DB, id, errMsg string) error {
+	_, err := db.Exec(
+		`UPDATE operations SET status = 'failed', error = ?, updated_at = ? WHERE id = ?`,
+		errMsg, time.Now().UTC(), id,
+	)
+	return err
+}
+
+func marshalOperationResult(result interface{}) (string, error) {
+	if result == nil {
+		return "", nil
+	}
+	switch v := result.(type) {
+	case string:
+		return v, nil
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("marshal operation result: %w", err)
+		}
+		return string(data), nil
+	}
+}
+
+func listOperations(db *state.DB, includeAll bool) ([]operationRow, error) {
+	query := `SELECT id, type, target_id, status, COALESCE(result, ''), COALESCE(error, ''), created_at, updated_at
+	          FROM operations`
+	var args []interface{}
+	if !includeAll {
+		query += ` WHERE status = 'running' OR updated_at >= datetime('now', '-5 minutes')`
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []operationRow
+	for rows.Next() {
+		var row operationRow
+		if err := rows.Scan(&row.ID, &row.Type, &row.TargetID, &row.Status, &row.Result, &row.Error, &row.CreatedAt, &row.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func renderSpinner(label string, done <-chan struct{}) {
+	frames := []rune{'|', '/', '-', '\\'}
+	i := 0
+	for {
+		select {
+		case <-done:
+			fmt.Printf("\r%s... done\n", label)
+			return
+		default:
+			fmt.Printf("\r%s... %c", label, frames[i%len(frames)])
+			time.Sleep(120 * time.Millisecond)
+			i++
+		}
+	}
 }
 
 // --- Sprint commands ---
@@ -773,6 +1725,13 @@ func runSprintStart(cmd *cobra.Command, args []string) error {
 	if active.Status != "planning" {
 		return fmt.Errorf("sprint %s is %s, not planning", short(active.ID), active.Status)
 	}
+	if err := ensureOperationsTable(db); err != nil {
+		return fmt.Errorf("ensure operations table: %w", err)
+	}
+	opID, err := createOperation(db, "sprint_start", active.ID)
+	if err != nil {
+		return fmt.Errorf("create operation: %w", err)
+	}
 
 	// Write PID file so `pod sprint cancel` can signal us.
 	pidPath := filepath.Join(".pod", "sprint.pid")
@@ -790,13 +1749,15 @@ func runSprintStart(cmd *cobra.Command, args []string) error {
 		executor.Cancel()
 	}()
 
-	fmt.Printf("Starting sprint %s...\n\n", short(active.ID))
+	fmt.Printf("Starting sprint %s... (op %s)\n\n", short(active.ID), short(opID))
+	fmt.Printf("sprint.started  sprint=%s operation=%s\n", short(active.ID), short(opID))
 	results, err := executor.Run(active)
 
 	// Stop signal handler after Run returns.
 	signal.Stop(sigCh)
 
 	if cancelled.Load() {
+		_ = failOperation(db, opID, "cancelled")
 		if cleanupErr := executor.Cleanup(active); cleanupErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: worktree cleanup: %v\n", cleanupErr)
 		}
@@ -808,6 +1769,7 @@ func runSprintStart(cmd *cobra.Command, args []string) error {
 	}
 
 	if err != nil {
+		_ = failOperation(db, opID, err.Error())
 		return fmt.Errorf("run sprint: %w", err)
 	}
 
@@ -818,6 +1780,7 @@ func runSprintStart(cmd *cobra.Command, args []string) error {
 		if t != nil {
 			title = t.Title
 		}
+		fmt.Printf("sprint.progress task=%s status=%s duration=%s\n", short(r.TaskID), r.Status, r.Duration.Round(time.Second))
 		fmt.Printf("  %s %s  %s  (%s)\n", statusIcon(r.Status), short(r.TaskID), title, r.Duration.Round(time.Second))
 		if r.Status == "failed" {
 			failed++
@@ -832,6 +1795,15 @@ func runSprintStart(cmd *cobra.Command, args []string) error {
 			succeeded++
 		}
 	}
+	if err := completeOperation(db, opID, map[string]interface{}{
+		"sprint_id":  active.ID,
+		"succeeded":  succeeded,
+		"failed":     failed,
+		"task_count": len(results),
+	}); err != nil {
+		return fmt.Errorf("complete operation: %w", err)
+	}
+	fmt.Printf("sprint.completed sprint=%s operation=%s\n", short(active.ID), short(opID))
 
 	fmt.Printf("\nSprint complete: %d succeeded, %d failed\n", succeeded, failed)
 	return nil
@@ -852,6 +1824,7 @@ func runSprintStatus(cmd *cobra.Command, args []string) error {
 		fmt.Println("No active sprint")
 		return nil
 	}
+	repoDir, _ := os.Getwd()
 
 	fmt.Printf("Sprint %s (%s)\n\n", short(active.ID), active.Status)
 	for _, id := range active.TaskIDs {
@@ -859,7 +1832,106 @@ func runSprintStatus(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("get task %s: %w", id, err)
 		}
-		fmt.Printf("  %s %s  %s\n", statusIcon(t.Status), short(t.ID), t.Title)
+		line := fmt.Sprintf("  %s %s  %s", statusIcon(t.Status), short(t.ID), t.Title)
+		if t.Status == "running" {
+			if latest, err := tasklog.ReadLastLine(repoDir, t.ID); err == nil && latest != "" {
+				line += "  |  " + latest
+			}
+		}
+		fmt.Println(line)
+	}
+	return nil
+}
+
+func runSprintAssign(cmd *cobra.Command, args []string) error {
+	db, _, planner, _, err := loadRuntime()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	store := task.NewStore(db)
+	active, err := planner.GetActive()
+	if err != nil {
+		return fmt.Errorf("get active sprint: %w", err)
+	}
+	if active == nil {
+		active, err = planner.CreateEmpty()
+		if err != nil {
+			return fmt.Errorf("create sprint: %w", err)
+		}
+	}
+	if active.Status != "planning" {
+		return fmt.Errorf("sprint is running, cannot assign tasks")
+	}
+
+	var assigned int
+	var lastAssignedID string
+	for _, arg := range args {
+		id, err := resolveTaskID(store, arg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			continue
+		}
+		if err := planner.AddTaskToSprint(active.ID, id); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			continue
+		}
+		assigned++
+		lastAssignedID = id
+	}
+
+	if assigned == 1 {
+		fmt.Printf("Assigned task %s to sprint %s (planning)\n", short(lastAssignedID), short(active.ID))
+		return nil
+	}
+	if assigned > 1 {
+		fmt.Printf("Assigned %d tasks to sprint %s (planning)\n", assigned, short(active.ID))
+	}
+	return nil
+}
+
+func runSprintUnassign(cmd *cobra.Command, args []string) error {
+	db, _, planner, _, err := loadRuntime()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	store := task.NewStore(db)
+	active, err := planner.GetActive()
+	if err != nil {
+		return fmt.Errorf("get active sprint: %w", err)
+	}
+	if active == nil {
+		return fmt.Errorf("no active sprint")
+	}
+	if active.Status != "planning" {
+		return fmt.Errorf("sprint is running, cannot unassign tasks")
+	}
+
+	var removed int
+	var lastRemovedID string
+	for _, arg := range args {
+		id, err := resolveTaskID(store, arg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			continue
+		}
+		if err := planner.RemoveTaskFromSprint(active.ID, id); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			continue
+		}
+		removed++
+		lastRemovedID = id
+	}
+
+	if removed == 1 {
+		fmt.Printf("Removed task %s from sprint %s\n", short(lastRemovedID), short(active.ID))
+		return nil
+	}
+	if removed > 1 {
+		fmt.Printf("Removed %d tasks from sprint %s\n", removed, short(active.ID))
 	}
 	return nil
 }
@@ -1045,6 +2117,13 @@ func runSprintReview(cmd *cobra.Command, args []string) error {
 	if !auto {
 		return nil
 	}
+	if err := ensureOperationsTable(db); err != nil {
+		return fmt.Errorf("ensure operations table: %w", err)
+	}
+	opID, err := createOperation(db, "review", s.ID)
+	if err != nil {
+		return fmt.Errorf("create operation: %w", err)
+	}
 
 	// Resolve review tool: explicit flag > different tool than task's > first available.
 	repoDir, _ := os.Getwd()
@@ -1067,7 +2146,8 @@ func runSprintReview(cmd *cobra.Command, args []string) error {
 		return config.ToolConfig{}, fmt.Errorf("no tools configured")
 	}
 
-	fmt.Println("\nRunning automated review...")
+	fmt.Printf("\nRunning automated review... (op %s)\n", short(opID))
+	fmt.Printf("review.started sprint=%s operation=%s\n", short(s.ID), short(opID))
 
 	var inputs []review.ReviewInput
 	var toolForReview config.ToolConfig
@@ -1098,6 +2178,7 @@ func runSprintReview(cmd *cobra.Command, args []string) error {
 	reviewer := review.New(toolForReview, repoDir)
 	results, err := reviewer.ReviewBatch(inputs)
 	if err != nil {
+		_ = failOperation(db, opID, err.Error())
 		return fmt.Errorf("run reviews: %w", err)
 	}
 
@@ -1111,12 +2192,22 @@ func runSprintReview(cmd *cobra.Command, args []string) error {
 		}
 		if r.Approved {
 			approved++
+			fmt.Printf("review.progress task=%s status=approved\n", short(r.TaskID))
 			fmt.Printf("  \u2713 Approved: %s\n", title)
 		} else {
 			rejected++
+			fmt.Printf("review.progress task=%s status=rejected\n", short(r.TaskID))
 			fmt.Printf("  \u2717 Rejected: %s\n    feedback: %s\n", title, r.Feedback)
 		}
 	}
+	if err := completeOperation(db, opID, map[string]interface{}{
+		"sprint_id": s.ID,
+		"approved":  approved,
+		"rejected":  rejected,
+	}); err != nil {
+		return fmt.Errorf("complete operation: %w", err)
+	}
+	fmt.Printf("review.completed sprint=%s operation=%s\n", short(s.ID), short(opID))
 	fmt.Printf("\nReview: %d approved, %d rejected\n", approved, rejected)
 
 	return nil
@@ -1179,6 +2270,14 @@ func runIntegrate(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
+	if err := ensureOperationsTable(db); err != nil {
+		return fmt.Errorf("ensure operations table: %w", err)
+	}
+	opID, err := createOperation(db, "integrate", sprintID)
+	if err != nil {
+		return fmt.Errorf("create operation: %w", err)
+	}
+	fmt.Printf("integrate.started sprint=%s operation=%s\n", short(sprintID), short(opID))
 
 	repoDir, _ := os.Getwd()
 	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
@@ -1203,15 +2302,29 @@ func runIntegrate(cmd *cobra.Command, args []string) error {
 	})
 	merged, failed, err := ig.MergeBatch(taskIDs)
 	if err != nil {
+		_ = failOperation(db, opID, err.Error())
 		return fmt.Errorf("merge batch: %w", err)
 	}
 
 	for _, id := range merged {
+		fmt.Printf("integrate.progress task=%s status=merged\n", short(id))
+		if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: set task %s merged: %v\n", short(id), err)
+		}
 		fmt.Printf("  ✓ Merged task-%s\n", short(id))
 	}
 	for _, id := range failed {
+		fmt.Printf("integrate.progress task=%s status=failed\n", short(id))
 		fmt.Printf("  ✗ Failed task-%s\n", short(id))
 	}
+	if err := completeOperation(db, opID, map[string]interface{}{
+		"sprint_id": sprintID,
+		"merged":    merged,
+		"failed":    failed,
+	}); err != nil {
+		return fmt.Errorf("complete operation: %w", err)
+	}
+	fmt.Printf("integrate.completed sprint=%s operation=%s\n", short(sprintID), short(opID))
 	fmt.Printf("\nIntegrated: %d merged, %d failed\n", len(merged), len(failed))
 	return nil
 }
@@ -1283,21 +2396,230 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\nDry run: would remove %d worktrees\n", len(stale))
 		return nil
 	}
+	if err := ensureOperationsTable(db); err != nil {
+		return fmt.Errorf("ensure operations table: %w", err)
+	}
+	opID, err := createOperation(db, "cleanup", "")
+	if err != nil {
+		return fmt.Errorf("create operation: %w", err)
+	}
+	fmt.Printf("cleanup.started operation=%s\n", short(opID))
 
 	var removed int
 	for _, s := range stale {
 		if err := wm.Remove(s.taskID); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: remove %s: %v\n", s.branch, err)
+			fmt.Printf("cleanup.progress branch=%s status=failed\n", s.branch)
 			continue
 		}
 		removed++
+		fmt.Printf("cleanup.progress branch=%s status=removed\n", s.branch)
 	}
+	if err := completeOperation(db, opID, map[string]interface{}{"removed": removed}); err != nil {
+		return fmt.Errorf("complete operation: %w", err)
+	}
+	fmt.Printf("cleanup.completed operation=%s removed=%d\n", short(opID), removed)
 
 	fmt.Printf("\nRemoved %d worktrees\n", removed)
 	return nil
 }
 
+func runOps(cmd *cobra.Command, args []string) error {
+	db, _ := openStore()
+	defer db.Close()
+
+	if err := ensureOperationsTable(db); err != nil {
+		return fmt.Errorf("ensure operations table: %w", err)
+	}
+	includeAll, _ := cmd.Flags().GetBool("all")
+	ops, err := listOperations(db, includeAll)
+	if err != nil {
+		return fmt.Errorf("list operations: %w", err)
+	}
+	if len(ops) == 0 {
+		if includeAll {
+			fmt.Println("No operations recorded.")
+		} else {
+			fmt.Println("No running/recent operations.")
+		}
+		return nil
+	}
+
+	for _, op := range ops {
+		var elapsed time.Duration
+		if op.Status == "running" {
+			elapsed = time.Since(op.CreatedAt)
+		} else {
+			elapsed = op.UpdatedAt.Sub(op.CreatedAt)
+		}
+		if elapsed < 0 {
+			elapsed = 0
+		}
+
+		target := op.TargetID
+		if strings.TrimSpace(target) == "" {
+			target = "-"
+		} else {
+			target = short(target)
+		}
+
+		fmt.Printf("%-8s %-14s target=%-8s elapsed=%-8s status=%s\n",
+			short(op.ID), op.Type, target, elapsed.Round(time.Second), op.Status)
+		if op.Error != "" {
+			fmt.Printf("  error: %s\n", op.Error)
+		}
+	}
+	return nil
+}
+
 // --- Log command ---
+
+func runLogs(cmd *cobra.Command, args []string) error {
+	follow, _ := cmd.Flags().GetBool("follow")
+	tail, _ := cmd.Flags().GetInt("tail")
+	listAll, _ := cmd.Flags().GetBool("all")
+
+	repoDir, _ := os.Getwd()
+	logsDir := filepath.Join(repoDir, ".pod", "logs")
+	if err := tasklog.EnsureDir(repoDir); err != nil {
+		return fmt.Errorf("ensure logs directory: %w", err)
+	}
+
+	db, store := openStore()
+	defer db.Close()
+
+	if listAll {
+		entries, err := os.ReadDir(logsDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Println("No logs directory found.")
+				return nil
+			}
+			return fmt.Errorf("list logs: %w", err)
+		}
+		type item struct {
+			taskID  string
+			status  string
+			size    int64
+			modTime time.Time
+		}
+		items := make([]item, 0, len(entries))
+		for _, ent := range entries {
+			if ent.IsDir() || !strings.HasSuffix(ent.Name(), ".log") {
+				continue
+			}
+			id := strings.TrimSuffix(ent.Name(), ".log")
+			info, err := ent.Info()
+			if err != nil {
+				continue
+			}
+			status := "unknown"
+			if tk, err := store.Get(id); err == nil {
+				status = tk.Status
+			}
+			items = append(items, item{
+				taskID:  id,
+				status:  status,
+				size:    info.Size(),
+				modTime: info.ModTime(),
+			})
+		}
+		sort.Slice(items, func(i, j int) bool { return items[i].modTime.After(items[j].modTime) })
+		if len(items) == 0 {
+			fmt.Println("No task logs found.")
+			return nil
+		}
+		for _, it := range items {
+			fmt.Printf("%s  status=%s  size=%dB\n", short(it.taskID), it.status, it.size)
+		}
+		return nil
+	}
+
+	if len(args) != 1 {
+		return fmt.Errorf("task-id is required unless --all is set")
+	}
+
+	taskID, err := resolveTaskID(store, args[0])
+	if err != nil {
+		if strings.HasPrefix(err.Error(), "task not found") {
+			taskID = args[0]
+		} else {
+			return err
+		}
+	}
+	logPath := tasklog.Path(repoDir, taskID)
+	if _, err := os.Stat(logPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("log not found for task %s", args[0])
+		}
+		return fmt.Errorf("stat log: %w", err)
+	}
+
+	var lines []string
+	if tail > 0 {
+		lines, err = tasklog.ReadTailLines(repoDir, taskID, tail)
+	} else {
+		lines, err = tasklog.ReadLines(repoDir, taskID)
+	}
+	if err != nil {
+		return fmt.Errorf("read log: %w", err)
+	}
+	for _, line := range lines {
+		fmt.Println(line)
+	}
+	if !follow {
+		return nil
+	}
+
+	return followTaskLog(logPath)
+}
+
+func followTaskLog(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	offset, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+	var carry string
+
+	for {
+		time.Sleep(250 * time.Millisecond)
+
+		st, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if st.Size() < offset {
+			offset = 0
+			carry = ""
+		}
+		if st.Size() == offset {
+			continue
+		}
+		if _, err := f.Seek(offset, io.SeekStart); err != nil {
+			return err
+		}
+		chunk, err := io.ReadAll(f)
+		if err != nil {
+			return err
+		}
+		offset = st.Size()
+		text := carry + strings.ToValidUTF8(string(chunk), "?")
+		parts := strings.Split(text, "\n")
+		carry = parts[len(parts)-1]
+		for _, line := range parts[:len(parts)-1] {
+			fmt.Println(line)
+		}
+	}
+}
 
 func runLog(cmd *cobra.Command, args []string) error {
 	db, _ := openStore()
@@ -1365,6 +2687,30 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	repoDir, _ := os.Getwd()
 	m := tui.New(db, cfg, planner, executor, repoDir)
 	return tui.Run(m)
+}
+
+// --- Serve command ---
+
+func runServe(cmd *cobra.Command, args []string) error {
+	db, cfg, planner, executor, err := loadRuntime()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	repoDir, _ := os.Getwd()
+	addr, _ := cmd.Flags().GetString("addr")
+
+	// Embed frontend static files from web/dist.
+	var frontendFS fs.FS
+	if sub, err := fs.Sub(web.DistFS, "dist"); err == nil {
+		frontendFS = sub
+	}
+
+	srv := api.NewServer(db, cfg, planner, executor, repoDir, frontendFS)
+
+	fmt.Printf("Pod server listening on %s\n", addr)
+	return http.ListenAndServe(addr, srv.Routes())
 }
 
 // --- Autopilot command ---
@@ -1481,6 +2827,39 @@ func runAutopilot(cmd *cobra.Command, args []string) error {
 	err = sup.Run(goal, cb)
 	signal.Stop(sigCh)
 	return err
+}
+
+func runAutopilotRespond(cmd *cobra.Command, args []string) error {
+	baseURL, _ := cmd.Flags().GetString("addr")
+	cont, _ := cmd.Flags().GetBool("continue")
+
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return fmt.Errorf("addr is required")
+	}
+	payload := map[string]bool{"continue": cont}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	resp, err := http.Post(baseURL+"/api/v1/autopilot/respond", "application/json", bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("post autopilot respond: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = resp.Status
+		}
+		return fmt.Errorf("autopilot respond failed: %s", msg)
+	}
+
+	fmt.Printf("Sent autopilot response: continue=%t\n", cont)
+	return nil
 }
 
 // --- Config commands ---

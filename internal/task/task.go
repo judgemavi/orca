@@ -11,17 +11,19 @@ import (
 )
 
 type Task struct {
-	ID           string
-	Title        string
-	Description  string
-	Prompt       string
-	ParentID     string
-	Status       string
-	AssignedTool string
-	SprintID     string
-	DependsOn    []string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	Prompt       string    `json:"prompt,omitempty"`
+	Model        string    `json:"model,omitempty"`
+	Plan         string    `json:"plan,omitempty"`
+	ParentID     string    `json:"parent_id,omitempty"`
+	Status       string    `json:"status"`
+	AssignedTool string    `json:"assigned_tool,omitempty"`
+	SprintID     string    `json:"sprint_id,omitempty"`
+	DependsOn    []string  `json:"depends_on"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Store struct {
@@ -69,7 +71,7 @@ func (s *Store) Create(title, description, parentID, assignedTool string) (*Task
 
 func (s *Store) Get(id string) (*Task, error) {
 	t, err := s.scanTask(
-		`SELECT id, title, description, prompt, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, plan, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
 		 FROM tasks WHERE id = ?`, id,
 	)
 	if err != nil {
@@ -86,14 +88,14 @@ func (s *Store) Get(id string) (*Task, error) {
 
 func (s *Store) List() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, plan, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
 		 FROM tasks ORDER BY created_at`,
 	)
 }
 
 func (s *Store) ListByStatus(status string) ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, plan, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
 		 FROM tasks WHERE status = ? ORDER BY created_at`, status,
 	)
 }
@@ -158,19 +160,68 @@ func (s *Store) RemoveDependency(taskID, dependsOnID string) error {
 	return nil
 }
 
-// GetReady returns all pending tasks whose deps are all completed (or have no deps).
+func (s *Store) SetPlan(id, content string) error {
+	return s.Update(id, map[string]interface{}{"plan": content})
+}
+
+func (s *Store) GetPlan(id string) (string, error) {
+	var plan *string
+	if err := s.db.QueryRow(`SELECT plan FROM tasks WHERE id = ?`, id).Scan(&plan); err != nil {
+		return "", fmt.Errorf("get task plan: %w", err)
+	}
+	return deref(plan), nil
+}
+
+// GetReady returns all pending tasks whose deps are all merged (or have no deps).
+// Tasks with deps that are only "completed" but not yet merged are NOT ready —
+// the dependent task needs the dep's code in the integration branch.
 func (s *Store) GetReady() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT t.id, t.title, t.description, t.prompt, t.parent_id, t.status, t.assigned_tool, t.sprint_id, t.created_at, t.updated_at
+		`SELECT t.id, t.title, t.description, t.prompt, t.model, t.plan, t.parent_id, t.status, t.assigned_tool, t.sprint_id, t.created_at, t.updated_at
 		 FROM tasks t
 		 WHERE t.status = 'pending'
 		   AND NOT EXISTS (
 		     SELECT 1 FROM task_deps d
 		     JOIN tasks dep ON dep.id = d.depends_on
-		     WHERE d.task_id = t.id AND dep.status != 'completed'
+		     WHERE d.task_id = t.id AND dep.status != 'merged'
 		   )
 		 ORDER BY t.created_at`,
 	)
+}
+
+// DepsMetOrInSprint returns true if all of the task's dependencies are merged.
+// Tasks in the same sprint are NOT considered met — deps must be merged into
+// the integration branch so worktrees have the actual code.
+func (s *Store) DepsMetOrInSprint(taskID, sprintID string) (bool, []string, error) {
+	rows, err := s.db.Query(
+		`SELECT d.depends_on, dep.status, dep.sprint_id
+		 FROM task_deps d
+		 JOIN tasks dep ON dep.id = d.depends_on
+		 WHERE d.task_id = ?`,
+		taskID,
+	)
+	if err != nil {
+		return false, nil, fmt.Errorf("query deps: %w", err)
+	}
+	defer rows.Close()
+
+	var unmet []string
+	for rows.Next() {
+		var depID, depStatus string
+		var depSprintID *string
+		if err := rows.Scan(&depID, &depStatus, &depSprintID); err != nil {
+			return false, nil, fmt.Errorf("scan deps: %w", err)
+		}
+		_ = depSprintID // no longer used — only merged status counts
+		if depStatus != "merged" {
+			unmet = append(unmet, depID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, nil, fmt.Errorf("iterate deps: %w", err)
+	}
+
+	return len(unmet) == 0, unmet, nil
 }
 
 // ResolveID resolves a prefix to a full task ID.
@@ -208,13 +259,15 @@ func (s *Store) ResolveID(prefix string) (string, error) {
 func (s *Store) scanTask(query string, args ...interface{}) (*Task, error) {
 	row := s.db.QueryRow(query, args...)
 	var t Task
-	var desc, prompt, parentID, tool, sprintID *string
-	err := row.Scan(&t.ID, &t.Title, &desc, &prompt, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt)
+	var desc, prompt, model, plan, parentID, tool, sprintID *string
+	err := row.Scan(&t.ID, &t.Title, &desc, &prompt, &model, &plan, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	t.Description = deref(desc)
 	t.Prompt = deref(prompt)
+	t.Model = deref(model)
+	t.Plan = deref(plan)
 	t.ParentID = deref(parentID)
 	t.AssignedTool = deref(tool)
 	t.SprintID = deref(sprintID)
@@ -231,12 +284,14 @@ func (s *Store) queryTasks(query string, args ...interface{}) ([]*Task, error) {
 	var tasks []*Task
 	for rows.Next() {
 		var t Task
-		var desc, prompt, parentID, tool, sprintID *string
-		if err := rows.Scan(&t.ID, &t.Title, &desc, &prompt, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		var desc, prompt, model, plan, parentID, tool, sprintID *string
+		if err := rows.Scan(&t.ID, &t.Title, &desc, &prompt, &model, &plan, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
 		t.Description = deref(desc)
 		t.Prompt = deref(prompt)
+		t.Model = deref(model)
+		t.Plan = deref(plan)
 		t.ParentID = deref(parentID)
 		t.AssignedTool = deref(tool)
 		t.SprintID = deref(sprintID)

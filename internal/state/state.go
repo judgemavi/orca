@@ -4,6 +4,7 @@ package state
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -43,8 +44,30 @@ func Open(dbPath string) (*DB, error) {
 }
 
 func (db *DB) migrate() error {
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	return db.migrateTaskColumns()
+}
+
+func (db *DB) migrateTaskColumns() error {
+	queries := []string{
+		`ALTER TABLE tasks ADD COLUMN model TEXT`,
+		`ALTER TABLE tasks ADD COLUMN plan TEXT`,
+	}
+	for _, query := range queries {
+		if _, err := db.Exec(query); err != nil && !isDuplicateColumnError(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column name")
 }
 
 const schema = `
@@ -53,6 +76,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 	title       TEXT NOT NULL,
 	description TEXT,
 	prompt      TEXT,
+	model       TEXT,
+	plan        TEXT,
 	parent_id   TEXT REFERENCES tasks(id),
 	status      TEXT NOT NULL DEFAULT 'pending',
 	assigned_tool TEXT,
@@ -95,5 +120,16 @@ CREATE TABLE IF NOT EXISTS costs (
 	output_tokens  INTEGER DEFAULT 0,
 	estimated_cost REAL DEFAULT 0.0,
 	created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS operations (
+	id         TEXT PRIMARY KEY,
+	type       TEXT NOT NULL,
+	target_id  TEXT NOT NULL,
+	status     TEXT NOT NULL DEFAULT 'running',
+	result     TEXT,
+	error      TEXT,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `

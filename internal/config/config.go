@@ -2,50 +2,56 @@
 package config
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
 )
 
+//go:embed defaults.yaml
+var defaultsYAML []byte
+
 type Config struct {
-	Project    ProjectConfig         `yaml:"project"`
-	Tools      map[string]ToolConfig `yaml:"tools"`
-	Validation ValidationConfig      `yaml:"validation"`
-	Workers    WorkersConfig         `yaml:"workers"`
-	Autopilot  AutopilotConfig       `yaml:"autopilot"`
+	Project    ProjectConfig         `yaml:"project" json:"project"`
+	Tools      map[string]ToolConfig `yaml:"tools" json:"tools"`
+	Validation ValidationConfig      `yaml:"validation" json:"validation"`
+	Workers    WorkersConfig         `yaml:"workers" json:"workers"`
+	Autopilot  AutopilotConfig       `yaml:"autopilot" json:"autopilot"`
 }
 
 type ProjectConfig struct {
-	Name              string `yaml:"name"`
-	IntegrationBranch string `yaml:"integration_branch"`
-	WorktreeDir       string `yaml:"worktree_dir"`
+	Name              string `yaml:"name" json:"name"`
+	IntegrationBranch string `yaml:"integration_branch" json:"integration_branch"`
+	WorktreeDir       string `yaml:"worktree_dir" json:"worktree_dir"`
 }
 
 type ToolConfig struct {
-	Binary          string   `yaml:"binary"`
-	InteractiveArgs []string `yaml:"interactive_args"`
-	HeadlessArgs    []string `yaml:"headless_args"`
-	Timeout         string   `yaml:"timeout"`
-	Mode            string   `yaml:"mode"`
-	PromptMode      string   `yaml:"prompt_mode"`
+	Binary          string   `yaml:"binary" json:"binary"`
+	Model           string   `yaml:"model" json:"model,omitempty"`
+	Models          []string `yaml:"models" json:"models,omitempty"`
+	InteractiveArgs []string `yaml:"interactive_args" json:"interactive_args,omitempty"`
+	HeadlessArgs    []string `yaml:"headless_args" json:"headless_args,omitempty"`
+	Timeout         string   `yaml:"timeout" json:"timeout"`
+	Mode            string   `yaml:"mode" json:"mode"`
+	PromptMode      string   `yaml:"prompt_mode" json:"prompt_mode"`
 }
 
 type ValidationConfig struct {
-	Commands []string `yaml:"commands"`
+	Commands []string `yaml:"commands" json:"commands"`
 }
 
 type WorkersConfig struct {
-	MaxParallel int `yaml:"max_parallel"`
+	MaxParallel int `yaml:"max_parallel" json:"max_parallel"`
 }
 
 type AutopilotConfig struct {
-	Enabled              bool    `yaml:"enabled"`
-	CostBudget           float64 `yaml:"cost_budget"`
-	EscalateAfterRetries int     `yaml:"escalate_after_retries"`
-	MaxSprints           int     `yaml:"max_sprints"`
-	PauseOnReview        bool    `yaml:"pause_on_review"`
-	SupervisorTool       string  `yaml:"supervisor_tool,omitempty"`
+	Enabled              bool    `yaml:"enabled" json:"enabled"`
+	CostBudget           float64 `yaml:"cost_budget" json:"cost_budget"`
+	EscalateAfterRetries int     `yaml:"escalate_after_retries" json:"escalate_after_retries"`
+	MaxSprints           int     `yaml:"max_sprints" json:"max_sprints"`
+	PauseOnReview        bool    `yaml:"pause_on_review" json:"pause_on_review"`
+	SupervisorTool       string  `yaml:"supervisor_tool,omitempty" json:"supervisor_tool,omitempty"`
 }
 
 // Load reads and parses a pod.yaml config file.
@@ -61,49 +67,13 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Default returns a Config with sensible defaults for a new project.
+// Default returns a Config parsed from the embedded defaults.yaml.
 func Default() *Config {
-	return &Config{
-		Project: ProjectConfig{
-			IntegrationBranch: "pod/integration",
-			WorktreeDir:       "/tmp/pod/worktrees",
-		},
-		Tools: map[string]ToolConfig{
-			"claude": {
-				Binary:          "claude",
-				InteractiveArgs: []string{"--append-system-prompt", "{{context}}"},
-				HeadlessArgs:    []string{"-p", "{{prompt}}", "--output-format", "json", "--permission-mode", "bypassPermissions"},
-				Mode:            "headless",
-				PromptMode:      "arg",
-				Timeout:         "600s",
-			},
-			"codex": {
-				Binary:       "codex",
-				HeadlessArgs: []string{"exec", "{{prompt}}", "--full-auto"},
-				Mode:         "headless",
-				PromptMode:   "arg",
-				Timeout:      "600s",
-			},
-			"aider": {
-				Binary:          "aider",
-				InteractiveArgs: []string{"--yes-always", "--no-auto-commits"},
-				HeadlessArgs:    []string{"--message", "{{prompt}}", "--yes-always", "--no-auto-commits"},
-				Mode:            "headless",
-				PromptMode:      "arg",
-				Timeout:         "600s",
-			},
-		},
-		Workers: WorkersConfig{
-			MaxParallel: 3,
-		},
-		Autopilot: AutopilotConfig{
-			Enabled:              false,
-			CostBudget:           0,
-			EscalateAfterRetries: 2,
-			MaxSprints:           10,
-			PauseOnReview:        true,
-		},
+	var cfg Config
+	if err := yaml.Unmarshal(defaultsYAML, &cfg); err != nil {
+		panic(fmt.Sprintf("parse embedded defaults.yaml: %v", err))
 	}
+	return &cfg
 }
 
 // Save writes the config to a yaml file at path.

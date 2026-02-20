@@ -43,6 +43,17 @@ func TestCreate(t *testing.T) {
 	if task2.AssignedTool != "claude" {
 		t.Errorf("assigned_tool = %q, want %q", task2.AssignedTool, "claude")
 	}
+
+	if err := store.Update(task2.ID, map[string]interface{}{"model": "claude-3-7-sonnet"}); err != nil {
+		t.Fatalf("set model: %v", err)
+	}
+	updated, err := store.Get(task2.ID)
+	if err != nil {
+		t.Fatalf("get after model update: %v", err)
+	}
+	if updated.Model != "claude-3-7-sonnet" {
+		t.Errorf("model = %q, want %q", updated.Model, "claude-3-7-sonnet")
+	}
 }
 
 func TestGet(t *testing.T) {
@@ -85,6 +96,8 @@ func TestUpdate(t *testing.T) {
 	err = store.Update(created.ID, map[string]interface{}{
 		"title":  "Updated",
 		"status": "running",
+		"model":  "gpt-5",
+		"plan":   "1. do a\n2. do b",
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -99,6 +112,12 @@ func TestUpdate(t *testing.T) {
 	}
 	if got.Status != "running" {
 		t.Errorf("status = %q, want %q", got.Status, "running")
+	}
+	if got.Model != "gpt-5" {
+		t.Errorf("model = %q, want %q", got.Model, "gpt-5")
+	}
+	if got.Plan != "1. do a\n2. do b" {
+		t.Errorf("plan = %q, want %q", got.Plan, "1. do a\n2. do b")
 	}
 
 	// Update non-existent ID
@@ -181,9 +200,9 @@ func TestGetReady(t *testing.T) {
 		t.Errorf("C should not be ready (blocked by A)")
 	}
 
-	// Complete A → C should become ready
-	if err := store.Update(a.ID, map[string]interface{}{"status": "completed"}); err != nil {
-		t.Fatalf("complete A: %v", err)
+	// Merge A → C should become ready
+	if err := store.Update(a.ID, map[string]interface{}{"status": "merged"}); err != nil {
+		t.Fatalf("merge A: %v", err)
 	}
 
 	ready, err = store.GetReady()
@@ -256,6 +275,36 @@ func TestDelete(t *testing.T) {
 	_, err = store.Get(a.ID)
 	if err == nil {
 		t.Fatal("expected error getting deleted task")
+	}
+}
+
+func TestSetAndGetPlan(t *testing.T) {
+	store := NewStore(testDB(t))
+
+	tk, err := store.Create("Task with plan", "", "", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	const plan = "Investigate bug\nApply fix\nRun tests"
+	if err := store.SetPlan(tk.ID, plan); err != nil {
+		t.Fatalf("set plan: %v", err)
+	}
+
+	gotPlan, err := store.GetPlan(tk.ID)
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	if gotPlan != plan {
+		t.Fatalf("plan = %q, want %q", gotPlan, plan)
+	}
+
+	gotTask, err := store.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if gotTask.Plan != plan {
+		t.Fatalf("task plan = %q, want %q", gotTask.Plan, plan)
 	}
 }
 

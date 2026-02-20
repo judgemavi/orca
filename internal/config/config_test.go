@@ -39,9 +39,11 @@ func assertConfigEquivalent(t *testing.T, got, want *Config) {
 			t.Fatalf("missing tool %q after load", name)
 		}
 		if gotTool.Binary != wantTool.Binary ||
+			gotTool.Model != wantTool.Model ||
 			gotTool.Timeout != wantTool.Timeout ||
 			gotTool.Mode != wantTool.Mode ||
 			gotTool.PromptMode != wantTool.PromptMode ||
+			!reflect.DeepEqual(normalizeSlice(gotTool.Models), normalizeSlice(wantTool.Models)) ||
 			!reflect.DeepEqual(normalizeSlice(gotTool.InteractiveArgs), normalizeSlice(wantTool.InteractiveArgs)) ||
 			!reflect.DeepEqual(normalizeSlice(gotTool.HeadlessArgs), normalizeSlice(wantTool.HeadlessArgs)) {
 			t.Fatalf("tool %q mismatch: got=%+v want=%+v", name, gotTool, wantTool)
@@ -67,9 +69,22 @@ func TestDefault(t *testing.T) {
 	if !reflect.DeepEqual(claude.HeadlessArgs, wantClaudeArgs) {
 		t.Fatalf("claude headless_args = %v, want %v", claude.HeadlessArgs, wantClaudeArgs)
 	}
+	wantClaudeModels := []string{"claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101", "claude-sonnet-4-5-20250929"}
+	if !reflect.DeepEqual(claude.Models, wantClaudeModels) {
+		t.Fatalf("claude models = %v, want %v", claude.Models, wantClaudeModels)
+	}
 
-	if _, ok := cfg.Tools["codex"]; !ok {
+	codex, ok := cfg.Tools["codex"]
+	if !ok {
 		t.Fatal("default config missing codex tool")
+	}
+	wantCodexModels := []string{"gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5-codex", "gpt-5-codex-mini"}
+	if !reflect.DeepEqual(codex.Models, wantCodexModels) {
+		t.Fatalf("codex models = %v, want %v", codex.Models, wantCodexModels)
+	}
+
+	if _, ok := cfg.Tools["aider"]; ok {
+		t.Fatal("default config should not include aider")
 	}
 	if cfg.Workers.MaxParallel != 3 {
 		t.Fatalf("max_parallel = %d, want 3", cfg.Workers.MaxParallel)
@@ -123,9 +138,11 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	cfg := Default()
 	cfg.Project.Name = "roundtrip-project"
 	cfg.Tools["echo"] = ToolConfig{
-		Binary:       "echo",
-		HeadlessArgs: []string{"{{prompt}}"},
-		Timeout:      "15s",
+		Binary:        "echo",
+		Model:         "echo-1",
+		Models:        []string{"echo-model-1"},
+		HeadlessArgs:  []string{"{{prompt}}"},
+		Timeout:       "15s",
 	}
 	cfg.Autopilot.Enabled = true
 	cfg.Autopilot.CostBudget = 12.34

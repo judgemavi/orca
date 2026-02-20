@@ -63,8 +63,8 @@ func (m *Manager) Remove(taskID string) error {
 		return fmt.Errorf("git worktree remove: %w", err)
 	}
 
-	if err := m.gitCmd("branch", "-D", branchName); err != nil {
-		return fmt.Errorf("git branch -D: %w", err)
+	if err := m.gitCmd("branch", "-d", branchName); err != nil {
+		return fmt.Errorf("git branch -d: %w", err)
 	}
 
 	return nil

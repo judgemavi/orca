@@ -178,12 +178,12 @@ func TestRunSprintLoopMaxSprints(t *testing.T) {
 		t.Fatalf("sprint complete events = %d, want 1", sprintCompleteEvents)
 	}
 
-	completed, err := store.ListByStatus("completed")
+	merged, err := store.ListByStatus("merged")
 	if err != nil {
-		t.Fatalf("list completed: %v", err)
+		t.Fatalf("list merged: %v", err)
 	}
-	if len(completed) != 2 {
-		t.Fatalf("completed tasks = %d, want 2", len(completed))
+	if len(merged) != 2 {
+		t.Fatalf("merged tasks = %d, want 2", len(merged))
 	}
 
 	pending, err := store.ListByStatus("pending")

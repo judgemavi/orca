@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ func TestNewAdapter(t *testing.T) {
 		cfg := config.ToolConfig{
 			Binary:       "echo",
 			HeadlessArgs: []string{"hello"},
+			Model:        "claude-sonnet-4-6",
 			Timeout:      "60s",
 		}
 		a, err := NewAdapter(cfg)
@@ -26,6 +28,9 @@ func TestNewAdapter(t *testing.T) {
 		}
 		if a.Binary != "echo" {
 			t.Errorf("binary = %q, want %q", a.Binary, "echo")
+		}
+		if a.Model != "claude-sonnet-4-6" {
+			t.Errorf("model = %q, want %q", a.Model, "claude-sonnet-4-6")
 		}
 	})
 
@@ -209,5 +214,143 @@ func TestPromptSubstitution(t *testing.T) {
 	expected := "before hello after"
 	if !strings.Contains(res.Stdout, expected) {
 		t.Errorf("stdout = %q, want it to contain %q", res.Stdout, expected)
+	}
+}
+
+func TestExecuteInjectsModelFlag(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+
+	cfg := config.ToolConfig{
+		Binary:       "echo",
+		HeadlessArgs: []string{"{{prompt}}"},
+		Model:        "o4-mini",
+		Timeout:      "30s",
+	}
+	a, err := NewAdapter(cfg)
+	if err != nil {
+		t.Fatalf("NewAdapter: %v", err)
+	}
+
+	var gotArgs []string
+	a.SetCmdCallback(func(cmd *exec.Cmd) {
+		gotArgs = append([]string(nil), cmd.Args...)
+	})
+
+	if _, err := a.Execute(context.Background(), "model-task", "hello", dir); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	want := []string{"echo", "hello", "--model", "o4-mini"}
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("cmd args = %v, want %v", gotArgs, want)
+	}
+}
+
+func TestExecuteSkipsModelFlagWhenEmpty(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+
+	cfg := config.ToolConfig{
+		Binary:       "echo",
+		HeadlessArgs: []string{"{{prompt}}"},
+		Timeout:      "30s",
+	}
+	a, err := NewAdapter(cfg)
+	if err != nil {
+		t.Fatalf("NewAdapter: %v", err)
+	}
+
+	var gotArgs []string
+	a.SetCmdCallback(func(cmd *exec.Cmd) {
+		gotArgs = append([]string(nil), cmd.Args...)
+	})
+
+	if _, err := a.Execute(context.Background(), "empty-model-task", "hello", dir); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	want := []string{"echo", "hello"}
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("cmd args = %v, want %v", gotArgs, want)
+	}
+}
+
+func TestSetModelOverridesPerTask(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+
+	cfg := config.ToolConfig{
+		Binary:       "echo",
+		HeadlessArgs: []string{"{{prompt}}"},
+		Model:        "old-model",
+		Timeout:      "30s",
+	}
+	w, err := NewWorker(cfg)
+	if err != nil {
+		t.Fatalf("NewWorker: %v", err)
+	}
+
+	var gotArgs []string
+	w.SetCmdCallback(func(cmd *exec.Cmd) {
+		gotArgs = append([]string(nil), cmd.Args...)
+	})
+	w.SetModel("new-model")
+
+	if _, err := w.Execute(context.Background(), "override-task", "hello", dir); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	want := []string{"echo", "hello", "--model", "new-model"}
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("cmd args = %v, want %v", gotArgs, want)
+	}
+}
+
+func TestInteractiveExecuteInjectsModelFlag(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+
+	cfg := config.ToolConfig{
+		Binary:          "echo",
+		InteractiveArgs: []string{"{{prompt}}"},
+		Model:           "claude-sonnet-4-6",
+		Timeout:         "30s",
+		Mode:            "interactive",
+		PromptMode:      "arg",
+	}
+	w, err := NewWorker(cfg)
+	if err != nil {
+		t.Fatalf("NewWorker: %v", err)
+	}
+
+	var gotArgs []string
+	w.SetCmdCallback(func(cmd *exec.Cmd) {
+		gotArgs = append([]string(nil), cmd.Args...)
+	})
+
+	if _, err := w.Execute(context.Background(), "interactive-model-task", "hello", dir); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	want := []string{"echo", "hello", "--model", "claude-sonnet-4-6"}
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("cmd args = %v, want %v", gotArgs, want)
 	}
 }

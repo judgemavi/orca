@@ -30,9 +30,9 @@ const (
 
 // Event is emitted by the autopilot to report progress or request input.
 type Event struct {
-	Type    EventType
-	Message string
-	Data    interface{} // type-specific payload
+	Type    EventType   `json:"type"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
 }
 
 // Callback is called when autopilot needs user input.
@@ -90,7 +90,7 @@ func (s *Supervisor) Run(goal string, cb Callback) error {
 		if err != nil {
 			return fmt.Errorf("resolve tool for explore: %w", err)
 		}
-		explorer := explore.New(toolCfg, s.repoDir)
+		explorer := explore.New(toolCfg, s.repoDir).WithGoal(s.goal)
 		outPath, err := explorer.Run()
 		if err != nil {
 			return fmt.Errorf("explore: %w", err)
@@ -98,6 +98,16 @@ func (s *Supervisor) Run(goal string, cb Callback) error {
 		if !cb(Event{Type: EventExploreComplete, Message: fmt.Sprintf("Context written to %s", outPath)}) {
 			return fmt.Errorf("aborted after explore")
 		}
+	}
+
+	// b. CHECK EXISTING BACKLOG — skip decomposition if work already queued.
+	pending, err := s.store.ListByStatus("pending")
+	if err != nil {
+		return fmt.Errorf("check backlog: %w", err)
+	}
+	if len(pending) > 0 {
+		cb(Event{Type: EventProgress, Message: fmt.Sprintf("Found %d pending tasks, skipping decomposition", len(pending))})
+		return s.RunSprintLoop(cb)
 	}
 
 	// b. DECOMPOSE
@@ -230,6 +240,11 @@ func (s *Supervisor) RunSprintLoop(cb Callback) error {
 				return s.resolveToolConfigForTask(taskID)
 			})
 			merged, failedIDs, _ := ig.MergeBatch(taskIDs)
+			for _, id := range merged {
+				if err := s.store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+					log.Printf("set task %s merged: %v", id, err)
+				}
+			}
 			cb(Event{Type: EventIntegrateComplete, Message: fmt.Sprintf("Integrated: %d merged, %d failed", len(merged), len(failedIDs))})
 		}
 
