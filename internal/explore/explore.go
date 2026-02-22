@@ -3,9 +3,14 @@ package explore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/worker"
@@ -60,6 +65,10 @@ func (e *Explorer) Run() (string, error) {
 	if err := os.WriteFile(outPath, []byte(content), 0644); err != nil {
 		return "", fmt.Errorf("write context: %w", err)
 	}
+	hash, _ := hashFileTree(e.repoDir)
+	if hash != "" {
+		_ = os.WriteFile(filepath.Join(e.repoDir, ".pod/context.hash"), []byte(hash), 0644)
+	}
 
 	return outPath, nil
 }
@@ -87,6 +96,10 @@ func WriteManualContext(repoDir, content string) (string, error) {
 	if err := os.WriteFile(outPath, []byte(content), 0644); err != nil {
 		return "", fmt.Errorf("write context: %w", err)
 	}
+	hash, _ := hashFileTree(repoDir)
+	if hash != "" {
+		_ = os.WriteFile(filepath.Join(repoDir, ".pod/context.hash"), []byte(hash), 0644)
+	}
 	return outPath, nil
 }
 
@@ -97,4 +110,40 @@ func WriteManualContextFromFile(repoDir, sourcePath string) (string, error) {
 		return "", fmt.Errorf("read source: %w", err)
 	}
 	return WriteManualContext(repoDir, string(data))
+}
+
+// IsStale returns true if the codebase file tree has changed since exploration.
+// Returns false if no hash file exists (never explored = not stale, just missing).
+func IsStale(repoDir string) (bool, error) {
+	hashPath := filepath.Join(repoDir, ".pod/context.hash")
+	stored, err := os.ReadFile(hashPath)
+	if err != nil {
+		return false, nil
+	}
+	current, err := hashFileTree(repoDir)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(stored)) != current, nil
+}
+
+// ContextAge returns how old the context file is. Returns 0 if not found.
+func ContextAge(repoDir string) time.Duration {
+	info, err := os.Stat(ContextPath(repoDir))
+	if err != nil {
+		return 0
+	}
+	return time.Since(info.ModTime())
+}
+
+// hashFileTree returns a sha256 hex digest of `git ls-files` output in repoDir.
+func hashFileTree(repoDir string) (string, error) {
+	cmd := exec.Command("git", "ls-files")
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(out)
+	return hex.EncodeToString(h[:]), nil
 }

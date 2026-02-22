@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -21,7 +22,9 @@ import (
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/cost"
 	"github.com/jasjeetmavi/pod/internal/explore"
+	"github.com/jasjeetmavi/pod/internal/monitor"
 	"github.com/jasjeetmavi/pod/internal/pty"
+	"github.com/jasjeetmavi/pod/internal/quality"
 	"github.com/jasjeetmavi/pod/internal/task"
 	"github.com/jasjeetmavi/pod/internal/worker"
 	"github.com/jasjeetmavi/pod/internal/worktree"
@@ -72,6 +75,10 @@ type Executor struct {
 
 	// Cost tracking (optional — nil means no tracking).
 	costTracker *cost.Tracker
+	// Runtime monitors.
+	monitorStuck    *monitor.StuckDetector
+	monitorBudget   *monitor.BudgetEnforcer
+	monitorConflict *monitor.ConflictDetector
 
 	// Cancel support.
 	cancel   context.CancelFunc
@@ -84,6 +91,7 @@ type Executor struct {
 
 	// Optional task status broadcast callback (e.g. WS event emitter).
 	broadcastHook func(taskID, status string)
+	monitorHook   func(alertType, taskID, message string)
 }
 
 // NewExecutor creates an Executor wired to the given planner, worktree manager,
@@ -109,6 +117,11 @@ func NewExecutor(planner *Planner, wm *worktree.Manager, cfg *config.Config, rep
 
 // Worktrees returns the underlying worktree manager.
 func (e *Executor) Worktrees() *worktree.Manager { return e.worktrees }
+
+// SetMonitorAlertHook sets a callback for runtime monitor alerts.
+func (e *Executor) SetMonitorAlertHook(fn func(alertType, taskID, message string)) {
+	e.monitorHook = fn
+}
 
 // IsTaskRunning reports whether a task process is currently running.
 func (e *Executor) IsTaskRunning(taskID string) bool {
@@ -184,6 +197,80 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 			prompt:       prompt,
 			model:        model,
 		})
+	}
+
+	taskIDs := make([]string, len(prepared))
+	for i, p := range prepared {
+		taskIDs[i] = p.taskID
+	}
+
+	monCtx, monCancel := context.WithCancel(ctx)
+	defer monCancel()
+
+	e.monitorStuck = monitor.NewStuckDetector(
+		e.config.Project.WorktreeDir,
+		30*time.Second,
+		3,
+		func(taskID, reason string) {
+			log.Printf("monitor: task %s stuck: %s", taskID, reason)
+			e.emitMonitorAlert("stuck", taskID, reason)
+			e.killTask(taskID)
+		},
+	)
+	e.monitorStuck.Start(monCtx, taskIDs)
+
+	e.monitorBudget = nil
+	if e.config.Orchestrator.CostBudget > 0 && e.costTracker != nil && len(taskIDs) > 0 {
+		taskBudget := e.config.Orchestrator.CostBudget / float64(len(taskIDs))
+		e.monitorBudget = monitor.NewBudgetEnforcer(
+			30*time.Second,
+			taskBudget,
+			e.config.Orchestrator.CostBudget,
+			func(taskID string) float64 {
+				var total sql.NullFloat64
+				if err := e.planner.DB().QueryRow(
+					`SELECT SUM(estimated_cost) FROM costs WHERE sprint_id = ? AND task_id = ?`,
+					s.ID, taskID,
+				).Scan(&total); err != nil {
+					log.Printf("monitor: query cost for task %s: %v", taskID, err)
+					return 0
+				}
+				if !total.Valid {
+					return 0
+				}
+				return total.Float64
+			},
+			func(taskID string, spent, limit float64) {
+				msg := fmt.Sprintf("budget exceeded ($%.2f/$%.2f)", spent, limit)
+				log.Printf("monitor: task %s %s", taskID, msg)
+				e.emitMonitorAlert("budget", taskID, msg)
+				e.killTask(taskID)
+			},
+		)
+		e.monitorBudget.Start(monCtx, taskIDs)
+	}
+
+	e.monitorConflict = monitor.NewConflictDetector(
+		e.config.Project.WorktreeDir,
+		15*time.Second,
+		func(taskIDs, files []string) {
+			msg := fmt.Sprintf("conflict detected between %v on files %v", taskIDs, files)
+			log.Printf("monitor: %s", msg)
+			for _, taskID := range taskIDs {
+				e.emitMonitorAlert("conflict", taskID, msg)
+			}
+		},
+	)
+	e.monitorConflict.Start(monCtx, taskIDs)
+
+	var baselineSnapshot *quality.Snapshot
+	if len(e.config.Validation.Commands) > 0 {
+		// Best-effort snapshot on integration checkout; skip delta checks if this fails.
+		var err error
+		baselineSnapshot, err = quality.TakeSnapshot(e.repoDir, e.config.Validation.Commands)
+		if err != nil {
+			log.Printf("quality: baseline snapshot failed: %v", err)
+		}
 	}
 
 	// Run all workers in parallel. Each goroutine writes to its own index,
@@ -264,15 +351,52 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 
 	// Update task statuses and store artifacts.
 	for _, r := range results {
+		var qualityJSON sql.NullString
+		if r.Status == "review" {
+			var qualityPayload struct {
+				Scope     *quality.ScopeAnalysis `json:"scope,omitempty"`
+				TestDelta *quality.Delta         `json:"test_delta,omitempty"`
+			}
+
+			taskTitle := ""
+			if t, err := e.planner.GetTask(r.TaskID); err == nil {
+				taskTitle = t.Title
+			}
+			scope := quality.AnalyzeScope(r.TaskID, taskTitle, r.Diff)
+			qualityPayload.Scope = scope
+			if scope.Excessive {
+				log.Printf("quality: task %s scope creep: %v", r.TaskID, scope.Flags)
+			}
+
+			if baselineSnapshot != nil && r.WorktreePath != "" {
+				afterSnapshot, err := quality.TakeSnapshot(r.WorktreePath, e.config.Validation.Commands)
+				if err != nil {
+					log.Printf("quality: task %s post snapshot failed: %v", r.TaskID, err)
+				} else if afterSnapshot != nil {
+					delta := quality.ComputeDelta(baselineSnapshot, afterSnapshot)
+					qualityPayload.TestDelta = delta
+					if len(delta.NewFailures) > 0 {
+						log.Printf("quality: task %s broke tests: %v", r.TaskID, delta.NewFailures)
+					}
+				}
+			}
+
+			if buf, err := json.Marshal(qualityPayload); err != nil {
+				log.Printf("quality: task %s marshal failed: %v", r.TaskID, err)
+			} else {
+				qualityJSON = sql.NullString{String: string(buf), Valid: true}
+			}
+		}
+
 		if err := e.planner.CompleteTask(s.ID, r.TaskID, r.Status); err != nil {
 			log.Printf("complete task %s: %v", r.TaskID, err)
 		}
 
 		_, err := e.planner.db.Exec(
-			`INSERT INTO artifacts (id, task_id, sprint_id, diff, stdout, stderr, exit_code, duration_ms)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO artifacts (id, task_id, sprint_id, diff, stdout, stderr, exit_code, duration_ms, quality_json)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.New().String(), r.TaskID, s.ID,
-			r.Diff, r.Stdout, r.Stderr, r.ExitCode, r.Duration.Milliseconds(),
+			r.Diff, r.Stdout, r.Stderr, r.ExitCode, r.Duration.Milliseconds(), qualityJSON,
 		)
 		if err != nil {
 			log.Printf("store artifact for task %s: %v", r.TaskID, err)
@@ -586,6 +710,12 @@ func (e *Executor) emitDone(taskID string, exitCode int) {
 	}
 }
 
+func (e *Executor) emitMonitorAlert(alertType, taskID, message string) {
+	if e.monitorHook != nil {
+		e.monitorHook(alertType, taskID, message)
+	}
+}
+
 // RunSingle re-runs a single task with review feedback, reusing the existing
 // worktree and resuming the tool session when supported.
 func (e *Executor) RunSingle(taskID string) error {
@@ -710,10 +840,10 @@ func (e *Executor) RunSingle(taskID string) error {
 
 	if t.SprintID != "" {
 		_, err := e.planner.DB().Exec(
-			`INSERT INTO artifacts (id, task_id, sprint_id, diff, stdout, stderr, exit_code, duration_ms)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO artifacts (id, task_id, sprint_id, diff, stdout, stderr, exit_code, duration_ms, quality_json)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.New().String(), taskID, t.SprintID,
-			result.Diff, result.Stdout, result.Stderr, result.ExitCode, result.Duration.Milliseconds(),
+			result.Diff, result.Stdout, result.Stderr, result.ExitCode, result.Duration.Milliseconds(), nil,
 		)
 		if err != nil {
 			log.Printf("store artifact for task %s: %v", taskID, err)
@@ -763,6 +893,15 @@ func (e *Executor) Cancel() error {
 	e.mu.Unlock()
 
 	return nil
+}
+
+func (e *Executor) killTask(taskID string) {
+	e.mu.Lock()
+	cmd, ok := e.running[taskID]
+	e.mu.Unlock()
+	if ok && cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Signal(syscall.SIGINT)
+	}
 }
 
 // rollbackPreparation cleans up worktrees created during prep and resets task/sprint state.

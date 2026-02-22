@@ -8,6 +8,8 @@ import type {
   ModelInfo,
   Operation,
   Config,
+  MonitorAlert,
+  WorktreeStatus,
 } from './types'
 
 const BASE = '/api/v1'
@@ -139,9 +141,16 @@ export const api = {
     ),
 
   explore: () => request('/explore', { method: 'POST' }),
+  getMonitorAlerts: () => request<{ alerts: MonitorAlert[] }>('/monitor/alerts'),
 
   getStatus: () => request<ProjectStatus>('/status'),
   getCosts: () => request('/costs'),
+  getWorktreeStatus: () => request<WorktreeStatus>('/worktrees'),
+  cleanupWorktrees: (dryRun?: boolean) =>
+    post<{ removed: string[]; errors: string[] }>(
+      `/cleanup${dryRun ? '?dry_run=true' : ''}`,
+      {},
+    ),
   getConfig: () => request<Config>('/config'),
   listModels: async (tool?: string): Promise<Record<string, ModelInfo[]>> => {
     const query = tool ? `?tool=${encodeURIComponent(tool)}` : ''

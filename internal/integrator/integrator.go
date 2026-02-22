@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/jasjeetmavi/pod/internal/config"
@@ -226,10 +227,28 @@ func (i *Integrator) MergeAndValidate(taskID string) error {
 	return nil
 }
 
+// diffLineCount returns the number of lines in a task's diff against the integration branch.
+// Returns 0 on error (treat errored tasks as smallest — try them first to fail fast).
+func (i *Integrator) diffLineCount(taskID string) int {
+	branch := "pod/task-" + taskID
+	cmd := exec.Command("git", "diff", "--stat", i.integrationBranch+".."+branch)
+	cmd.Dir = i.repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	return strings.Count(string(out), "\n")
+}
+
 // MergeBatch processes multiple task IDs in order. Each is merged and validated
 // independently — a failure on one does not block the rest.
 // Uses MergeWithRerun when rerun config is set, otherwise MergeAndValidate.
 func (i *Integrator) MergeBatch(taskIDs []string) (merged []string, failed []string, err error) {
+	// Sort by diff size — smallest first to minimize conflict surface.
+	sort.Slice(taskIDs, func(a, b int) bool {
+		return i.diffLineCount(taskIDs[a]) < i.diffLineCount(taskIDs[b])
+	})
+
 	useRerun := i.worktreeDir != "" && i.toolResolver != nil
 	for _, id := range taskIDs {
 		var mergeErr error

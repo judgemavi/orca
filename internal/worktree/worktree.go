@@ -4,10 +4,13 @@ package worktree
 import (
 	"bufio"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 // WorktreeInfo holds parsed info from `git worktree list --porcelain`.
@@ -15,6 +18,13 @@ type WorktreeInfo struct {
 	Path   string
 	Branch string
 	Head   string
+}
+
+// WorktreeAge holds worktree info plus its age.
+type WorktreeAge struct {
+	WorktreeInfo
+	TaskID string
+	Age    time.Duration
 }
 
 // Manager handles git worktree lifecycle for worker isolation.
@@ -81,6 +91,93 @@ func (m *Manager) List() ([]WorktreeInfo, error) {
 	}
 
 	return parsePorcelain(string(out)), nil
+}
+
+// ListWithAge returns all pod worktrees with their age.
+func (m *Manager) ListWithAge() ([]WorktreeAge, error) {
+	entries, err := os.ReadDir(m.worktreeDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []WorktreeAge
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "task-") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		taskID := strings.TrimPrefix(entry.Name(), "task-")
+		path := filepath.Join(m.worktreeDir, entry.Name())
+
+		result = append(result, WorktreeAge{
+			WorktreeInfo: WorktreeInfo{Path: path},
+			TaskID:       taskID,
+			Age:          time.Since(info.ModTime()),
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].TaskID < result[j].TaskID
+	})
+
+	return result, nil
+}
+
+// CleanupStale removes worktrees older than maxAge. Returns removed task IDs and errors.
+func (m *Manager) CleanupStale(maxAge time.Duration) (removed []string, errs []error) {
+	entries, err := os.ReadDir(m.worktreeDir)
+	if err != nil {
+		return nil, []error{err}
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "task-") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		if time.Since(info.ModTime()) < maxAge {
+			continue
+		}
+
+		taskID := strings.TrimPrefix(entry.Name(), "task-")
+		if err := m.Remove(taskID); err != nil {
+			errs = append(errs, fmt.Errorf("remove %s: %w", taskID, err))
+			continue
+		}
+		removed = append(removed, taskID)
+	}
+
+	return removed, errs
+}
+
+// DiskUsage returns total bytes used by all worktrees.
+func (m *Manager) DiskUsage() (int64, error) {
+	var total int64
+	err := filepath.WalkDir(m.worktreeDir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
 }
 
 // Diff returns the combined staged + unstaged diff for a task's worktree.

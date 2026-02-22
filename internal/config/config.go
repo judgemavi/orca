@@ -21,6 +21,9 @@ type Config struct {
 	Validation   ValidationConfig      `yaml:"validation" json:"validation"`
 	Workers      WorkersConfig         `yaml:"workers" json:"workers"`
 	Orchestrator OrchestratorConfig    `yaml:"orchestrator" json:"orchestrator"`
+	Monitor      MonitorConfig         `yaml:"monitor,omitempty" json:"monitor,omitempty"`
+	Quality      QualityConfig         `yaml:"quality,omitempty" json:"quality,omitempty"`
+	Cleanup      CleanupConfig         `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
 }
 
 type ProjectConfig struct {
@@ -67,13 +70,35 @@ type OrchestratorConfig struct {
 	Phases          map[string]PhaseConfig `yaml:"phases,omitempty" json:"phases,omitempty"`
 }
 
+type MonitorConfig struct {
+	StuckCheckInterval string  `yaml:"stuck_check_interval,omitempty" json:"stuck_check_interval,omitempty"`
+	MaxStuckCycles     int     `yaml:"max_stuck_cycles,omitempty" json:"max_stuck_cycles,omitempty"`
+	ConflictInterval   string  `yaml:"conflict_check_interval,omitempty" json:"conflict_check_interval,omitempty"`
+	TaskBudget         float64 `yaml:"task_budget,omitempty" json:"task_budget,omitempty"`
+}
+
+type QualityConfig struct {
+	Enabled        bool `yaml:"enabled" json:"enabled"`
+	ScopeCheck     bool `yaml:"scope_check" json:"scope_check"`
+	TestDelta      bool `yaml:"test_delta" json:"test_delta"`
+	AlignmentCheck bool `yaml:"alignment_check" json:"alignment_check"`
+}
+
+type CleanupConfig struct {
+	TTL string `yaml:"ttl,omitempty" json:"ttl,omitempty"`
+}
+
 // Load reads and parses a pod.yaml config file.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
-	var cfg Config
+
+	cfg, err := Default()
+	if err != nil {
+		return nil, err
+	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}

@@ -68,3 +68,18 @@ orchestrator:
 
 defaults:
   tool: claude
+
+monitor:
+  stuck_check_interval: 30s
+  max_stuck_cycles: 3
+  conflict_check_interval: 15s
+  task_budget: 0
+
+quality:
+  enabled: true
+  scope_check: true
+  test_delta: true
+  alignment_check: false
+
+cleanup:
+  ttl: 168h

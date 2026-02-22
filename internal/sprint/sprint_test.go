@@ -2,6 +2,9 @@ package sprint
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jasjeetmavi/pod/internal/task"
@@ -441,6 +444,179 @@ func TestGetActive(t *testing.T) {
 	}
 	if active != nil {
 		t.Errorf("expected nil after completing sprint, got %s", active.ID)
+	}
+}
+
+func TestRecoverOrphansAndResolveOrphanFailed(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	planner := NewPlanner(db)
+
+	tk, err := store.Create("Task 1", "", "", "")
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	s, err := planner.Plan(10)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if err := planner.Start(s.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	worktreeDir := t.TempDir()
+	orphans, err := planner.RecoverOrphans(worktreeDir, "pod/integration")
+	if err != nil {
+		t.Fatalf("recover orphans: %v", err)
+	}
+	if len(orphans) != 1 {
+		t.Fatalf("orphans len = %d, want 1", len(orphans))
+	}
+	if orphans[0].TaskID != tk.ID {
+		t.Fatalf("orphan task id = %q, want %q", orphans[0].TaskID, tk.ID)
+	}
+	if orphans[0].SprintID != s.ID {
+		t.Fatalf("orphan sprint id = %q, want %q", orphans[0].SprintID, s.ID)
+	}
+	if orphans[0].HasCommits {
+		t.Fatal("orphan has commits = true, want false")
+	}
+
+	if err := planner.ResolveOrphan(tk.ID, false); err != nil {
+		t.Fatalf("resolve orphan: %v", err)
+	}
+	got, err := store.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("task status = %q, want %q", got.Status, "failed")
+	}
+}
+
+func TestRecoverOrphansAndResolveOrphanReview(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	planner := NewPlanner(db)
+
+	tk, err := store.Create("Task 1", "", "", "")
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	s, err := planner.Plan(10)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if err := planner.Start(s.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	initSprintRecoveryRepo(t, repoDir)
+	integrationBranch := "pod/integration"
+	runSprintGit(t, repoDir, "checkout", "-b", integrationBranch)
+	runSprintGit(t, repoDir, "checkout", "-")
+
+	worktreeDir := t.TempDir()
+	wtPath := filepath.Join(worktreeDir, "task-"+tk.ID)
+	runSprintGit(t, repoDir, "worktree", "add", wtPath, "-b", "pod/task-"+tk.ID, integrationBranch)
+
+	filePath := filepath.Join(wtPath, "README.md")
+	if err := os.WriteFile(filePath, []byte("change\n"), 0o644); err != nil {
+		t.Fatalf("write worktree file: %v", err)
+	}
+	runSprintGit(t, wtPath, "add", "README.md")
+	runSprintGit(t, wtPath, "commit", "-m", "task change")
+
+	orphans, err := planner.RecoverOrphans(worktreeDir, integrationBranch)
+	if err != nil {
+		t.Fatalf("recover orphans: %v", err)
+	}
+	if len(orphans) != 1 {
+		t.Fatalf("orphans len = %d, want 1", len(orphans))
+	}
+	if !orphans[0].HasCommits {
+		t.Fatal("orphan has commits = false, want true")
+	}
+
+	if err := planner.ResolveOrphan(tk.ID, true); err != nil {
+		t.Fatalf("resolve orphan: %v", err)
+	}
+	got, err := store.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if got.Status != "review" {
+		t.Fatalf("task status = %q, want %q", got.Status, "review")
+	}
+}
+
+func TestRecoverOrphansNone(t *testing.T) {
+	db := testutil.DB(t)
+	planner := NewPlanner(db)
+
+	orphans, err := planner.RecoverOrphans(t.TempDir(), "pod/integration")
+	if err != nil {
+		t.Fatalf("recover orphans: %v", err)
+	}
+	if len(orphans) != 0 {
+		t.Fatalf("orphans len = %d, want 0", len(orphans))
+	}
+}
+
+func TestRecoverSprint(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	planner := NewPlanner(db)
+
+	_, err := store.Create("Task 1", "", "", "")
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	s, err := planner.Plan(10)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if err := planner.Start(s.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	if err := planner.RecoverSprint(s.ID); err != nil {
+		t.Fatalf("recover sprint: %v", err)
+	}
+
+	got, err := planner.Get(s.ID)
+	if err != nil {
+		t.Fatalf("get sprint: %v", err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("sprint status = %q, want %q", got.Status, "failed")
+	}
+}
+
+func initSprintRecoveryRepo(t *testing.T, dir string) {
+	t.Helper()
+	runSprintGit(t, dir, "init")
+	runSprintGit(t, dir, "config", "user.name", "Test User")
+	runSprintGit(t, dir, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("init\n"), 0o644); err != nil {
+		t.Fatalf("write repo file: %v", err)
+	}
+	runSprintGit(t, dir, "add", ".")
+	runSprintGit(t, dir, "commit", "-m", "initial")
+}
+
+func runSprintGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 }
 

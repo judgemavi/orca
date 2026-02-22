@@ -3,6 +3,9 @@ package sprint
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,6 +23,14 @@ type Sprint struct {
 }
 
 type EventFunc func(eventType string, id string)
+
+// OrphanedTask represents a task that was running when Pod exited.
+type OrphanedTask struct {
+	TaskID       string
+	SprintID     string
+	WorktreePath string
+	HasCommits   bool // true if worktree has commits beyond the base branch
+}
 
 type Planner struct {
 	db      *state.DB
@@ -371,4 +382,50 @@ func (p *Planner) CompleteSprintIfDone(sprintID string) error {
 		return p.Fail(sprintID)
 	}
 	return p.Complete(sprintID)
+}
+
+// RecoverOrphans finds tasks in "running" status and determines their state.
+// Call this on startup before accepting new commands.
+func (p *Planner) RecoverOrphans(worktreeDir, integrationBranch string) ([]OrphanedTask, error) {
+	tasks, err := p.tasks.ListByStatus("running")
+	if err != nil {
+		return nil, err
+	}
+
+	var orphans []OrphanedTask
+	for _, t := range tasks {
+		wtPath := filepath.Join(worktreeDir, "task-"+t.ID)
+		hasCommits := false
+
+		// Check if worktree exists and has commits.
+		if _, err := os.Stat(wtPath); err == nil {
+			cmd := exec.Command("git", "log", integrationBranch+"..HEAD", "--oneline")
+			cmd.Dir = wtPath
+			out, _ := cmd.Output()
+			hasCommits = len(strings.TrimSpace(string(out))) > 0
+		}
+
+		orphans = append(orphans, OrphanedTask{
+			TaskID:       t.ID,
+			SprintID:     t.SprintID,
+			WorktreePath: wtPath,
+			HasCommits:   hasCommits,
+		})
+	}
+	return orphans, nil
+}
+
+// ResolveOrphan transitions an orphaned task to an appropriate state.
+// - HasCommits=true -> move to "review" (work was done, needs review)
+// - HasCommits=false -> move to "failed" (no work completed)
+func (p *Planner) ResolveOrphan(taskID string, hasCommits bool) error {
+	if hasCommits {
+		return p.tasks.Update(taskID, map[string]interface{}{"status": "review"})
+	}
+	return p.tasks.Update(taskID, map[string]interface{}{"status": "failed"})
+}
+
+// RecoverSprint marks a "running" sprint as "failed" if it has no active processes.
+func (p *Planner) RecoverSprint(sprintID string) error {
+	return p.Fail(sprintID)
 }

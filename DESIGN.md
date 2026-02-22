@@ -1,6 +1,6 @@
 # Pod — Multi-Agent CLI Orchestrator
 
-**Status:** Draft v0.3
+**Status:** v1.0 — Implementation Complete
 **Date:** February 2026
 
 ---
@@ -9,25 +9,24 @@
 
 Pod coordinates multiple AI coding CLI agents (Claude Code, Codex, Aider, etc.) on shared codebases. It wraps CLI tools as workers, not APIs.
 
-The execution model mirrors how real dev teams work: a tech lead explores the codebase and decomposes work, developers implement in parallel on isolated worktrees, reviewers check quality, and an integrator merges and validates. The user supervises by default. An LLM autopilot can take over.
+The execution model mirrors a real dev team: explore the codebase, decompose into tasks, execute in parallel on isolated worktrees, review quality, and integrate with validation gates.
 
 ---
 
 ## Goals
 
 - Coordinate multiple CLI-based AI agents without collision
-- Recursive decomposition — always break work into the smallest useful units
-- Scrum-inspired phases: explore → plan → execute → review → integrate
-- User-first supervision, LLM autopilot opt-in
-- Git worktrees for isolation, merge/rebase for integration
-- Single binary, config-driven, no runtime dependencies
+- Recursive decomposition into small, mergeable tasks
+- Scrum-inspired lifecycle: explore -> plan -> sprint -> review -> integrate -> adapt
+- User-first supervision, with optional autopilot
+- Git worktree isolation and deterministic integration
+- Single binary, config-driven orchestration
 
 ## Non-Goals
 
 - Replacing underlying CLI tools
-- Direct LLM API integration
-- Worker-to-worker communication
-- Time-boxed sprints
+- Reimplementing model providers via direct API calls
+- Worker-to-worker direct communication
 
 ---
 
@@ -38,7 +37,7 @@ The execution model mirrors how real dev teams work: a tech lead explores the co
 │                              POD                                  │
 │                                                                   │
 │  ┌─────────────────────────────────────────────────────────────┐  │
-│  │  Supervisor  (User in manual │ LLM in autopilot)            │  │
+│  │  Supervisor  (User in manual | LLM in autopilot)            │  │
 │  └──────┬──────────────┬────────────────┬──────────────────────┘  │
 │         │              │                │                          │
 │  ┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼───────┐                 │
@@ -49,15 +48,11 @@ The execution model mirrors how real dev teams work: a tech lead explores the co
 │         │              │               │                          │
 │         │        ┌─────┴─────────────┐ │                          │
 │         │        │  Worktree Pool    │ │                          │
-│         │        │                   │ │                          │
-│         │        │  pod/task-001/ ─┐ │ │                          │
-│         │        │  pod/task-002/ ─┤ │ │                          │
-│         │        │  pod/task-003/ ─┘ │ │                          │
 │         │        └─────┬─────────────┘ │                          │
 │         │              │               │                          │
 │         │        ┌─────▼───────────────▼──┐                       │
 │         │        │  Integrator            │                       │
-│         │        │  merge → validate → CI │                       │
+│         │        │  merge -> validate     │                       │
 │         │        └─────┬──────────────────┘                       │
 │         │              │                                          │
 │  ┌──────▼──────────────▼──────────────────────────────────────┐   │
@@ -75,36 +70,21 @@ The execution model mirrors how real dev teams work: a tech lead explores the co
 
 ## Roles
 
-Pod models a dev team, not a generic task queue. Four distinct roles:
-
 ### Tech Lead (Explore + Decompose)
 
-An agent (or the user) that understands the codebase before any work begins.
-
-**Explore phase:** Reads the codebase — file structure, patterns, dependencies, conventions. Produces an exploration context document that gets injected into all subsequent worker prompts.
-
-**Decompose phase:** Breaks the goal into atomic tasks with dependency ordering. Doesn't predict file claims — just scopes work small enough that conflicts are unlikely and resolvable.
-
-In manual mode, the user is the tech lead. In autopilot, an LLM agent runs in its own worktree (read-only) to explore and decompose.
+Builds codebase understanding first, then decomposes goals into atomic tasks with dependency ordering.
 
 ### Developer (Implement)
 
-Works autonomously on a single task in an isolated worktree. Multi-turn — can read code, run tests, iterate. Produces commits on a task branch.
-
-Developers are the CLI tools: Claude Code, Codex, Aider, etc. Each gets a task prompt enriched with exploration context from the tech lead.
+Runs one task per isolated worktree, iterates autonomously, and produces commits on `pod/task-{id}`.
 
 ### Reviewer (PR Review)
 
-Receives a diff + task description. Checks correctness, style, test coverage. Approves or sends back with feedback. A different agent (or tool) than the one that wrote the code.
+Reviews completed task diffs against intent, correctness, and quality signals.
 
 ### Integrator (Merge + Validate)
 
-Automated, not agent-driven:
-
-1. Merge approved task branches into `pod/integration` sequentially
-2. If conflict: rebase the conflicting task branch onto updated integration, re-run developer
-3. Run validation gate (tests, lint, build)
-4. If validation fails: task goes back to backlog with failure context
+Merges approved branches into `pod/integration`, resolves conflicts, and executes validation commands.
 
 ---
 
@@ -112,267 +92,149 @@ Automated, not agent-driven:
 
 ### Manual (Default)
 
-User acts as tech lead + scrum master:
-
-- Explores codebase themselves (or asks Pod to run exploration)
-- Writes/approves task decomposition
-- Assigns tools to tasks or lets Pod auto-route
-- Reviews sprint results
-- Intervenes mid-sprint if needed
-
-No LLM tokens spent on coordination.
+User controls exploration, tasking, sprint actions, and approvals.
 
 ### Autopilot
 
-LLM takes the supervisor seat:
-
-- Runs tech lead agent for exploration and decomposition
-- Plans sprints, assigns workers
-- Reviews output via reviewer agent
-- Handles failures (retry, re-decompose, escalate)
-
-User can toggle at any phase boundary. Autopilot pauses at sprint review for approval unless running unattended.
-
-**Escalation:** Ambiguity, repeated failures, or merge conflicts the LLM can't resolve → pause and ask user.
+LLM handles orchestration phases with escalation to user on ambiguity, repeated failures, or unresolved conflicts.
 
 ---
 
 ## Phases
 
-Real dev teams don't jump straight to coding. Neither does Pod.
-
 ### 1. EXPLORE
 
-Tech lead agent maps the codebase:
+`pod explore`
 
-```
-pod explore
-```
-
-Produces exploration context:
-- File tree with purpose annotations
-- Key patterns (routing, models, tests, config)
-- Dependency map (what imports what)
-- Conventions (naming, structure, test patterns)
-
-This context gets stored and injected into every worker's prompt. Expensive but done once per project (refreshed when codebase changes significantly).
-
-In manual mode, the user can skip this or provide their own context.
+Runs an exploration agent and stores context in `.pod/context.md` for prompt injection in later phases.
 
 ### 2. PLAN
 
-Decompose the goal into a task tree:
+`pod plan "goal description"`
 
-```
-pod plan "Add user authentication with JWT"
-```
-
-```
-Epic: Add user authentication with JWT
-├── task-001: Create User model and DB migration
-│   depends_on: []
-├── task-002: Implement password hashing utility
-│   depends_on: []
-├── task-003: Add login/register HTTP handlers
-│   depends_on: [001, 002]
-├── task-004: Add auth middleware
-│   depends_on: [002]
-├── task-005: Write tests for auth flow
-│   depends_on: [003, 004]
-└── task-006: Update router to wire auth routes
-    depends_on: [003, 004]
-```
-
-No file claims. Tasks are scoped small enough that overlap is unlikely. When it happens, the integrator handles it (like a real team resolving PR conflicts).
-
-User approves the plan (or autopilot commits it).
+Creates dependency-aware tasks. Tasks are intentionally small to reduce merge friction.
 
 ### 3. SPRINT
 
-Select a batch of non-dependent tasks and execute in parallel:
+`pod sprint start`
 
-```
-pod sprint start
-```
-
-Sprint N picks: task-001, task-002 (no dependencies, can run in parallel)
-
-For each task:
-1. Create worktree branched from `pod/integration`
-2. Drop exploration context + task-specific CLAUDE.md into worktree
-3. Spawn worker (multi-turn, interactive in worktree)
-4. Monitor: completion, failure, timeout
-5. Capture result (commits on task branch + stdout)
-
-Workers run autonomously. Supervisor monitors via status checks (standup).
-
-**Standup:** Periodic status poll. If a worker finishes early, the supervisor can pull the next task from backlog. If a worker is stuck (timeout), kill and requeue.
-
-**Adaptive ceremony:**
-- 1 task → just run it, no sprint overhead
-- 2-5 tasks → lightweight: plan, execute, review
-- 5+ tasks → full sprint with standup checkpoints
+Executes ready tasks in parallel:
+1. Create worktree from `pod/integration`
+2. Inject task prompt + exploration context
+3. Run worker
+4. Capture diff/output/artifacts
 
 ### 4. REVIEW
 
-Each completed task gets a PR review:
+`pod sprint review`
 
-```
-pod sprint review
-```
+Completed task artifacts are reviewed before integration. Review surfaces diff plus quality payload (scope flags and test delta signals) from stored artifacts.
 
-For each completed task:
-1. Generate diff (worktree vs integration branch)
-2. Reviewer agent (or user) checks the diff
-3. Approved → merge queue
-4. Rejected → back to backlog with reviewer feedback attached
+### Quality Gates
+
+Quality gates run during sprint execution and are attached to task artifacts:
+
+- Scope creep analysis (`internal/quality/scope.go`): flags high file count, high line churn, wide directory spread, and low/no test additions for multi-file changes.
+- Test delta (`internal/quality/testdelta.go`): compares before/after validation snapshots and detects new failures/regressions.
+- Diff-vs-task alignment (`internal/review/alignment.go`): optional LLM-based check for intent alignment. Implemented and available as a reviewer capability; intended for selective use due to token cost.
+
+Quality results are stored in `artifacts.quality_json` and returned in review APIs/tools.
 
 ### 5. INTEGRATE
 
-Merge approved work:
+`pod integrate`
 
-1. Merge task branches into `pod/integration` sequentially (dependency order)
-2. On conflict: rebase conflicting task branch onto updated integration
-   - Re-run the developer worker with rebase context ("these files conflicted, resolve")
-   - Or: ask user to resolve manually
-3. Run validation gate: tests, lint, build (configured in `pod.yaml`)
-4. All green → sprint complete
-5. Failures → back to backlog
+Approved tasks are merged and validated with active gates (not just configured):
+
+1. Smart merge ordering: tasks are sorted by smallest diff first (`internal/integrator/integrator.go`) to reduce conflict surface.
+2. Merge each task into `pod/integration`.
+3. On conflict, attempt rebase and optional tool-assisted conflict resolution.
+4. Run validation commands.
+5. If validation fails, revert merge commit and keep integration clean.
 
 ### 6. ADAPT
 
-Update state and prepare for next sprint:
-
-- Completed tasks removed from backlog
-- Failed tasks re-enter backlog with failure context
-- New tasks discovered during execution added to backlog
-- Autopilot: LLM evaluates what went wrong, adjusts decomposition strategy
-- → next sprint
+Update backlog and sprint state:
+- merged tasks leave backlog
+- failed tasks return with failure context
+- newly discovered work is added to backlog
 
 ---
 
 ## Worker Execution Model
 
-### Multi-Turn Interactive (Primary)
+Workers execute either:
+- Interactive multi-turn mode in a PTY/worktree
+- Headless mode for bounded tasks
 
-Workers run CLI tools interactively in their worktree. This gives agents full capability: read files, run commands, use tools, iterate.
+Each worker gets exploration context and task prompt. Completion is process-based; artifacts are persisted for review/integration.
 
-```
-# Pod creates worktree, drops context files, then:
-cd /tmp/pod/worktrees/task-001/
-claude --append-system-prompt "$(cat .pod/context.md)"
-# Agent works autonomously within the worktree
-```
+---
 
-Status detection via process exit. When the agent completes, Pod captures the worktree state (git diff).
+## Sprint Health Monitoring
 
-For tools like Claude Code: use `claude` in interactive mode with `--append-system-prompt` for context injection. Agent works, exits with `/exit` when done, or Pod sends interrupt after timeout.
+Three runtime monitors run as background goroutines during sprint execution (`internal/sprint/executor.go`):
 
-For headless-capable tools: `claude -p "prompt" --output-format json` for simpler tasks where single-shot suffices.
+- Stuck detection (`internal/monitor/stuck.go`): detects no-progress loops (unchanged diff hash across cycles) and edit-revert cycles (repeated prior diff hashes).
+- Budget enforcement (`internal/monitor/budget.go`): tracks per-task and per-sprint spend; on breach, emits alert and interrupts the task process.
+- Live conflict prediction (`internal/monitor/conflict.go`): scans active worktrees for overlapping changed files and emits early conflict alerts.
 
-### Mode Selection Per Task
+Why: fail faster on stalled work, runaway spend, and avoidable merge collisions.
 
-```yaml
-tools:
-  claude:
-    binary: claude
-    interactive_args: ["--append-system-prompt", "{{context}}"]
-    headless_args: ["-p", "{{prompt}}", "--output-format", "json"]
-    timeout: 600s
+---
 
-  codex:
-    binary: codex
-    interactive_args: []
-    headless_args: ["-q", "{{prompt}}", "--approval-mode", "full-auto"]
-    timeout: 300s
+## Crash Recovery
 
-  aider:
-    binary: aider
-    interactive_args: ["--yes-always", "--no-auto-commits"]
-    headless_args: ["--message", "{{prompt}}", "--yes-always", "--no-auto-commits"]
-    timeout: 600s
-```
+Sprint/task recovery primitives live in `internal/sprint/sprint.go`:
 
-Scheduler picks mode based on task complexity. Simple creation tasks → headless. Tasks requiring exploration/iteration → interactive.
+- `RecoverOrphans`: finds tasks still marked `running` after interruption.
+- `ResolveOrphan`:
+1. task has commits beyond integration -> move to `review`
+2. no commits -> move to `failed`
+- `RecoverSprint`: marks interrupted running sprint as `failed`.
+
+Operator flow includes `pod sprint resume` to recover interrupted execution and continue safely.
+
+---
+
+## Exploration Staleness
+
+Exploration freshness is tracked by file-tree hash (`internal/explore/explore.go`):
+
+- After explore/manual context write, Pod stores `.pod/context.hash` alongside `.pod/context.md`.
+- Hash is computed from `git ls-files` output.
+- `IsStale()` compares current tree hash to stored hash.
+- Status endpoints/tools expose staleness for pre-sprint warnings.
+- `pod explore --check` supports scriptable staleness checks.
+
+Why: avoid executing sprints on outdated codebase context.
 
 ---
 
 ## Worktree Management
 
-```
-repo/
-├── .git/
-├── .pod/
-│   ├── pod.yaml          # Project config
-│   ├── state.db          # SQLite
-│   └── context.md        # Exploration output
-├── (main working tree)
-│
-└── (external worktrees, managed by Pod)
-    /tmp/pod/worktrees/
-    ├── integration/      # pod/integration branch checkout
-    ├── task-001/         # branched from pod/integration
-    ├── task-002/         # branched from pod/integration
-    └── task-003/         # branched from pod/integration
-```
+Each task runs in its own `task-{id}` worktree and branch (`pod/task-{id}`).
 
-Each worktree gets:
-- Its own branch: `pod/task-{id}`
-- A `.pod/` directory with task prompt and exploration context
-- Full filesystem isolation from other workers
+Lifecycle:
+1. create worktree from integration
+2. execute worker and capture artifacts
+3. merge approved task
+4. remove worktree on successful integration
 
-Worktree lifecycle:
-1. Created at sprint start: `git worktree add /tmp/pod/worktrees/task-001 -b pod/task-001 pod/integration`
-2. Context files injected
-3. Worker runs inside the worktree
-4. On completion: diff captured, branch ready for merge
-5. On successful merge: worktree removed (`git worktree remove`)
-6. On failure: worktree preserved for debugging
+Cleanup features (`internal/worktree/worktree.go`):
+- TTL-based stale worktree cleanup
+- `pod cleanup` and `pod cleanup --dry-run`
+- Disk usage tracking across worktrees
 
 ---
 
 ## Communication Model
 
-Workers never communicate with each other. All coordination flows through the supervisor.
+Workers never communicate directly.
 
-- **Supervisor → Worker:** Task prompt + exploration context. Injected at worktree setup.
-- **Worker → Supervisor:** Completion signal (process exit) + artifacts (commits in worktree).
-- **Between sprints:** Supervisor passes prior sprint output into next sprint's worker prompts as needed.
-- **Worker ↔ Worker:** Not supported. Dependencies are handled by sprint ordering.
-
----
-
-## Orchestration Patterns
-
-Compose naturally within the phase model:
-
-**Fan-out** — Single sprint, multiple workers on independent tasks. The default.
-
-**Pipeline** — Sequential sprints. Sprint 1: tech lead explores. Sprint 2: developers implement. Sprint 3: reviewers check. Each feeds the next.
-
-**Specialist routing** — Scheduler assigns based on tool strengths. Claude Code for refactoring, Codex for greenfield, Aider for surgical edits.
-
-**Adversarial review** — Developer agent writes code in sprint N. Different agent reviews in sprint N+1. Feedback loop until review passes.
-
----
-
-## Key Design Decisions
-
-**Dev team model, not task queue** — Typed roles (tech lead, developer, reviewer, integrator) mirror how real teams work. Each role has clear responsibilities and handoff points.
-
-**Explore before plan** — Codebase understanding comes before decomposition. Prevents hallucinated file paths and missed dependencies.
-
-**Worktrees as isolation** — Each worker gets a full filesystem. Agents can read, write, run tests without affecting each other. Merge conflicts resolved at integration, not prevented at planning. Same as real teams using feature branches.
-
-**No file claims** — Replaced by worktree isolation + merge-time conflict resolution. Tasks don't need to predict which files they'll touch. The integrator handles conflicts like a dev resolving a PR rebase.
-
-**Multi-turn workers** — Agents run interactively, not single-shot. Real devs explore, implement, test, iterate. Agents need the same capability.
-
-**User-first, autopilot-optional** — Manual mode burns zero coordination tokens. Autopilot is an upgrade, not the default.
-
-**Adaptive ceremony** — Single task skips sprint overhead. 5+ tasks get full sprint model. Process scales to the work.
-
-**Wrap CLIs, don't call APIs** — CLI tools handle auth, context, tool use, model selection. Pod orchestrates, not reimplements.
+- Supervisor -> worker: task prompt + exploration context
+- Worker -> supervisor: process exit + artifacts
+- Inter-task dependencies: handled by phase ordering and sprint planning
 
 ---
 
@@ -380,85 +242,110 @@ Compose naturally within the phase model:
 
 ```bash
 # Setup
-pod init                          # Init Pod in current git repo
-pod config                        # Edit pod.yaml
+pod init
+pod config
 
 # Explore
-pod explore                       # Run tech lead exploration
-pod explore --manual              # User provides context
+pod explore
+pod explore --manual
+pod explore --check              # Check context staleness
 
-# Plan
-pod plan "goal description"       # Decompose into tasks (LLM-assisted)
-pod plan --manual                 # User writes task tree
-pod backlog                       # View task tree
-pod backlog add "task"            # Add task manually
-pod backlog edit task-001         # Edit task
+# Plan / Backlog
+pod plan "goal description"
+pod plan --manual
+pod backlog
+pod backlog add "task"
+pod backlog edit task-001
 
 # Sprint
-pod sprint plan                   # Select next batch
-pod sprint start                  # Execute current batch
-pod sprint status                 # Standup — check all workers
-pod sprint review                 # Review completed work
-pod sprint cancel                 # Kill in-flight workers
+pod sprint plan
+pod sprint start
+pod sprint status
+pod sprint review
+pod sprint resume                # Recover interrupted sprint
+pod sprint cancel
 
 # Integration
-pod integrate                     # Merge approved tasks
-pod integrate --dry-run           # Preview merges
+pod integrate
+pod integrate --dry-run
+
+# Worktrees
+pod cleanup                      # Remove stale worktrees
+pod cleanup --dry-run            # Preview cleanup
 
 # General
-pod status                        # Overall project status
-pod log                           # Sprint history
-pod cleanup                       # Remove stale worktrees
+pod status
+pod log
 ```
 
 ---
 
-## User Interface
+## MCP Interface
 
-### Phase 1: Plain CLI
+Pod exposes 19 MCP tools (`internal/mcp/tools.go`) for orchestrator agents.
 
-Standard command-line output. `pod backlog` prints the task tree, `pod sprint status` prints worker state, exit. User runs commands repeatedly to check progress. Simple, scriptable, zero dependencies.
+### Task
+- `task_list`
+- `task_create`
+- `task_update`
+- `task_approve`
+- `task_request_changes`
 
-### Phase 2+: Interactive TUI
+### Sprint
+- `sprint_plan`
+- `sprint_start`
+- `sprint_status`
+- `sprint_cancel`
+- `sprint_reset`
 
-Persistent terminal UI built with `charmbracelet/bubbletea`. Real-time view of backlog, sprint progress, and worker status in a single screen.
+### Review / Quality
+- `review_get`
+- `review_sprint`
+- `quality_results`
 
-```
-┌─ Backlog ──────────────────────┬─ Sprint 2 ────────────────────────┐
-│                                │                                    │
-│ ○ task-005 Write auth tests    │ ● task-003 Add HTTP handlers       │
-│   blocked by: 003, 004        │   worker: claude  ██████░░ running  │
-│ ○ task-006 Wire auth routes    │ ● task-004 Add auth middleware     │
-│   blocked by: 003, 004        │   worker: codex   █████████ done ✓  │
-│                                │                                    │
-├─ Completed ────────────────────┤                                    │
-│ ✓ task-001 Create User model   │                                    │
-│ ✓ task-002 Password hashing    │                                    │
-└────────────────────────────────┴────────────────────────────────────┘
- [a]dd task  [p]lan sprint  [s]tart  [r]eview  [i]ntegrate  [q]uit
-```
+### Explore
+- `explore`
+- `explore_status`
 
-The TUI enables:
-- Live worker progress monitoring (no repeated `pod sprint status`)
-- Inline task management (add, edit, reorder, assign from one screen)
-- Sprint review with diff preview
-- Approve/reject tasks without leaving the interface
-- Worker log tailing (select a worker, see its stdout live)
+### Monitor / Budget
+- `budget_status`
 
-The data model is identical — TUI is a rendering layer on top of the same SQLite state and CLI commands. Both interfaces remain available; TUI is the default when running interactively, plain CLI for scripts and piping.
+### Worktree
+- `worktree_cleanup`
+- `worktree_status`
 
-**Library:** `charmbracelet/bubbletea` (Go TUI framework, same team behind `lazygit`-style tools like `glow`, `soft-serve`).
+### Integration
+- `integrate`
+
+---
+
+## Web Interface
+
+Pod ships a web UI (React + Vite) served by the API server under `/ui/`.
+
+Key capabilities:
+- Board view with task columns by status (backlog -> merged/failed)
+- Real-time updates via WebSocket (`/api/v1/ws`) for tasks, sprints, sessions, operations, monitor alerts
+- Console panel for live orchestration output/events
+- Terminal sessions over WebSocket (`/api/v1/terminal/{session_id}`)
+- Session APIs for worker/orchestrator lifecycle visibility
+
+Core API route groups (`internal/api/server.go`):
+- tasks, sprints, review, plan, explore, integrate
+- config, status, costs, cleanup, monitor alerts
+- websocket + terminal streaming
 
 ---
 
 ## Configuration
 
+`pod.yaml` includes orchestration, monitor, quality, and cleanup controls:
+
 ```yaml
-# pod.yaml
 project:
   name: my-project
   integration_branch: pod/integration
-  worktree_dir: /tmp/pod/worktrees
+  worktree_dir: .pod/worktrees
 
 tools:
   claude:
@@ -468,56 +355,53 @@ tools:
     timeout: 600s
   codex:
     binary: codex
-    headless_args: ["-q", "{{prompt}}", "--approval-mode", "full-auto"]
-    timeout: 300s
+    headless_args: ["exec", "{{prompt}}", "--full-auto"]
+    timeout: 600s
 
 validation:
   commands:
     - "go test ./..."
     - "go vet ./..."
-    - "golangci-lint run"
 
 workers:
   max_parallel: 3
 
-autopilot:
-  enabled: false
-  cost_budget: 5.00          # Max $ per sprint
-  escalate_after_retries: 2  # Ask user after N failures
+orchestrator:
+  cost_budget: 5.0
+  supervisor_tool: claude
+
+monitor:
+  stuck_check_interval: 30s
+  max_stuck_cycles: 3
+  conflict_check_interval: 15s
+  task_budget: 0
+
+quality:
+  enabled: true
+  scope_check: true
+  test_delta: true
+  alignment_check: false
+
+cleanup:
+  ttl: 168h
 ```
-
----
-
-## Language Choice
-
-Go:
-
-- Single binary, no runtime deps
-- Strong process lifecycle mgmt (`os/exec`, signals, pipes)
-- Good concurrency for parallel workers
-- `creack/pty` for interactive mode
-- Anthropic + OpenAI ship Go SDKs
 
 ---
 
 ## Persistence
 
-SQLite (`.pod/state.db`):
-
-- **tasks** — full task tree with status, deps, parent, sprint assignment
-- **sprints** — sprint log with task batches and outcomes
-- **artifacts** — diffs, stdout, metadata per execution
-- **exploration** — cached codebase context
-
-Persists across sessions. Resume partial projects.
+SQLite (`.pod/state.db`) stores:
+- tasks and dependencies
+- sprints and phase state
+- artifacts (diff/stdout/stderr/quality payload)
+- costs
+- operations and sessions
+- exploration context metadata
 
 ---
 
 ## Open Questions
 
-- How should the tech lead exploration agent work concretely — what prompt, what output format, how much of the codebase does it read?
-- What's the right heuristic for scheduler mode selection (headless vs interactive per task)?
-- How does the reviewer agent work — full diff review or targeted checks?
-- Should autopilot's cost budget be per-sprint or per-project?
-- How to handle tasks that spawn new tasks mid-execution (agent discovers more work needed)?
-- What's the right interface for the user to intervene mid-sprint in manual mode?
+- Alignment gate wiring: should `alignment_check` run automatically for every reviewed task, or only on flagged/high-risk diffs?
+- Monitor config parity: should executor consume all `monitor.*` settings directly (intervals, per-task budgets) instead of fixed runtime defaults?
+- Recovery UX: should startup auto-apply orphan resolution, or require explicit `pod sprint resume` confirmation in all modes?

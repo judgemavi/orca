@@ -18,6 +18,7 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 
 	assertMigrationVersions(t, db.DB, len(migrations))
 	assertTaskColumns(t, db.DB, "model", "plan", "session_id", "phase_config")
+	assertArtifactColumns(t, db.DB, "quality_json")
 	assertDBVersion(t, db, 0)
 
 	if err := db.Close(); err != nil {
@@ -32,6 +33,7 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 
 	assertMigrationVersions(t, db.DB, len(migrations))
 	assertTaskColumns(t, db.DB, "model", "plan", "session_id", "phase_config")
+	assertArtifactColumns(t, db.DB, "quality_json")
 	assertDBVersion(t, db, 0)
 }
 
@@ -58,6 +60,7 @@ func TestOpenMigratesLegacyUnversionedDB(t *testing.T) {
 
 	assertMigrationVersions(t, db.DB, len(migrations))
 	assertTaskColumns(t, db.DB, "model", "plan", "session_id", "phase_config")
+	assertArtifactColumns(t, db.DB, "quality_json")
 	assertDBVersion(t, db, 0)
 }
 
@@ -134,6 +137,7 @@ func TestMigrationV7(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	assertTaskColumns(t, db.DB, "phase_config")
+	assertArtifactColumns(t, db.DB, "quality_json")
 	assertMigrationVersions(t, db.DB, len(migrations))
 
 	var phaseConfig sql.NullString
@@ -184,6 +188,22 @@ func assertTaskColumns(t *testing.T, db *sql.DB, columns ...string) {
 		}
 		if count != 1 {
 			t.Fatalf("tasks.%s missing", column)
+		}
+	}
+}
+
+func assertArtifactColumns(t *testing.T, db *sql.DB, columns ...string) {
+	t.Helper()
+	for _, column := range columns {
+		var count int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info('artifacts') WHERE name = ?`,
+			column,
+		).Scan(&count); err != nil {
+			t.Fatalf("check artifacts.%s column: %v", column, err)
+		}
+		if count != 1 {
+			t.Fatalf("artifacts.%s missing", column)
 		}
 	}
 }

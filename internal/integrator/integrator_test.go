@@ -1,9 +1,11 @@
 package integrator
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -62,6 +64,30 @@ func createTaskBranch(t *testing.T, dir, taskID, filename, content string) {
 	}
 	run("add", "-A")
 	run("commit", "-m", "task "+taskID+": add "+filename)
+	run("checkout", "pod/integration")
+}
+
+func createTaskBranchWithNFiles(t *testing.T, dir, taskID string, files int) {
+	t.Helper()
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	run("checkout", "-b", "pod/task-"+taskID, "pod/integration")
+	for idx := 1; idx <= files; idx++ {
+		name := filepath.Join(dir, fmt.Sprintf("task-%s-file-%02d.txt", taskID, idx))
+		if err := os.WriteFile(name, []byte("line\n"), 0644); err != nil {
+			t.Fatalf("write file: %v", err)
+		}
+	}
+	run("add", "-A")
+	run("commit", "-m", "task "+taskID+": add files")
 	run("checkout", "pod/integration")
 }
 
@@ -215,5 +241,98 @@ func TestMergeBatch(t *testing.T) {
 	}
 	if len(failed) == 1 && failed[0] != "b2" {
 		t.Errorf("failed[0] = %q, want %q", failed[0], "b2")
+	}
+}
+
+func TestMergeBatchSortsByDiffSize(t *testing.T) {
+	dir := setupRepo(t)
+
+	createTaskBranchWithNFiles(t, dir, "d1", 1)
+	createTaskBranchWithNFiles(t, dir, "d10", 10)
+	createTaskBranchWithNFiles(t, dir, "d5", 5)
+
+	ig := New(dir, "pod/integration", nil)
+	merged, failed, err := ig.MergeBatch([]string{"d10", "d1", "d5"})
+	if err != nil {
+		t.Fatalf("MergeBatch: %v", err)
+	}
+	if len(failed) != 0 {
+		t.Fatalf("failed = %v, want none", failed)
+	}
+	if len(merged) != 3 {
+		t.Fatalf("merged = %v, want 3 items", merged)
+	}
+
+	cmd := exec.Command("git", "log", "--first-parent", "--reverse", "--pretty=%s", "pod/integration")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v\n%s", err, out)
+	}
+
+	var merges []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(line, "pod: merge task-") {
+			merges = append(merges, line)
+		}
+	}
+
+	want := []string{
+		"pod: merge task-d1",
+		"pod: merge task-d5",
+		"pod: merge task-d10",
+	}
+	if len(merges) != len(want) {
+		t.Fatalf("merge commits = %v, want %v", merges, want)
+	}
+	for i := range want {
+		if merges[i] != want[i] {
+			t.Fatalf("merge order = %v, want %v", merges, want)
+		}
+	}
+}
+
+func TestMergeBatchDiffErrorSortsFirst(t *testing.T) {
+	dir := setupRepo(t)
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	// Create a conflict task branch that will fail to merge.
+	run("checkout", "pod/integration")
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("integration\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "integration: add shared.txt")
+
+	run("checkout", "-b", "pod/task-conflict2", "HEAD~1")
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("task\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "task conflict2")
+	run("checkout", "pod/integration")
+
+	// Create then delete a task branch so diffLineCount returns 0 due to git diff error.
+	createTaskBranch(t, dir, "missing", "missing.txt", "x\n")
+	run("branch", "-D", "pod/task-missing")
+
+	ig := New(dir, "pod/integration", nil)
+	_, failed, err := ig.MergeBatch([]string{"conflict2", "missing"})
+	if err != nil {
+		t.Fatalf("MergeBatch: %v", err)
+	}
+	if len(failed) != 2 {
+		t.Fatalf("failed = %v, want 2 items", failed)
+	}
+	if failed[0] != "missing" || failed[1] != "conflict2" {
+		t.Fatalf("failed order = %v, want [missing conflict2]", failed)
 	}
 }

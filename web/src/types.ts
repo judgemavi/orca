@@ -88,6 +88,7 @@ export interface ReviewArtifact {
   diff: string
   files: string[]
   duration_ms: number
+  quality?: QualityResult
 }
 
 export interface TaskResult {
@@ -140,9 +141,50 @@ export interface ProjectStatus {
   task_counts: Record<string, number>
   active_sprint: { id: string; status: string } | null
   context_exists: boolean
+  context_stale?: boolean
+  context_age_minutes?: number
   total_cost: number
   budget: number
   budget_remaining: number
+}
+
+export interface QualityScope {
+  task_id: string
+  files_changed: number
+  lines_changed: number
+  flags: string[]
+  excessive: boolean
+}
+
+export interface QualityTestDelta {
+  new_failures: string[]
+  new_passes: string[]
+  unchanged: string[]
+  test_count_delta: number
+}
+
+export interface QualityResult {
+  scope?: QualityScope
+  test_delta?: QualityTestDelta
+  alignment?: { aligned: boolean; reason: string }
+}
+
+export interface MonitorAlert {
+  type: 'stuck' | 'budget' | 'conflict'
+  task_id: string
+  message: string
+  timestamp: string
+}
+
+export interface WorktreeInfo {
+  task_id: string
+  branch: string
+  age_hours: number
+}
+
+export interface WorktreeStatus {
+  worktrees: WorktreeInfo[]
+  total_disk_bytes: number
 }
 
 export interface PTYSession {

@@ -19,8 +19,14 @@ var Plan string
 //go:embed review.md
 var Review string
 
+//go:embed alignment.md
+var Alignment string
+
 //go:embed conflict_resolve.md
 var ConflictResolve string
+
+//go:embed budget_aware.md
+var BudgetAware string
 
 //go:embed output_style.md
 var OutputStyle string

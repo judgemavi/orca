@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/pod/internal/cost"
 	"github.com/jasjeetmavi/pod/internal/explore"
 	"github.com/jasjeetmavi/pod/internal/integrator"
 	"github.com/jasjeetmavi/pod/internal/review"
 	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/pod/internal/worktree"
 )
 
 type toolDef struct {
@@ -250,6 +253,66 @@ func (s *Server) toolDefinitions() []toolDef {
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "explore_status",
+			Description: "Check if codebase exploration context exists and whether it is stale.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "worktree_cleanup",
+			Description: "Remove stale worktrees older than max_age_hours. Supports dry-run mode.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"dry_run": map[string]interface{}{
+						"type":        "boolean",
+						"description": "If true, only report stale worktrees that would be removed.",
+					},
+					"max_age_hours": map[string]interface{}{
+						"type":        "integer",
+						"description": "Max worktree age in hours before cleanup (default 168).",
+					},
+				},
+			},
+		},
+		{
+			Name:        "worktree_status",
+			Description: "List all task worktrees with age and branch, plus total disk usage.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "budget_status",
+			Description: "Get current total cost, budget, remaining budget, and per-tool breakdown.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"sprint_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional sprint ID for sprint-level totals instead of project totals.",
+					},
+				},
+			},
+		},
+		{
+			Name:        "quality_results",
+			Description: "Get latest quality gate results for a task from stored artifacts.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Task ID to fetch quality results for.",
+					},
+				},
+				"required": []string{"task_id"},
 			},
 		},
 		{
@@ -718,6 +781,202 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			return nil, err
 		}
 		return map[string]interface{}{"path": outPath}, nil
+
+	case "explore_status":
+		exists := explore.LoadContext(s.repoDir) != ""
+		stale, err := explore.IsStale(s.repoDir)
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+		ageMinutes := int(explore.ContextAge(s.repoDir) / time.Minute)
+		if ageMinutes < 0 {
+			ageMinutes = 0
+		}
+		return map[string]interface{}{
+			"exists":      exists,
+			"stale":       stale,
+			"age_minutes": ageMinutes,
+		}, nil
+
+	case "worktree_cleanup":
+		var args struct {
+			DryRun      bool `json:"dry_run"`
+			MaxAgeHours int  `json:"max_age_hours"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return map[string]interface{}{"error": fmt.Sprintf("worktree_cleanup args: %v", err)}, nil
+		}
+		if s.cfg == nil {
+			return map[string]interface{}{"error": "worktree cleanup not configured"}, nil
+		}
+
+		maxAgeHours := args.MaxAgeHours
+		if maxAgeHours <= 0 {
+			maxAgeHours = 168
+		}
+		maxAge := time.Duration(maxAgeHours) * time.Hour
+		wm := worktree.NewManager(s.repoDir, s.cfg.Project.WorktreeDir)
+
+		if args.DryRun {
+			list, err := wm.ListWithAge()
+			if err != nil {
+				return map[string]interface{}{
+					"removed": []string{},
+					"errors":  []string{err.Error()},
+				}, nil
+			}
+			removed := make([]string, 0, len(list))
+			for _, wt := range list {
+				if wt.Age >= maxAge {
+					removed = append(removed, wt.TaskID)
+				}
+			}
+			return map[string]interface{}{
+				"removed": removed,
+				"errors":  []string{},
+			}, nil
+		}
+
+		removed, errs := wm.CleanupStale(maxAge)
+		errTexts := make([]string, 0, len(errs))
+		for _, err := range errs {
+			errTexts = append(errTexts, err.Error())
+		}
+		return map[string]interface{}{
+			"removed": removed,
+			"errors":  errTexts,
+		}, nil
+
+	case "worktree_status":
+		if s.cfg == nil {
+			return map[string]interface{}{"error": "worktree status not configured"}, nil
+		}
+		wm := worktree.NewManager(s.repoDir, s.cfg.Project.WorktreeDir)
+
+		listWithAge, err := wm.ListWithAge()
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+
+		all, err := wm.List()
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+		branchesByPath := make(map[string]string, len(all))
+		for _, wt := range all {
+			branchesByPath[wt.Path] = wt.Branch
+		}
+
+		totalDiskBytes, err := wm.DiskUsage()
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+
+		worktrees := make([]map[string]interface{}, 0, len(listWithAge))
+		for _, wt := range listWithAge {
+			worktrees = append(worktrees, map[string]interface{}{
+				"task_id":   wt.TaskID,
+				"age_hours": int(wt.Age / time.Hour),
+				"branch":    branchesByPath[wt.Path],
+			})
+		}
+		return map[string]interface{}{
+			"worktrees":        worktrees,
+			"total_disk_bytes": totalDiskBytes,
+		}, nil
+
+	case "budget_status":
+		var args struct {
+			SprintID string `json:"sprint_id"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return map[string]interface{}{"error": fmt.Sprintf("budget_status args: %v", err)}, nil
+		}
+		if s.planner == nil || s.planner.DB() == nil {
+			return map[string]interface{}{"error": "cost tracking not configured"}, nil
+		}
+
+		tracker := cost.NewTracker(s.planner.DB())
+		budget := s.cfg.Orchestrator.CostBudget
+		if strings.TrimSpace(args.SprintID) != "" {
+			total, err := tracker.SprintTotal(args.SprintID)
+			if err != nil {
+				return map[string]interface{}{"error": err.Error()}, nil
+			}
+			tools, err := tracker.SprintSummary(args.SprintID)
+			if err != nil {
+				return map[string]interface{}{"error": err.Error()}, nil
+			}
+			return map[string]interface{}{
+				"sprint_id":  args.SprintID,
+				"total_cost": total,
+				"budget":     budget,
+				"remaining":  budget - total,
+				"tools":      tools,
+			}, nil
+		}
+
+		total, err := tracker.ProjectTotal()
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+		remaining, err := tracker.BudgetRemaining(budget)
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+		tools, err := tracker.ProjectSummary()
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+		return map[string]interface{}{
+			"total_cost": total,
+			"budget":     budget,
+			"remaining":  remaining,
+			"tools":      tools,
+		}, nil
+
+	case "quality_results":
+		var args struct {
+			TaskID string `json:"task_id"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return map[string]interface{}{"error": fmt.Sprintf("quality_results args: %v", err)}, nil
+		}
+		taskID := strings.TrimSpace(args.TaskID)
+		if taskID == "" {
+			return map[string]interface{}{"error": "task_id is required"}, nil
+		}
+		if s.planner == nil || s.planner.DB() == nil {
+			return map[string]interface{}{"error": "database not configured"}, nil
+		}
+
+		var qualityJSON sql.NullString
+		err := s.planner.DB().QueryRow(
+			`SELECT quality_json FROM artifacts WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`,
+			taskID,
+		).Scan(&qualityJSON)
+		if err == sql.ErrNoRows {
+			return map[string]interface{}{"task_id": taskID, "quality": nil}, nil
+		}
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}, nil
+		}
+
+		if !qualityJSON.Valid || strings.TrimSpace(qualityJSON.String) == "" {
+			return map[string]interface{}{"task_id": taskID, "quality": nil}, nil
+		}
+		if !json.Valid([]byte(qualityJSON.String)) {
+			return map[string]interface{}{"error": "invalid quality_json payload"}, nil
+		}
+
+		var quality interface{}
+		if err := json.Unmarshal([]byte(qualityJSON.String), &quality); err != nil {
+			return map[string]interface{}{"error": fmt.Sprintf("parse quality_json: %v", err)}, nil
+		}
+		return map[string]interface{}{
+			"task_id": taskID,
+			"quality": quality,
+		}, nil
 
 	case "integrate":
 		var sprintID string

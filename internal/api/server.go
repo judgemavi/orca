@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasjeetmavi/pod/internal/config"
@@ -32,6 +33,9 @@ type Server struct {
 	sessionMgr *pty.SessionManager
 	ctx        context.Context
 	cancel     context.CancelFunc
+
+	monitorAlerts []MonitorAlert
+	monitorMu     sync.Mutex
 
 	// Embedded frontend filesystem (optional).
 	frontendFS fs.FS
@@ -172,7 +176,7 @@ func NewServerWithHub(db *state.DB, cfg *config.Config, planner *sprint.Planner,
 		})
 	}
 
-	return &Server{
+	srv := &Server{
 		db:         db,
 		cfg:        cfg,
 		planner:    planner,
@@ -185,6 +189,19 @@ func NewServerWithHub(db *state.DB, cfg *config.Config, planner *sprint.Planner,
 		ctx:        ctx,
 		cancel:     cancel,
 	}
+
+	if executor != nil {
+		executor.SetMonitorAlertHook(func(alertType, taskID, message string) {
+			srv.AddMonitorAlert(MonitorAlert{
+				Type:      alertType,
+				TaskID:    taskID,
+				Message:   message,
+				Timestamp: time.Now().UTC(),
+			})
+		})
+	}
+
+	return srv
 }
 
 // Shutdown stops background server workers.
@@ -236,6 +253,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/costs", s.handleCosts)
 	mux.HandleFunc("/api/v1/config", s.routeConfig)
 	mux.HandleFunc("/api/v1/status", s.handleStatus)
+	mux.HandleFunc("/api/v1/monitor/alerts", s.handleMonitorAlerts)
 
 	// WebSocket
 	mux.HandleFunc("/api/v1/ws", s.hub.ServeWS)

@@ -224,6 +224,13 @@ END;
 			return hasColumn(tx, "tasks", "phase_config")
 		},
 	},
+	{
+		version: 8,
+		sql:     `ALTER TABLE artifacts ADD COLUMN quality_json TEXT`,
+		isApplied: func(tx *sql.Tx) (bool, error) {
+			return hasColumn(tx, "artifacts", "quality_json")
+		},
+	},
 }
 
 // DBVersion returns the current persisted db_version sentinel value.

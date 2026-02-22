@@ -37,6 +37,15 @@ func assertConfigEquivalent(t *testing.T, got, want *Config) {
 		!reflect.DeepEqual(got.Orchestrator.Phases, want.Orchestrator.Phases) {
 		t.Fatalf("orchestrator mismatch: got=%+v want=%+v", got.Orchestrator, want.Orchestrator)
 	}
+	if got.Monitor != want.Monitor {
+		t.Fatalf("monitor mismatch: got=%+v want=%+v", got.Monitor, want.Monitor)
+	}
+	if got.Quality != want.Quality {
+		t.Fatalf("quality mismatch: got=%+v want=%+v", got.Quality, want.Quality)
+	}
+	if got.Cleanup != want.Cleanup {
+		t.Fatalf("cleanup mismatch: got=%+v want=%+v", got.Cleanup, want.Cleanup)
+	}
 
 	if len(got.Tools) != len(want.Tools) {
 		t.Fatalf("tool count mismatch: got=%d want=%d", len(got.Tools), len(want.Tools))
@@ -110,6 +119,21 @@ func TestDefault(t *testing.T) {
 	if cfg.Defaults.Tool != "claude" {
 		t.Fatalf("defaults.tool = %q, want claude", cfg.Defaults.Tool)
 	}
+	if cfg.Monitor.StuckCheckInterval != "30s" ||
+		cfg.Monitor.MaxStuckCycles != 3 ||
+		cfg.Monitor.ConflictInterval != "15s" ||
+		cfg.Monitor.TaskBudget != 0 {
+		t.Fatalf("monitor defaults mismatch: %+v", cfg.Monitor)
+	}
+	if cfg.Quality.Enabled != true ||
+		cfg.Quality.ScopeCheck != true ||
+		cfg.Quality.TestDelta != true ||
+		cfg.Quality.AlignmentCheck != false {
+		t.Fatalf("quality defaults mismatch: %+v", cfg.Quality)
+	}
+	if cfg.Cleanup.TTL != "168h" {
+		t.Fatalf("cleanup.ttl = %q, want 168h", cfg.Cleanup.TTL)
+	}
 }
 
 func TestSaveAndLoad(t *testing.T) {
@@ -170,6 +194,21 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	cfg.Defaults = DefaultsConfig{Tool: "claude", Model: "claude-sonnet-4-6"}
 	cfg.Workers.MaxParallel = 5
+	cfg.Monitor = MonitorConfig{
+		StuckCheckInterval: "45s",
+		MaxStuckCycles:     5,
+		ConflictInterval:   "20s",
+		TaskBudget:         1.25,
+	}
+	cfg.Quality = QualityConfig{
+		Enabled:        true,
+		ScopeCheck:     false,
+		TestDelta:      true,
+		AlignmentCheck: true,
+	}
+	cfg.Cleanup = CleanupConfig{
+		TTL: "72h",
+	}
 
 	path := filepath.Join(t.TempDir(), "pod.yaml")
 	if err := cfg.Save(path); err != nil {
@@ -198,6 +237,15 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	if loaded.Workers.MaxParallel != 5 {
 		t.Fatalf("workers.max_parallel = %d, want 5", loaded.Workers.MaxParallel)
+	}
+	if loaded.Monitor != cfg.Monitor {
+		t.Fatalf("monitor mismatch: got=%+v want=%+v", loaded.Monitor, cfg.Monitor)
+	}
+	if loaded.Quality != cfg.Quality {
+		t.Fatalf("quality mismatch: got=%+v want=%+v", loaded.Quality, cfg.Quality)
+	}
+	if loaded.Cleanup != cfg.Cleanup {
+		t.Fatalf("cleanup mismatch: got=%+v want=%+v", loaded.Cleanup, cfg.Cleanup)
 	}
 }
 
@@ -395,6 +443,181 @@ func TestDefaultsYAML_NewFields(t *testing.T) {
 	}
 	if cfg.Defaults.Tool != "claude" {
 		t.Fatalf("defaults.tool = %q, want claude", cfg.Defaults.Tool)
+	}
+	if cfg.Monitor.StuckCheckInterval != "30s" {
+		t.Fatalf("monitor.stuck_check_interval = %q, want 30s", cfg.Monitor.StuckCheckInterval)
+	}
+	if cfg.Monitor.MaxStuckCycles != 3 {
+		t.Fatalf("monitor.max_stuck_cycles = %d, want 3", cfg.Monitor.MaxStuckCycles)
+	}
+	if cfg.Monitor.ConflictInterval != "15s" {
+		t.Fatalf("monitor.conflict_check_interval = %q, want 15s", cfg.Monitor.ConflictInterval)
+	}
+	if cfg.Quality.Enabled != true || cfg.Quality.ScopeCheck != true || cfg.Quality.TestDelta != true || cfg.Quality.AlignmentCheck != false {
+		t.Fatalf("quality defaults mismatch: %+v", cfg.Quality)
+	}
+	if cfg.Cleanup.TTL != "168h" {
+		t.Fatalf("cleanup.ttl = %q, want 168h", cfg.Cleanup.TTL)
+	}
+}
+
+func TestConfigYAML_NewFieldsParse(t *testing.T) {
+	data := []byte(`
+project:
+  name: parse-project
+  integration_branch: main
+  worktree_dir: .worktrees
+tools:
+  codex:
+    binary: codex
+    model: gpt-5-codex
+    timeout: 30m
+    mode: headless
+    prompt_mode: arg
+validation:
+  commands: []
+workers:
+  max_parallel: 2
+orchestrator:
+  cost_budget: 0
+monitor:
+  stuck_check_interval: 22s
+  max_stuck_cycles: 7
+  conflict_check_interval: 9s
+  task_budget: 4.5
+quality:
+  enabled: false
+  scope_check: true
+  test_delta: false
+  alignment_check: true
+cleanup:
+  ttl: 24h
+`)
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	if cfg.Monitor.StuckCheckInterval != "22s" ||
+		cfg.Monitor.MaxStuckCycles != 7 ||
+		cfg.Monitor.ConflictInterval != "9s" ||
+		cfg.Monitor.TaskBudget != 4.5 {
+		t.Fatalf("monitor parse mismatch: %+v", cfg.Monitor)
+	}
+	if cfg.Quality.Enabled != false ||
+		cfg.Quality.ScopeCheck != true ||
+		cfg.Quality.TestDelta != false ||
+		cfg.Quality.AlignmentCheck != true {
+		t.Fatalf("quality parse mismatch: %+v", cfg.Quality)
+	}
+	if cfg.Cleanup.TTL != "24h" {
+		t.Fatalf("cleanup.ttl = %q, want 24h", cfg.Cleanup.TTL)
+	}
+}
+
+func TestLoadAppliesNewFieldDefaultsWhenOmitted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pod.yaml")
+	data := []byte(`
+project:
+  name: defaults-project
+  integration_branch: main
+  worktree_dir: .worktrees
+tools:
+  codex:
+    binary: codex
+    model: gpt-5-codex
+    timeout: 30m
+    mode: headless
+    prompt_mode: arg
+validation:
+  commands: []
+workers:
+  max_parallel: 1
+orchestrator:
+  cost_budget: 0
+`)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Monitor.StuckCheckInterval != "30s" ||
+		cfg.Monitor.MaxStuckCycles != 3 ||
+		cfg.Monitor.ConflictInterval != "15s" ||
+		cfg.Monitor.TaskBudget != 0 {
+		t.Fatalf("monitor defaults not applied: %+v", cfg.Monitor)
+	}
+	if cfg.Quality.Enabled != true ||
+		cfg.Quality.ScopeCheck != true ||
+		cfg.Quality.TestDelta != true ||
+		cfg.Quality.AlignmentCheck != false {
+		t.Fatalf("quality defaults not applied: %+v", cfg.Quality)
+	}
+	if cfg.Cleanup.TTL != "168h" {
+		t.Fatalf("cleanup default not applied: got %q want 168h", cfg.Cleanup.TTL)
+	}
+}
+
+func TestLoadWithAllNewFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pod.yaml")
+	data := []byte(`
+project:
+  name: all-fields-project
+  integration_branch: main
+  worktree_dir: .worktrees
+tools:
+  codex:
+    binary: codex
+    model: gpt-5-codex
+    timeout: 30m
+    mode: headless
+    prompt_mode: arg
+validation:
+  commands: []
+workers:
+  max_parallel: 1
+orchestrator:
+  cost_budget: 0
+monitor:
+  stuck_check_interval: 40s
+  max_stuck_cycles: 6
+  conflict_check_interval: 12s
+  task_budget: 2.75
+quality:
+  enabled: false
+  scope_check: false
+  test_delta: true
+  alignment_check: true
+cleanup:
+  ttl: 200h
+`)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Monitor.StuckCheckInterval != "40s" ||
+		cfg.Monitor.MaxStuckCycles != 6 ||
+		cfg.Monitor.ConflictInterval != "12s" ||
+		cfg.Monitor.TaskBudget != 2.75 {
+		t.Fatalf("monitor load mismatch: %+v", cfg.Monitor)
+	}
+	if cfg.Quality.Enabled != false ||
+		cfg.Quality.ScopeCheck != false ||
+		cfg.Quality.TestDelta != true ||
+		cfg.Quality.AlignmentCheck != true {
+		t.Fatalf("quality load mismatch: %+v", cfg.Quality)
+	}
+	if cfg.Cleanup.TTL != "200h" {
+		t.Fatalf("cleanup.ttl = %q, want 200h", cfg.Cleanup.TTL)
 	}
 }
 

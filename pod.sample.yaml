@@ -182,3 +182,29 @@ validation:
   commands:
     - go test ./...
     - go vet ./...
+
+# Sprint health monitoring.
+monitor:
+  # How often to check for stuck workers. Go duration string.
+  stuck_check_interval: 30s
+  # Consecutive no-progress checks before killing a worker.
+  max_stuck_cycles: 3
+  # How often to check for cross-worker file conflicts.
+  conflict_check_interval: 15s
+  # Max USD per task. 0 = disabled. Sprint budget uses orchestrator.cost_budget.
+  task_budget: 0
+
+# Post-completion quality checks run before review.
+quality:
+  enabled: true
+  # Flag tasks that modify more files than expected for their scope.
+  scope_check: true
+  # Run validation commands before/after to detect test regressions.
+  test_delta: true
+  # LLM check: does the diff actually implement the task? Costs tokens.
+  alignment_check: false
+
+# Stale worktree cleanup.
+cleanup:
+  # Remove worktrees older than this. Go duration string. 0 = never auto-clean.
+  ttl: 168h

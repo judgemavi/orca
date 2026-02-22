@@ -26,12 +26,14 @@ func (s *Server) handleGetReview(w http.ResponseWriter, r *http.Request, sprintI
 	}
 
 	type artifact struct {
-		TaskID     string   `json:"task_id"`
-		Title      string   `json:"title"`
-		Status     string   `json:"status"`
-		Diff       string   `json:"diff,omitempty"`
-		Files      []string `json:"files,omitempty"`
-		DurationMs int64    `json:"duration_ms"`
+		TaskID      string      `json:"task_id"`
+		Title       string      `json:"title"`
+		Status      string      `json:"status"`
+		Diff        string      `json:"diff,omitempty"`
+		Files       []string    `json:"files,omitempty"`
+		DurationMs  int64       `json:"duration_ms"`
+		QualityJSON string      `json:"quality_json,omitempty"`
+		Quality     interface{} `json:"quality"`
 	}
 
 	var artifacts []artifact
@@ -44,16 +46,27 @@ func (s *Server) handleGetReview(w http.ResponseWriter, r *http.Request, sprintI
 		a := artifact{TaskID: taskID, Title: t.Title, Status: t.Status}
 
 		var diff, stdout, stderr string
+		var qualityJSON sql.NullString
 		var exitCode int
 		var durationMs int64
 		artErr := s.db.QueryRow(
-			`SELECT diff, stdout, stderr, exit_code, duration_ms FROM artifacts WHERE task_id = ? AND sprint_id = ? ORDER BY rowid DESC LIMIT 1`,
+			`SELECT diff, stdout, stderr, exit_code, duration_ms, quality_json FROM artifacts WHERE task_id = ? AND sprint_id = ? ORDER BY rowid DESC LIMIT 1`,
 			taskID, sprintID,
-		).Scan(&diff, &stdout, &stderr, &exitCode, &durationMs)
+		).Scan(&diff, &stdout, &stderr, &exitCode, &durationMs, &qualityJSON)
 
 		if artErr == nil {
 			a.Diff = diff
 			a.DurationMs = durationMs
+			if qualityJSON.Valid {
+				raw := strings.TrimSpace(qualityJSON.String)
+				if raw != "" {
+					a.QualityJSON = raw
+					var parsed interface{}
+					if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+						a.Quality = parsed
+					}
+				}
+			}
 			for _, line := range strings.Split(diff, "\n") {
 				if strings.HasPrefix(line, "+++ b/") {
 					a.Files = append(a.Files, strings.TrimPrefix(line, "+++ b/"))
