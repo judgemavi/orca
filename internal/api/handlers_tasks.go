@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -260,11 +261,11 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 	}
 	s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
 
-	go func(taskID string) {
-		if err := s.executor.RunSingle(taskID); err != nil {
+	go func(ctx context.Context, taskID string) {
+		if err := s.executor.RunSingle(ctx, taskID); err != nil {
 			log.Printf("request changes rerun failed for task %s: %v", taskID, err)
 		}
-	}(resolved)
+	}(s.ctx, resolved)
 
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"status":  "running",

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -171,8 +172,12 @@ func (s *Store) Delete(id string) error {
 }
 
 func (s *Store) AddDependency(taskID, dependsOnID string) error {
-	_, err := s.db.Exec(`INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)`, taskID, dependsOnID)
+	deps, err := s.loadDeps(taskID)
 	if err != nil {
+		return err
+	}
+	deps = append(deps, dependsOnID)
+	if err := s.UpdateDependencies(taskID, deps); err != nil {
 		return fmt.Errorf("add dependency: %w", err)
 	}
 	return nil
@@ -182,6 +187,43 @@ func (s *Store) RemoveDependency(taskID, dependsOnID string) error {
 	_, err := s.db.Exec(`DELETE FROM task_deps WHERE task_id = ? AND depends_on = ?`, taskID, dependsOnID)
 	if err != nil {
 		return fmt.Errorf("remove dependency: %w", err)
+	}
+	return nil
+}
+
+// UpdateDependencies replaces all dependencies for taskID.
+// It rejects updates that introduce dependency cycles.
+func (s *Store) UpdateDependencies(taskID string, deps []string) error {
+	graph, err := s.loadDependencyGraph()
+	if err != nil {
+		return err
+	}
+
+	normalized := normalizeDeps(deps)
+	graph[taskID] = normalized
+
+	if cycle, ok := detectDependencyCycle(graph); ok {
+		return fmt.Errorf("circular dependency: %s", strings.Join(cycle, " -> "))
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("update dependencies begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM task_deps WHERE task_id = ?`, taskID); err != nil {
+		return fmt.Errorf("update dependencies delete existing: %w", err)
+	}
+
+	for _, dep := range normalized {
+		if _, err := tx.Exec(`INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)`, taskID, dep); err != nil {
+			return fmt.Errorf("update dependencies insert %s -> %s: %w", taskID, dep, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("update dependencies commit: %w", err)
 	}
 	return nil
 }
@@ -438,6 +480,126 @@ func (s *Store) loadDeps(taskID string) ([]string, error) {
 		deps = append(deps, dep)
 	}
 	return deps, nil
+}
+
+func (s *Store) loadDependencyGraph() (map[string][]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM tasks`)
+	if err != nil {
+		return nil, fmt.Errorf("load dependency graph tasks: %w", err)
+	}
+	defer rows.Close()
+
+	graph := make(map[string][]string)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan dependency graph task: %w", err)
+		}
+		graph[id] = nil
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dependency graph tasks: %w", err)
+	}
+
+	rows, err = s.db.Query(`SELECT task_id, depends_on FROM task_deps`)
+	if err != nil {
+		return nil, fmt.Errorf("load dependency graph edges: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var taskID, depID string
+		if err := rows.Scan(&taskID, &depID); err != nil {
+			return nil, fmt.Errorf("scan dependency graph edge: %w", err)
+		}
+		graph[taskID] = append(graph[taskID], depID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dependency graph edges: %w", err)
+	}
+
+	for id := range graph {
+		slices.Sort(graph[id])
+	}
+	return graph, nil
+}
+
+func normalizeDeps(deps []string) []string {
+	if len(deps) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(deps))
+	out := make([]string, 0, len(deps))
+	for _, dep := range deps {
+		if dep == "" {
+			continue
+		}
+		if _, ok := seen[dep]; ok {
+			continue
+		}
+		seen[dep] = struct{}{}
+		out = append(out, dep)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func detectDependencyCycle(graph map[string][]string) ([]string, bool) {
+	const (
+		stateUnvisited = 0
+		stateVisiting  = 1
+		stateDone      = 2
+	)
+
+	nodes := make([]string, 0, len(graph))
+	for id := range graph {
+		nodes = append(nodes, id)
+	}
+	slices.Sort(nodes)
+
+	state := make(map[string]int, len(graph))
+	stack := make([]string, 0, len(graph))
+	stackIndex := make(map[string]int, len(graph))
+
+	var visit func(string) ([]string, bool)
+	visit = func(node string) ([]string, bool) {
+		state[node] = stateVisiting
+		stackIndex[node] = len(stack)
+		stack = append(stack, node)
+
+		for _, dep := range graph[node] {
+			if _, ok := graph[dep]; !ok {
+				continue
+			}
+			switch state[dep] {
+			case stateUnvisited:
+				if cycle, ok := visit(dep); ok {
+					return cycle, true
+				}
+			case stateVisiting:
+				start := stackIndex[dep]
+				cycle := append([]string{}, stack[start:]...)
+				cycle = append(cycle, dep)
+				return cycle, true
+			}
+		}
+
+		stack = stack[:len(stack)-1]
+		delete(stackIndex, node)
+		state[node] = stateDone
+		return nil, false
+	}
+
+	for _, node := range nodes {
+		if state[node] != stateUnvisited {
+			continue
+		}
+		if cycle, ok := visit(node); ok {
+			return cycle, true
+		}
+	}
+	return nil, false
 }
 
 func deref(s *string) string {

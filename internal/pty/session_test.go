@@ -24,6 +24,9 @@ func TestManagerCreateWriteReadKill(t *testing.T) {
 		Tool:    "bash",
 	})
 	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "operation not permitted") {
+			t.Skipf("pty start not permitted in this environment: %v", err)
+		}
 		t.Fatalf("create session: %v", err)
 	}
 

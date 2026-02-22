@@ -3,11 +3,11 @@ package decompose
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/explore"
+	"github.com/jasjeetmavi/pod/internal/llm"
 	"github.com/jasjeetmavi/pod/internal/worker"
 	"github.com/jasjeetmavi/pod/prompts"
 )
@@ -54,28 +54,10 @@ func (d *Decomposer) Run(goal string) ([]ProposedTask, error) {
 		return nil, fmt.Errorf("decomposer exited %d: %s", result.ExitCode, result.Stderr)
 	}
 
-	// Unwrap Claude JSON envelope if present, then parse the task array.
-	output := worker.ExtractClaudeResult(result.Stdout)
+	// Extract tool output based on configured output mode, then parse the task array.
+	output := worker.ExtractOutput(d.toolCfg.Output, result.Stdout, d.repoDir)
 	var tasks []ProposedTask
-	if err := json.Unmarshal([]byte(output), &tasks); err != nil {
-		// Try to extract JSON array from surrounding text.
-		start := -1
-		depth := 0
-		for i, c := range output {
-			if c == '[' && start == -1 {
-				start = i
-				depth = 1
-			} else if c == '[' && start != -1 {
-				depth++
-			} else if c == ']' && start != -1 {
-				depth--
-				if depth == 0 {
-					if err2 := json.Unmarshal([]byte(output[start:i+1]), &tasks); err2 == nil {
-						return tasks, nil
-					}
-				}
-			}
-		}
+	if err := llm.ExtractJSON(output, &tasks); err != nil {
 		return nil, fmt.Errorf("parse tasks JSON: %w\nraw output:\n%s", err, output)
 	}
 	return tasks, nil

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/state"
 )
 
@@ -236,57 +237,117 @@ func TestProjectSummary(t *testing.T) {
 	}
 }
 
-func TestParseClaudeCost(t *testing.T) {
-	// Real Claude envelope with cache tokens.
-	in, out, cost, err := ParseClaudeCost(`{"type":"result","subtype":"success","result":"analysis","total_cost_usd":0.03254575,"usage":{"input_tokens":3,"cache_creation_input_tokens":2913,"cache_read_input_tokens":18751,"output_tokens":188}}`)
+func TestParseCostJSONField_ClaudeCompatible(t *testing.T) {
+	cfg := config.ToolCostConfig{
+		Mode:        "json_field",
+		CostField:   "total_cost_usd",
+		UsageInput:  "usage.input_tokens",
+		UsageOutput: "usage.output_tokens",
+	}
+
+	in, out, cost, err := ParseCost(cfg, `{"type":"result","subtype":"success","result":"analysis","total_cost_usd":0.03254575,"usage":{"input_tokens":3,"cache_creation_input_tokens":2913,"cache_read_input_tokens":18751,"output_tokens":188}}`)
 	if err != nil {
-		t.Fatalf("ParseClaudeCost(real envelope): %v", err)
+		t.Fatalf("ParseCost(json_field real envelope): %v", err)
 	}
 	wantIn := int64(3 + 2913 + 18751)
 	if in != wantIn || out != 188 || !floatEqual(cost, 0.03254575) {
 		t.Fatalf("real envelope parse = (%d,%d,%f), want (%d,188,0.03254575)", in, out, cost, wantIn)
 	}
 
-	// Simple case with only input/output tokens.
-	in, out, cost, err = ParseClaudeCost(`{"usage":{"input_tokens":12,"output_tokens":34},"total_cost_usd":0.56}`)
+	in, out, cost, err = ParseCost(cfg, `{"usage":{"input_tokens":12,"output_tokens":34},"total_cost_usd":0.56}`)
 	if err != nil {
-		t.Fatalf("ParseClaudeCost(simple): %v", err)
+		t.Fatalf("ParseCost(json_field simple): %v", err)
 	}
 	if in != 12 || out != 34 || !floatEqual(cost, 0.56) {
 		t.Fatalf("simple parse = (%d,%d,%.2f), want (12,34,0.56)", in, out, cost)
 	}
 
-	in, out, cost, err = ParseClaudeCost("{not-json")
+	in, out, cost, err = ParseCost(cfg, "{not-json")
 	if err != nil {
-		t.Fatalf("ParseClaudeCost(invalid json): %v", err)
+		t.Fatalf("ParseCost(json_field invalid json): %v", err)
 	}
 	if in != 0 || out != 0 || !floatEqual(cost, 0) {
 		t.Fatalf("invalid json parse = (%d,%d,%.2f), want zeros", in, out, cost)
 	}
 
-	in, out, cost, err = ParseClaudeCost(`{"usage":{},"total_cost_usd":0}`)
+	in, out, cost, err = ParseCost(cfg, `{"usage":{},"total_cost_usd":0}`)
 	if err != nil {
-		t.Fatalf("ParseClaudeCost(missing usage fields): %v", err)
+		t.Fatalf("ParseCost(json_field missing usage fields): %v", err)
 	}
 	if in != 0 || out != 0 || !floatEqual(cost, 0) {
 		t.Fatalf("missing usage parse = (%d,%d,%.2f), want zeros", in, out, cost)
 	}
+}
 
-	in, out, cost, err = ParseClaudeCost("")
-	if err != nil {
-		t.Fatalf("ParseClaudeCost(empty): %v", err)
+func TestParseCostRegex(t *testing.T) {
+	cfg := config.ToolCostConfig{
+		Mode:    "regex",
+		Pattern: `input=(\d+)\s+output=(\d+)\s+cost=([0-9.]+)`,
 	}
-	if in != 0 || out != 0 || !floatEqual(cost, 0) {
-		t.Fatalf("empty parse = (%d,%d,%.2f), want zeros", in, out, cost)
+
+	in, out, c, err := ParseCost(cfg, "input=123 output=45 cost=0.67")
+	if err != nil {
+		t.Fatalf("ParseCost(regex): %v", err)
+	}
+	if in != 123 || out != 45 || !floatEqual(c, 0.67) {
+		t.Fatalf("ParseCost(regex)=(%d,%d,%.2f), want (123,45,0.67)", in, out, c)
+	}
+
+	in, out, c, err = ParseCost(cfg, "no match")
+	if err != nil {
+		t.Fatalf("ParseCost(regex no match): %v", err)
+	}
+	if in != 0 || out != 0 || !floatEqual(c, 0) {
+		t.Fatalf("ParseCost(regex no match)=(%d,%d,%.2f), want zeros", in, out, c)
+	}
+
+	partialCfg := config.ToolCostConfig{
+		Mode:    "regex",
+		Pattern: `input=(\d+)`,
+	}
+	in, out, c, err = ParseCost(partialCfg, "input=9")
+	if err != nil {
+		t.Fatalf("ParseCost(regex partial): %v", err)
+	}
+	if in != 9 || out != 0 || !floatEqual(c, 0) {
+		t.Fatalf("ParseCost(regex partial)=(%d,%d,%.2f), want (9,0,0)", in, out, c)
 	}
 }
 
-func TestParseGenericCost(t *testing.T) {
-	in, out, cost, err := ParseGenericCost("anything")
-	if err != nil {
-		t.Fatalf("ParseGenericCost: %v", err)
+func TestParseCostRegex_NonNumericCaptureReturnsZero(t *testing.T) {
+	cfg := config.ToolCostConfig{
+		Mode:    "regex",
+		Pattern: `input=([^\s]+)\s+output=(\d+)\s+cost=([0-9.]+)`,
 	}
-	if in != 0 || out != 0 || !floatEqual(cost, 0) {
-		t.Fatalf("ParseGenericCost = (%d,%d,%.2f), want zeros", in, out, cost)
+	in, out, c, err := ParseCost(cfg, "input=abc output=9 cost=0.4")
+	if err != nil {
+		t.Fatalf("ParseCost(regex non-numeric): %v", err)
+	}
+	if in != 0 || out != 0 || !floatEqual(c, 0) {
+		t.Fatalf("ParseCost(regex non-numeric)=(%d,%d,%.2f), want zeros", in, out, c)
+	}
+}
+
+func TestParseCostNoneAndNegativeClamp(t *testing.T) {
+	in, out, c, err := ParseCost(config.ToolCostConfig{Mode: "none"}, "anything")
+	if err != nil {
+		t.Fatalf("ParseCost(none): %v", err)
+	}
+	if in != 0 || out != 0 || !floatEqual(c, 0) {
+		t.Fatalf("ParseCost(none)=(%d,%d,%.2f), want zeros", in, out, c)
+	}
+
+	cfg := config.ToolCostConfig{
+		Mode:        "json_field",
+		CostField:   "total_cost_usd",
+		UsageInput:  "usage.input_tokens",
+		UsageOutput: "usage.output_tokens",
+	}
+	in, out, c, err = ParseCost(cfg, `{"usage":{"input_tokens":10,"output_tokens":2},"total_cost_usd":-1.23}`)
+	if err != nil {
+		t.Fatalf("ParseCost(json_field negative): %v", err)
+	}
+	if in != 10 || out != 2 || !floatEqual(c, 0) {
+		t.Fatalf("ParseCost(json_field negative)=(%d,%d,%.2f), want (10,2,0)", in, out, c)
 	}
 }

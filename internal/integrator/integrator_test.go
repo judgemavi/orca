@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // setupRepo creates a temp git repo with an initial commit and an integration branch.
@@ -334,5 +335,65 @@ func TestMergeBatchDiffErrorSortsFirst(t *testing.T) {
 	}
 	if failed[0] != "missing" || failed[1] != "conflict2" {
 		t.Fatalf("failed order = %v, want [missing conflict2]", failed)
+	}
+}
+
+func TestAcquireFileLockLifecycle(t *testing.T) {
+	dir := setupRepo(t)
+	ig := New(dir, "pod/integration", nil)
+
+	unlock, err := ig.acquireFileLock()
+	if err != nil {
+		t.Fatalf("acquireFileLock: %v", err)
+	}
+
+	if _, err := os.Stat(ig.lockPath); err != nil {
+		t.Fatalf("lock file missing while held: %v", err)
+	}
+
+	unlock()
+
+	if _, err := os.Stat(ig.lockPath); !os.IsNotExist(err) {
+		t.Fatalf("lock file still exists after unlock: %v", err)
+	}
+}
+
+func TestMergeWaitsForFileLock(t *testing.T) {
+	dir := setupRepo(t)
+	createTaskBranch(t, dir, "lockwait", "lockwait.go", "package lockwait\n")
+
+	lockOwner := New(dir, "pod/integration", nil)
+	unlock, err := lockOwner.acquireFileLock()
+	if err != nil {
+		t.Fatalf("acquireFileLock: %v", err)
+	}
+	defer unlock()
+
+	ig := New(dir, "pod/integration", nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- ig.Merge("lockwait")
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("merge returned before lock release: %v", err)
+	case <-time.After(200 * time.Millisecond):
+		// Expected: merge is blocked on file lock.
+	}
+
+	unlock()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("merge after lock release: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("merge did not complete after lock release")
+	}
+
+	if _, err := os.Stat(ig.lockPath); !os.IsNotExist(err) {
+		t.Fatalf("lock file still exists after merge: %v", err)
 	}
 }

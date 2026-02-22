@@ -34,6 +34,14 @@ tools:
     mode: headless
     prompt_mode: arg
     timeout: 600s
+    output:
+      mode: json_envelope
+      result_field: result
+    cost:
+      mode: json_field
+      cost_field: total_cost_usd
+      usage_input: usage.input_tokens
+      usage_output: usage.output_tokens
 
   codex:
     binary: codex
@@ -58,6 +66,10 @@ tools:
     mode: headless
     prompt_mode: arg
     timeout: 600s
+    output:
+      mode: stdout
+    cost:
+      mode: none
 
 workers:
   max_parallel: 3

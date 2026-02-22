@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -95,6 +96,7 @@ func (m *Manager) Create(opts CreateOpts) (*Session, error) {
 	if opts.Dir != "" {
 		cmd.Dir = opts.Dir
 	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = mergeEnv(filteredEnv(), opts.Env)
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
@@ -150,31 +152,34 @@ func (m *Manager) List() []*Session {
 	return out
 }
 
-// Kill terminates a session via SIGTERM then SIGKILL after 5s if needed.
+// Kill terminates a session process group via SIGTERM then SIGKILL after 5s.
 func (m *Manager) Kill(id string) error {
 	s := m.Get(id)
 	if s == nil {
 		return fmt.Errorf("session %q not found", id)
 	}
 
-	if s.Cmd != nil && s.Cmd.Process != nil {
-		if err := s.Cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	if err := signalProcessGroup(s, syscall.SIGTERM); err != nil {
+		if errors.Is(err, syscall.EPERM) {
+			log.Printf("pty: permission denied sending SIGTERM to session %s (pid %d): %v", id, processID(s), err)
+		} else {
 			return fmt.Errorf("sigterm %q: %w", id, err)
 		}
 	}
 
-	go func(sess *Session) {
-		select {
-		case <-sess.exited:
-			return
-		case <-time.After(5 * time.Second):
-		}
-		if sess.Cmd != nil && sess.Cmd.Process != nil {
-			_ = sess.Cmd.Process.Kill()
-		}
-	}(s)
+	if waitForExit(s, 5*time.Second) {
+		return nil
+	}
 
-	m.finalizeSession(s)
+	if err := signalProcessGroup(s, syscall.SIGKILL); err != nil {
+		if errors.Is(err, syscall.EPERM) {
+			log.Printf("pty: permission denied sending SIGKILL to session %s (pid %d): %v", id, processID(s), err)
+		} else {
+			log.Printf("pty: failed sending SIGKILL to session %s (pid %d): %v", id, processID(s), err)
+		}
+	}
+
+	waitForExit(s, 5*time.Second)
 	return nil
 }
 
@@ -254,6 +259,41 @@ func (m *Manager) finalizeSession(s *Session) {
 			hook("session.exited", s)
 		}
 	})
+}
+
+func signalProcessGroup(s *Session, sig syscall.Signal) error {
+	if s == nil || s.Cmd == nil || s.Cmd.Process == nil {
+		return nil
+	}
+
+	// Negative PID targets the entire process group created by Setpgid.
+	err := syscall.Kill(-s.Cmd.Process.Pid, sig)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, syscall.ESRCH) || errors.Is(err, os.ErrProcessDone) {
+		return nil
+	}
+	return err
+}
+
+func waitForExit(s *Session, timeout time.Duration) bool {
+	if s == nil {
+		return true
+	}
+	select {
+	case <-s.exited:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+func processID(s *Session) int {
+	if s == nil || s.Cmd == nil || s.Cmd.Process == nil {
+		return 0
+	}
+	return s.Cmd.Process.Pid
 }
 
 func exitCodeFromWaitErr(err error) int {

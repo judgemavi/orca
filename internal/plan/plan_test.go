@@ -37,7 +37,10 @@ func TestBuildPlanPromptEmptyContext(t *testing.T) {
 
 func TestExtractPlanOutputFromClaudeEnvelope(t *testing.T) {
 	envelope := `{"type":"result","result":"### Approach\nImplement package\n\n### Steps\n1. Add code"}`
-	got := extractPlanOutput(envelope)
+	got := extractPlanOutput(envelope, config.ToolOutputConfig{
+		Mode:        "json_envelope",
+		ResultField: "result",
+	}, t.TempDir())
 	want := "### Approach\nImplement package\n\n### Steps\n1. Add code"
 	if got != want {
 		t.Fatalf("extractPlanOutput(envelope) = %q, want %q", got, want)
@@ -46,7 +49,7 @@ func TestExtractPlanOutputFromClaudeEnvelope(t *testing.T) {
 
 func TestExtractPlanOutputPlainMarkdown(t *testing.T) {
 	plain := "  ### Approach\nUse existing patterns\n"
-	got := extractPlanOutput(plain)
+	got := extractPlanOutput(plain, config.ToolOutputConfig{Mode: "stdout"}, t.TempDir())
 	want := "### Approach\nUse existing patterns"
 	if got != want {
 		t.Fatalf("extractPlanOutput(plain) = %q, want %q", got, want)

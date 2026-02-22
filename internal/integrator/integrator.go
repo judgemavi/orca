@@ -4,12 +4,15 @@ package integrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/worker"
@@ -26,6 +29,9 @@ type Integrator struct {
 	// For auto-rebase re-run support.
 	worktreeDir  string
 	toolResolver func(taskID string) (config.ToolConfig, error)
+
+	mu       sync.Mutex
+	lockPath string
 }
 
 // New creates an Integrator.
@@ -34,6 +40,7 @@ func New(repoDir, integrationBranch string, validationCmds []string) *Integrator
 		repoDir:           repoDir,
 		integrationBranch: integrationBranch,
 		validationCmds:    validationCmds,
+		lockPath:          filepath.Join(repoDir, ".pod", "integration.lock"),
 	}
 }
 
@@ -46,6 +53,12 @@ func (i *Integrator) SetRerunConfig(worktreeDir string, resolver func(string) (c
 // Merge merges the task branch into the integration branch using --no-ff.
 // On conflict it aborts the merge, attempts a rebase, and retries.
 func (i *Integrator) Merge(taskID string) error {
+	return i.withIntegrationLock(func() error {
+		return i.mergeUnlocked(taskID)
+	})
+}
+
+func (i *Integrator) mergeUnlocked(taskID string) error {
 	branch := "pod/task-" + taskID
 
 	if err := i.git("checkout", i.integrationBranch); err != nil {
@@ -103,8 +116,14 @@ func (i *Integrator) Merge(taskID string) error {
 // in the worktree leaving conflict markers in place, runs a tool to resolve them,
 // then continues the rebase and retries the merge.
 func (i *Integrator) MergeWithRerun(taskID string) error {
+	return i.withIntegrationLock(func() error {
+		return i.mergeWithRerunUnlocked(taskID)
+	})
+}
+
+func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 	// Try clean merge first.
-	if err := i.Merge(taskID); err == nil {
+	if err := i.mergeUnlocked(taskID); err == nil {
 		return nil
 	}
 
@@ -188,6 +207,49 @@ func (i *Integrator) MergeWithRerun(taskID string) error {
 	}
 
 	return nil
+}
+
+func (i *Integrator) withIntegrationLock(fn func() error) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	unlock, err := i.acquireFileLock()
+	if err != nil {
+		return fmt.Errorf("acquire integration lock: %w", err)
+	}
+	defer unlock()
+
+	return fn()
+}
+
+func (i *Integrator) acquireFileLock() (func(), error) {
+	lockPath := i.lockPath
+	if lockPath == "" {
+		lockPath = filepath.Join(i.repoDir, ".pod", "integration.lock")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+		return nil, err
+	}
+
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err == nil {
+			return func() {
+				_ = f.Close()
+				_ = os.Remove(lockPath)
+			}, nil
+		}
+
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timeout waiting for lock file %s", lockPath)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 // abortRebaseInWorktree safely aborts a rebase in progress inside a worktree.

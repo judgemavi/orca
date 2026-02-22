@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -760,7 +761,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			return nil, err
 		}
 
-		if err := s.executor.RunSingle(taskID); err != nil {
+		if err := s.executor.RunSingle(context.Background(), taskID); err != nil {
 			return nil, err
 		}
 		updated, err := s.store.Get(taskID)

@@ -396,6 +396,131 @@ func TestAddRemoveDependency(t *testing.T) {
 	}
 }
 
+func TestUpdateDependenciesCycleValidation(t *testing.T) {
+	t.Run("NoDeps", func(t *testing.T) {
+		store := NewStore(testutil.DB(t))
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		if err := store.UpdateDependencies(a.ID, nil); err != nil {
+			t.Fatalf("update deps: %v", err)
+		}
+	})
+
+	t.Run("LinearChain", func(t *testing.T) {
+		store := NewStore(testutil.DB(t))
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		b, err := store.Create("Task B", "", "", "")
+		if err != nil {
+			t.Fatalf("create B: %v", err)
+		}
+		c, err := store.Create("Task C", "", "", "")
+		if err != nil {
+			t.Fatalf("create C: %v", err)
+		}
+
+		if err := store.UpdateDependencies(a.ID, []string{b.ID}); err != nil {
+			t.Fatalf("set A deps: %v", err)
+		}
+		if err := store.UpdateDependencies(b.ID, []string{c.ID}); err != nil {
+			t.Fatalf("set B deps: %v", err)
+		}
+	})
+
+	t.Run("DirectCycle", func(t *testing.T) {
+		store := NewStore(testutil.DB(t))
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		b, err := store.Create("Task B", "", "", "")
+		if err != nil {
+			t.Fatalf("create B: %v", err)
+		}
+
+		if err := store.UpdateDependencies(a.ID, []string{b.ID}); err != nil {
+			t.Fatalf("set A deps: %v", err)
+		}
+		err = store.UpdateDependencies(b.ID, []string{a.ID})
+		if err == nil {
+			t.Fatal("expected circular dependency error")
+		}
+		if !contains(err.Error(), "circular dependency:") {
+			t.Fatalf("error = %q, want circular dependency", err)
+		}
+		if !contains(err.Error(), a.ID) || !contains(err.Error(), b.ID) {
+			t.Fatalf("error = %q, want cycle path with %s and %s", err, a.ID, b.ID)
+		}
+	})
+
+	t.Run("IndirectCycle", func(t *testing.T) {
+		store := NewStore(testutil.DB(t))
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		b, err := store.Create("Task B", "", "", "")
+		if err != nil {
+			t.Fatalf("create B: %v", err)
+		}
+		c, err := store.Create("Task C", "", "", "")
+		if err != nil {
+			t.Fatalf("create C: %v", err)
+		}
+
+		if err := store.UpdateDependencies(a.ID, []string{b.ID}); err != nil {
+			t.Fatalf("set A deps: %v", err)
+		}
+		if err := store.UpdateDependencies(b.ID, []string{c.ID}); err != nil {
+			t.Fatalf("set B deps: %v", err)
+		}
+		err = store.UpdateDependencies(c.ID, []string{a.ID})
+		if err == nil {
+			t.Fatal("expected circular dependency error")
+		}
+		if !contains(err.Error(), "circular dependency:") {
+			t.Fatalf("error = %q, want circular dependency", err)
+		}
+		if !contains(err.Error(), a.ID) || !contains(err.Error(), b.ID) || !contains(err.Error(), c.ID) {
+			t.Fatalf("error = %q, want cycle path with %s, %s, %s", err, a.ID, b.ID, c.ID)
+		}
+	})
+
+	t.Run("Diamond", func(t *testing.T) {
+		store := NewStore(testutil.DB(t))
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		b, err := store.Create("Task B", "", "", "")
+		if err != nil {
+			t.Fatalf("create B: %v", err)
+		}
+		c, err := store.Create("Task C", "", "", "")
+		if err != nil {
+			t.Fatalf("create C: %v", err)
+		}
+		d, err := store.Create("Task D", "", "", "")
+		if err != nil {
+			t.Fatalf("create D: %v", err)
+		}
+
+		if err := store.UpdateDependencies(a.ID, []string{b.ID, c.ID}); err != nil {
+			t.Fatalf("set A deps: %v", err)
+		}
+		if err := store.UpdateDependencies(b.ID, []string{d.ID}); err != nil {
+			t.Fatalf("set B deps: %v", err)
+		}
+		if err := store.UpdateDependencies(c.ID, []string{d.ID}); err != nil {
+			t.Fatalf("set C deps: %v", err)
+		}
+	})
+}
+
 func TestDelete(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 

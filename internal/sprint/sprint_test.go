@@ -94,6 +94,165 @@ func TestPlanNoReadyTasks(t *testing.T) {
 	}
 }
 
+func TestPlanDependencyCycleDetection(t *testing.T) {
+	t.Run("NoDeps", func(t *testing.T) {
+		db := testutil.DB(t)
+		store := task.NewStore(db)
+		planner := NewPlanner(db)
+
+		if _, err := store.Create("Task A", "", "", ""); err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+
+		if _, err := planner.Plan(10); err != nil {
+			t.Fatalf("plan: %v", err)
+		}
+	})
+
+	t.Run("LinearChain", func(t *testing.T) {
+		db := testutil.DB(t)
+		store := task.NewStore(db)
+		planner := NewPlanner(db)
+
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		b, err := store.Create("Task B", "", "", "")
+		if err != nil {
+			t.Fatalf("create B: %v", err)
+		}
+		c, err := store.Create("Task C", "", "", "")
+		if err != nil {
+			t.Fatalf("create C: %v", err)
+		}
+
+		if err := store.AddDependency(a.ID, b.ID); err != nil {
+			t.Fatalf("add A->B: %v", err)
+		}
+		if err := store.AddDependency(b.ID, c.ID); err != nil {
+			t.Fatalf("add B->C: %v", err)
+		}
+
+		if _, err := planner.Plan(10); err != nil {
+			t.Fatalf("plan: %v", err)
+		}
+	})
+
+	t.Run("DirectCycle", func(t *testing.T) {
+		db := testutil.DB(t)
+		store := task.NewStore(db)
+		planner := NewPlanner(db)
+
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		b, err := store.Create("Task B", "", "", "")
+		if err != nil {
+			t.Fatalf("create B: %v", err)
+		}
+
+		if _, err := db.Exec(`INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)`, a.ID, b.ID); err != nil {
+			t.Fatalf("insert A->B: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)`, b.ID, a.ID); err != nil {
+			t.Fatalf("insert B->A: %v", err)
+		}
+
+		_, err = planner.Plan(10)
+		if err == nil {
+			t.Fatal("expected circular dependency error")
+		}
+		if !strings.Contains(err.Error(), "circular dependency:") {
+			t.Fatalf("error = %q, want circular dependency", err)
+		}
+		if !strings.Contains(err.Error(), a.ID) || !strings.Contains(err.Error(), b.ID) {
+			t.Fatalf("error = %q, want cycle path with %s and %s", err, a.ID, b.ID)
+		}
+	})
+
+	t.Run("IndirectCycle", func(t *testing.T) {
+		db := testutil.DB(t)
+		store := task.NewStore(db)
+		planner := NewPlanner(db)
+
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		b, err := store.Create("Task B", "", "", "")
+		if err != nil {
+			t.Fatalf("create B: %v", err)
+		}
+		c, err := store.Create("Task C", "", "", "")
+		if err != nil {
+			t.Fatalf("create C: %v", err)
+		}
+
+		if _, err := db.Exec(`INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)`, a.ID, b.ID); err != nil {
+			t.Fatalf("insert A->B: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)`, b.ID, c.ID); err != nil {
+			t.Fatalf("insert B->C: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)`, c.ID, a.ID); err != nil {
+			t.Fatalf("insert C->A: %v", err)
+		}
+
+		_, err = planner.Plan(10)
+		if err == nil {
+			t.Fatal("expected circular dependency error")
+		}
+		if !strings.Contains(err.Error(), "circular dependency:") {
+			t.Fatalf("error = %q, want circular dependency", err)
+		}
+		if !strings.Contains(err.Error(), a.ID) || !strings.Contains(err.Error(), b.ID) || !strings.Contains(err.Error(), c.ID) {
+			t.Fatalf("error = %q, want cycle path with %s, %s, %s", err, a.ID, b.ID, c.ID)
+		}
+	})
+
+	t.Run("Diamond", func(t *testing.T) {
+		db := testutil.DB(t)
+		store := task.NewStore(db)
+		planner := NewPlanner(db)
+
+		a, err := store.Create("Task A", "", "", "")
+		if err != nil {
+			t.Fatalf("create A: %v", err)
+		}
+		b, err := store.Create("Task B", "", "", "")
+		if err != nil {
+			t.Fatalf("create B: %v", err)
+		}
+		c, err := store.Create("Task C", "", "", "")
+		if err != nil {
+			t.Fatalf("create C: %v", err)
+		}
+		d, err := store.Create("Task D", "", "", "")
+		if err != nil {
+			t.Fatalf("create D: %v", err)
+		}
+
+		if err := store.AddDependency(a.ID, b.ID); err != nil {
+			t.Fatalf("add A->B: %v", err)
+		}
+		if err := store.AddDependency(a.ID, c.ID); err != nil {
+			t.Fatalf("add A->C: %v", err)
+		}
+		if err := store.AddDependency(b.ID, d.ID); err != nil {
+			t.Fatalf("add B->D: %v", err)
+		}
+		if err := store.AddDependency(c.ID, d.ID); err != nil {
+			t.Fatalf("add C->D: %v", err)
+		}
+
+		if _, err := planner.Plan(10); err != nil {
+			t.Fatalf("plan: %v", err)
+		}
+	})
+}
+
 func TestCompleteTaskDoesNotCompleteSprint(t *testing.T) {
 	db := testutil.DB(t)
 	store := task.NewStore(db)

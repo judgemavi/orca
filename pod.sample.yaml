@@ -91,6 +91,29 @@ tools:
     # "stdin": prompt is written to stdin/PTY after launch.
     prompt_mode: arg
 
+    # Tool output extraction settings.
+    output:
+      # Output mode:
+      # - stdout: use raw stdout as result text
+      # - json_envelope: parse stdout as JSON and extract result_field
+      # - file: read result from result_path (supports {{worktree}})
+      # - regex: extract result from stdout via capture group
+      mode: json_envelope
+      # Dot-path in JSON stdout used when mode=json_envelope.
+      result_field: result
+
+    # Tool cost extraction settings.
+    cost:
+      # Cost mode:
+      # - none: no cost parsing
+      # - json_field: parse JSON stdout fields
+      # - regex: parse stdout with capture groups
+      mode: json_field
+      # Dot-path fields in JSON stdout when mode=json_field.
+      cost_field: total_cost_usd
+      usage_input: usage.input_tokens
+      usage_output: usage.output_tokens
+
   # Full Codex example with different argument pattern.
   codex:
     binary: codex
@@ -119,6 +142,10 @@ tools:
     timeout: 600s
     mode: headless
     prompt_mode: arg
+    output:
+      mode: stdout
+    cost:
+      mode: none
 
   # Minimal third-tool example (no session support).
   aider:
@@ -135,6 +162,32 @@ tools:
     timeout: 600s
     mode: headless
     prompt_mode: arg
+    output:
+      # Regex mode: first capture group is extracted as result text.
+      mode: regex
+      pattern: '(?s)FINAL:\s*(.+)$'
+    cost:
+      # Regex mode capture groups: input_tokens, output_tokens, cost.
+      mode: regex
+      pattern: 'input_tokens=(\d+)\s+output_tokens=(\d+)\s+cost_usd=([0-9.]+)'
+
+  # Custom file-output tool example.
+  markdown_writer:
+    binary: custom-tool
+    model: custom-model
+    headless_args:
+      - "--prompt"
+      - "{{prompt}}"
+      - "--out"
+      - "{{worktree}}/.pod/result.md"
+    timeout: 300s
+    mode: headless
+    prompt_mode: arg
+    output:
+      mode: file
+      result_path: "{{worktree}}/.pod/result.md"
+    cost:
+      mode: none
 
 # Orchestrator-level behavior.
 orchestrator:

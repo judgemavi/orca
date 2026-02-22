@@ -51,7 +51,7 @@ func (g *Generator) generate(title, description, model string) (string, error) {
 		return "", fmt.Errorf("planner exited %d: %s", result.ExitCode, result.Stderr)
 	}
 
-	return extractPlanOutput(result.Stdout), nil
+	return extractPlanOutput(result.Stdout, toolCfg.Output, g.repoDir), nil
 }
 
 func buildPlanPrompt(codebaseContext, title, description string) string {
@@ -62,8 +62,8 @@ func buildPlanPrompt(codebaseContext, title, description string) string {
 	return fmt.Sprintf(prompts.Plan, contextSection, title, description)
 }
 
-func extractPlanOutput(stdout string) string {
-	return strings.TrimSpace(worker.ExtractClaudeResult(stdout))
+func extractPlanOutput(stdout string, outputCfg config.ToolOutputConfig, worktreePath string) string {
+	return strings.TrimSpace(worker.ExtractOutput(outputCfg, stdout, worktreePath))
 }
 
 func applyModelOverride(toolCfg config.ToolConfig, model string) config.ToolConfig {

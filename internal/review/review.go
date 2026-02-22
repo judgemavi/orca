@@ -3,10 +3,10 @@ package review
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/pod/internal/llm"
 	"github.com/jasjeetmavi/pod/internal/worker"
 	"github.com/jasjeetmavi/pod/prompts"
 )
@@ -64,30 +64,7 @@ func (r *Reviewer) Review(taskID, title, description, diff string) (*ReviewResul
 
 	var resp reviewResponse
 	output := result.Stdout
-	if err := json.Unmarshal([]byte(output), &resp); err != nil {
-		// Try to extract JSON object from surrounding text.
-		start := -1
-		depth := 0
-		for i, c := range output {
-			if c == '{' && start == -1 {
-				start = i
-				depth = 1
-			} else if c == '{' && start != -1 {
-				depth++
-			} else if c == '}' && start != -1 {
-				depth--
-				if depth == 0 {
-					if err2 := json.Unmarshal([]byte(output[start:i+1]), &resp); err2 == nil {
-						return &ReviewResult{
-							TaskID:   taskID,
-							Approved: resp.Approved,
-							Feedback: resp.Feedback,
-							Tool:     r.toolCfg.Binary,
-						}, nil
-					}
-				}
-			}
-		}
+	if err := llm.ExtractJSON(output, &resp); err != nil {
 		return nil, fmt.Errorf("parse review JSON: %w\nraw output:\n%s", err, output)
 	}
 

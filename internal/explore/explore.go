@@ -58,8 +58,8 @@ func (e *Explorer) Run() (string, error) {
 		return "", fmt.Errorf("explorer exited %d: %s", result.ExitCode, result.Stderr)
 	}
 
-	// Extract text from Claude JSON envelope if present.
-	content := worker.ExtractClaudeResult(result.Stdout)
+	// Extract text based on the tool's configured output mode.
+	content := worker.ExtractOutput(e.toolCfg.Output, result.Stdout, e.repoDir)
 
 	outPath := filepath.Join(e.repoDir, contextFile)
 	if err := os.WriteFile(outPath, []byte(content), 0644); err != nil {

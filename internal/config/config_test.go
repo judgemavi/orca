@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -60,9 +61,13 @@ func assertConfigEquivalent(t *testing.T, got, want *Config) {
 			gotTool.Timeout != wantTool.Timeout ||
 			gotTool.Mode != wantTool.Mode ||
 			gotTool.PromptMode != wantTool.PromptMode ||
+			gotTool.Output != wantTool.Output ||
+			gotTool.Cost != wantTool.Cost ||
 			!reflect.DeepEqual(normalizeSlice(gotTool.Models), normalizeSlice(wantTool.Models)) ||
 			!reflect.DeepEqual(normalizeSlice(gotTool.InteractiveArgs), normalizeSlice(wantTool.InteractiveArgs)) ||
-			!reflect.DeepEqual(normalizeSlice(gotTool.HeadlessArgs), normalizeSlice(wantTool.HeadlessArgs)) {
+			!reflect.DeepEqual(normalizeSlice(gotTool.HeadlessArgs), normalizeSlice(wantTool.HeadlessArgs)) ||
+			!reflect.DeepEqual(normalizeSlice(gotTool.ResumeArgs), normalizeSlice(wantTool.ResumeArgs)) ||
+			gotTool.SessionIDPattern != wantTool.SessionIDPattern {
 			t.Fatalf("tool %q mismatch: got=%+v want=%+v", name, gotTool, wantTool)
 		}
 	}
@@ -93,6 +98,15 @@ func TestDefault(t *testing.T) {
 	if !reflect.DeepEqual(claude.Models, wantClaudeModels) {
 		t.Fatalf("claude models = %v, want %v", claude.Models, wantClaudeModels)
 	}
+	if claude.Output.Mode != "json_envelope" || claude.Output.ResultField != "result" {
+		t.Fatalf("claude output config mismatch: %+v", claude.Output)
+	}
+	if claude.Cost.Mode != "json_field" ||
+		claude.Cost.CostField != "total_cost_usd" ||
+		claude.Cost.UsageInput != "usage.input_tokens" ||
+		claude.Cost.UsageOutput != "usage.output_tokens" {
+		t.Fatalf("claude cost config mismatch: %+v", claude.Cost)
+	}
 
 	codex, ok := cfg.Tools["codex"]
 	if !ok {
@@ -101,6 +115,12 @@ func TestDefault(t *testing.T) {
 	wantCodexModels := []string{"gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5-codex", "gpt-5-codex-mini"}
 	if !reflect.DeepEqual(codex.Models, wantCodexModels) {
 		t.Fatalf("codex models = %v, want %v", codex.Models, wantCodexModels)
+	}
+	if codex.Output.Mode != "stdout" {
+		t.Fatalf("codex output.mode = %q, want stdout", codex.Output.Mode)
+	}
+	if codex.Cost.Mode != "none" {
+		t.Fatalf("codex cost.mode = %q, want none", codex.Cost.Mode)
 	}
 
 	if _, ok := cfg.Tools["aider"]; ok {
@@ -170,6 +190,103 @@ func TestLoadInvalid(t *testing.T) {
 	}
 	if _, err := Load(badPath); err == nil {
 		t.Fatal("expected parse error for invalid yaml")
+	}
+}
+
+func TestConfigValidate(t *testing.T) {
+	newDefault := func(t *testing.T) Config {
+		t.Helper()
+		cfg, err := Default()
+		if err != nil {
+			t.Fatalf("Default: %v", err)
+		}
+		return cfg
+	}
+
+	t.Run("valid config passes", func(t *testing.T) {
+		cfg := newDefault(t)
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+	})
+
+	t.Run("max parallel zero fails", func(t *testing.T) {
+		cfg := newDefault(t)
+		cfg.Workers.MaxParallel = 0
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("expected validation error")
+		}
+		if !strings.Contains(err.Error(), "workers.max_parallel") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("invalid timeout fails", func(t *testing.T) {
+		cfg := newDefault(t)
+		tool := cfg.Defaults.Tool
+		if tool == "" {
+			tool = "claude"
+		}
+		toolCfg := cfg.Tools[tool]
+		toolCfg.Timeout = "definitely-not-duration"
+		cfg.Tools[tool] = toolCfg
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("expected validation error")
+		}
+		if !strings.Contains(err.Error(), "timeout") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("negative budget fails", func(t *testing.T) {
+		cfg := newDefault(t)
+		cfg.Orchestrator.CostBudget = -1
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("expected validation error")
+		}
+		if !strings.Contains(err.Error(), "orchestrator.cost_budget") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("unknown supervisor tool fails", func(t *testing.T) {
+		cfg := newDefault(t)
+		cfg.Orchestrator.SupervisorTool = "missing-tool"
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("expected validation error")
+		}
+		if !strings.Contains(err.Error(), "orchestrator.supervisor_tool") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestLoadRunsValidation(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	cfg.Workers.MaxParallel = 0
+
+	path := filepath.Join(t.TempDir(), "pod.yaml")
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	_, err = Load(path)
+	if err == nil {
+		t.Fatal("expected validation error from Load")
+	}
+	if !strings.Contains(err.Error(), "validate config") || !strings.Contains(err.Error(), "workers.max_parallel") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -430,6 +547,12 @@ orchestrator:
 	if toolCfg.Model != "alpha-model" {
 		t.Fatalf("model=%q, want alpha-model", toolCfg.Model)
 	}
+	if toolCfg.Output.Mode != "stdout" {
+		t.Fatalf("legacy tool output.mode=%q, want stdout", toolCfg.Output.Mode)
+	}
+	if toolCfg.Cost.Mode != "none" {
+		t.Fatalf("legacy tool cost.mode=%q, want none", toolCfg.Cost.Mode)
+	}
 }
 
 func TestDefaultsYAML_NewFields(t *testing.T) {
@@ -474,6 +597,12 @@ tools:
     timeout: 30m
     mode: headless
     prompt_mode: arg
+    output:
+      mode: file
+      result_path: "{{worktree}}/.pod/result.md"
+    cost:
+      mode: regex
+      pattern: 'input=(\d+)\s+output=(\d+)\s+cost=([0-9.]+)'
 validation:
   commands: []
 workers:
@@ -512,6 +641,13 @@ cleanup:
 	}
 	if cfg.Cleanup.TTL != "24h" {
 		t.Fatalf("cleanup.ttl = %q, want 24h", cfg.Cleanup.TTL)
+	}
+	tool := cfg.Tools["codex"]
+	if tool.Output.Mode != "file" || tool.Output.ResultPath != "{{worktree}}/.pod/result.md" {
+		t.Fatalf("output parse mismatch: %+v", tool.Output)
+	}
+	if tool.Cost.Mode != "regex" || tool.Cost.Pattern != `input=(\d+)\s+output=(\d+)\s+cost=([0-9.]+)` {
+		t.Fatalf("cost parse mismatch: %+v", tool.Cost)
 	}
 }
 
@@ -560,6 +696,12 @@ orchestrator:
 	if cfg.Cleanup.TTL != "168h" {
 		t.Fatalf("cleanup default not applied: got %q want 168h", cfg.Cleanup.TTL)
 	}
+	if cfg.Tools["codex"].Output.Mode != "stdout" {
+		t.Fatalf("tool output default not applied: %+v", cfg.Tools["codex"].Output)
+	}
+	if cfg.Tools["codex"].Cost.Mode != "none" {
+		t.Fatalf("tool cost default not applied: %+v", cfg.Tools["codex"].Cost)
+	}
 }
 
 func TestLoadWithAllNewFields(t *testing.T) {
@@ -576,6 +718,14 @@ tools:
     timeout: 30m
     mode: headless
     prompt_mode: arg
+    output:
+      mode: regex
+      pattern: '(?s)RESULT:\s*(.+)$'
+    cost:
+      mode: json_field
+      cost_field: billing.total_cost_usd
+      usage_input: usage.in_tokens
+      usage_output: usage.out_tokens
 validation:
   commands: []
 workers:
@@ -618,6 +768,51 @@ cleanup:
 	}
 	if cfg.Cleanup.TTL != "200h" {
 		t.Fatalf("cleanup.ttl = %q, want 200h", cfg.Cleanup.TTL)
+	}
+	tool := cfg.Tools["codex"]
+	if tool.Output.Mode != "regex" || tool.Output.Pattern != `(?s)RESULT:\s*(.+)$` {
+		t.Fatalf("tool output mismatch: %+v", tool.Output)
+	}
+	if tool.Cost.Mode != "json_field" ||
+		tool.Cost.CostField != "billing.total_cost_usd" ||
+		tool.Cost.UsageInput != "usage.in_tokens" ||
+		tool.Cost.UsageOutput != "usage.out_tokens" {
+		t.Fatalf("tool cost mismatch: %+v", tool.Cost)
+	}
+}
+
+func TestToolConfigDefaults_EmptyOutputCostBlocks(t *testing.T) {
+	data := []byte(`
+project:
+  integration_branch: main
+  worktree_dir: .worktrees
+tools:
+  custom:
+    binary: custom
+    timeout: 30s
+    mode: headless
+    prompt_mode: arg
+    output: {}
+    cost: {}
+workers:
+  max_parallel: 1
+validation:
+  commands: []
+orchestrator:
+  cost_budget: 0
+`)
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+
+	tool := cfg.Tools["custom"]
+	if tool.Output.Mode != "stdout" {
+		t.Fatalf("output.mode=%q, want stdout", tool.Output.Mode)
+	}
+	if tool.Cost.Mode != "none" {
+		t.Fatalf("cost.mode=%q, want none", tool.Cost.Mode)
 	}
 }
 

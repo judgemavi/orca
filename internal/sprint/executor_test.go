@@ -2,6 +2,7 @@ package sprint
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"os/exec"
 	"path/filepath"
@@ -553,7 +554,7 @@ func TestRunSingleUsesResumeArgsWhenSessionIDPresent(t *testing.T) {
 		t.Fatalf("update task session: %v", err)
 	}
 
-	if err := execu.RunSingle(tk.ID); err != nil {
+	if err := execu.RunSingle(context.Background(), tk.ID); err != nil {
 		t.Fatalf("run single: %v", err)
 	}
 

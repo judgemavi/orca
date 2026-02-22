@@ -2,7 +2,6 @@
 package cost
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -148,32 +147,4 @@ func (t *Tracker) ProjectSummary() ([]ToolSummary, error) {
 		summaries = append(summaries, s)
 	}
 	return summaries, nil
-}
-
-// claudeOutput represents the JSON structure from Claude's --output-format json.
-type claudeOutput struct {
-	Usage struct {
-		InputTokens              int64 `json:"input_tokens"`
-		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
-		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
-		OutputTokens             int64 `json:"output_tokens"`
-	} `json:"usage"`
-	TotalCostUSD float64 `json:"total_cost_usd"`
-}
-
-// ParseClaudeCost parses cost info from Claude's JSON output.
-// Returns zeros (not an error) if fields are missing or parse fails.
-func ParseClaudeCost(stdout string) (inputTokens, outputTokens int64, cost float64, err error) {
-	var out claudeOutput
-	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
-		return 0, 0, 0, nil
-	}
-	totalInput := out.Usage.InputTokens + out.Usage.CacheCreationInputTokens + out.Usage.CacheReadInputTokens
-	return totalInput, out.Usage.OutputTokens, out.TotalCostUSD, nil
-}
-
-// ParseGenericCost is a fallback for tools that don't report cost in stdout.
-// Always returns zeros.
-func ParseGenericCost(stdout string) (inputTokens, outputTokens int64, cost float64, err error) {
-	return 0, 0, 0, nil
 }

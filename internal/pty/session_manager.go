@@ -78,23 +78,12 @@ func (m *SessionManager) Create(opts CreateOpts) (*Session, error) {
 	return s, nil
 }
 
-// Kill terminates a PTY session and marks it exited in DB.
+// Kill terminates a PTY session.
 func (m *SessionManager) Kill(id string) error {
-	s := m.runtime.Get(id)
-	if s == nil {
+	if m.runtime.Get(id) == nil {
 		return fmt.Errorf("session %q not found", id)
 	}
-
-	if err := m.runtime.Kill(id); err != nil {
-		return err
-	}
-	if m.db != nil {
-		if err := m.db.MarkSessionExited(id, s.ExitCode); err != nil {
-			return fmt.Errorf("persist session exit %s: %w", id, err)
-		}
-	}
-
-	return nil
+	return m.runtime.Kill(id)
 }
 
 // Get returns the active runtime session by ID.
