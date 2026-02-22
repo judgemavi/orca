@@ -330,10 +330,9 @@ func (p *Planner) GetTask(id string) (*task.Task, error) {
 	return p.tasks.Get(id)
 }
 
-// CompleteTask marks a task as completed or failed, and auto-completes the sprint
-// if all tasks are done.
-func (p *Planner) CompleteTask(sprintID, taskID, status string) error {
-	if status != "completed" && status != "failed" {
+// CompleteTask marks a task as completed/review/failed.
+func (p *Planner) CompleteTask(_ string, taskID, status string) error {
+	if status != "completed" && status != "failed" && status != "review" {
 		return fmt.Errorf("invalid task completion status: %s", status)
 	}
 
@@ -343,29 +342,29 @@ func (p *Planner) CompleteTask(sprintID, taskID, status string) error {
 		return fmt.Errorf("update task: %w", err)
 	}
 	p.emit("task.updated", taskID)
+	return nil
+}
 
-	// Check if all tasks in this sprint are done.
+// CompleteSprintIfDone completes or fails a sprint when all tasks are terminal.
+func (p *Planner) CompleteSprintIfDone(sprintID string) error {
 	var remaining int
 	err := p.db.QueryRow(
-		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status NOT IN ('completed', 'failed')`,
+		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status NOT IN ('completed', 'merged', 'failed')`,
 		sprintID,
 	).Scan(&remaining)
 	if err != nil {
-		return fmt.Errorf("check remaining tasks: %w", err)
+		return fmt.Errorf("check remaining: %w", err)
 	}
-
 	if remaining > 0 {
 		return nil
 	}
 
-	// All done — check if any failed.
 	var failCount int
-	err = p.db.QueryRow(
+	if err := p.db.QueryRow(
 		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status = 'failed'`,
 		sprintID,
-	).Scan(&failCount)
-	if err != nil {
-		return fmt.Errorf("check failed tasks: %w", err)
+	).Scan(&failCount); err != nil {
+		return fmt.Errorf("check failed: %w", err)
 	}
 
 	if failCount > 0 {

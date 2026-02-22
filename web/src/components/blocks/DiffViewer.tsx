@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
 import { ActionButton } from '../common/ActionButton'
 
@@ -36,11 +36,49 @@ function parseDiff(raw: string): { oldValue: string; newValue: string } {
   return { oldValue: oldLines.join('\n'), newValue: newLines.join('\n') }
 }
 
+function splitDiffByFile(raw: string): Record<string, string> {
+  const sections: Array<{ file: string; lines: string[] }> = []
+  let currentFile = ''
+  let currentLines: string[] = []
+
+  const pushSection = () => {
+    if (currentLines.length === 0) return
+    sections.push({ file: currentFile, lines: currentLines })
+  }
+
+  for (const line of raw.replace(/\r\n/g, '\n').split('\n')) {
+    if (line.startsWith('diff --git ')) {
+      pushSection()
+      const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/)
+      currentFile = match?.[2] ?? ''
+      currentLines = [line]
+      continue
+    }
+    if (currentLines.length > 0) {
+      currentLines.push(line)
+    }
+  }
+
+  pushSection()
+  return sections.reduce<Record<string, string>>((acc, section) => {
+    if (section.file) acc[section.file] = section.lines.join('\n')
+    return acc
+  }, {})
+}
+
 export function DiffViewer({ data, onAction }: Props) {
   const [activeFile, setActiveFile] = useState(0)
-  const { oldValue, newValue } = parseDiff(data?.diff ?? '')
   const filesChanged = data?.files_changed ?? []
   const actions = data?.actions ?? []
+  const diffByFile = useMemo(() => splitDiffByFile(data?.diff ?? ''), [data?.diff])
+  const activeFileIndex = Math.min(activeFile, Math.max(filesChanged.length - 1, 0))
+  const selectedFile = filesChanged[activeFileIndex]
+  const selectedDiff = selectedFile ? (diffByFile[selectedFile] ?? data?.diff ?? '') : (data?.diff ?? '')
+  const { oldValue, newValue } = useMemo(() => parseDiff(selectedDiff), [selectedDiff])
+
+  useEffect(() => {
+    setActiveFile(0)
+  }, [data?.task_id, data?.diff])
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-900 p-4">
@@ -50,7 +88,7 @@ export function DiffViewer({ data, onAction }: Props) {
           {filesChanged.map((f, i) => (
             <button
               key={f}
-              className={`rounded px-2.5 py-1 font-mono text-xs ${i === activeFile ? 'bg-slate-800 font-semibold text-slate-100' : 'text-slate-400 hover:bg-slate-800'}`}
+              className={`rounded px-2.5 py-1 font-mono text-xs ${i === activeFileIndex ? 'bg-slate-800 font-semibold text-slate-100' : 'text-slate-400 hover:bg-slate-800'}`}
               onClick={() => setActiveFile(i)}
               type="button"
             >

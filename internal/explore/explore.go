@@ -9,19 +9,10 @@ import (
 
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/worker"
+	"github.com/jasjeetmavi/pod/prompts"
 )
 
 const contextFile = ".pod/context.md"
-
-const metaPrompt = `Analyze this codebase and produce a concise context document in markdown. Include:
-
-1. **Project overview** — what this project does, in 1-2 sentences
-2. **Directory structure** — top-level layout with brief descriptions
-3. **Key patterns** — architecture style, naming conventions, error handling patterns
-4. **Dependencies** — major external deps and what they're used for
-5. **Build/test** — how to build and test the project
-
-Keep it under 500 lines. Focus on what another developer (or AI agent) needs to know to contribute effectively.`
 
 // Explorer runs a tool headlessly to map a codebase.
 type Explorer struct {
@@ -48,7 +39,7 @@ func (e *Explorer) Run() (string, error) {
 		return "", fmt.Errorf("create adapter: %w", err)
 	}
 
-	prompt := metaPrompt
+	prompt := prompts.Explore
 	if e.goal != "" {
 		prompt += "\n\n## User Goal\n\n" + e.goal + "\n\nIncorporate this goal into your analysis - note what exists that supports it and what's missing."
 	}

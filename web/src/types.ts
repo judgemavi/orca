@@ -8,6 +8,7 @@ export interface Task {
     | 'pending'
     | 'in_sprint'
     | 'running'
+    | 'review'
     | 'completed'
     | 'merged'
     | 'failed'
@@ -15,9 +16,19 @@ export interface Task {
   sprint_id: string | null
   depends_on: string[]
   model: string | null
+  phase_config: PhaseConfigMap | null
   plan: string | null
   created_at: string
   updated_at: string
+}
+
+export interface TaskReview {
+  id: string
+  task_id: string
+  feedback: string
+  status: 'pending' | 'addressed'
+  created_at: string
+  addressed_at: string | null
 }
 
 export interface Sprint {
@@ -28,12 +39,23 @@ export interface Sprint {
   completed_at: string | null
 }
 
+export interface PhaseOverride {
+  tool?: string
+  model?: string
+}
+
+export interface PhaseConfigMap {
+  use_defaults: boolean
+  phases?: Record<string, PhaseOverride>
+}
+
 export interface Config {
   project: {
     name: string
     integration_branch: string
     worktree_dir: string
   }
+  defaults?: { tool?: string; model?: string }
   tools: Record<
     string,
     {
@@ -41,14 +63,15 @@ export interface Config {
       mode: string
       timeout: string
       model?: string
+      models?: string[]
     }
   >
   workers: { max_parallel: number }
-  autopilot: {
-    enabled: boolean
+  orchestrator: {
     cost_budget: number
-    max_sprints: number
-    pause_on_review: boolean
+    supervisor_tool?: string
+    supervisor_model?: string
+    phases?: Record<string, PhaseOverride>
   }
 }
 
@@ -122,12 +145,14 @@ export interface ProjectStatus {
   budget_remaining: number
 }
 
-export interface ChatMessage {
+export interface PTYSession {
   id: string
-  role: 'user' | 'assistant'
-  timestamp: string
-  content?: string
-  blocks?: Block[]
+  type: 'orchestrator' | 'worker'
+  tool: string
+  task_id: string
+  cols: number
+  rows: number
+  created_at: string
 }
 
 export type Block =
@@ -241,12 +266,4 @@ export interface WorkerOutputEvent {
   stream: 'stdout' | 'stderr'
   line: string
   ts: string
-}
-
-export interface LogEntry {
-  task_id: string
-  size_bytes: number
-  modified_at: string
-  task_title?: string
-  task_status?: Task['status']
 }

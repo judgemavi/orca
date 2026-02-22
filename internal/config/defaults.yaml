@@ -1,6 +1,6 @@
 project:
   integration_branch: pod/integration
-  worktree_dir: /tmp/pod/worktrees
+  worktree_dir: .pod/worktrees
 
 tools:
   claude:
@@ -17,6 +17,16 @@ tools:
     headless_args:
       - "-p"
       - "{{prompt}}"
+      - "--output-format"
+      - json
+      - "--permission-mode"
+      - bypassPermissions
+    session_id_pattern: '"session_id":\s*"([^"]+)"'
+    resume_args:
+      - "--resume"
+      - "{{session_id}}"
+      - "-p"
+      - "{{feedback}}"
       - "--output-format"
       - json
       - "--permission-mode"
@@ -38,6 +48,13 @@ tools:
       - exec
       - "{{prompt}}"
       - "--full-auto"
+    session_id_pattern: 'session id: ([a-f0-9-]+)'
+    resume_args:
+      - exec
+      - resume
+      - "{{session_id}}"
+      - "{{feedback}}"
+      - "--full-auto"
     mode: headless
     prompt_mode: arg
     timeout: 600s
@@ -45,9 +62,9 @@ tools:
 workers:
   max_parallel: 3
 
-autopilot:
-  enabled: false
+orchestrator:
   cost_budget: 0
-  escalate_after_retries: 2
-  max_sprints: 10
-  pause_on_review: true
+  supervisor_tool: claude
+
+defaults:
+  tool: claude

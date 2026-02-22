@@ -5,11 +5,10 @@ pod
 # Dependencies
 web/node_modules/
 
-# Pod state (local)
-.pod/state.db
-.pod/state.db-wal
-.pod/state.db-shm
-.pod/prompts/
+# Pod orchestrator
+.pod/worktrees/
+.pod/*.db-wal
+.pod/*.db-shm
 
 # Web build output
 web/dist/

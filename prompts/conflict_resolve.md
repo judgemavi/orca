@@ -1,0 +1,1 @@
+This file has git merge/rebase conflict markers (<<<<<<< HEAD, =======, >>>>>>>). Resolve ALL conflicts by choosing the correct code and removing ALL conflict markers. Do not leave any <<<<<<< or ======= or >>>>>>> markers in any file. After resolving, make sure the code compiles and works correctly.

@@ -1,29 +1,20 @@
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import type { Task, ModelInfo } from '../../types'
+import type { Task } from '../../types'
 import { BoardTaskCard } from './BoardTaskCard'
 
 interface Props {
   task: Task
-  tools: string[]
-  models: ModelInfo[]
-  loadingModels?: boolean
   onClick: () => void
   onRefresh: () => void
 }
 
-export function DraggableTaskCard({
-  task,
-  tools,
-  models,
-  loadingModels,
-  onClick,
-  onRefresh,
-}: Props) {
+export function DraggableTaskCard({ task, onClick, onRefresh }: Props) {
   const draggable =
     task.status !== 'completed' &&
     task.status !== 'merged' &&
-    task.status !== 'running'
+    task.status !== 'running' &&
+    task.status !== 'review'
 
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
@@ -48,9 +39,6 @@ export function DraggableTaskCard({
     >
       <BoardTaskCard
         task={task}
-        tools={tools}
-        models={models}
-        loadingModels={loadingModels}
         onClick={onClick}
         onRefresh={onRefresh}
         className={[

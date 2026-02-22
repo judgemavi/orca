@@ -15,6 +15,22 @@ export async function invalidateQueriesForWSEvent(
   queryClient: QueryClient,
   event: WSEvent,
 ) {
+  if (event.type === 'task.updated') {
+    const taskId = readString(event.data, 'id')
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      taskId
+        ? queryClient.invalidateQueries({ queryKey: ['task', taskId] })
+        : Promise.resolve(),
+    ])
+    return
+  }
+
+  if (event.type === 'task.deleted') {
+    await queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    return
+  }
+
   if (event.type.startsWith('task.')) {
     await queryClient.invalidateQueries({ queryKey: ['tasks'] })
     return
@@ -58,6 +74,11 @@ export async function invalidateQueriesForWSEvent(
     return
   }
 
+  if (event.type === 'session.created' || event.type === 'session.exited') {
+    await queryClient.invalidateQueries({ queryKey: ['sessions'] })
+    return
+  }
+
   if (
     event.type === 'decompose.started' ||
     event.type === 'decompose.completed' ||
@@ -72,8 +93,7 @@ export async function invalidateQueriesForWSEvent(
     event.type === 'cleanup.completed' ||
     event.type === 'cleanup.failed' ||
     event.type === 'explore.completed' ||
-    event.type === 'explore.failed' ||
-    event.type.startsWith('autopilot.')
+    event.type === 'explore.failed'
   ) {
     await queryClient.invalidateQueries({ queryKey: ['operations'] })
   }

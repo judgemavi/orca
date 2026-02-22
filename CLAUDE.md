@@ -7,7 +7,6 @@ Pre-implementation. Design phase complete (v0.3). Ready to build Phase 1.
 
 - `DESIGN.md` — Core design doc (v0.3). Architecture, scrum model, roles (tech lead/dev/reviewer/integrator), phases (explore/plan/sprint/review/integrate), worktree isolation, supervisor modes (manual/autopilot), worker execution model, CLI interface, TUI design, config format. This is the source of truth for what Pod is.
 - `RESEARCH.md` — Competitive landscape analysis. Deep-dive on AWS CLI Agent Orchestrator (CAO) internals, plus summaries of claude-octopus, myclaude, Claude Code Agent Teams, Task Master AI. Includes differentiation table and key learnings from CAO's codebase.
-- `BUILD_PLAN.md` — 3-phase build plan. Phase 1 (MVP): manual mode, headless workers, single tool, worktree mgmt. Phase 2: multi-tool, exploration, reviewer. Phase 3: LLM autopilot. Includes tech decisions table and day-1 priorities.
 - `DECISIONS.md` — Design decision log tracking what changed across v0.1 → v0.2 → v0.3 and why. Covers: file claims → worktrees, single-shot → multi-turn, generic workers → typed roles, continuous queue → scrum model.
 - `cli-agent-orchestrator/` — Cloned repo of AWS CAO (https://github.com/awslabs/cli-agent-orchestrator). Python/FastAPI/tmux-based multi-agent orchestrator. Kept as reference implementation. Key files: `src/cli_agent_orchestrator/providers/` (tool adapters), `mcp_server/server.py` (handoff/assign/send_message), `clients/tmux.py` (tmux session mgmt).
 

@@ -1,14 +1,14 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from 'react'
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTrigger,
+} from '@tiny-bits/react-dialog'
 import { api } from '../../api'
-import type { LogEntry, WSEvent, WorkerOutputEvent } from '../../types'
+import type { WSEvent, WorkerOutputEvent } from '../../types'
 import { ConsoleTab, type ConsoleLine } from './ConsoleTab'
-import { LogHistory } from './LogHistory'
+import { TerminalPane } from '../terminal/TerminalPane'
 
 type TabStatus = 'running' | 'done' | 'failed'
 
@@ -23,10 +23,8 @@ interface ConsoleTaskTab {
 
 interface Props {
   lastWSEvent: WSEvent | null
+  orchestratorId: string | null
 }
-
-const LS_EXPANDED = 'pod.console.expanded'
-const LS_HEIGHT = 'pod.console.heightPct'
 
 function parseStreamLine(raw: string): ConsoleLine {
   if (raw.startsWith('[stderr] ')) {
@@ -38,25 +36,52 @@ function parseStreamLine(raw: string): ConsoleLine {
   return { raw, stream: 'stdout' }
 }
 
-function clampSnap(percent: number): number {
-  if (percent < 40) return 30
-  if (percent < 60) return 50
-  return 70
+const DIALOG_CLS =
+  'fixed! inset-4! top-14! bottom-16! mx-auto! w-4/5 h-3/5 rounded-lg! border! border-slate-600! bg-slate-900! p-0! shadow-2xl! m-0!'
+
+function DialogChrome({
+  title,
+  children,
+}: {
+  title: string
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-slate-700 px-4">
+      <div className="flex gap-1.5">
+        <DialogClose
+          aria-label="Close"
+          className="group h-3 w-3 rounded-full bg-[#ff5f57] transition hover:brightness-110"
+        >
+          <svg
+            className="h-3 w-3 opacity-0 group-hover:opacity-100"
+            viewBox="0 0 12 12"
+            fill="none"
+          >
+            <path
+              d="M3 3l6 6M9 3l-6 6"
+              stroke="#820005"
+              strokeWidth="1.2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </DialogClose>
+      </div>
+      <span className="font-mono text-xs text-slate-300">{title}</span>
+      {children && (
+        <div className="ml-auto flex items-center gap-2">{children}</div>
+      )}
+    </div>
+  )
 }
 
-export function ConsolePanel({ lastWSEvent }: Props) {
-  const [expanded, setExpanded] = useState<boolean>(
-    () => localStorage.getItem(LS_EXPANDED) === '1',
-  )
-  const [heightPct, setHeightPct] = useState<number>(() => {
-    const raw = Number(localStorage.getItem(LS_HEIGHT) ?? '50')
-    if (!Number.isFinite(raw) || raw <= 0) return 50
-    return raw
-  })
+export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
   const [tabs, setTabs] = useState<ConsoleTaskTab[]>([])
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
+  const [liveSessions, setLiveSessions] = useState<Map<string, string>>(
+    new Map(),
+  )
   const [showTimestamps, setShowTimestamps] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
+  const hydratingRef = useRef<Set<string>>(new Set())
 
   const ensureTab = useCallback(
     (taskId: string, base?: Partial<ConsoleTaskTab>) => {
@@ -87,34 +112,7 @@ export function ConsolePanel({ lastWSEvent }: Props) {
     [],
   )
 
-  const hydrateTabs = useCallback(async () => {
-    if (!expanded) return
-    const current = tabs
-    await Promise.all(
-      current.map(async (tab) => {
-        if (tab.hydrated) return
-        try {
-          const lines = await api.getTaskLogs(tab.taskId, 2000)
-          updateTab(tab.taskId, (prev) => ({
-            ...prev,
-            lines: lines.map(parseStreamLine),
-            hydrated: true,
-          }))
-        } catch {
-          updateTab(tab.taskId, (prev) => ({ ...prev, hydrated: true }))
-        }
-      }),
-    )
-  }, [expanded, tabs, updateTab])
-
-  useEffect(() => {
-    localStorage.setItem(LS_EXPANDED, expanded ? '1' : '0')
-  }, [expanded])
-
-  useEffect(() => {
-    localStorage.setItem(LS_HEIGHT, String(heightPct))
-  }, [heightPct])
-
+  // Bootstrap: load running sprint tabs on mount
   useEffect(() => {
     Promise.all([
       api.listOperations({ type: 'sprint_start' }),
@@ -122,14 +120,11 @@ export function ConsolePanel({ lastWSEvent }: Props) {
       api.getActiveSprint().catch(() => null),
     ])
       .then(([opsRes, taskRes, active]) => {
-        const hasRunningSprintOp = (opsRes.operations ?? []).some(
+        const hasRunning = (opsRes.operations ?? []).some(
           (op) => op.status === 'running',
         )
-        if (!hasRunningSprintOp || !active) return
-
-        const tasks = taskRes.tasks ?? []
-        const taskMap = new Map((tasks ?? []).map((t) => [t.id, t]))
-
+        if (!hasRunning || !active) return
+        const taskMap = new Map((taskRes.tasks ?? []).map((t) => [t.id, t]))
         const nextTabs: ConsoleTaskTab[] = []
         for (const id of active.task_ids ?? []) {
           const task = taskMap.get(id)
@@ -152,24 +147,40 @@ export function ConsolePanel({ lastWSEvent }: Props) {
         if (nextTabs.length === 0) return
         setTabs((prev) => {
           const seen = new Set(prev.map((t) => t.taskId))
-          const merged = [...prev]
-          for (const tab of nextTabs) {
-            if (!seen.has(tab.taskId)) merged.push(tab)
-          }
-          return merged
+          return [...prev, ...nextTabs.filter((t) => !seen.has(t.taskId))]
         })
-        setActiveTaskId(
-          (prev) =>
-            prev ??
-            nextTabs.find((t) => t.status === 'running')?.taskId ??
-            nextTabs[0].taskId,
-        )
       })
       .catch(() => {})
   }, [])
 
+  // WS events
   useEffect(() => {
     if (!lastWSEvent) return
+
+    if (lastWSEvent.type === 'session.created') {
+      const sessionId = String(lastWSEvent.data.id ?? '')
+      const taskId = String(lastWSEvent.data.task_id ?? '')
+      if (taskId && sessionId) {
+        setLiveSessions((prev) => new Map(prev).set(taskId, sessionId))
+      }
+      return
+    }
+
+    if (lastWSEvent.type === 'session.exited') {
+      const sessionId = String(lastWSEvent.data.id ?? '')
+      if (!sessionId) return
+      setLiveSessions((prev) => {
+        const next = new Map(prev)
+        for (const [taskId, sid] of next) {
+          if (sid === sessionId) {
+            next.delete(taskId)
+            break
+          }
+        }
+        return next
+      })
+      return
+    }
 
     if (lastWSEvent.type === 'sprint.started') {
       Promise.all([api.getActiveSprint(), api.listTasks()])
@@ -183,7 +194,6 @@ export function ConsolePanel({ lastWSEvent }: Props) {
               tool: task?.assigned_tool ?? 'worker',
               status: 'running',
             })
-            setActiveTaskId(taskID)
           }
         })
         .catch(() => {})
@@ -199,23 +209,17 @@ export function ConsolePanel({ lastWSEvent }: Props) {
           data.stream === 'stderr' ? 'stderr' : 'stdout'
         const next = [
           ...tab.lines,
-          {
-            raw: data.line ?? '',
-            stream,
-            ts: data.ts,
-          },
+          { raw: data.line ?? '', stream, ts: data.ts },
         ]
         return {
           ...tab,
-          // Terminal states always win over late output lines.
           status:
             tab.status === 'failed' || tab.status === 'done'
               ? tab.status
               : 'running',
-          lines: next.length > 2000 ? next.slice(next.length - 2000) : next,
+          lines: next.length > 2000 ? next.slice(-2000) : next,
         }
       })
-      setActiveTaskId(data.task_id)
       return
     }
 
@@ -242,7 +246,6 @@ export function ConsolePanel({ lastWSEvent }: Props) {
       if (status === 'completed' || status === 'merged') nextStatus = 'done'
       if (status === 'running') nextStatus = 'running'
       if (!nextStatus) return
-
       ensureTab(taskID)
       updateTab(taskID, (tab) => ({
         ...tab,
@@ -269,176 +272,174 @@ export function ConsolePanel({ lastWSEvent }: Props) {
     }
   }, [ensureTab, lastWSEvent, updateTab])
 
-  useEffect(() => {
-    hydrateTabs()
-  }, [hydrateTabs])
+  const closeTab = useCallback((taskId: string) => {
+    hydratingRef.current.delete(taskId)
+    setTabs((prev) => prev.filter((t) => t.taskId !== taskId))
+    setLiveSessions((prev) => {
+      if (!prev.has(taskId)) return prev
+      const next = new Map(prev)
+      next.delete(taskId)
+      return next
+    })
+  }, [])
 
-  const activeCount = useMemo(
-    () => tabs.filter((t) => t.status === 'running').length,
-    [tabs],
+  const hydrateTab = useCallback(
+    (taskId: string) => {
+      if (hydratingRef.current.has(taskId)) return
+      setTabs((prev) => {
+        const tab = prev.find((t) => t.taskId === taskId)
+        if (!tab || tab.hydrated) return prev
+        hydratingRef.current.add(taskId)
+        api
+          .getTaskLogs(taskId, 2000)
+          .then((lines) =>
+            updateTab(taskId, (t) => ({
+              ...t,
+              lines: lines.map(parseStreamLine),
+              hydrated: true,
+            })),
+          )
+          .catch(() => updateTab(taskId, (t) => ({ ...t, hydrated: true })))
+        return prev.map((t) =>
+          t.taskId === taskId ? { ...t, hydrated: true } : t,
+        )
+      })
+    },
+    [updateTab],
   )
 
-  const startResize = (event: ReactMouseEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    const onMove = (ev: MouseEvent) => {
-      const pct = ((window.innerHeight - ev.clientY) / window.innerHeight) * 100
-      setHeightPct(Math.min(80, Math.max(20, pct)))
-    }
-    const onUp = () => {
-      setHeightPct((prev) => clampSnap(prev))
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
-
-  const openHistoricalLog = async (entry: LogEntry) => {
-    const taskId = entry.task_id
-    const status: TabStatus = entry.task_status === 'failed' ? 'failed' : 'done'
-
-    ensureTab(taskId, {
-      title: entry.task_title ?? `Task ${taskId.slice(0, 8)}`,
-      tool: 'history',
-      status,
-      hydrated: true,
-    })
-
-    try {
-      const lines = await api.getTaskLogs(taskId, 2000)
-      updateTab(taskId, (prev) => ({
-        ...prev,
-        title: entry.task_title ?? prev.title,
-        tool: 'history',
-        status,
-        lines: lines.map(parseStreamLine),
-        hydrated: true,
-      }))
-    } catch {
-      updateTab(taskId, (prev) => ({
-        ...prev,
-        title: entry.task_title ?? prev.title,
-        tool: 'history',
-        status,
-        hydrated: true,
-      }))
-    }
-
-    setActiveTaskId(taskId)
-    setShowHistory(false)
-  }
-
   return (
-    <section className="pointer-events-none fixed bottom-0 left-0 right-0 z-[18]">
-      <button
-        type="button"
-        className="pointer-events-auto mx-auto flex h-[34px] w-full items-center justify-between border-t border-slate-700 bg-slate-800 px-3.5 font-mono text-xs text-slate-200"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <span>Console</span>
-        <span className="inline-flex h-[18px] min-w-[22px] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[11px] text-white">
-          {activeCount}
-        </span>
-      </button>
-
-      {expanded && (
-        <div
-          className="pointer-events-auto flex flex-col border-t border-slate-700 bg-slate-900 shadow-[0_-8px_30px_rgba(0,0,0,0.35)]"
-          style={{ height: `${heightPct}vh` }}
-        >
-          <div
-            className="h-2.5 cursor-ns-resize border-b border-slate-700 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900"
-            onMouseDown={startResize}
-          />
-
-          <div className="flex items-center gap-1.5 overflow-x-auto border-b border-slate-700 p-2">
-            {tabs.map((tab) => (
-              <button
-                key={tab.taskId}
-                type="button"
-                className={`inline-flex min-w-[140px] items-center gap-2 rounded-md border px-2.5 py-1.5 ${activeTaskId === tab.taskId ? 'border-slate-500 bg-slate-700' : 'border-slate-600 bg-slate-800'} text-slate-200 max-[760px]:min-w-[100px]`}
-                onClick={() => {
-                  setShowHistory(false)
-                  setActiveTaskId(tab.taskId)
-                }}
-              >
+    <div className="fixed bottom-0 left-0 right-0 z-18 flex h-10.5 items-center gap-1 border-t border-slate-700 bg-slate-900 px-2.5">
+      {/* Worker task tabs — each with its own independent Dialog instance */}
+      {tabs.map((tab) => {
+        const sessionId = liveSessions.get(tab.taskId)
+        return (
+          <Dialog key={tab.taskId} modal>
+            <DialogTrigger
+              className="inline-flex max-w-55 items-center gap-1.5 rounded px-2.5 py-1 text-xs text-slate-200 transition hover:bg-slate-800"
+              onClick={() => hydrateTab(tab.taskId)}
+            >
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  tab.status === 'running'
+                    ? 'animate-pulse bg-emerald-500'
+                    : tab.status === 'failed'
+                      ? 'bg-rose-400'
+                      : 'bg-slate-500'
+                }`}
+              />
+              <span className="font-mono text-[11px] text-slate-400">
+                {tab.tool}
+              </span>
+              <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                {tab.title}
+              </span>
+              {tab.status !== 'running' && (
                 <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${tab.status === 'running' ? 'bg-emerald-500' : tab.status === 'failed' ? 'bg-rose-400' : 'bg-slate-400'}`}
-                />
-                <span className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap max-[760px]:max-w-[120px]">
-                  {tab.title}
+                  role="button"
+                  tabIndex={0}
+                  className="ml-0.5 shrink-0 text-slate-500 hover:text-slate-200"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeTab(tab.taskId)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return
+                    e.preventDefault()
+                    closeTab(tab.taskId)
+                  }}
+                >
+                  ×
                 </span>
-                <span className="text-[11px] text-slate-400">{tab.tool}</span>
-                {tab.status !== 'running' && (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="ml-0.5 text-slate-300"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setTabs((prev) =>
-                        prev.filter((t) => t.taskId !== tab.taskId),
-                      )
-                      setActiveTaskId((prev) =>
-                        prev === tab.taskId ? null : prev,
-                      )
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter' && e.key !== ' ') return
-                      e.preventDefault()
-                      setTabs((prev) =>
-                        prev.filter((t) => t.taskId !== tab.taskId),
-                      )
-                      setActiveTaskId((prev) =>
-                        prev === tab.taskId ? null : prev,
-                      )
-                    }}
-                  >
-                    ×
-                  </span>
-                )}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="rounded border border-slate-500 bg-transparent px-2 py-1 text-[11px] text-slate-200"
-              onClick={() => setShowHistory((v) => !v)}
-            >
-              {showHistory ? 'Hide history' : 'History'}
-            </button>
-            <button
-              type="button"
-              className="rounded border border-slate-500 bg-transparent px-2 py-1 text-[11px] text-slate-200"
-              onClick={() => setShowTimestamps((v) => !v)}
-            >
-              {showTimestamps ? 'Hide time' : 'Show time'}
-            </button>
-          </div>
+              )}
+            </DialogTrigger>
 
-          <div className="relative min-h-0 flex-1">
-            {showHistory ? (
-              <LogHistory onOpenLog={openHistoricalLog} />
-            ) : (
-              tabs.map((tab) => (
-                <ConsoleTab
-                  key={tab.taskId}
-                  taskId={tab.taskId}
-                  lines={tab.lines}
-                  isActive={
-                    activeTaskId === tab.taskId ||
-                    (!activeTaskId && tabs[0]?.taskId === tab.taskId)
-                  }
-                  status={tab.status}
-                  showTimestamps={showTimestamps}
-                  onClear={() =>
-                    updateTab(tab.taskId, (prev) => ({ ...prev, lines: [] }))
-                  }
-                />
-              ))
-            )}
+            <DialogContent className={DIALOG_CLS}>
+              <div className="flex h-full flex-col overflow-hidden">
+                <DialogChrome title={`${tab.tool} • ${tab.title}`}>
+                  <button
+                    type="button"
+                    className="rounded border border-slate-600 px-2 py-0.5 text-[11px] text-slate-400 hover:text-slate-200"
+                    onClick={() => setShowTimestamps((v) => !v)}
+                  >
+                    {showTimestamps ? 'Hide time' : 'Time'}
+                  </button>
+                  {tab.status !== 'running' && (
+                    <DialogClose
+                      className="rounded border border-slate-600 px-2 py-0.5 text-[11px] text-slate-400 hover:text-rose-400"
+                      onClick={() => closeTab(tab.taskId)}
+                    >
+                      Close tab
+                    </DialogClose>
+                  )}
+                </DialogChrome>
+                <div className="min-h-0 flex-1">
+                  {sessionId ? (
+                    <TerminalPane sessionId={sessionId} className="h-full" />
+                  ) : (
+                    <ConsoleTab
+                      taskId={tab.taskId}
+                      lines={tab.lines}
+                      isActive
+                      status={tab.status}
+                      showTimestamps={showTimestamps}
+                      onClear={() =>
+                        updateTab(tab.taskId, (prev) => ({
+                          ...prev,
+                          lines: [],
+                        }))
+                      }
+                    />
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )
+      })}
+
+      <div className="flex-1" />
+
+      {/* Orchestrator — permanent right tab */}
+      <Dialog modal>
+        <DialogTrigger className="inline-flex items-center gap-1.5 rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-indigo-500">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="2" y="3" width="12" height="10" rx="2" />
+            <path d="M5 14h6" />
+          </svg>
+          Orchestrator
+        </DialogTrigger>
+        <DialogContent className={DIALOG_CLS}>
+          <div className="flex h-full flex-col overflow-hidden">
+            <DialogChrome title="Orchestrator" />
+            <div className="min-h-0 flex-1">
+              {orchestratorId ? (
+                <TerminalPane sessionId={orchestratorId} className="h-full" />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-500">
+                  <span>No orchestrator session</span>
+                  <button
+                    type="button"
+                    className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
+                    onClick={() => api.startOrchestrator().catch(() => {})}
+                  >
+                    Start Session
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </section>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }

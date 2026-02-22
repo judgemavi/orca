@@ -1,0 +1,184 @@
+# Sample pod configuration.
+#
+# Tool/model resolution chain used by orchestrated phases (explore, plan, sprint, review, integrate):
+# 1) orchestrator.phases.<phase>.tool/model
+# 2) defaults.tool/model
+# 3) tool fallback only: first tool key in alphabetical order
+#
+# If model is still empty after (1) and (2), pod uses the selected tool's own 'model' value.
+
+# Project-level settings.
+project:
+  # Optional human-readable project name shown in some UIs/logs.
+  # Default when omitted: empty string.
+  name: my-project
+
+  # Branch where integrated changes are merged.
+  # Default when omitted from the embedded defaults: "pod/integration".
+  integration_branch: pod/integration
+
+  # Base directory for task worktrees.
+  # Relative paths are resolved against the repo root when loaded from .pod/pod.yaml.
+  # Default when omitted from the embedded defaults: ".pod/worktrees".
+  worktree_dir: .pod/worktrees
+
+# Global defaults used when a phase does not set its own tool/model.
+defaults:
+  # Must match a key under 'tools'.
+  # Default when omitted: first tool key in alphabetical order.
+  tool: claude
+
+  # Optional model override applied after tool selection.
+  # Default when omitted: use the selected tool's configured 'model'.
+  model: claude-sonnet-4-6
+
+# Tool definitions keyed by tool name.
+# Each key can be referenced by defaults.tool, orchestrator.supervisor_tool, and phase tool overrides.
+tools:
+  # Full Claude example with every ToolConfig field.
+  claude:
+    # Executable name/path available in PATH.
+    binary: claude
+
+    # Default model for this tool (used unless defaults/phase override it).
+    model: claude-sonnet-4-6
+
+    # Optional catalog used by /models APIs and UI pickers.
+    models:
+      - claude-opus-4-6
+      - claude-sonnet-4-6
+      - claude-haiku-4-5-20251001
+
+    # Args used only when mode=interactive.
+    # {{context}} is replaced from .pod/context.md in the worktree.
+    interactive_args:
+      - "--append-system-prompt"
+      - "{{context}}"
+
+    # Args used for non-interactive execution.
+    # {{prompt}} is replaced with the task prompt.
+    headless_args:
+      - "-p"
+      - "{{prompt}}"
+      - "--output-format"
+      - json
+      - "--permission-mode"
+      - bypassPermissions
+
+    # Args for continuing a previous session.
+    # {{session_id}} and {{feedback}} are replaced at runtime.
+    resume_args:
+      - "--resume"
+      - "{{session_id}}"
+      - "-p"
+      - "{{feedback}}"
+      - "--output-format"
+      - json
+
+    # Regex (first capture group) used to extract a session id from tool output.
+    # Leave empty for tools that do not support resumable sessions.
+    session_id_pattern: '"session_id":\s*"([^"]+)"'
+
+    # Go duration string parsed with time.ParseDuration.
+    # Examples: 30s, 2m, 10m.
+    timeout: 600s
+
+    # Execution mode: "headless" (default behavior) or "interactive".
+    mode: headless
+
+    # Interactive prompt delivery mode.
+    # "arg": prompt is passed via args (for {{prompt}} placeholders).
+    # "stdin": prompt is written to stdin/PTY after launch.
+    prompt_mode: arg
+
+  # Full Codex example with different argument pattern.
+  codex:
+    binary: codex
+    model: gpt-5.3-codex
+    models:
+      - gpt-5.3-codex
+      - gpt-5.2-codex
+      - gpt-5-codex
+    interactive_args:
+      - exec
+      - "--full-auto"
+      - "--skip-git-repo-check"
+      - "{{prompt}}"
+    headless_args:
+      - exec
+      - "{{prompt}}"
+      - "--full-auto"
+      - "--skip-git-repo-check"
+    resume_args:
+      - exec
+      - resume
+      - "{{session_id}}"
+      - "{{feedback}}"
+      - "--full-auto"
+    session_id_pattern: 'session id: ([a-f0-9-]+)'
+    timeout: 600s
+    mode: headless
+    prompt_mode: arg
+
+  # Minimal third-tool example (no session support).
+  aider:
+    binary: aider
+    # For tools without resume/session support, keep these empty.
+    resume_args: []
+    session_id_pattern: ""
+    headless_args:
+      - "--message"
+      - "{{prompt}}"
+      - "--yes-always"
+      - "--no-auto-commits"
+    # Timeout/mode/prompt_mode are still recommended for a runnable config.
+    timeout: 600s
+    mode: headless
+    prompt_mode: arg
+
+# Orchestrator-level behavior.
+orchestrator:
+  # Optional budget cap in USD for orchestration flows.
+  # 0 means no budget enforcement.
+  cost_budget: 0
+
+  # Tool used by supervisor/orchestrator prompts.
+  # Must match a key in 'tools'.
+  # Default from embedded defaults: "claude".
+  supervisor_tool: claude
+
+  # Optional model override for the supervisor tool.
+  # Default when omitted: supervisor tool's own 'model'.
+  supervisor_model: claude-opus-4-6
+
+  # Per-phase tool/model overrides (all 5 phases shown).
+  phases:
+    explore:
+      tool: codex
+      model: gpt-5.3-codex
+    plan:
+      tool: claude
+      model: claude-sonnet-4-6
+    sprint:
+      tool: aider
+      model: "" # Empty means: defaults.model, else selected tool's model.
+    review:
+      tool: claude
+      model: claude-opus-4-6
+    integrate:
+      tool: claude
+      model: claude-opus-4-6
+
+# Worker pool settings.
+workers:
+  # Maximum concurrent task workers in sprint execution.
+  # Default from embedded defaults: 3.
+  max_parallel: 3
+
+# Optional commands run as quality gates.
+validation:
+  # Commands are executed in the repo root.
+  # Use an empty list or omit section to disable validation checks.
+  commands:
+    - go test ./...
+    - go vet ./...

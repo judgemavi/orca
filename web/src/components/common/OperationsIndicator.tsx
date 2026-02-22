@@ -36,11 +36,7 @@ export function OperationsIndicator() {
   }, [])
 
   if (operations.length === 0) {
-    return (
-      <span className="text-xs text-[var(--text-secondary)]">
-        No background ops
-      </span>
-    )
+    return null
   }
 
   return (

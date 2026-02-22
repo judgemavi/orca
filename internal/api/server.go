@@ -1,36 +1,37 @@
 package api
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/ops"
+	"github.com/jasjeetmavi/pod/internal/orchestrator"
+	"github.com/jasjeetmavi/pod/internal/pty"
 	"github.com/jasjeetmavi/pod/internal/sprint"
 	"github.com/jasjeetmavi/pod/internal/state"
-	"github.com/jasjeetmavi/pod/internal/worker"
+	"github.com/jasjeetmavi/pod/internal/task"
 )
 
 // Server is the Pod HTTP/WS API server.
 type Server struct {
-	db       *state.DB
-	cfg      *config.Config
-	planner  *sprint.Planner
-	executor *sprint.Executor
-	ops      *ops.Store
-	repoDir  string
-	hub      *Hub
-	resolver *IntentResolver
-
-	// Channel for autopilot respond unblocking.
-	autopilotResp   chan bool
-	autopilotMu     sync.Mutex
-	autopilotCancel func() // set when autopilot is running
+	db         *state.DB
+	cfg        *config.Config
+	planner    *sprint.Planner
+	executor   *sprint.Executor
+	ops        *ops.Store
+	repoDir    string
+	hub        *Hub
+	sessionMgr *pty.SessionManager
+	ctx        context.Context
+	cancel     context.CancelFunc
 
 	// Embedded frontend filesystem (optional).
 	frontendFS fs.FS
@@ -38,10 +39,116 @@ type Server struct {
 
 // NewServer creates a Server and starts the WebSocket hub.
 // frontendFS is optional — pass nil to disable static file serving.
-func NewServer(db *state.DB, cfg *config.Config, planner *sprint.Planner, executor *sprint.Executor, repoDir string, frontendFS fs.FS) *Server {
-	hub := NewHub()
-	go hub.Run()
+func NewServer(db *state.DB, cfg *config.Config, planner *sprint.Planner, executor *sprint.Executor, repoDir string, frontendFS fs.FS, sessionMgr *pty.SessionManager) *Server {
+	return NewServerWithHub(db, cfg, planner, executor, repoDir, frontendFS, sessionMgr, nil)
+}
+
+// NewServerWithHub creates a Server with an optional pre-created hub.
+// If hub is nil, a new hub is created and started.
+func NewServerWithHub(db *state.DB, cfg *config.Config, planner *sprint.Planner, executor *sprint.Executor, repoDir string, frontendFS fs.FS, sessionMgr *pty.SessionManager, hub *Hub) *Server {
+	if hub == nil {
+		hub = NewHub()
+		go hub.Run()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	taskStore := task.NewStore(db)
 	opsStore := ops.NewStore(db)
+	watcher := state.NewWatcher(db, state.WatcherCallbacks{
+		OnTaskChange: func(changes []state.TaskChange) {
+			for _, c := range changes {
+				switch c.Type {
+				case state.ChangeCreated:
+					t, err := taskStore.Get(c.TaskID)
+					if err == nil {
+						hub.Broadcast(Event{Type: "task.created", Data: t})
+					}
+				case state.ChangeUpdated:
+					t, err := taskStore.Get(c.TaskID)
+					if err == nil {
+						hub.Broadcast(Event{Type: "task.updated", Data: t})
+					}
+				case state.ChangeDeleted:
+					hub.Broadcast(Event{Type: "task.deleted", Data: map[string]string{"id": c.TaskID}})
+				}
+			}
+		},
+		OnSprintChange: func(changes []state.SprintChange) {
+			for _, c := range changes {
+				if c.Type == state.ChangeCreated || c.Type == state.ChangeUpdated || c.Type == state.ChangeDeleted {
+					sp, err := planner.Get(c.SprintID)
+					if err == nil {
+						hub.Broadcast(Event{Type: "sprint.updated", Data: sp})
+						continue
+					}
+					hub.Broadcast(Event{Type: "sprint.updated", Data: map[string]string{"id": c.SprintID}})
+				}
+			}
+		},
+		OnOperationChange: func(changes []state.OperationChange) {
+			for _, c := range changes {
+				op, err := opsStore.Get(c.OperationID)
+				if err == nil {
+					hub.Broadcast(Event{Type: "operation.updated", Data: op})
+					continue
+				}
+				hub.Broadcast(Event{Type: "operation.updated", Data: map[string]string{"id": c.OperationID}})
+			}
+		},
+		OnSessionChange: func(changes []state.SessionChange) {
+			for _, c := range changes {
+				row := db.QueryRow(
+					`SELECT id, type, tool, task_id, status, exit_code FROM sessions WHERE id = ?`,
+					c.SessionID,
+				)
+				var (
+					id       string
+					typ      string
+					toolName string
+					taskID   sql.NullString
+					status   string
+					exitCode int
+				)
+				if err := row.Scan(&id, &typ, &toolName, &taskID, &status, &exitCode); err != nil {
+					continue
+				}
+				taskIDValue := ""
+				if taskID.Valid {
+					taskIDValue = taskID.String
+				}
+
+				switch c.Type {
+				case state.ChangeCreated:
+					hub.Broadcast(Event{
+						Type: "session.created",
+						Data: map[string]interface{}{
+							"id":        id,
+							"type":      typ,
+							"tool":      toolName,
+							"task_id":   taskIDValue,
+							"status":    status,
+							"exit_code": exitCode,
+						},
+					})
+				case state.ChangeUpdated:
+					if status == "exited" {
+						hub.Broadcast(Event{
+							Type: "session.exited",
+							Data: map[string]interface{}{
+								"id":        id,
+								"type":      typ,
+								"tool":      toolName,
+								"task_id":   taskIDValue,
+								"status":    status,
+								"exit_code": exitCode,
+							},
+						})
+					}
+				}
+			}
+		},
+	}, state.WatcherOpts{})
+	go watcher.Run(ctx)
+
 	if err := opsStore.MarkStaleAsFailed(); err != nil {
 		log.Printf("mark stale operations failed: %v", err)
 	}
@@ -50,39 +157,20 @@ func NewServer(db *state.DB, cfg *config.Config, planner *sprint.Planner, execut
 		hub.Broadcast(Event{Type: eventType, Data: map[string]string{"id": id}})
 	})
 
-	var toolCfg config.ToolConfig
-	for _, tc := range cfg.Tools {
-		toolCfg = tc
-		break
+	if sessionMgr != nil {
+		sessionMgr.SetEventHook(func(eventType string, sess *pty.Session) {
+			hub.Broadcast(Event{
+				Type: eventType,
+				Data: map[string]interface{}{
+					"id":        sess.ID,
+					"type":      string(sess.Type),
+					"tool":      sess.Tool,
+					"task_id":   sess.TaskID,
+					"exit_code": sess.ExitCode,
+				},
+			})
+		})
 	}
-
-	executor.SetOutputHook(func(line worker.OutputLine) {
-		hub.Broadcast(Event{
-			Type: "worker.output",
-			Data: map[string]interface{}{
-				"task_id": line.TaskID,
-				"stream":  line.Stream,
-				"line":    line.Line,
-				"ts":      line.Time.UTC().Format(time.RFC3339Nano),
-			},
-		})
-	})
-	executor.SetDoneHook(func(taskID string, exitCode int) {
-		hub.Broadcast(Event{
-			Type: "worker.done",
-			Data: map[string]interface{}{
-				"task_id":   taskID,
-				"exit_code": exitCode,
-			},
-		})
-		hub.Broadcast(Event{
-			Type: "worker.output.end",
-			Data: map[string]interface{}{
-				"task_id": taskID,
-				"ts":      time.Now().UTC().Format(time.RFC3339Nano),
-			},
-		})
-	})
 
 	return &Server{
 		db:         db,
@@ -92,8 +180,17 @@ func NewServer(db *state.DB, cfg *config.Config, planner *sprint.Planner, execut
 		ops:        opsStore,
 		repoDir:    repoDir,
 		hub:        hub,
-		resolver:   NewIntentResolver(toolCfg, repoDir),
 		frontendFS: frontendFS,
+		sessionMgr: sessionMgr,
+		ctx:        ctx,
+		cancel:     cancel,
+	}
+}
+
+// Shutdown stops background server workers.
+func (s *Server) Shutdown() {
+	if s.cancel != nil {
+		s.cancel()
 	}
 }
 
@@ -105,7 +202,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/tasks", s.routeTasks)
 	mux.HandleFunc("/api/v1/tasks/ready", s.handleGetReady)
 	mux.HandleFunc("/api/v1/tasks/", s.routeTaskByID)
-	mux.HandleFunc("/api/v1/logs", s.handleListLogs)
 	mux.HandleFunc("/api/v1/models", s.handleListModels)
 	mux.HandleFunc("/api/v1/cleanup", s.handleCleanup)
 
@@ -136,27 +232,95 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/plan/reject", s.handlePlanReject)
 	mux.HandleFunc("/api/v1/operations", s.handleListOperations)
 
-	// Autopilot
-	mux.HandleFunc("/api/v1/autopilot/start", s.handleAutopilotStart)
-	mux.HandleFunc("/api/v1/autopilot/stop", s.handleAutopilotStop)
-	mux.HandleFunc("/api/v1/autopilot/respond", s.handleAutopilotRespond)
-	mux.HandleFunc("/api/v1/autopilot/status", s.handleAutopilotStatus)
-
 	// Costs, Config, Status
 	mux.HandleFunc("/api/v1/costs", s.handleCosts)
 	mux.HandleFunc("/api/v1/config", s.routeConfig)
 	mux.HandleFunc("/api/v1/status", s.handleStatus)
 
-	// Chat & WebSocket
-	mux.HandleFunc("/api/v1/chat", s.handleChat)
+	// WebSocket
 	mux.HandleFunc("/api/v1/ws", s.hub.ServeWS)
+	mux.HandleFunc("/api/v1/terminal/", s.handleTerminalWS)
 
-	// Static files for frontend (embedded)
+	// Sessions
+	mux.HandleFunc("/api/v1/sessions", s.routeSessions)
+	mux.HandleFunc("/api/v1/sessions/", s.routeSessionByID)
+
+	// Orchestrator
+	mux.HandleFunc("/api/v1/orchestrator/start", s.handleStartOrchestrator)
+
+	// Frontend served under /ui/ with SPA fallback for client-side routing.
 	if s.frontendFS != nil {
-		mux.Handle("/", http.FileServer(http.FS(s.frontendFS)))
+		fileServer := http.FileServer(http.FS(s.frontendFS))
+		mux.Handle("/ui/", http.StripPrefix("/ui/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Try serving the file directly first.
+			path := r.URL.Path
+			if path == "" || path == "/" {
+				path = "index.html"
+			}
+			f, err := s.frontendFS.Open(path)
+			if err == nil {
+				f.Close()
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			// SPA fallback: serve index.html for unknown paths.
+			r.URL.Path = "/"
+			fileServer.ServeHTTP(w, r)
+		})))
+		// Redirect bare /ui to /ui/
+		mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/ui/", http.StatusMovedPermanently)
+		})
 	}
 
 	return logMiddleware(corsMiddleware(mux))
+}
+
+// BootstrapOrchestrator starts the orchestrator PTY session for pod serve.
+func (s *Server) BootstrapOrchestrator() {
+	if s.sessionMgr == nil {
+		return
+	}
+
+	podBinary, err := os.Executable()
+	if err != nil {
+		log.Printf("resolve pod binary: %v", err)
+		return
+	}
+
+	mcpConfigPath, err := orchestrator.WriteMCPConfig(s.repoDir, podBinary)
+	if err != nil {
+		log.Printf("write mcp config: %v", err)
+		return
+	}
+
+	toolName, supervisorTool, err := orchestrator.ResolveSupervisorTool(s.cfg)
+	if err != nil {
+		log.Printf("resolve supervisor tool: %v", err)
+		return
+	}
+	if strings.TrimSpace(supervisorTool.Binary) == "" {
+		log.Printf("resolve supervisor tool: tool %q has empty binary", toolName)
+		return
+	}
+
+	args := orchestrator.BuildLaunchArgs(supervisorTool, mcpConfigPath)
+	sess, err := s.sessionMgr.Create(pty.CreateOpts{
+		Type:    pty.SessionOrchestrator,
+		Command: supervisorTool.Binary,
+		Args:    args,
+		Dir:     s.repoDir,
+		Tool:    "orchestrator",
+		Cols:    120,
+		Rows:    40,
+		Env:     []string{"POD_MCP_CONFIG=" + mcpConfigPath},
+	})
+	if err != nil {
+		log.Printf("bootstrap orchestrator: %v", err)
+		return
+	}
+
+	log.Printf("orchestrator session started (%s): %s", toolName, sess.ID)
 }
 
 // --- routing helpers ---
@@ -188,16 +352,6 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) > 1 {
 		switch parts[1] {
-		case "logs":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			s.handleGetTaskLogs(w, r, taskID)
 		case "deps":
 			if len(parts) != 2 {
 				http.NotFound(w, r)
@@ -216,6 +370,36 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.handleReopenTask(w, r, taskID)
+		case "approve":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleApproveTask(w, r, taskID)
+		case "request-changes":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleRequestChanges(w, r, taskID)
+		case "reviews":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleListTaskReviews(w, r, taskID)
 		case "plan":
 			if len(parts) == 2 {
 				switch r.Method {

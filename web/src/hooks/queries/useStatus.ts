@@ -4,7 +4,6 @@ import { api } from '../../api'
 export const statusKeys = {
   status: ['status'] as const,
   costs: ['costs'] as const,
-  config: ['config'] as const,
 }
 
 export function useStatusQuery() {
@@ -18,12 +17,5 @@ export function useCostsQuery() {
   return useQuery({
     queryKey: statusKeys.costs,
     queryFn: () => api.getCosts(),
-  })
-}
-
-export function useConfigQuery() {
-  return useQuery({
-    queryKey: statusKeys.config,
-    queryFn: () => api.getConfig(),
   })
 }

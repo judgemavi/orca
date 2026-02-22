@@ -1,13 +1,13 @@
 import type {
-  Block,
   Task,
+  TaskReview,
   Sprint,
   ProposedTask,
   ProjectStatus,
   ReviewArtifact,
   ModelInfo,
   Operation,
-  LogEntry,
+  Config,
 } from './types'
 
 const BASE = '/api/v1'
@@ -32,13 +32,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return json.data !== undefined ? json.data : json
 }
 
-export const api = {
-  chat: (message: string, sessionId: string) =>
-    request<{ blocks: Block[] }>('/chat', {
-      method: 'POST',
-      body: JSON.stringify({ message, session_id: sessionId }),
-    }),
+function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
 
+export const api = {
   listTasks: () => request<{ tasks: Task[] }>('/tasks'),
   getTask: (id: string) => request<{ task: Task }>(`/tasks/${id}`),
   createTask: (data: Partial<Task>) =>
@@ -128,34 +129,20 @@ export const api = {
       method: 'POST',
       body: mode ? JSON.stringify({ mode }) : undefined,
     }),
+  getTaskReviews: (id: string) =>
+    request<{ reviews: TaskReview[] }>(`/tasks/${id}/reviews`),
+  approveTask: (id: string) => post<Task>(`/tasks/${id}/approve`, {}),
+  requestChanges: (id: string, feedback: string) =>
+    post<{ status: string; task_id: string }>(
+      `/tasks/${id}/request-changes`,
+      { feedback },
+    ),
 
   explore: () => request('/explore', { method: 'POST' }),
 
-  autopilotStart: (
-    goal: string,
-    opts?: { max_sprints?: number; unattended?: boolean },
-  ) =>
-    request<{ status: string }>('/autopilot/start', {
-      method: 'POST',
-      body: JSON.stringify({ goal, ...opts }),
-    }),
-  autopilotStop: () =>
-    request<{ status: string }>('/autopilot/stop', { method: 'POST' }),
-  autopilotRespond: (cont: boolean) =>
-    request<{ status: string }>('/autopilot/respond', {
-      method: 'POST',
-      body: JSON.stringify({ continue: cont }),
-    }),
-  autopilotStatus: () =>
-    request<{
-      autopilot_running: boolean
-      sprint_active: boolean
-      sprint_id?: string
-    }>('/autopilot/status'),
-
   getStatus: () => request<ProjectStatus>('/status'),
   getCosts: () => request('/costs'),
-  getConfig: () => request('/config'),
+  getConfig: () => request<Config>('/config'),
   listModels: async (tool?: string): Promise<Record<string, ModelInfo[]>> => {
     const query = tool ? `?tool=${encodeURIComponent(tool)}` : ''
     const data = await request<{ tools: Record<string, ModelInfo[]> }>(
@@ -187,11 +174,6 @@ export const api = {
     const data = await request<{ lines: string[] }>(`/tasks/${taskId}/logs${q}`)
     return data.lines ?? []
   },
-  listLogs: async (status?: string): Promise<LogEntry[]> => {
-    const q = status ? `?status=${encodeURIComponent(status)}` : ''
-    const data = await request<{ logs: LogEntry[] }>(`/logs${q}`)
-    return data.logs ?? []
-  },
   reopenTask: async (taskId: string): Promise<void> => {
     await request(`/tasks/${taskId}/reopen`, { method: 'POST' })
   },
@@ -207,4 +189,41 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ depends_on: dependsOn }),
     }),
+  createSession: (opts: {
+    type: string
+    command?: string
+    args?: string[]
+    tool?: string
+    task_id?: string
+    working_dir?: string
+    cols?: number
+    rows?: number
+  }) =>
+    request<{
+      id: string
+      type: string
+      tool: string
+      task_id: string
+      cols: number
+      rows: number
+      created_at: string
+    }>('/sessions', {
+      method: 'POST',
+      body: JSON.stringify(opts),
+    }),
+  listSessions: () =>
+    request<{
+      sessions: Array<{
+        id: string
+        type: string
+        tool: string
+        task_id: string
+        cols: number
+        rows: number
+        created_at: string
+      }>
+    }>('/sessions'),
+  killSession: (id: string) => request(`/sessions/${id}`, { method: 'DELETE' }),
+  startOrchestrator: () =>
+    request<{ status: string }>('/orchestrator/start', { method: 'POST' }),
 }

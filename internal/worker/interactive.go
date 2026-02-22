@@ -16,7 +16,6 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/tasklog"
 )
 
 // InteractiveAdapter runs a CLI tool in a pseudo-terminal for full interactive capability.
@@ -25,6 +24,7 @@ type InteractiveAdapter struct {
 	Args        []string
 	Timeout     time.Duration
 	Model       string
+	TaskTitle   string
 	CmdCallback func(*exec.Cmd)
 	PromptMode  string
 	OutputChan  chan<- OutputLine
@@ -91,19 +91,9 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 	}()
 
 	var output bytes.Buffer
-	logWriter, err := tasklog.NewWriter(resolveLogRoot(worktreePath), taskID)
-	if err != nil {
-		return nil, fmt.Errorf("open task log: %w", err)
-	}
-	defer func() {
-		if closeErr := logWriter.Close(); closeErr != nil {
-			log.Printf("close task log for %s: %v", taskID, closeErr)
-		}
-	}()
-
 	copyDone := make(chan struct{})
 	go func() {
-		streamPTY(taskID, ptmx, &output, a.OutputChan, logWriter)
+		streamPTY(taskID, ptmx, &output, a.OutputChan)
 		close(copyDone)
 	}()
 
@@ -138,7 +128,11 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 	}
 
 	_, _ = gitOutput(worktreePath, "add", "-A")
-	_, _ = gitOutput(worktreePath, "commit", "-m", "pod: task "+taskID)
+	commitMsg := "pod: task " + taskID
+	if a.TaskTitle != "" {
+		commitMsg = a.TaskTitle
+	}
+	_, _ = gitOutput(worktreePath, "commit", "-m", commitMsg)
 
 	diff, err := gitOutput(worktreePath, "diff", "HEAD~1..HEAD")
 	if err == nil {
@@ -170,7 +164,8 @@ func (a *InteractiveAdapter) Cancel() {
 func (a *InteractiveAdapter) SetCmdCallback(cb func(*exec.Cmd)) { a.CmdCallback = cb }
 
 // SetModel sets/overrides the model passed to the CLI.
-func (a *InteractiveAdapter) SetModel(model string) { a.Model = model }
+func (a *InteractiveAdapter) SetModel(model string)     { a.Model = model }
+func (a *InteractiveAdapter) SetTaskTitle(title string) { a.TaskTitle = title }
 
 // SetOutputChan sets the live output stream channel.
 func (a *InteractiveAdapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }
@@ -183,16 +178,13 @@ func loadContextFromWorktree(worktreePath string) string {
 	return string(data)
 }
 
-func streamPTY(taskID string, r io.Reader, outBuf *bytes.Buffer, outputChan chan<- OutputLine, logWriter *tasklog.Writer) {
+func streamPTY(taskID string, r io.Reader, outBuf *bytes.Buffer, outputChan chan<- OutputLine) {
 	reader := bufio.NewReader(r)
 	for {
 		chunk, err := reader.ReadBytes('\n')
 		if len(chunk) > 0 {
 			outBuf.Write(chunk)
 			line := strings.ToValidUTF8(strings.TrimRight(string(chunk), "\r\n"), "?")
-			if logErr := logWriter.WriteLine("stdout", line); logErr != nil {
-				log.Printf("task log write (%s): %v", taskID, logErr)
-			}
 			if outputChan != nil {
 				outputChan <- OutputLine{
 					TaskID: taskID,

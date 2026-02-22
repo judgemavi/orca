@@ -1,10 +1,18 @@
 package sprint
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -13,15 +21,18 @@ import (
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/cost"
 	"github.com/jasjeetmavi/pod/internal/explore"
+	"github.com/jasjeetmavi/pod/internal/pty"
+	"github.com/jasjeetmavi/pod/internal/task"
 	"github.com/jasjeetmavi/pod/internal/worker"
 	"github.com/jasjeetmavi/pod/internal/worktree"
+	"github.com/jasjeetmavi/pod/prompts"
 )
 
 // TaskResult holds the outcome of a single task execution.
 type TaskResult struct {
 	TaskID       string        `json:"task_id"`
 	ToolName     string        `json:"tool_name"`
-	Status       string        `json:"status"` // "completed" or "failed"
+	Status       string        `json:"status"` // "review" or "failed"
 	ExitCode     int           `json:"exit_code"`
 	Diff         string        `json:"diff,omitempty"`
 	FilesChanged []string      `json:"files_changed,omitempty"`
@@ -31,13 +42,33 @@ type TaskResult struct {
 	WorktreePath string        `json:"worktree_path,omitempty"`
 }
 
+type taskInfo struct {
+	taskID       string
+	taskTitle    string
+	toolName     string
+	toolCfg      config.ToolConfig
+	worktreePath string
+	prompt       string
+	model        string
+	args         []string
+}
+
+// ExecutorOptions configures optional executor dependencies and callbacks.
+type ExecutorOptions struct {
+	CostTracker   *cost.Tracker
+	OutputHook    func(worker.OutputLine)
+	DoneHook      func(taskID string, exitCode int)
+	BroadcastHook func(taskID, status string)
+}
+
 // Executor orchestrates sprint execution: worktree creation, parallel worker
 // spawning, result collection, and artifact storage.
 type Executor struct {
-	planner   *Planner
-	worktrees *worktree.Manager
-	config    *config.Config
-	repoDir   string
+	planner    *Planner
+	worktrees  *worktree.Manager
+	config     *config.Config
+	repoDir    string
+	sessionMgr *pty.SessionManager
 
 	// Cost tracking (optional — nil means no tracking).
 	costTracker *cost.Tracker
@@ -50,28 +81,31 @@ type Executor struct {
 
 	outputHook func(worker.OutputLine)
 	doneHook   func(taskID string, exitCode int)
+
+	// Optional task status broadcast callback (e.g. WS event emitter).
+	broadcastHook func(taskID, status string)
 }
 
 // NewExecutor creates an Executor wired to the given planner, worktree manager,
 // config, and repo directory.
-func NewExecutor(planner *Planner, wm *worktree.Manager, cfg *config.Config, repoDir string) *Executor {
+func NewExecutor(planner *Planner, wm *worktree.Manager, cfg *config.Config, repoDir string, opts ExecutorOptions, sessionMgr ...*pty.SessionManager) *Executor {
+	var mgr *pty.SessionManager
+	if len(sessionMgr) > 0 {
+		mgr = sessionMgr[0]
+	}
 	return &Executor{
-		planner:   planner,
-		worktrees: wm,
-		config:    cfg,
-		repoDir:   repoDir,
-		running:   make(map[string]*exec.Cmd),
+		planner:       planner,
+		worktrees:     wm,
+		config:        cfg,
+		repoDir:       repoDir,
+		sessionMgr:    mgr,
+		running:       make(map[string]*exec.Cmd),
+		costTracker:   opts.CostTracker,
+		outputHook:    opts.OutputHook,
+		doneHook:      opts.DoneHook,
+		broadcastHook: opts.BroadcastHook,
 	}
 }
-
-// SetCostTracker sets the cost tracker for recording per-task spend.
-func (e *Executor) SetCostTracker(ct *cost.Tracker) { e.costTracker = ct }
-
-// SetOutputHook configures a callback for live worker output lines.
-func (e *Executor) SetOutputHook(hook func(worker.OutputLine)) { e.outputHook = hook }
-
-// SetDoneHook configures a callback for worker completion notifications.
-func (e *Executor) SetDoneHook(hook func(taskID string, exitCode int)) { e.doneHook = hook }
 
 // Worktrees returns the underlying worktree manager.
 func (e *Executor) Worktrees() *worktree.Manager { return e.worktrees }
@@ -100,15 +134,6 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 	e.cancel = cancel
 	e.sprintID = s.ID
 
-	type taskInfo struct {
-		taskID       string
-		toolName     string
-		toolCfg      config.ToolConfig
-		worktreePath string
-		prompt       string
-		model        string
-	}
-
 	// Load codebase context if available.
 	contextPrefix := ""
 	if cctx := explore.LoadContext(e.repoDir); cctx != "" {
@@ -124,11 +149,12 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 			return nil, fmt.Errorf("get task %s: %w", taskID, err)
 		}
 
-		toolName, toolCfg, err := e.resolveToolConfig(t.AssignedTool)
+		toolName, toolCfg, err := e.resolveTaskToolConfig(t, "sprint")
 		if err != nil {
 			e.rollbackPreparation(s, createdTaskIDs)
 			return nil, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 		}
+		model := toolCfg.Model
 
 		wtPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch)
 		if err != nil {
@@ -147,14 +173,16 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 		if contextPrefix != "" {
 			prompt = contextPrefix + prompt
 		}
+		prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
 
 		prepared = append(prepared, taskInfo{
 			taskID:       taskID,
+			taskTitle:    t.Title,
 			toolName:     toolName,
 			toolCfg:      toolCfg,
 			worktreePath: wtPath,
 			prompt:       prompt,
-			model:        t.Model,
+			model:        model,
 		})
 	}
 
@@ -219,63 +247,14 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 				}
 			}()
 
-			workerAdapter, err := worker.NewWorker(info.toolCfg)
-			if err != nil {
-				results[idx] = TaskResult{
-					TaskID:       info.taskID,
-					ToolName:     info.toolName,
-					Status:       "failed",
-					ExitCode:     -1,
-					Stderr:       fmt.Sprintf("create adapter: %v", err),
-					WorktreePath: info.worktreePath,
-				}
-				e.emitDone(info.taskID, -1)
-				return
+			var taskResult TaskResult
+			if e.sessionMgr != nil {
+				taskResult = e.executeTaskPTY(ctx, info, outputCh)
+			} else {
+				taskResult = e.executeTaskLegacy(ctx, info, outputCh)
 			}
-			if info.model != "" {
-				workerAdapter.SetModel(info.model)
-			}
-			workerAdapter.SetOutputChan(outputCh)
-
-			// Register running cmd for cancel tracking.
-			workerAdapter.SetCmdCallback(func(cmd *exec.Cmd) {
-				e.mu.Lock()
-				e.running[info.taskID] = cmd
-				e.mu.Unlock()
-			})
-
-			res, err := workerAdapter.Execute(ctx, info.taskID, info.prompt, info.worktreePath)
-			if err != nil {
-				results[idx] = TaskResult{
-					TaskID:       info.taskID,
-					ToolName:     info.toolName,
-					Status:       "failed",
-					ExitCode:     -1,
-					Stderr:       fmt.Sprintf("execute: %v", err),
-					WorktreePath: info.worktreePath,
-				}
-				e.emitDone(info.taskID, -1)
-				return
-			}
-
-			status := "completed"
-			if res.ExitCode != 0 {
-				status = "failed"
-			}
-
-			results[idx] = TaskResult{
-				TaskID:       info.taskID,
-				ToolName:     info.toolName,
-				Status:       status,
-				ExitCode:     res.ExitCode,
-				Diff:         res.Diff,
-				FilesChanged: res.FilesChanged,
-				Stdout:       res.Stdout,
-				Stderr:       res.Stderr,
-				Duration:     res.Duration,
-				WorktreePath: info.worktreePath,
-			}
-			e.emitDone(info.taskID, res.ExitCode)
+			results[idx] = taskResult
+			e.emitDone(info.taskID, taskResult.ExitCode)
 		}(i, ti)
 	}
 
@@ -312,10 +291,441 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 	return results, nil
 }
 
+func (e *Executor) executeTaskLegacy(ctx context.Context, info taskInfo, outputCh chan<- worker.OutputLine) TaskResult {
+	result := TaskResult{
+		TaskID:       info.taskID,
+		ToolName:     info.toolName,
+		Status:       "failed",
+		ExitCode:     -1,
+		WorktreePath: info.worktreePath,
+	}
+
+	toolCfg := info.toolCfg
+	if len(info.args) > 0 {
+		if strings.EqualFold(toolCfg.Mode, "interactive") && len(toolCfg.InteractiveArgs) > 0 {
+			toolCfg.InteractiveArgs = append([]string(nil), info.args...)
+		} else {
+			toolCfg.HeadlessArgs = append([]string(nil), info.args...)
+		}
+	}
+
+	workerAdapter, err := worker.NewWorker(toolCfg)
+	if err != nil {
+		result.Stderr = fmt.Sprintf("create adapter: %v", err)
+		return result
+	}
+	if info.model != "" {
+		workerAdapter.SetModel(info.model)
+	}
+	if info.taskTitle != "" {
+		workerAdapter.SetTaskTitle(info.taskTitle)
+	}
+	workerAdapter.SetOutputChan(outputCh)
+	workerAdapter.SetCmdCallback(func(cmd *exec.Cmd) {
+		e.mu.Lock()
+		e.running[info.taskID] = cmd
+		e.mu.Unlock()
+	})
+
+	res, err := workerAdapter.Execute(ctx, info.taskID, info.prompt, info.worktreePath)
+	if err != nil {
+		result.Stderr = fmt.Sprintf("execute: %v", err)
+		return result
+	}
+
+	result.ExitCode = res.ExitCode
+	result.Diff = res.Diff
+	result.FilesChanged = res.FilesChanged
+	result.Stdout = res.Stdout
+	result.Stderr = res.Stderr
+	result.Duration = res.Duration
+	if res.ExitCode == 0 {
+		result.Status = "review"
+		e.storeSessionID(info.taskID, parseSessionID(info.toolCfg.SessionIDPattern, res.Stdout))
+	}
+	return result
+}
+
+func (e *Executor) executeTaskPTY(ctx context.Context, info taskInfo, outputCh chan<- worker.OutputLine) TaskResult {
+	result := TaskResult{
+		TaskID:       info.taskID,
+		ToolName:     info.toolName,
+		Status:       "failed",
+		ExitCode:     -1,
+		WorktreePath: info.worktreePath,
+	}
+
+	timeout, err := time.ParseDuration(info.toolCfg.Timeout)
+	if err != nil {
+		result.Stderr = fmt.Sprintf("parse timeout %q: %v", info.toolCfg.Timeout, err)
+		return result
+	}
+
+	args := info.args
+	if len(args) == 0 {
+		args = buildWorkerArgs(info.toolCfg, info.prompt, info.model, info.worktreePath)
+	}
+	sess, err := e.sessionMgr.Create(pty.CreateOpts{
+		Type:    pty.SessionWorker,
+		Command: info.toolCfg.Binary,
+		Args:    args,
+		Dir:     info.worktreePath,
+		Tool:    info.toolName,
+		TaskID:  info.taskID,
+		Cols:    120,
+		Rows:    40,
+	})
+	if err != nil {
+		result.Stderr = fmt.Sprintf("create pty session: %v", err)
+		return result
+	}
+
+	e.mu.Lock()
+	e.running[info.taskID] = sess.Cmd
+	e.mu.Unlock()
+
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	readDone := make(chan struct{})
+	go func() {
+		select {
+		case <-readDone:
+			return
+		case <-runCtx.Done():
+		}
+		if sess.Cmd != nil && sess.Cmd.Process != nil {
+			_ = sess.Cmd.Process.Signal(syscall.SIGINT)
+			select {
+			case <-readDone:
+				return
+			case <-time.After(5 * time.Second):
+			}
+			_ = sess.Cmd.Process.Kill()
+		}
+	}()
+
+	start := time.Now()
+	stdout, streamErr := streamSessionPTY(info.taskID, sess.Pty, outputCh)
+	close(readDone)
+	result.Duration = time.Since(start)
+	result.Stdout = stdout
+
+	if streamErr != nil && !errorsIsEOF(streamErr) {
+		log.Printf("stream PTY (%s): %v", info.taskID, streamErr)
+	}
+
+	if runCtx.Err() == context.DeadlineExceeded {
+		result.Stderr = "pod: process killed after timeout (" + timeout.String() + ")"
+		return result
+	}
+	if runCtx.Err() == context.Canceled {
+		result.Stderr = "pod: process cancelled"
+		return result
+	}
+
+	result.ExitCode = waitSessionExitCode(sess)
+
+	_, _ = gitOutput(info.worktreePath, "add", "-A")
+	commitMsg := "pod: task " + info.taskID
+	if info.taskTitle != "" {
+		commitMsg = info.taskTitle
+	}
+	_, _ = gitOutput(info.worktreePath, "commit", "-m", commitMsg)
+
+	if diff, err := gitOutput(info.worktreePath, "diff", "HEAD~1..HEAD"); err == nil {
+		result.Diff = diff
+	}
+	if names, err := gitOutput(info.worktreePath, "diff", "HEAD~1..HEAD", "--name-only"); err == nil && names != "" {
+		for _, f := range strings.Split(strings.TrimSpace(names), "\n") {
+			if f != "" {
+				result.FilesChanged = append(result.FilesChanged, f)
+			}
+		}
+	}
+
+	if result.ExitCode == 0 {
+		result.Status = "review"
+		e.storeSessionID(info.taskID, parseSessionID(info.toolCfg.SessionIDPattern, result.Stdout))
+	}
+	return result
+}
+
+func (e *Executor) storeSessionID(taskID, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	if err := task.NewStore(e.planner.DB()).SetSessionID(taskID, sessionID); err != nil {
+		log.Printf("set session_id for task %s: %v", taskID, err)
+	}
+}
+
+func parseSessionID(pattern, output string) string {
+	if pattern == "" {
+		return ""
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return ""
+	}
+	m := re.FindStringSubmatch(output)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+func streamSessionPTY(taskID string, r io.Reader, outputCh chan<- worker.OutputLine) (string, error) {
+	reader := bufio.NewReader(r)
+	var output bytes.Buffer
+
+	for {
+		chunk, err := reader.ReadBytes('\n')
+		if len(chunk) > 0 {
+			output.Write(chunk)
+			line := strings.ToValidUTF8(strings.TrimRight(string(chunk), "\r\n"), "?")
+			if outputCh != nil {
+				outputCh <- worker.OutputLine{
+					TaskID: taskID,
+					Stream: "stdout",
+					Line:   line,
+					Time:   time.Now().UTC(),
+				}
+			}
+		}
+		if err == io.EOF {
+			return output.String(), nil
+		}
+		if err != nil {
+			return output.String(), err
+		}
+	}
+}
+
+func waitSessionExitCode(sess *pty.Session) int {
+	for i := 0; i < 100; i++ {
+		if sess.ExitCode != -1 {
+			return sess.ExitCode
+		}
+		if sess.Cmd != nil && sess.Cmd.ProcessState != nil {
+			return sess.Cmd.ProcessState.ExitCode()
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return sess.ExitCode
+}
+
+func errorsIsEOF(err error) bool {
+	return err == io.EOF || strings.Contains(strings.ToLower(err.Error()), "file already closed")
+}
+
+func buildWorkerArgs(toolCfg config.ToolConfig, prompt, model, worktreePath string) []string {
+	argsCfg := toolCfg.HeadlessArgs
+	if strings.EqualFold(toolCfg.Mode, "interactive") && len(toolCfg.InteractiveArgs) > 0 {
+		argsCfg = toolCfg.InteractiveArgs
+	}
+
+	contextContent := loadContextFromWorktree(worktreePath)
+	args := make([]string, len(argsCfg))
+	for i, arg := range argsCfg {
+		arg = strings.ReplaceAll(arg, "{{prompt}}", prompt)
+		arg = strings.ReplaceAll(arg, "{{context}}", contextContent)
+		args[i] = arg
+	}
+
+	selectedModel := toolCfg.Model
+	if model != "" {
+		selectedModel = model
+	}
+	if selectedModel != "" {
+		args = append(args, "--model", selectedModel)
+	}
+	return args
+}
+
+func buildResumeArgs(toolCfg config.ToolConfig, sessionID, feedback, model string) []string {
+	args := make([]string, len(toolCfg.ResumeArgs))
+	for i, arg := range toolCfg.ResumeArgs {
+		arg = strings.ReplaceAll(arg, "{{session_id}}", sessionID)
+		arg = strings.ReplaceAll(arg, "{{feedback}}", feedback)
+		args[i] = arg
+	}
+
+	selectedModel := toolCfg.Model
+	if model != "" {
+		selectedModel = model
+	}
+	if selectedModel != "" {
+		args = append(args, "--model", selectedModel)
+	}
+	return args
+}
+
+func loadContextFromWorktree(worktreePath string) string {
+	data, err := os.ReadFile(filepath.Join(worktreePath, ".pod", "context.md"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// gitOutput runs a git command in dir and returns its stdout.
+func gitOutput(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 func (e *Executor) emitDone(taskID string, exitCode int) {
 	if e.doneHook != nil {
 		e.doneHook(taskID, exitCode)
 	}
+}
+
+// RunSingle re-runs a single task with review feedback, reusing the existing
+// worktree and resuming the tool session when supported.
+func (e *Executor) RunSingle(taskID string) error {
+	t, err := e.planner.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("get task %s: %w", taskID, err)
+	}
+
+	toolName, toolCfg, err := e.resolveTaskToolConfig(t, "sprint")
+	if err != nil {
+		return fmt.Errorf("resolve tool for task %s: %w", taskID, err)
+	}
+	model := toolCfg.Model
+
+	wtPath := filepath.Join(e.config.Project.WorktreeDir, "task-"+taskID)
+	if _, err := os.Stat(wtPath); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("stat worktree for task %s: %w", taskID, err)
+		}
+		createdPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch)
+		if err != nil {
+			return fmt.Errorf("create worktree for task %s: %w", taskID, err)
+		}
+		wtPath = createdPath
+	}
+
+	contextPrefix := ""
+	if cctx := explore.LoadContext(e.repoDir); cctx != "" {
+		contextPrefix = "## Codebase Context\n\n" + cctx + "\n\n---\n\n"
+	}
+
+	prompt := t.Prompt
+	if prompt == "" {
+		prompt = t.Title + "\n\n" + t.Description
+	}
+	if t.Plan != "" {
+		prompt = "## Implementation Plan\n\n" + t.Plan + "\n\n---\n\n## Task\n\n" + prompt
+	}
+	if contextPrefix != "" {
+		prompt = contextPrefix + prompt
+	}
+
+	taskStore := task.NewStore(e.planner.DB())
+	reviewID, feedback, err := taskStore.GetPendingReview(taskID)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("get pending review for task %s: %w", taskID, err)
+	}
+	if err == sql.ErrNoRows {
+		reviewID = ""
+		feedback = ""
+	}
+
+	var args []string
+	if t.SessionID != "" && len(toolCfg.ResumeArgs) > 0 {
+		args = buildResumeArgs(toolCfg, t.SessionID, feedback, model)
+	} else {
+		prompt = strings.TrimSpace(prompt) + "\n\nReviewer feedback: " + feedback
+	}
+	prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
+
+	if err := taskStore.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
+		return fmt.Errorf("set task running: %w", err)
+	}
+	if e.broadcastHook != nil {
+		e.broadcastHook(taskID, "running")
+	}
+
+	defer func() {
+		e.mu.Lock()
+		delete(e.running, taskID)
+		e.mu.Unlock()
+	}()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("worker panic for task %s: %v", taskID, r)
+			_ = taskStore.Update(taskID, map[string]interface{}{"status": "failed"})
+			if e.broadcastHook != nil {
+				e.broadcastHook(taskID, "failed")
+			}
+			e.emitDone(taskID, -1)
+		}
+	}()
+
+	outputCh := make(chan worker.OutputLine, 256)
+	outputDone := make(chan struct{})
+	go func() {
+		defer close(outputDone)
+		for line := range outputCh {
+			if e.outputHook != nil {
+				e.outputHook(line)
+			}
+		}
+	}()
+
+	info := taskInfo{
+		taskID:       taskID,
+		taskTitle:    t.Title,
+		toolName:     toolName,
+		toolCfg:      toolCfg,
+		worktreePath: wtPath,
+		prompt:       prompt,
+		model:        model,
+		args:         args,
+	}
+
+	var result TaskResult
+	if e.sessionMgr != nil {
+		result = e.executeTaskPTY(context.Background(), info, outputCh)
+	} else {
+		result = e.executeTaskLegacy(context.Background(), info, outputCh)
+	}
+	close(outputCh)
+	<-outputDone
+	e.emitDone(taskID, result.ExitCode)
+
+	if err := taskStore.Update(taskID, map[string]interface{}{"status": result.Status}); err != nil {
+		log.Printf("update task status %s: %v", taskID, err)
+	}
+	if e.broadcastHook != nil {
+		e.broadcastHook(taskID, result.Status)
+	}
+
+	if t.SprintID != "" {
+		_, err := e.planner.DB().Exec(
+			`INSERT INTO artifacts (id, task_id, sprint_id, diff, stdout, stderr, exit_code, duration_ms)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.New().String(), taskID, t.SprintID,
+			result.Diff, result.Stdout, result.Stderr, result.ExitCode, result.Duration.Milliseconds(),
+		)
+		if err != nil {
+			log.Printf("store artifact for task %s: %v", taskID, err)
+		}
+	}
+	if reviewID != "" && result.ExitCode == 0 {
+		if err := taskStore.AddressReview(reviewID); err != nil {
+			log.Printf("address review %s for task %s: %v", reviewID, taskID, err)
+		}
+	}
+
+	return nil
 }
 
 // Cancel stops all running workers.
@@ -385,18 +795,74 @@ func (e *Executor) Cleanup(s *Sprint) error {
 	return firstErr
 }
 
-// resolveToolConfig returns the tool name and ToolConfig for the named tool,
-// or the first available tool in config if name is empty.
-func (e *Executor) resolveToolConfig(name string) (string, config.ToolConfig, error) {
-	if name != "" {
-		tc, ok := e.config.Tools[name]
-		if !ok {
-			return "", config.ToolConfig{}, fmt.Errorf("tool %q not found in config", name)
+// resolveTaskToolConfig resolves tool and model for a task phase with fallback:
+// phase_config.phases[phase] -> assigned_tool -> config phase/default chain.
+func (e *Executor) resolveTaskToolConfig(t *task.Task, phase string) (string, config.ToolConfig, error) {
+	var phaseCfg *task.PhaseOverride
+	if t != nil && t.PhaseConfig != nil && !t.PhaseConfig.UseDefaults {
+		if p, ok := t.PhaseConfig.Phases[phase]; ok {
+			phaseCfg = &p
 		}
-		return name, tc, nil
 	}
-	for n, tc := range e.config.Tools {
-		return n, tc, nil
+
+	var (
+		toolName string
+		toolCfg  config.ToolConfig
+	)
+	if phaseCfg != nil && phaseCfg.Tool != "" {
+		if tc, ok := e.config.Tools[phaseCfg.Tool]; ok {
+			toolName = phaseCfg.Tool
+			toolCfg = tc
+		} else {
+			log.Printf("task phase_config tool %q for phase %q not found in config, falling back", phaseCfg.Tool, phase)
+		}
 	}
-	return "", config.ToolConfig{}, fmt.Errorf("no tools configured")
+	if toolName == "" && t != nil && t.AssignedTool != "" {
+		if tc, ok := e.config.Tools[t.AssignedTool]; ok {
+			toolName = t.AssignedTool
+			toolCfg = tc
+		} else {
+			log.Printf("task assigned_tool %q not found in config, falling back to %s phase default", t.AssignedTool, phase)
+		}
+	}
+	if toolName == "" {
+		var err error
+		toolName, toolCfg, err = e.config.ResolvePhaseToolConfig(phase)
+		if err != nil {
+			return "", config.ToolConfig{}, err
+		}
+	}
+
+	if phaseCfg != nil {
+		if model := e.validateModel(toolName, phaseCfg.Model, toolCfg); model != "" {
+			toolCfg.Model = model
+			return toolName, toolCfg, nil
+		}
+	}
+	if t != nil {
+		if model := e.validateModel(toolName, t.Model, toolCfg); model != "" {
+			toolCfg.Model = model
+			return toolName, toolCfg, nil
+		}
+	}
+
+	if _, phaseToolCfg, err := e.config.ResolvePhaseToolConfig(phase); err == nil {
+		if model := e.validateModel(toolName, phaseToolCfg.Model, toolCfg); model != "" {
+			toolCfg.Model = model
+		}
+	}
+	return toolName, toolCfg, nil
+}
+
+func (e *Executor) validateModel(toolName, model string, toolCfg config.ToolConfig) string {
+	if model == "" {
+		return ""
+	}
+	for _, m := range toolCfg.Models {
+		if m == model {
+			return model
+		}
+	}
+	log.Printf("task model %q not in %s models list, using default", model, toolName)
+	return ""
 }

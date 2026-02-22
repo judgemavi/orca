@@ -23,7 +23,10 @@ export function runLogParserTests(): void {
   const markdownBlocks = parseLogBlocks(
     lines([
       ['# Header', 'stdout'],
-      ['This is prose that should be markdown rendered in one block.', 'stdout'],
+      [
+        'This is prose that should be markdown rendered in one block.',
+        'stdout',
+      ],
     ]),
   )
   assert(markdownBlocks.length === 1, 'expected one markdown block')

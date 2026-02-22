@@ -1,4 +1,10 @@
-export type BlockType = 'json' | 'markdown' | 'code' | 'diff' | 'text' | 'stderr'
+export type BlockType =
+  | 'json'
+  | 'markdown'
+  | 'code'
+  | 'diff'
+  | 'text'
+  | 'stderr'
 
 export interface LogLine {
   raw: string
@@ -13,7 +19,8 @@ export interface LogBlock {
   stream: 'stdout' | 'stderr'
 }
 
-const MARKDOWN_PREFIX_RE = /^(#{1,6}\s|[-*+]\s|>\s|\d+\.\s|\*\*|`{1,3}|\|.+\||---$|___$)/
+const MARKDOWN_PREFIX_RE =
+  /^(#{1,6}\s|[-*+]\s|>\s|\d+\.\s|\*\*|`{1,3}|\|.+\||---$|___$)/
 
 function isFenceLine(line: string): boolean {
   return line.trimStart().startsWith('```')
@@ -73,7 +80,10 @@ function isDiffContinuation(line: string): boolean {
   )
 }
 
-function parsePossibleDiff(lines: LogLine[], start: number): { end: number; content: string } | null {
+function parsePossibleDiff(
+  lines: LogLine[],
+  start: number,
+): { end: number; content: string } | null {
   if (!isDiffStart(lines[start]?.raw ?? '')) return null
 
   const stream = lines[start].stream
@@ -90,7 +100,10 @@ function parsePossibleDiff(lines: LogLine[], start: number): { end: number; cont
   return { end: i - 1, content: chunk.join('\n') }
 }
 
-function parsePossibleJSON(lines: LogLine[], start: number): { end: number; content: string } | null {
+function parsePossibleJSON(
+  lines: LogLine[],
+  start: number,
+): { end: number; content: string } | null {
   if (!startsJSON(lines[start]?.raw ?? '')) return null
 
   const candidate: string[] = []
@@ -166,7 +179,11 @@ export function parseLogBlocks(lines: LogLine[]): LogBlock[] {
         chunk.push(lines[i].raw)
         i++
       }
-      blocks.push({ type: 'stderr', stream: 'stderr', content: chunk.join('\n') })
+      blocks.push({
+        type: 'stderr',
+        stream: 'stderr',
+        content: chunk.join('\n'),
+      })
       continue
     }
 
@@ -218,7 +235,11 @@ export function parseLogBlocks(lines: LogLine[]): LogBlock[] {
         chunk.push(current)
         i++
       }
-      blocks.push({ type: 'markdown', stream: 'stdout', content: chunk.join('\n') })
+      blocks.push({
+        type: 'markdown',
+        stream: 'stdout',
+        content: chunk.join('\n'),
+      })
       continue
     }
 
@@ -226,7 +247,12 @@ export function parseLogBlocks(lines: LogLine[]): LogBlock[] {
     i++
     while (i < lines.length && lines[i].stream === 'stdout') {
       const current = lines[i].raw
-      if (isFenceLine(current) || startsJSON(current) || isMarkdownLine(current)) break
+      if (
+        isFenceLine(current) ||
+        startsJSON(current) ||
+        isMarkdownLine(current)
+      )
+        break
       chunk.push(current)
       i++
     }

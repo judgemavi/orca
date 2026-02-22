@@ -2,26 +2,14 @@ package sprint
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/jasjeetmavi/pod/internal/state"
 	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/pod/internal/testutil"
 )
 
-func testDB(t *testing.T) *state.DB {
-	t.Helper()
-	tmpDir := t.TempDir()
-	db, err := state.Open(filepath.Join(tmpDir, "test.db"))
-	if err != nil {
-		t.Fatalf("open test db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
 func TestPlan(t *testing.T) {
-	db := testDB(t)
+	db := testutil.DB(t)
 	store := task.NewStore(db)
 	planner := NewPlanner(db)
 
@@ -69,7 +57,7 @@ func TestPlan(t *testing.T) {
 }
 
 func TestPlanNoReadyTasks(t *testing.T) {
-	db := testDB(t)
+	db := testutil.DB(t)
 	store := task.NewStore(db)
 	planner := NewPlanner(db)
 
@@ -103,8 +91,8 @@ func TestPlanNoReadyTasks(t *testing.T) {
 	}
 }
 
-func TestStartAndComplete(t *testing.T) {
-	db := testDB(t)
+func TestCompleteTaskDoesNotCompleteSprint(t *testing.T) {
+	db := testutil.DB(t)
 	store := task.NewStore(db)
 	planner := NewPlanner(db)
 
@@ -156,15 +144,15 @@ func TestStartAndComplete(t *testing.T) {
 
 	got, err = planner.Get(s.ID)
 	if err != nil {
-		t.Fatalf("get sprint after complete: %v", err)
+		t.Fatalf("get sprint after complete task updates: %v", err)
 	}
-	if got.Status != "completed" {
-		t.Errorf("sprint status = %q, want %q", got.Status, "completed")
+	if got.Status != "running" {
+		t.Errorf("sprint status = %q, want %q", got.Status, "running")
 	}
 }
 
-func TestCompleteTaskWithFailure(t *testing.T) {
-	db := testDB(t)
+func TestCompleteTaskWithFailureDoesNotFailSprint(t *testing.T) {
+	db := testutil.DB(t)
 	store := task.NewStore(db)
 	planner := NewPlanner(db)
 
@@ -196,13 +184,177 @@ func TestCompleteTaskWithFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sprint: %v", err)
 	}
+	if got.Status != "running" {
+		t.Errorf("sprint status = %q, want %q", got.Status, "running")
+	}
+}
+
+func TestCompleteTaskWithReviewDoesNotCompleteSprint(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	planner := NewPlanner(db)
+
+	t1, err := store.Create("Task 1", "", "", "")
+	if err != nil {
+		t.Fatalf("create t1: %v", err)
+	}
+	t2, err := store.Create("Task 2", "", "", "")
+	if err != nil {
+		t.Fatalf("create t2: %v", err)
+	}
+
+	s, err := planner.Plan(10)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if err := planner.Start(s.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	if err := planner.CompleteTask(s.ID, t1.ID, "review"); err != nil {
+		t.Fatalf("complete t1 as review: %v", err)
+	}
+	if err := planner.CompleteTask(s.ID, t2.ID, "completed"); err != nil {
+		t.Fatalf("complete t2: %v", err)
+	}
+
+	got, err := planner.Get(s.ID)
+	if err != nil {
+		t.Fatalf("get sprint: %v", err)
+	}
+	if got.Status != "running" {
+		t.Errorf("sprint status = %q, want %q", got.Status, "running")
+	}
+}
+
+func TestCompleteSprintIfDoneCompletesWhenTasksAreTerminal(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	planner := NewPlanner(db)
+
+	t1, err := store.Create("Task 1", "", "", "")
+	if err != nil {
+		t.Fatalf("create t1: %v", err)
+	}
+	t2, err := store.Create("Task 2", "", "", "")
+	if err != nil {
+		t.Fatalf("create t2: %v", err)
+	}
+
+	s, err := planner.Plan(10)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if err := planner.Start(s.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	if err := store.Update(t1.ID, map[string]interface{}{"status": "completed"}); err != nil {
+		t.Fatalf("complete t1: %v", err)
+	}
+	if err := store.Update(t2.ID, map[string]interface{}{"status": "merged"}); err != nil {
+		t.Fatalf("merge t2: %v", err)
+	}
+
+	if err := planner.CompleteSprintIfDone(s.ID); err != nil {
+		t.Fatalf("complete sprint if done: %v", err)
+	}
+
+	got, err := planner.Get(s.ID)
+	if err != nil {
+		t.Fatalf("get sprint: %v", err)
+	}
+	if got.Status != "completed" {
+		t.Errorf("sprint status = %q, want %q", got.Status, "completed")
+	}
+}
+
+func TestCompleteSprintIfDoneFailsWhenAnyFailedAndRestTerminal(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	planner := NewPlanner(db)
+
+	t1, err := store.Create("Task 1", "", "", "")
+	if err != nil {
+		t.Fatalf("create t1: %v", err)
+	}
+	t2, err := store.Create("Task 2", "", "", "")
+	if err != nil {
+		t.Fatalf("create t2: %v", err)
+	}
+
+	s, err := planner.Plan(10)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if err := planner.Start(s.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	if err := store.Update(t1.ID, map[string]interface{}{"status": "failed"}); err != nil {
+		t.Fatalf("fail t1: %v", err)
+	}
+	if err := store.Update(t2.ID, map[string]interface{}{"status": "completed"}); err != nil {
+		t.Fatalf("complete t2: %v", err)
+	}
+
+	if err := planner.CompleteSprintIfDone(s.ID); err != nil {
+		t.Fatalf("complete sprint if done: %v", err)
+	}
+
+	got, err := planner.Get(s.ID)
+	if err != nil {
+		t.Fatalf("get sprint: %v", err)
+	}
+	if got.Status != "failed" {
+		t.Errorf("sprint status = %q, want %q", got.Status, "failed")
+	}
+}
+
+func TestCompleteSprintIfDoneFailsWhenAllFailed(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	planner := NewPlanner(db)
+
+	t1, err := store.Create("Task 1", "", "", "")
+	if err != nil {
+		t.Fatalf("create t1: %v", err)
+	}
+	t2, err := store.Create("Task 2", "", "", "")
+	if err != nil {
+		t.Fatalf("create t2: %v", err)
+	}
+
+	s, err := planner.Plan(10)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if err := planner.Start(s.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	if err := store.Update(t1.ID, map[string]interface{}{"status": "failed"}); err != nil {
+		t.Fatalf("fail t1: %v", err)
+	}
+	if err := store.Update(t2.ID, map[string]interface{}{"status": "failed"}); err != nil {
+		t.Fatalf("fail t2: %v", err)
+	}
+
+	if err := planner.CompleteSprintIfDone(s.ID); err != nil {
+		t.Fatalf("complete sprint if done: %v", err)
+	}
+
+	got, err := planner.Get(s.ID)
+	if err != nil {
+		t.Fatalf("get sprint: %v", err)
+	}
 	if got.Status != "failed" {
 		t.Errorf("sprint status = %q, want %q", got.Status, "failed")
 	}
 }
 
 func TestResetSprintTasks(t *testing.T) {
-	db := testDB(t)
+	db := testutil.DB(t)
 	store := task.NewStore(db)
 	planner := NewPlanner(db)
 
@@ -243,7 +395,7 @@ func TestResetSprintTasks(t *testing.T) {
 }
 
 func TestGetActive(t *testing.T) {
-	db := testDB(t)
+	db := testutil.DB(t)
 	store := task.NewStore(db)
 	planner := NewPlanner(db)
 

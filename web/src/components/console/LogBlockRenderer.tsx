@@ -64,7 +64,9 @@ function JSONBlock({ content }: { content: string }) {
         <CopyButton content={pretty} />
       </div>
       {!expanded ? (
-        <div className="truncate px-2 py-1.5 text-xs text-slate-300">{firstLine}</div>
+        <div className="truncate px-2 py-1.5 text-xs text-slate-300">
+          {firstLine}
+        </div>
       ) : (
         <div className="text-xs">
           {render ? (
@@ -98,7 +100,9 @@ export function LogBlockRenderer({ block }: Props) {
   if (block.type === 'markdown') {
     return (
       <div className="prose prose-invert prose-sm max-w-none text-slate-100 prose-p:my-1">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {block.content}
+        </ReactMarkdown>
       </div>
     )
   }
@@ -107,7 +111,9 @@ export function LogBlockRenderer({ block }: Props) {
     return (
       <div className="rounded border border-slate-700 bg-slate-950/70">
         <div className="flex items-center justify-between border-b border-slate-700 px-2 py-1.5">
-          <span className="text-[11px] text-slate-400">{block.language ?? 'code'}</span>
+          <span className="text-[11px] text-slate-400">
+            {block.language ?? 'code'}
+          </span>
           <CopyButton content={block.content} />
         </div>
         <SyntaxHighlighter

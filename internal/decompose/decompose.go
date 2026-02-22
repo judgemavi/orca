@@ -9,29 +9,8 @@ import (
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/explore"
 	"github.com/jasjeetmavi/pod/internal/worker"
+	"github.com/jasjeetmavi/pod/prompts"
 )
-
-const promptTemplate = `You are a task decomposer for a software project. Given a goal, break it into concrete, implementable tasks.
-
-%s
-## Goal
-
-%s
-
-## Instructions
-
-Respond with ONLY a JSON array. Each element:
-{
-  "title": "short imperative title",
-  "description": "what to implement, specific files/functions if known",
-  "depends_on_indices": [0, 1],
-  "suggested_tool": "claude"
-}
-
-depends_on_indices uses 0-based indices into this array. Leave empty if no deps.
-suggested_tool is optional — use "claude", "codex", or "" if no preference.
-
-Keep tasks small and parallelizable. Aim for 2-8 tasks.`
 
 // ProposedTask is a task proposed by the LLM decomposer.
 type ProposedTask struct {
@@ -59,7 +38,7 @@ func (d *Decomposer) Run(goal string) ([]ProposedTask, error) {
 		contextSection = "## Codebase Context\n\n" + ctx + "\n\n"
 	}
 
-	prompt := fmt.Sprintf(promptTemplate, contextSection, goal)
+	prompt := fmt.Sprintf(prompts.Decompose, contextSection, goal)
 
 	adapter, err := worker.NewAdapter(d.toolCfg)
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasjeetmavi/pod/internal/config"
 	"github.com/jasjeetmavi/pod/internal/worker"
+	"github.com/jasjeetmavi/pod/prompts"
 )
 
 // Integrator merges task worktree branches into an integration branch
@@ -135,10 +136,7 @@ func (i *Integrator) MergeWithRerun(taskID string) error {
 		return fmt.Errorf("create adapter for conflict resolution: %w", err)
 	}
 
-	prompt := "This file has git merge/rebase conflict markers (<<<<<<< HEAD, =======, >>>>>>>). " +
-		"Resolve ALL conflicts by choosing the correct code and removing ALL conflict markers. " +
-		"Do not leave any <<<<<<< or ======= or >>>>>>> markers in any file. " +
-		"After resolving, make sure the code compiles and works correctly."
+	prompt := prompts.ConflictResolve
 
 	if _, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath); execErr != nil {
 		i.abortRebaseInWorktree(wtPath)

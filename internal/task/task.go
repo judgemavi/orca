@@ -2,6 +2,8 @@
 package task
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,19 +13,40 @@ import (
 )
 
 type Task struct {
-	ID           string    `json:"id"`
-	Title        string    `json:"title"`
-	Description  string    `json:"description"`
-	Prompt       string    `json:"prompt,omitempty"`
-	Model        string    `json:"model,omitempty"`
-	Plan         string    `json:"plan,omitempty"`
-	ParentID     string    `json:"parent_id,omitempty"`
-	Status       string    `json:"status"`
-	AssignedTool string    `json:"assigned_tool,omitempty"`
-	SprintID     string    `json:"sprint_id,omitempty"`
-	DependsOn    []string  `json:"depends_on"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title"`
+	Description  string          `json:"description"`
+	Prompt       string          `json:"prompt,omitempty"`
+	Model        string          `json:"model,omitempty"`
+	PhaseConfig  *PhaseConfigMap `json:"phase_config,omitempty"`
+	Plan         string          `json:"plan,omitempty"`
+	SessionID    string          `json:"session_id,omitempty"`
+	ParentID     string          `json:"parent_id,omitempty"`
+	Status       string          `json:"status"`
+	AssignedTool string          `json:"assigned_tool,omitempty"`
+	SprintID     string          `json:"sprint_id,omitempty"`
+	DependsOn    []string        `json:"depends_on"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+}
+
+type PhaseOverride struct {
+	Tool  string `json:"tool,omitempty"`
+	Model string `json:"model,omitempty"`
+}
+
+type PhaseConfigMap struct {
+	UseDefaults bool                     `json:"use_defaults"`
+	Phases      map[string]PhaseOverride `json:"phases,omitempty"` // keys: "plan", "sprint", "review"
+}
+
+type TaskReview struct {
+	ID          string     `json:"id"`
+	TaskID      string     `json:"task_id"`
+	Feedback    string     `json:"feedback"`
+	Status      string     `json:"status"` // "pending" | "addressed"
+	CreatedAt   time.Time  `json:"created_at"`
+	AddressedAt *time.Time `json:"addressed_at,omitempty"`
 }
 
 type Store struct {
@@ -71,7 +94,7 @@ func (s *Store) Create(title, description, parentID, assignedTool string) (*Task
 
 func (s *Store) Get(id string) (*Task, error) {
 	t, err := s.scanTask(
-		`SELECT id, title, description, prompt, model, plan, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
 		 FROM tasks WHERE id = ?`, id,
 	)
 	if err != nil {
@@ -88,14 +111,14 @@ func (s *Store) Get(id string) (*Task, error) {
 
 func (s *Store) List() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, model, plan, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
 		 FROM tasks ORDER BY created_at`,
 	)
 }
 
 func (s *Store) ListByStatus(status string) ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, model, plan, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
 		 FROM tasks WHERE status = ? ORDER BY created_at`, status,
 	)
 }
@@ -103,6 +126,9 @@ func (s *Store) ListByStatus(status string) ([]*Task, error) {
 func (s *Store) Update(id string, fields map[string]interface{}) error {
 	if len(fields) == 0 {
 		return nil
+	}
+	if err := normalizePhaseConfigField(fields); err != nil {
+		return err
 	}
 
 	setClauses := make([]string, 0, len(fields)+1)
@@ -164,6 +190,10 @@ func (s *Store) SetPlan(id, content string) error {
 	return s.Update(id, map[string]interface{}{"plan": content})
 }
 
+func (s *Store) SetSessionID(id, sessionID string) error {
+	return s.Update(id, map[string]interface{}{"session_id": sessionID})
+}
+
 func (s *Store) GetPlan(id string) (string, error) {
 	var plan *string
 	if err := s.db.QueryRow(`SELECT plan FROM tasks WHERE id = ?`, id).Scan(&plan); err != nil {
@@ -177,7 +207,7 @@ func (s *Store) GetPlan(id string) (string, error) {
 // the dependent task needs the dep's code in the integration branch.
 func (s *Store) GetReady() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT t.id, t.title, t.description, t.prompt, t.model, t.plan, t.parent_id, t.status, t.assigned_tool, t.sprint_id, t.created_at, t.updated_at
+		`SELECT t.id, t.title, t.description, t.prompt, t.model, t.phase_config, t.plan, t.session_id, t.parent_id, t.status, t.assigned_tool, t.sprint_id, t.created_at, t.updated_at
 		 FROM tasks t
 		 WHERE t.status = 'pending'
 		   AND NOT EXISTS (
@@ -254,20 +284,100 @@ func (s *Store) ResolveID(prefix string) (string, error) {
 	}
 }
 
+func (s *Store) AddReview(taskID, feedback string) (string, error) {
+	id := uuid.New().String()
+	_, err := s.db.Exec(
+		`INSERT INTO task_reviews (id, task_id, feedback, status) VALUES (?, ?, ?, 'pending')`,
+		id, taskID, feedback,
+	)
+	if err != nil {
+		return "", fmt.Errorf("add task review: %w", err)
+	}
+	return id, nil
+}
+
+func (s *Store) GetPendingReview(taskID string) (id, feedback string, err error) {
+	err = s.db.QueryRow(
+		`SELECT id, feedback
+		 FROM task_reviews
+		 WHERE task_id = ? AND status = 'pending'
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		taskID,
+	).Scan(&id, &feedback)
+	if err != nil {
+		return "", "", err
+	}
+	return id, feedback, nil
+}
+
+func (s *Store) AddressReview(reviewID string) error {
+	_, err := s.db.Exec(
+		`UPDATE task_reviews
+		 SET status = 'addressed', addressed_at = ?
+		 WHERE id = ?`,
+		time.Now().UTC(), reviewID,
+	)
+	if err != nil {
+		return fmt.Errorf("address task review: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListReviews(taskID string) ([]TaskReview, error) {
+	rows, err := s.db.Query(
+		`SELECT id, task_id, feedback, status, created_at, addressed_at
+		 FROM task_reviews
+		 WHERE task_id = ?
+		 ORDER BY created_at`,
+		taskID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list task reviews: %w", err)
+	}
+	defer rows.Close()
+
+	var reviews []TaskReview
+	for rows.Next() {
+		var review TaskReview
+		var addressedAt sql.NullTime
+		if err := rows.Scan(
+			&review.ID,
+			&review.TaskID,
+			&review.Feedback,
+			&review.Status,
+			&review.CreatedAt,
+			&addressedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan task review: %w", err)
+		}
+		if addressedAt.Valid {
+			review.AddressedAt = &addressedAt.Time
+		}
+		reviews = append(reviews, review)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate task reviews: %w", err)
+	}
+	return reviews, nil
+}
+
 // --- helpers ---
 
 func (s *Store) scanTask(query string, args ...interface{}) (*Task, error) {
 	row := s.db.QueryRow(query, args...)
 	var t Task
-	var desc, prompt, model, plan, parentID, tool, sprintID *string
-	err := row.Scan(&t.ID, &t.Title, &desc, &prompt, &model, &plan, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt)
+	var desc, prompt, model, phaseConfig, plan, sessionID, parentID, tool, sprintID *string
+	err := row.Scan(&t.ID, &t.Title, &desc, &prompt, &model, &phaseConfig, &plan, &sessionID, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	t.Description = deref(desc)
 	t.Prompt = deref(prompt)
 	t.Model = deref(model)
+	t.PhaseConfig = parsePhaseConfig(phaseConfig)
 	t.Plan = deref(plan)
+	t.SessionID = deref(sessionID)
 	t.ParentID = deref(parentID)
 	t.AssignedTool = deref(tool)
 	t.SprintID = deref(sprintID)
@@ -284,14 +394,16 @@ func (s *Store) queryTasks(query string, args ...interface{}) ([]*Task, error) {
 	var tasks []*Task
 	for rows.Next() {
 		var t Task
-		var desc, prompt, model, plan, parentID, tool, sprintID *string
-		if err := rows.Scan(&t.ID, &t.Title, &desc, &prompt, &model, &plan, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		var desc, prompt, model, phaseConfig, plan, sessionID, parentID, tool, sprintID *string
+		if err := rows.Scan(&t.ID, &t.Title, &desc, &prompt, &model, &phaseConfig, &plan, &sessionID, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
 		t.Description = deref(desc)
 		t.Prompt = deref(prompt)
 		t.Model = deref(model)
+		t.PhaseConfig = parsePhaseConfig(phaseConfig)
 		t.Plan = deref(plan)
+		t.SessionID = deref(sessionID)
 		t.ParentID = deref(parentID)
 		t.AssignedTool = deref(tool)
 		t.SprintID = deref(sprintID)
@@ -333,4 +445,41 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func parsePhaseConfig(raw *string) *PhaseConfigMap {
+	if raw == nil || *raw == "" {
+		return nil
+	}
+
+	var pc PhaseConfigMap
+	if err := json.Unmarshal([]byte(*raw), &pc); err != nil {
+		return nil
+	}
+	return &pc
+}
+
+func normalizePhaseConfigField(fields map[string]interface{}) error {
+	v, ok := fields["phase_config"]
+	if !ok || v == nil {
+		return nil
+	}
+
+	var data []byte
+	var err error
+	switch pc := v.(type) {
+	case PhaseConfigMap:
+		data, err = json.Marshal(pc)
+	case *PhaseConfigMap:
+		data, err = json.Marshal(pc)
+	case map[string]interface{}:
+		data, err = json.Marshal(pc)
+	default:
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("marshal phase_config: %w", err)
+	}
+	fields["phase_config"] = string(data)
+	return nil
 }
