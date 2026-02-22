@@ -58,9 +58,9 @@
 
 ---
 
-## Pod's Differentiation
+## Orca's Differentiation
 
-| Aspect | CAO | Pod |
+| Aspect | CAO | Orca |
 |---|---|---|
 | Isolation | tmux windows (shared FS) | Git worktrees (true FS isolation) |
 | Status detection | Regex on ANSI terminal output | Process exit + git diff |
@@ -72,17 +72,17 @@
 | Coordination model | Ad-hoc LLM decisions | Scrum-inspired phases |
 | Roles | Generic workers | Typed: tech lead, dev, reviewer |
 
-**Pod's core pitch:** Git-native isolation with a dev-team-inspired workflow model. The thing CAO should have been if it used worktrees instead of tmux.
+**Orca's core pitch:** Git-native isolation with a dev-team-inspired workflow model. The thing CAO should have been if it used worktrees instead of tmux.
 
 ---
 
 ## Key Learnings from CAO Deep-Dive
 
-1. **Interactive mode is powerful but expensive** — CAO chose tmux+interactive because agents need multi-turn tool use. The regex price is high. Pod should test headless first and only add interactive if needed.
+1. **Interactive mode is powerful but expensive** — CAO chose tmux+interactive because agents need multi-turn tool use. The regex price is high. Orca should test headless first and only add interactive if needed.
 
-2. **MCP is a clean orchestration interface** — CAO's approach of exposing `handoff`/`assign`/`send_message` as MCP tools is elegant. Pod doesn't need MCP (user is supervisor), but worth noting if autopilot mode needs it later.
+2. **MCP is a clean orchestration interface** — CAO's approach of exposing `handoff`/`assign`/`send_message` as MCP tools is elegant. Orca doesn't need MCP (user is supervisor), but worth noting if autopilot mode needs it later.
 
-3. **Agent profiles as markdown are a good pattern** — YAML frontmatter for config, markdown body for system prompt. Pod should adopt something similar for role definitions.
+3. **Agent profiles as markdown are a good pattern** — YAML frontmatter for config, markdown body for system prompt. Orca should adopt something similar for role definitions.
 
 4. **Status detection is the hardest part of interactive mode** — CAO has 50+ lines of regex per provider and it's still fragile. Avoid this if possible.
 
@@ -125,9 +125,9 @@
 6. **No cost tracking.**
 7. **Metadata hooks are brittle** — Relies on injected bash scripts; if agent skips expected commands, metadata stales.
 
-### Pod vs Composio AO
+### Orca vs Composio AO
 
-| Aspect | Composio AO | Pod |
+| Aspect | Composio AO | Orca |
 |---|---|---|
 | Orchestration model | Spawn-and-monitor per issue | Phase-driven scrum (explore→plan→sprint→review→integrate) |
 | Task coordination | Independent issues, no dependencies | Dependency graphs, sprint planning, ordered execution |
@@ -143,11 +143,11 @@
 
 ### Key Insight: MCP as Autopilot vs Bespoke Orchestrator
 
-Composio's reaction engine is a **hardcoded policy loop** — deterministic, cheap (no tokens), but rigid. Pod's MCP approach lets any LLM *reason* about what to do: retry, skip, replan, or escalate based on full context. This is strictly more capable for non-trivial decisions.
+Composio's reaction engine is a **hardcoded policy loop** — deterministic, cheap (no tokens), but rigid. Orca's MCP approach lets any LLM *reason* about what to do: retry, skip, replan, or escalate based on full context. This is strictly more capable for non-trivial decisions.
 
-Composio would need to build a custom orchestrator agent to match this. Pod already ships it — any MCP-capable client (Claude, future models) can drive the full workflow today.
+Composio would need to build a custom orchestrator agent to match this. Orca already ships it — any MCP-capable client (Claude, future models) can drive the full workflow today.
 
 ### What's Worth Borrowing
 
 1. **Browser notifications for unattended runs** — If user kicks off a multi-hour sprint and closes the tab, a `Notification API` ping from the existing WebSocket connection would be trivial.
-2. **Plugin abstraction** — Not needed now, but if Pod ever needs Docker/K8s runtimes or Linear/Jira integration, Composio's slot-based interface pattern is clean. Premature today.
+2. **Plugin abstraction** — Not needed now, but if Orca ever needs Docker/K8s runtimes or Linear/Jira integration, Composio's slot-based interface pattern is clean. Premature today.

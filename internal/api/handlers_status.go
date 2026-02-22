@@ -3,9 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/jasjeetmavi/pod/internal/cost"
-	"github.com/jasjeetmavi/pod/internal/explore"
-	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // ========== Status ==========

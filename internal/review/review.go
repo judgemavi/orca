@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/llm"
-	"github.com/jasjeetmavi/pod/internal/worker"
-	"github.com/jasjeetmavi/pod/prompts"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/llm"
+	"github.com/jasjeetmavi/orca/internal/worker"
+	"github.com/jasjeetmavi/orca/prompts"
 )
 
 // ReviewResult holds the outcome of a single task review.

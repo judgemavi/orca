@@ -5,17 +5,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jasjeetmavi/pod/cmd/pod/commands"
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/cost"
-	"github.com/jasjeetmavi/pod/internal/sprint"
-	"github.com/jasjeetmavi/pod/internal/state"
-	"github.com/jasjeetmavi/pod/internal/task"
-	"github.com/jasjeetmavi/pod/internal/worktree"
+	"github.com/jasjeetmavi/orca/cmd/orca/commands"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
-const skipRuntimeInitAnnotation = "pod.skip_runtime_init"
+const skipRuntimeInitAnnotation = "orca.skip_runtime_init"
 
 type runtimeState struct {
 	db       *state.DB
@@ -29,15 +29,15 @@ func (rt *runtimeState) init() error {
 	if rt.db != nil && rt.cfg != nil && rt.store != nil && rt.planner != nil && rt.executor != nil {
 		return nil
 	}
-	dbPath := filepath.Join(".pod", "state.db")
+	dbPath := filepath.Join(".orca", "state.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		return fmt.Errorf("pod not initialized — run 'pod init' first")
+		return fmt.Errorf("orca not initialized — run 'orca init' first")
 	}
 	db, err := state.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	cfg, err := config.Load(filepath.Join(".pod", "pod.yaml"))
+	cfg, err := config.Load(filepath.Join(".orca", "orca.yaml"))
 	if err != nil {
 		db.Close()
 		return fmt.Errorf("load config: %w", err)
@@ -100,7 +100,7 @@ func main() {
 	rt := &runtimeState{}
 	reg := commands.NewRegistry(rt.openStore, rt.loadRuntime)
 
-	root := &cobra.Command{Use: "pod", Short: "Multi-agent CLI orchestrator"}
+	root := &cobra.Command{Use: "orca", Short: "Multi-agent CLI orchestrator"}
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		if shouldSkipRuntimeInit(cmd) {
 			return nil

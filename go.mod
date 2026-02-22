@@ -1,4 +1,4 @@
-module github.com/jasjeetmavi/pod
+module github.com/jasjeetmavi/orca
 
 go 1.25.3
 

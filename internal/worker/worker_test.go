@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/orca/internal/config"
 )
 
 func TestNewAdapter(t *testing.T) {

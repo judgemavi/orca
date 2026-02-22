@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/explore"
-	"github.com/jasjeetmavi/pod/internal/task"
-	"github.com/jasjeetmavi/pod/internal/testutil"
-	"github.com/jasjeetmavi/pod/internal/worktree"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/testutil"
+	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 func initExecutorRepo(t *testing.T, dir string) {
@@ -45,7 +45,7 @@ func setupExecutor(t *testing.T, toolCfg config.ToolConfig) (*Executor, *Planner
 
 	cfg := &config.Config{
 		Project: config.ProjectConfig{
-			IntegrationBranch: "pod/integration",
+			IntegrationBranch: "orca/integration",
 			WorktreeDir:       filepath.Join(t.TempDir(), "worktrees"),
 		},
 		Tools: map[string]config.ToolConfig{

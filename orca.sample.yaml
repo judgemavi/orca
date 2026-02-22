@@ -1,11 +1,11 @@
-# Sample pod configuration.
+# Sample orca configuration.
 #
 # Tool/model resolution chain used by orchestrated phases (explore, plan, sprint, review, integrate):
 # 1) orchestrator.phases.<phase>.tool/model
 # 2) defaults.tool/model
 # 3) tool fallback only: first tool key in alphabetical order
 #
-# If model is still empty after (1) and (2), pod uses the selected tool's own 'model' value.
+# If model is still empty after (1) and (2), orca uses the selected tool's own 'model' value.
 
 # Project-level settings.
 project:
@@ -14,13 +14,13 @@ project:
   name: my-project
 
   # Branch where integrated changes are merged.
-  # Default when omitted from the embedded defaults: "pod/integration".
-  integration_branch: pod/integration
+  # Default when omitted from the embedded defaults: "orca/integration".
+  integration_branch: orca/integration
 
   # Base directory for task worktrees.
-  # Relative paths are resolved against the repo root when loaded from .pod/pod.yaml.
-  # Default when omitted from the embedded defaults: ".pod/worktrees".
-  worktree_dir: .pod/worktrees
+  # Relative paths are resolved against the repo root when loaded from .orca/orca.yaml.
+  # Default when omitted from the embedded defaults: ".orca/worktrees".
+  worktree_dir: .orca/worktrees
 
 # Global defaults used when a phase does not set its own tool/model.
 defaults:
@@ -50,7 +50,7 @@ tools:
       - claude-haiku-4-5-20251001
 
     # Args used only when mode=interactive.
-    # {{context}} is replaced from .pod/context.md in the worktree.
+    # {{context}} is replaced from .orca/context.md in the worktree.
     interactive_args:
       - "--append-system-prompt"
       - "{{context}}"
@@ -179,13 +179,13 @@ tools:
       - "--prompt"
       - "{{prompt}}"
       - "--out"
-      - "{{worktree}}/.pod/result.md"
+      - "{{worktree}}/.orca/result.md"
     timeout: 300s
     mode: headless
     prompt_mode: arg
     output:
       mode: file
-      result_path: "{{worktree}}/.pod/result.md"
+      result_path: "{{worktree}}/.orca/result.md"
     cost:
       mode: none
 

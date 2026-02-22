@@ -136,7 +136,7 @@ func newTestManagerWithRepo(t *testing.T) (*Manager, string) {
 	runGit(t, repoDir, "commit", "-m", "init")
 	runGit(t, repoDir, "branch", "-M", "main")
 
-	worktreeDir := filepath.Join(repoDir, ".pod", "worktrees")
+	worktreeDir := filepath.Join(repoDir, ".orca", "worktrees")
 	return NewManager(repoDir, worktreeDir), worktreeDir
 }
 

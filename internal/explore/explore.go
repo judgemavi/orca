@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/worker"
-	"github.com/jasjeetmavi/pod/prompts"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/worker"
+	"github.com/jasjeetmavi/orca/prompts"
 )
 
-const contextFile = ".pod/context.md"
+const contextFile = ".orca/context.md"
 
 // Explorer runs a tool headlessly to map a codebase.
 type Explorer struct {
@@ -37,7 +37,7 @@ func (e *Explorer) WithGoal(goal string) *Explorer {
 	return e
 }
 
-// Run executes the exploration and writes results to .pod/context.md.
+// Run executes the exploration and writes results to .orca/context.md.
 func (e *Explorer) Run() (string, error) {
 	adapter, err := worker.NewAdapter(e.toolCfg)
 	if err != nil {
@@ -67,7 +67,7 @@ func (e *Explorer) Run() (string, error) {
 	}
 	hash, _ := hashFileTree(e.repoDir)
 	if hash != "" {
-		_ = os.WriteFile(filepath.Join(e.repoDir, ".pod/context.hash"), []byte(hash), 0644)
+		_ = os.WriteFile(filepath.Join(e.repoDir, ".orca/context.hash"), []byte(hash), 0644)
 	}
 
 	return outPath, nil
@@ -98,7 +98,7 @@ func WriteManualContext(repoDir, content string) (string, error) {
 	}
 	hash, _ := hashFileTree(repoDir)
 	if hash != "" {
-		_ = os.WriteFile(filepath.Join(repoDir, ".pod/context.hash"), []byte(hash), 0644)
+		_ = os.WriteFile(filepath.Join(repoDir, ".orca/context.hash"), []byte(hash), 0644)
 	}
 	return outPath, nil
 }
@@ -115,7 +115,7 @@ func WriteManualContextFromFile(repoDir, sourcePath string) (string, error) {
 // IsStale returns true if the codebase file tree has changed since exploration.
 // Returns false if no hash file exists (never explored = not stale, just missing).
 func IsStale(repoDir string) (bool, error) {
-	hashPath := filepath.Join(repoDir, ".pod/context.hash")
+	hashPath := filepath.Join(repoDir, ".orca/context.hash")
 	stored, err := os.ReadFile(hashPath)
 	if err != nil {
 		return false, nil

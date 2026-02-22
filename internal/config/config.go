@@ -1,4 +1,4 @@
-// Package config handles pod.yaml parsing and tool adapter configuration.
+// Package config handles orca.yaml parsing and tool adapter configuration.
 package config
 
 import (
@@ -125,7 +125,7 @@ type CleanupConfig struct {
 	TTL string `yaml:"ttl,omitempty" json:"ttl,omitempty"`
 }
 
-// Load reads and parses a pod.yaml config file.
+// Load reads and parses a orca.yaml config file.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -140,7 +140,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	if cfg.Project.WorktreeDir != "" && !filepath.IsAbs(cfg.Project.WorktreeDir) {
-		// Resolve relative to the repo root (parent of the .pod config dir).
+		// Resolve relative to the repo root (parent of the .orca config dir).
 		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), "..", cfg.Project.WorktreeDir))
 		if err == nil {
 			cfg.Project.WorktreeDir = abs

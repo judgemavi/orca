@@ -7,9 +7,9 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/explore"
-	"github.com/jasjeetmavi/pod/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/ops"
 )
 
 // ========== Explore ==========

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/orca/internal/config"
 )
 
 // Worker executes tasks via either headless or interactive adapter modes.
@@ -146,10 +146,10 @@ func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath stri
 
 	if ctx.Err() == context.DeadlineExceeded {
 		result.ExitCode = -1
-		result.Stderr = result.Stderr + "\npod: process killed after timeout (" + a.Timeout.String() + ")"
+		result.Stderr = result.Stderr + "\norca: process killed after timeout (" + a.Timeout.String() + ")"
 	} else if ctx.Err() == context.Canceled {
 		result.ExitCode = -1
-		result.Stderr = result.Stderr + "\npod: process cancelled"
+		result.Stderr = result.Stderr + "\norca: process cancelled"
 	} else if runErr != nil {
 		if ee, ok := runErr.(*exec.ExitError); ok {
 			result.ExitCode = ee.ExitCode()
@@ -160,7 +160,7 @@ func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath stri
 
 	// Stage all changes (including new files) and commit.
 	_, _ = gitOutput(worktreePath, "add", "-A")
-	commitMsg := "pod: task " + taskID
+	commitMsg := "orca: task " + taskID
 	if a.TaskTitle != "" {
 		commitMsg = a.TaskTitle
 	}

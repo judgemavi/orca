@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/pod/internal/state"
-	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 type Sprint struct {
@@ -25,7 +25,7 @@ type Sprint struct {
 
 type EventFunc func(eventType string, id string)
 
-// OrphanedTask represents a task that was running when Pod exited.
+// OrphanedTask represents a task that was running when Orca exited.
 type OrphanedTask struct {
 	TaskID       string
 	SprintID     string

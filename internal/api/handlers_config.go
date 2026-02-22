@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/orca/internal/config"
 )
 
 // ========== Config ==========
@@ -108,7 +108,7 @@ func (s *Server) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cfgPath := filepath.Join(".pod", "pod.yaml")
+	cfgPath := filepath.Join(".orca", "orca.yaml")
 	if err := s.cfg.Save(cfgPath); err != nil {
 		jsonError(w, err, 500)
 		return

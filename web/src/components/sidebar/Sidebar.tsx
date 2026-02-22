@@ -37,7 +37,7 @@ export function Sidebar({ collapsed, onToggle, refreshKey }: Props) {
   return (
     <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-slate-700 bg-slate-900">
       <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
-        <span className="text-lg font-extrabold tracking-tight">Pod</span>
+        <span className="text-lg font-extrabold tracking-tight">Orca</span>
         <button
           className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-black/10 hover:text-slate-100"
           onClick={onToggle}

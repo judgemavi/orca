@@ -129,7 +129,7 @@ func setupRepoAndWorktree(t *testing.T) (repoDir, worktreeDir, taskID, filePath 
 	runGit(t, repoDir, "commit", "-m", "initial commit")
 
 	wtPath := filepath.Join(worktreeDir, "task-"+taskID)
-	runGit(t, repoDir, "worktree", "add", wtPath, "-b", "pod/task-"+taskID, "HEAD")
+	runGit(t, repoDir, "worktree", "add", wtPath, "-b", "orca/task-"+taskID, "HEAD")
 
 	return repoDir, worktreeDir, taskID, filepath.Join(wtPath, "README.md")
 }

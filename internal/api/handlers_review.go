@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/ops"
-	"github.com/jasjeetmavi/pod/internal/review"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/review"
 )
 
 // ========== Sprint Review ==========

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasjeetmavi/pod/internal/state"
+	"github.com/jasjeetmavi/orca/internal/state"
 )
 
 // DB opens a temp SQLite DB for testing and registers cleanup.

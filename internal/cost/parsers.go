@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/orca/internal/config"
 )
 
 // ParseCost extracts cost data from tool output based on the tool's

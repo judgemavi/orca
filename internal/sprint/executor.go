@@ -19,16 +19,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/cost"
-	"github.com/jasjeetmavi/pod/internal/explore"
-	"github.com/jasjeetmavi/pod/internal/monitor"
-	"github.com/jasjeetmavi/pod/internal/pty"
-	"github.com/jasjeetmavi/pod/internal/quality"
-	"github.com/jasjeetmavi/pod/internal/task"
-	"github.com/jasjeetmavi/pod/internal/worker"
-	"github.com/jasjeetmavi/pod/internal/worktree"
-	"github.com/jasjeetmavi/pod/prompts"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/monitor"
+	"github.com/jasjeetmavi/orca/internal/pty"
+	"github.com/jasjeetmavi/orca/internal/quality"
+	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/worker"
+	"github.com/jasjeetmavi/orca/internal/worktree"
+	"github.com/jasjeetmavi/orca/prompts"
 )
 
 // TaskResult holds the outcome of a single task execution.
@@ -648,18 +648,18 @@ func (e *Executor) executeTaskPTY(ctx context.Context, info taskInfo, outputCh c
 	}
 
 	if runCtx.Err() == context.DeadlineExceeded {
-		result.Stderr = "pod: process killed after timeout (" + timeout.String() + ")"
+		result.Stderr = "orca: process killed after timeout (" + timeout.String() + ")"
 		return result
 	}
 	if runCtx.Err() == context.Canceled {
-		result.Stderr = "pod: process cancelled"
+		result.Stderr = "orca: process cancelled"
 		return result
 	}
 
 	result.ExitCode = waitSessionExitCode(sess)
 
 	_, _ = gitOutput(info.worktreePath, "add", "-A")
-	commitMsg := "pod: task " + info.taskID
+	commitMsg := "orca: task " + info.taskID
 	if info.taskTitle != "" {
 		commitMsg = info.taskTitle
 	}
@@ -795,7 +795,7 @@ func buildResumeArgs(toolCfg config.ToolConfig, sessionID, feedback, model strin
 }
 
 func loadContextFromWorktree(worktreePath string) string {
-	data, err := os.ReadFile(filepath.Join(worktreePath, ".pod", "context.md"))
+	data, err := os.ReadFile(filepath.Join(worktreePath, ".orca", "context.md"))
 	if err != nil {
 		return ""
 	}

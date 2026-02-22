@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/testutil"
+	"github.com/jasjeetmavi/orca/internal/testutil"
 )
 
 func TestCreate(t *testing.T) {

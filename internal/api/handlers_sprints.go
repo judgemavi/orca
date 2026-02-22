@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/pod/internal/ops"
-	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/orca/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // ========== Sprints ==========

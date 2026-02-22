@@ -55,7 +55,7 @@ Tracks key decisions and the reasoning behind them. Newest first.
 ## v0.1 — Initial Design (Feb 2026)
 
 ### Wrap CLIs, don't call APIs
-- CLI tools handle auth, context, tool use, model selection. Pod doesn't reimplement.
+- CLI tools handle auth, context, tool use, model selection. Orca doesn't reimplement.
 - Users keep their local config, custom instructions, tool setups.
 
 ### Git worktrees for isolation

@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/orca/internal/config"
 )
 
 // ExtractOutput extracts the usable result text from a tool's stdout

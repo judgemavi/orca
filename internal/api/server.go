@@ -12,16 +12,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/ops"
-	"github.com/jasjeetmavi/pod/internal/orchestrator"
-	"github.com/jasjeetmavi/pod/internal/pty"
-	"github.com/jasjeetmavi/pod/internal/sprint"
-	"github.com/jasjeetmavi/pod/internal/state"
-	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/orchestrator"
+	"github.com/jasjeetmavi/orca/internal/pty"
+	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
-// Server is the Pod HTTP/WS API server.
+// Server is the Orca HTTP/WS API server.
 type Server struct {
 	db         *state.DB
 	cfg        *config.Config
@@ -294,19 +294,19 @@ func (s *Server) Routes() http.Handler {
 	return logMiddleware(corsMiddleware(mux))
 }
 
-// BootstrapOrchestrator starts the orchestrator PTY session for pod serve.
+// BootstrapOrchestrator starts the orchestrator PTY session for orca serve.
 func (s *Server) BootstrapOrchestrator() {
 	if s.sessionMgr == nil {
 		return
 	}
 
-	podBinary, err := os.Executable()
+	orcaBinary, err := os.Executable()
 	if err != nil {
-		log.Printf("resolve pod binary: %v", err)
+		log.Printf("resolve orca binary: %v", err)
 		return
 	}
 
-	mcpConfigPath, err := orchestrator.WriteMCPConfig(s.repoDir, podBinary)
+	mcpConfigPath, err := orchestrator.WriteMCPConfig(s.repoDir, orcaBinary)
 	if err != nil {
 		log.Printf("write mcp config: %v", err)
 		return
@@ -331,7 +331,7 @@ func (s *Server) BootstrapOrchestrator() {
 		Tool:    "orchestrator",
 		Cols:    120,
 		Rows:    40,
-		Env:     []string{"POD_MCP_CONFIG=" + mcpConfigPath},
+		Env:     []string{"ORCA_MCP_CONFIG=" + mcpConfigPath},
 	})
 	if err != nil {
 		log.Printf("bootstrap orchestrator: %v", err)

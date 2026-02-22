@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasjeetmavi/pod/internal/task"
-	"github.com/jasjeetmavi/pod/internal/testutil"
+	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/testutil"
 )
 
 func TestPlan(t *testing.T) {
@@ -624,7 +624,7 @@ func TestRecoverOrphansAndResolveOrphanFailed(t *testing.T) {
 	}
 
 	worktreeDir := t.TempDir()
-	orphans, err := planner.RecoverOrphans(worktreeDir, "pod/integration")
+	orphans, err := planner.RecoverOrphans(worktreeDir, "orca/integration")
 	if err != nil {
 		t.Fatalf("recover orphans: %v", err)
 	}
@@ -676,13 +676,13 @@ func TestRecoverOrphansAndResolveOrphanReview(t *testing.T) {
 
 	repoDir := t.TempDir()
 	initSprintRecoveryRepo(t, repoDir)
-	integrationBranch := "pod/integration"
+	integrationBranch := "orca/integration"
 	runSprintGit(t, repoDir, "checkout", "-b", integrationBranch)
 	runSprintGit(t, repoDir, "checkout", "-")
 
 	worktreeDir := t.TempDir()
 	wtPath := filepath.Join(worktreeDir, "task-"+tk.ID)
-	runSprintGit(t, repoDir, "worktree", "add", wtPath, "-b", "pod/task-"+tk.ID, integrationBranch)
+	runSprintGit(t, repoDir, "worktree", "add", wtPath, "-b", "orca/task-"+tk.ID, integrationBranch)
 
 	filePath := filepath.Join(wtPath, "README.md")
 	if err := os.WriteFile(filePath, []byte("change\n"), 0o644); err != nil {
@@ -718,7 +718,7 @@ func TestRecoverOrphansNone(t *testing.T) {
 	db := testutil.DB(t)
 	planner := NewPlanner(db)
 
-	orphans, err := planner.RecoverOrphans(t.TempDir(), "pod/integration")
+	orphans, err := planner.RecoverOrphans(t.TempDir(), "orca/integration")
 	if err != nil {
 		t.Fatalf("recover orphans: %v", err)
 	}

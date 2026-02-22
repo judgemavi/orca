@@ -1,6 +1,6 @@
 project:
-  integration_branch: pod/integration
-  worktree_dir: .pod/worktrees
+  integration_branch: orca/integration
+  worktree_dir: .orca/worktrees
 
 tools:
   claude:

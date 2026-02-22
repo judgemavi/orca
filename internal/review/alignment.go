@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jasjeetmavi/pod/internal/llm"
-	"github.com/jasjeetmavi/pod/internal/worker"
-	"github.com/jasjeetmavi/pod/prompts"
+	"github.com/jasjeetmavi/orca/internal/llm"
+	"github.com/jasjeetmavi/orca/internal/worker"
+	"github.com/jasjeetmavi/orca/prompts"
 )
 
 type alignmentResponse struct {

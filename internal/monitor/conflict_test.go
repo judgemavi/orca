@@ -169,7 +169,7 @@ func setupConflictWorktrees(t *testing.T, taskIDs []string) (repoDir, worktreeDi
 	sort.Strings(sortedIDs)
 	for _, taskID := range sortedIDs {
 		wtPath := filepath.Join(worktreeDir, "task-"+taskID)
-		runConflictGit(t, repoDir, "worktree", "add", wtPath, "-b", "pod/task-"+taskID, "HEAD")
+		runConflictGit(t, repoDir, "worktree", "add", wtPath, "-b", "orca/task-"+taskID, "HEAD")
 		worktrees[taskID] = wtPath
 	}
 

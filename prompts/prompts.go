@@ -1,4 +1,4 @@
-// Package prompts embeds all LLM system prompts used by Pod components.
+// Package prompts embeds all LLM system prompts used by Orca components.
 // Edit the .md files in this directory to update prompt behaviour.
 package prompts
 

@@ -8,7 +8,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// DB wraps a SQLite connection with Pod-specific operations.
+// DB wraps a SQLite connection with Orca-specific operations.
 type DB struct {
 	*sql.DB
 }

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/pod/internal/state"
+	"github.com/jasjeetmavi/orca/internal/state"
 )
 
 // Record represents a single cost entry.

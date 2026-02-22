@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/mcp"
-	"github.com/jasjeetmavi/pod/internal/sprint"
-	"github.com/jasjeetmavi/pod/internal/state"
-	"github.com/jasjeetmavi/pod/internal/task"
-	"github.com/jasjeetmavi/pod/internal/worktree"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/mcp"
+	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 func main() {
@@ -21,7 +21,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	dbPath := filepath.Join(repoDir, ".pod", "state.db")
+	dbPath := filepath.Join(repoDir, ".orca", "state.db")
 	db, err := state.Open(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open database: %v\n", err)
@@ -29,7 +29,7 @@ func main() {
 	}
 	defer db.Close()
 
-	cfgPath := filepath.Join(repoDir, ".pod", "pod.yaml")
+	cfgPath := filepath.Join(repoDir, ".orca", "orca.yaml")
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

@@ -12,11 +12,11 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/model"
-	"github.com/jasjeetmavi/pod/internal/ops"
-	"github.com/jasjeetmavi/pod/internal/plan"
-	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/model"
+	"github.com/jasjeetmavi/orca/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/plan"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // ========== Tasks ==========
@@ -690,14 +690,14 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		if wt.Branch == "main" || wt.Branch == "master" || wt.Branch == "" {
 			continue
 		}
-		if wt.Branch == "pod/integration" {
+		if wt.Branch == "orca/integration" {
 			continue
 		}
-		if !strings.HasPrefix(wt.Branch, "pod/task-") {
+		if !strings.HasPrefix(wt.Branch, "orca/task-") {
 			continue
 		}
 
-		taskID := strings.TrimPrefix(wt.Branch, "pod/task-")
+		taskID := strings.TrimPrefix(wt.Branch, "orca/task-")
 		tk, err := store.Get(taskID)
 		if err != nil {
 			stale = append(stale, staleEntry{taskID: taskID, branch: wt.Branch})

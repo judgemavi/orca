@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/orca/internal/config"
 )
 
 // InteractiveAdapter runs a CLI tool in a pseudo-terminal for full interactive capability.
@@ -115,10 +115,10 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 
 	if ctx.Err() == context.DeadlineExceeded {
 		result.ExitCode = -1
-		result.Stderr = "pod: process killed after timeout (" + a.Timeout.String() + ")"
+		result.Stderr = "orca: process killed after timeout (" + a.Timeout.String() + ")"
 	} else if ctx.Err() == context.Canceled {
 		result.ExitCode = -1
-		result.Stderr = "pod: process cancelled"
+		result.Stderr = "orca: process cancelled"
 	} else if waitErr != nil {
 		if ee, ok := waitErr.(*exec.ExitError); ok {
 			result.ExitCode = ee.ExitCode()
@@ -128,7 +128,7 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 	}
 
 	_, _ = gitOutput(worktreePath, "add", "-A")
-	commitMsg := "pod: task " + taskID
+	commitMsg := "orca: task " + taskID
 	if a.TaskTitle != "" {
 		commitMsg = a.TaskTitle
 	}
@@ -171,7 +171,7 @@ func (a *InteractiveAdapter) SetTaskTitle(title string) { a.TaskTitle = title }
 func (a *InteractiveAdapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }
 
 func loadContextFromWorktree(worktreePath string) string {
-	data, err := os.ReadFile(filepath.Join(worktreePath, ".pod", "context.md"))
+	data, err := os.ReadFile(filepath.Join(worktreePath, ".orca", "context.md"))
 	if err != nil {
 		return ""
 	}

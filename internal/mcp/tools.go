@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/cost"
-	"github.com/jasjeetmavi/pod/internal/explore"
-	"github.com/jasjeetmavi/pod/internal/integrator"
-	"github.com/jasjeetmavi/pod/internal/review"
-	"github.com/jasjeetmavi/pod/internal/task"
-	"github.com/jasjeetmavi/pod/internal/worktree"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/review"
+	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 type toolDef struct {
@@ -43,7 +43,7 @@ func (s *Server) handleInitialize(req jsonrpcRequest) jsonrpcResponse {
 	result := map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"serverInfo": map[string]string{
-			"name":    "pod-mcp",
+			"name":    "orca-mcp",
 			"version": "0.1.0",
 		},
 		"capabilities": map[string]interface{}{

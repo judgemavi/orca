@@ -1,0 +1,91 @@
+version: "3"
+
+vars:
+  DIST: dist
+
+tasks:
+  build:
+    desc: Build everything (web + Go binaries)
+    cmds:
+      - task: web:build
+      - task: build:go
+
+  build:go:
+    desc: Build all Go binaries
+    deps: [build:orca, build:mcp]
+
+  build:orca:
+    desc: Build orca CLI
+    deps: [web:build]
+    cmds:
+      - go build -o {{.DIST}}/orca ./cmd/orca
+    sources:
+      - cmd/orca/**/*.go
+      - internal/**/*.go
+      - web/dist/**/*
+      - go.mod
+    generates:
+      - "{{.DIST}}/orca"
+
+  build:mcp:
+    desc: Build MCP server
+    cmds:
+      - go build -o {{.DIST}}/orca-mcp ./cmd/mcp
+    sources:
+      - cmd/mcp/**/*.go
+      - internal/**/*.go
+      - go.mod
+    generates:
+      - "{{.DIST}}/orca-mcp"
+
+  web:install:
+    desc: Install web dependencies
+    dir: web
+    cmds:
+      - bun install
+    sources:
+      - package.json
+      - bun.lock
+    generates:
+      - node_modules/.package-lock.json
+
+  web:build:
+    desc: Build web frontend
+    dir: web
+    deps: [web:install]
+    cmds:
+      - bun run build
+    sources:
+      - src/**/*
+      - index.html
+      - vite.config.*
+      - tsconfig.*
+    generates:
+      - dist/**/*
+
+  web:dev:
+    desc: Start web dev server
+    dir: web
+    deps: [web:install]
+    cmds:
+      - bun run dev
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./cmd/... ./internal/...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./cmd/... ./internal/...
+
+  lint:
+    desc: Vet + build check
+    deps: [vet, build]
+
+  clean:
+    desc: Remove all build artifacts
+    cmds:
+      - rm -rf {{.DIST}}
+      - rm -rf web/dist

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/explore"
-	"github.com/jasjeetmavi/pod/internal/worker"
-	"github.com/jasjeetmavi/pod/prompts"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/worker"
+	"github.com/jasjeetmavi/orca/prompts"
 )
 
 // Generator produces markdown implementation plans for tasks.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/pty"
+	"github.com/jasjeetmavi/orca/internal/pty"
 )
 
 type createSessionRequest struct {

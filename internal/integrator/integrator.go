@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/worker"
-	"github.com/jasjeetmavi/pod/prompts"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/worker"
+	"github.com/jasjeetmavi/orca/prompts"
 )
 
 // Integrator merges task worktree branches into an integration branch
@@ -40,7 +40,7 @@ func New(repoDir, integrationBranch string, validationCmds []string) *Integrator
 		repoDir:           repoDir,
 		integrationBranch: integrationBranch,
 		validationCmds:    validationCmds,
-		lockPath:          filepath.Join(repoDir, ".pod", "integration.lock"),
+		lockPath:          filepath.Join(repoDir, ".orca", "integration.lock"),
 	}
 }
 
@@ -59,13 +59,13 @@ func (i *Integrator) Merge(taskID string) error {
 }
 
 func (i *Integrator) mergeUnlocked(taskID string) error {
-	branch := "pod/task-" + taskID
+	branch := "orca/task-" + taskID
 
 	if err := i.git("checkout", i.integrationBranch); err != nil {
 		return fmt.Errorf("checkout %s: %w", i.integrationBranch, err)
 	}
 
-	msg := fmt.Sprintf("pod: merge task-%s", taskID)
+	msg := fmt.Sprintf("orca: merge task-%s", taskID)
 	if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
 		_ = i.git("merge", "--abort")
 
@@ -82,7 +82,7 @@ func (i *Integrator) mergeUnlocked(taskID string) error {
 				return fmt.Errorf("merge %s: conflict unresolvable after rebase attempt: %s", branch, strings.TrimSpace(string(out)))
 			}
 
-			msg := fmt.Sprintf("pod: merge task-%s (after rebase)", taskID)
+			msg := fmt.Sprintf("orca: merge task-%s (after rebase)", taskID)
 			if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
 				_ = i.git("merge", "--abort")
 				return fmt.Errorf("merge %s after rebase: %w", branch, err)
@@ -101,7 +101,7 @@ func (i *Integrator) mergeUnlocked(taskID string) error {
 				return fmt.Errorf("checkout %s after rebase: %w", i.integrationBranch, err)
 			}
 
-			msg := fmt.Sprintf("pod: merge task-%s (after rebase)", taskID)
+			msg := fmt.Sprintf("orca: merge task-%s (after rebase)", taskID)
 			if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
 				_ = i.git("merge", "--abort")
 				return fmt.Errorf("merge %s after rebase: %w", branch, err)
@@ -132,7 +132,7 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 	}
 
 	wtPath := filepath.Join(i.worktreeDir, "task-"+taskID)
-	branch := "pod/task-" + taskID
+	branch := "orca/task-" + taskID
 
 	// Ensure we're on integration branch in the main repo.
 	_ = i.git("checkout", i.integrationBranch)
@@ -200,7 +200,7 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 	}
 
 	// Final merge — should be clean now.
-	msg := fmt.Sprintf("pod: merge task-%s (after rebase)", taskID)
+	msg := fmt.Sprintf("orca: merge task-%s (after rebase)", taskID)
 	if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
 		_ = i.git("merge", "--abort")
 		return fmt.Errorf("merge %s failed after conflict resolution: %w", branch, err)
@@ -225,7 +225,7 @@ func (i *Integrator) withIntegrationLock(fn func() error) error {
 func (i *Integrator) acquireFileLock() (func(), error) {
 	lockPath := i.lockPath
 	if lockPath == "" {
-		lockPath = filepath.Join(i.repoDir, ".pod", "integration.lock")
+		lockPath = filepath.Join(i.repoDir, ".orca", "integration.lock")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
@@ -292,7 +292,7 @@ func (i *Integrator) MergeAndValidate(taskID string) error {
 // diffLineCount returns the number of lines in a task's diff against the integration branch.
 // Returns 0 on error (treat errored tasks as smallest — try them first to fail fast).
 func (i *Integrator) diffLineCount(taskID string) int {
-	branch := "pod/task-" + taskID
+	branch := "orca/task-" + taskID
 	cmd := exec.Command("git", "diff", "--stat", i.integrationBranch+".."+branch)
 	cmd.Dir = i.repoDir
 	out, err := cmd.Output()

@@ -79,8 +79,8 @@ func TestDefault(t *testing.T) {
 		t.Fatalf("Default: %v", err)
 	}
 
-	if cfg.Project.IntegrationBranch != "pod/integration" {
-		t.Fatalf("integration_branch = %q, want %q", cfg.Project.IntegrationBranch, "pod/integration")
+	if cfg.Project.IntegrationBranch != "orca/integration" {
+		t.Fatalf("integration_branch = %q, want %q", cfg.Project.IntegrationBranch, "orca/integration")
 	}
 
 	claude, ok := cfg.Tools["claude"]
@@ -161,7 +161,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	path := filepath.Join(t.TempDir(), "pod.yaml")
+	path := filepath.Join(t.TempDir(), "orca.yaml")
 
 	if err := cfg.Save(path); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -276,7 +276,7 @@ func TestLoadRunsValidation(t *testing.T) {
 	}
 	cfg.Workers.MaxParallel = 0
 
-	path := filepath.Join(t.TempDir(), "pod.yaml")
+	path := filepath.Join(t.TempDir(), "orca.yaml")
 	if err := cfg.Save(path); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 		TTL: "72h",
 	}
 
-	path := filepath.Join(t.TempDir(), "pod.yaml")
+	path := filepath.Join(t.TempDir(), "orca.yaml")
 	if err := cfg.Save(path); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -599,7 +599,7 @@ tools:
     prompt_mode: arg
     output:
       mode: file
-      result_path: "{{worktree}}/.pod/result.md"
+      result_path: "{{worktree}}/.orca/result.md"
     cost:
       mode: regex
       pattern: 'input=(\d+)\s+output=(\d+)\s+cost=([0-9.]+)'
@@ -643,7 +643,7 @@ cleanup:
 		t.Fatalf("cleanup.ttl = %q, want 24h", cfg.Cleanup.TTL)
 	}
 	tool := cfg.Tools["codex"]
-	if tool.Output.Mode != "file" || tool.Output.ResultPath != "{{worktree}}/.pod/result.md" {
+	if tool.Output.Mode != "file" || tool.Output.ResultPath != "{{worktree}}/.orca/result.md" {
 		t.Fatalf("output parse mismatch: %+v", tool.Output)
 	}
 	if tool.Cost.Mode != "regex" || tool.Cost.Pattern != `input=(\d+)\s+output=(\d+)\s+cost=([0-9.]+)` {
@@ -652,7 +652,7 @@ cleanup:
 }
 
 func TestLoadAppliesNewFieldDefaultsWhenOmitted(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "pod.yaml")
+	path := filepath.Join(t.TempDir(), "orca.yaml")
 	data := []byte(`
 project:
   name: defaults-project
@@ -705,7 +705,7 @@ orchestrator:
 }
 
 func TestLoadWithAllNewFields(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "pod.yaml")
+	path := filepath.Join(t.TempDir(), "orca.yaml")
 	data := []byte(`
 project:
   name: all-fields-project

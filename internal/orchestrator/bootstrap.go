@@ -8,23 +8,23 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/prompts"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/prompts"
 )
 
 // SystemPrompt is the orchestrator system prompt loaded from prompts/orchestrator.md.
 var SystemPrompt = strings.TrimSpace(prompts.Orchestrator) + "\n\n" + strings.TrimSpace(prompts.OutputStyle)
 
-func WriteMCPConfig(repoDir, podBinary string) (string, error) {
-	configPath := filepath.Join(repoDir, ".pod", "mcp.json")
+func WriteMCPConfig(repoDir, orcaBinary string) (string, error) {
+	configPath := filepath.Join(repoDir, ".orca", "mcp.json")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return "", fmt.Errorf("create .pod directory: %w", err)
+		return "", fmt.Errorf("create .orca directory: %w", err)
 	}
 
 	configData := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
-			"pod": map[string]interface{}{
-				"command": podBinary,
+			"orca": map[string]interface{}{
+				"command": orcaBinary,
 				"args":    []string{"mcp"},
 				"cwd":     repoDir,
 			},
@@ -79,21 +79,21 @@ func ResolveSupervisorTool(cfg *config.Config) (string, config.ToolConfig, error
 // MCP tools for coordination + read-only tools for codebase understanding.
 // No Write, Edit, Bash, or any file-mutation tools.
 var AllowedTools = []string{
-	// MCP tools (pod server)
-	"mcp__pod__task_list",
-	"mcp__pod__task_create",
-	"mcp__pod__task_update",
-	"mcp__pod__sprint_plan",
-	"mcp__pod__sprint_start",
-	"mcp__pod__sprint_status",
-	"mcp__pod__sprint_cancel",
-	"mcp__pod__sprint_reset",
-	"mcp__pod__review_get",
-	"mcp__pod__review_sprint",
-	"mcp__pod__task_approve",
-	"mcp__pod__task_request_changes",
-	"mcp__pod__explore",
-	"mcp__pod__integrate",
+	// MCP tools (orca server)
+	"mcp__orca__task_list",
+	"mcp__orca__task_create",
+	"mcp__orca__task_update",
+	"mcp__orca__sprint_plan",
+	"mcp__orca__sprint_start",
+	"mcp__orca__sprint_status",
+	"mcp__orca__sprint_cancel",
+	"mcp__orca__sprint_reset",
+	"mcp__orca__review_get",
+	"mcp__orca__review_sprint",
+	"mcp__orca__task_approve",
+	"mcp__orca__task_request_changes",
+	"mcp__orca__explore",
+	"mcp__orca__integrate",
 	// Read-only tools for codebase understanding
 	"Read",
 	"Glob",

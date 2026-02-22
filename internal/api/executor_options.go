@@ -4,10 +4,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/jasjeetmavi/pod/internal/sprint"
-	"github.com/jasjeetmavi/pod/internal/state"
-	"github.com/jasjeetmavi/pod/internal/task"
-	"github.com/jasjeetmavi/pod/internal/worker"
+	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/worker"
 )
 
 // NewExecutorOptions builds sprint executor hooks that broadcast worker and task

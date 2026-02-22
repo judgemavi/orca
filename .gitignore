@@ -1,14 +1,14 @@
 # Build output
-pod
+dist/
 *.exe
 
 # Dependencies
 web/node_modules/
 
-# Pod orchestrator
-.pod/worktrees/
-.pod/*.db-wal
-.pod/*.db-shm
+# Orca orchestrator
+.orca/worktrees/
+.orca/*.db-wal
+.orca/*.db-shm
 
 # Web build output
 web/dist/

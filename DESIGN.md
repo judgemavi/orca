@@ -1,4 +1,4 @@
-# Pod — Multi-Agent CLI Orchestrator
+# Orca — Multi-Agent CLI Orchestrator
 
 **Status:** v1.0 — Implementation Complete
 **Date:** February 2026
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Pod coordinates multiple AI coding CLI agents (Claude Code, Codex, Aider, etc.) on shared codebases. It wraps CLI tools as workers, not APIs.
+Orca coordinates multiple AI coding CLI agents (Claude Code, Codex, Aider, etc.) on shared codebases. It wraps CLI tools as workers, not APIs.
 
 The execution model mirrors a real dev team: explore the codebase, decompose into tasks, execute in parallel on isolated worktrees, review quality, and integrate with validation gates.
 
@@ -34,7 +34,7 @@ The execution model mirrors a real dev team: explore the codebase, decompose int
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                              POD                                  │
+│                             ORCA                                  │
 │                                                                   │
 │  ┌─────────────────────────────────────────────────────────────┐  │
 │  │  Supervisor  (User in manual | LLM in autopilot)            │  │
@@ -56,7 +56,7 @@ The execution model mirrors a real dev team: explore the codebase, decompose int
 │         │        └─────┬──────────────────┘                       │
 │         │              │                                          │
 │  ┌──────▼──────────────▼──────────────────────────────────────┐   │
-│  │  pod/integration branch                                     │   │
+│  │  orca/integration branch                                     │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                    │
 │  ┌─────────────────────────────────────────────────────────────┐   │
@@ -76,7 +76,7 @@ Builds codebase understanding first, then decomposes goals into atomic tasks wit
 
 ### Developer (Implement)
 
-Runs one task per isolated worktree, iterates autonomously, and produces commits on `pod/task-{id}`.
+Runs one task per isolated worktree, iterates autonomously, and produces commits on `orca/task-{id}`.
 
 ### Reviewer (PR Review)
 
@@ -84,7 +84,7 @@ Reviews completed task diffs against intent, correctness, and quality signals.
 
 ### Integrator (Merge + Validate)
 
-Merges approved branches into `pod/integration`, resolves conflicts, and executes validation commands.
+Merges approved branches into `orca/integration`, resolves conflicts, and executes validation commands.
 
 ---
 
@@ -104,29 +104,29 @@ LLM handles orchestration phases with escalation to user on ambiguity, repeated 
 
 ### 1. EXPLORE
 
-`pod explore`
+`orca explore`
 
-Runs an exploration agent and stores context in `.pod/context.md` for prompt injection in later phases.
+Runs an exploration agent and stores context in `.orca/context.md` for prompt injection in later phases.
 
 ### 2. PLAN
 
-`pod plan "goal description"`
+`orca plan "goal description"`
 
 Creates dependency-aware tasks. Tasks are intentionally small to reduce merge friction.
 
 ### 3. SPRINT
 
-`pod sprint start`
+`orca sprint start`
 
 Executes ready tasks in parallel:
-1. Create worktree from `pod/integration`
+1. Create worktree from `orca/integration`
 2. Inject task prompt + exploration context
 3. Run worker
 4. Capture diff/output/artifacts
 
 ### 4. REVIEW
 
-`pod sprint review`
+`orca sprint review`
 
 Completed task artifacts are reviewed before integration. Review surfaces diff plus quality payload (scope flags and test delta signals) from stored artifacts.
 
@@ -142,12 +142,12 @@ Quality results are stored in `artifacts.quality_json` and returned in review AP
 
 ### 5. INTEGRATE
 
-`pod integrate`
+`orca integrate`
 
 Approved tasks are merged and validated with active gates (not just configured):
 
 1. Smart merge ordering: tasks are sorted by smallest diff first (`internal/integrator/integrator.go`) to reduce conflict surface.
-2. Merge each task into `pod/integration`.
+2. Merge each task into `orca/integration`.
 3. On conflict, attempt rebase and optional tool-assisted conflict resolution.
 4. Run validation commands.
 5. If validation fails, revert merge commit and keep integration clean.
@@ -193,7 +193,7 @@ Sprint/task recovery primitives live in `internal/sprint/sprint.go`:
 2. no commits -> move to `failed`
 - `RecoverSprint`: marks interrupted running sprint as `failed`.
 
-Operator flow includes `pod sprint resume` to recover interrupted execution and continue safely.
+Operator flow includes `orca sprint resume` to recover interrupted execution and continue safely.
 
 ---
 
@@ -201,11 +201,11 @@ Operator flow includes `pod sprint resume` to recover interrupted execution and 
 
 Exploration freshness is tracked by file-tree hash (`internal/explore/explore.go`):
 
-- After explore/manual context write, Pod stores `.pod/context.hash` alongside `.pod/context.md`.
+- After explore/manual context write, Orca stores `.orca/context.hash` alongside `.orca/context.md`.
 - Hash is computed from `git ls-files` output.
 - `IsStale()` compares current tree hash to stored hash.
 - Status endpoints/tools expose staleness for pre-sprint warnings.
-- `pod explore --check` supports scriptable staleness checks.
+- `orca explore --check` supports scriptable staleness checks.
 
 Why: avoid executing sprints on outdated codebase context.
 
@@ -213,7 +213,7 @@ Why: avoid executing sprints on outdated codebase context.
 
 ## Worktree Management
 
-Each task runs in its own `task-{id}` worktree and branch (`pod/task-{id}`).
+Each task runs in its own `task-{id}` worktree and branch (`orca/task-{id}`).
 
 Lifecycle:
 1. create worktree from integration
@@ -223,7 +223,7 @@ Lifecycle:
 
 Cleanup features (`internal/worktree/worktree.go`):
 - TTL-based stale worktree cleanup
-- `pod cleanup` and `pod cleanup --dry-run`
+- `orca cleanup` and `orca cleanup --dry-run`
 - Disk usage tracking across worktrees
 
 ---
@@ -242,47 +242,47 @@ Workers never communicate directly.
 
 ```bash
 # Setup
-pod init
-pod config
+orca init
+orca config
 
 # Explore
-pod explore
-pod explore --manual
-pod explore --check              # Check context staleness
+orca explore
+orca explore --manual
+orca explore --check              # Check context staleness
 
 # Plan / Backlog
-pod plan "goal description"
-pod plan --manual
-pod backlog
-pod backlog add "task"
-pod backlog edit task-001
+orca plan "goal description"
+orca plan --manual
+orca backlog
+orca backlog add "task"
+orca backlog edit task-001
 
 # Sprint
-pod sprint plan
-pod sprint start
-pod sprint status
-pod sprint review
-pod sprint resume                # Recover interrupted sprint
-pod sprint cancel
+orca sprint plan
+orca sprint start
+orca sprint status
+orca sprint review
+orca sprint resume                # Recover interrupted sprint
+orca sprint cancel
 
 # Integration
-pod integrate
-pod integrate --dry-run
+orca integrate
+orca integrate --dry-run
 
 # Worktrees
-pod cleanup                      # Remove stale worktrees
-pod cleanup --dry-run            # Preview cleanup
+orca cleanup                      # Remove stale worktrees
+orca cleanup --dry-run            # Preview cleanup
 
 # General
-pod status
-pod log
+orca status
+orca log
 ```
 
 ---
 
 ## MCP Interface
 
-Pod exposes 19 MCP tools (`internal/mcp/tools.go`) for orchestrator agents.
+Orca exposes 19 MCP tools (`internal/mcp/tools.go`) for orchestrator agents.
 
 ### Task
 - `task_list`
@@ -321,7 +321,7 @@ Pod exposes 19 MCP tools (`internal/mcp/tools.go`) for orchestrator agents.
 
 ## Web Interface
 
-Pod ships a web UI (React + Vite) served by the API server under `/ui/`.
+Orca ships a web UI (React + Vite) served by the API server under `/ui/`.
 
 Key capabilities:
 - Board view with task columns by status (backlog -> merged/failed)
@@ -339,13 +339,13 @@ Core API route groups (`internal/api/server.go`):
 
 ## Configuration
 
-`pod.yaml` includes orchestration, monitor, quality, and cleanup controls:
+`orca.yaml` includes orchestration, monitor, quality, and cleanup controls:
 
 ```yaml
 project:
   name: my-project
-  integration_branch: pod/integration
-  worktree_dir: .pod/worktrees
+  integration_branch: orca/integration
+  worktree_dir: .orca/worktrees
 
 tools:
   claude:
@@ -390,7 +390,7 @@ cleanup:
 
 ## Persistence
 
-SQLite (`.pod/state.db`) stores:
+SQLite (`.orca/state.db`) stores:
 - tasks and dependencies
 - sprints and phase state
 - artifacts (diff/stdout/stderr/quality payload)
@@ -404,4 +404,4 @@ SQLite (`.pod/state.db`) stores:
 
 - Alignment gate wiring: should `alignment_check` run automatically for every reviewed task, or only on flagged/high-risk diffs?
 - Monitor config parity: should executor consume all `monitor.*` settings directly (intervals, per-task budgets) instead of fixed runtime defaults?
-- Recovery UX: should startup auto-apply orphan resolution, or require explicit `pod sprint resume` confirmation in all modes?
+- Recovery UX: should startup auto-apply orphan resolution, or require explicit `orca sprint resume` confirmation in all modes?

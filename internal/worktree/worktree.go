@@ -49,7 +49,7 @@ func (m *Manager) Create(taskID, baseBranch string) (worktreePath string, branch
 		return "", "", fmt.Errorf("create worktree dir: %w", err)
 	}
 
-	branchName = "pod/task-" + taskID
+	branchName = "orca/task-" + taskID
 	worktreePath = filepath.Join(m.worktreeDir, "task-"+taskID)
 
 	if _, err := os.Stat(worktreePath); err == nil {
@@ -67,7 +67,7 @@ func (m *Manager) Create(taskID, baseBranch string) (worktreePath string, branch
 // Remove deletes a worktree and its associated branch for the given task.
 func (m *Manager) Remove(taskID string) error {
 	worktreePath := filepath.Join(m.worktreeDir, "task-"+taskID)
-	branchName := "pod/task-" + taskID
+	branchName := "orca/task-" + taskID
 
 	if err := m.gitCmd("worktree", "remove", worktreePath); err != nil {
 		return fmt.Errorf("git worktree remove: %w", err)
@@ -93,7 +93,7 @@ func (m *Manager) List() ([]WorktreeInfo, error) {
 	return parsePorcelain(string(out)), nil
 }
 
-// ListWithAge returns all pod worktrees with their age.
+// ListWithAge returns all orca worktrees with their age.
 func (m *Manager) ListWithAge() ([]WorktreeAge, error) {
 	entries, err := os.ReadDir(m.worktreeDir)
 	if err != nil {

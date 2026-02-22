@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jasjeetmavi/pod/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/ops"
 )
 
 func (s *Server) handleListOperations(w http.ResponseWriter, r *http.Request) {

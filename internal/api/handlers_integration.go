@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/integrator"
-	"github.com/jasjeetmavi/pod/internal/ops"
-	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // ========== Integrate ==========

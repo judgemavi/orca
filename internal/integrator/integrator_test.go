@@ -40,7 +40,7 @@ func setupRepo(t *testing.T) string {
 	run("commit", "-m", "init")
 
 	// Create integration branch from HEAD.
-	run("branch", "pod/integration")
+	run("branch", "orca/integration")
 
 	return dir
 }
@@ -48,7 +48,7 @@ func setupRepo(t *testing.T) string {
 // createTaskBranch creates a task branch with a commit that adds/modifies a file.
 func createTaskBranch(t *testing.T, dir, taskID, filename, content string) {
 	t.Helper()
-	branch := "pod/task-" + taskID
+	branch := "orca/task-" + taskID
 
 	run := func(args ...string) {
 		t.Helper()
@@ -59,13 +59,13 @@ func createTaskBranch(t *testing.T, dir, taskID, filename, content string) {
 		}
 	}
 
-	run("checkout", "-b", branch, "pod/integration")
+	run("checkout", "-b", branch, "orca/integration")
 	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	run("add", "-A")
 	run("commit", "-m", "task "+taskID+": add "+filename)
-	run("checkout", "pod/integration")
+	run("checkout", "orca/integration")
 }
 
 func createTaskBranchWithNFiles(t *testing.T, dir, taskID string, files int) {
@@ -80,7 +80,7 @@ func createTaskBranchWithNFiles(t *testing.T, dir, taskID string, files int) {
 		}
 	}
 
-	run("checkout", "-b", "pod/task-"+taskID, "pod/integration")
+	run("checkout", "-b", "orca/task-"+taskID, "orca/integration")
 	for idx := 1; idx <= files; idx++ {
 		name := filepath.Join(dir, fmt.Sprintf("task-%s-file-%02d.txt", taskID, idx))
 		if err := os.WriteFile(name, []byte("line\n"), 0644); err != nil {
@@ -89,7 +89,7 @@ func createTaskBranchWithNFiles(t *testing.T, dir, taskID string, files int) {
 	}
 	run("add", "-A")
 	run("commit", "-m", "task "+taskID+": add files")
-	run("checkout", "pod/integration")
+	run("checkout", "orca/integration")
 }
 
 func TestMergeSuccess(t *testing.T) {
@@ -97,7 +97,7 @@ func TestMergeSuccess(t *testing.T) {
 
 	createTaskBranch(t, dir, "001", "feature.go", "package main\n")
 
-	ig := New(dir, "pod/integration", nil)
+	ig := New(dir, "orca/integration", nil)
 	if err := ig.Merge("001"); err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestMergeConflict(t *testing.T) {
 	}
 
 	// Create conflicting content on integration branch.
-	run("checkout", "pod/integration")
+	run("checkout", "orca/integration")
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("integration\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -130,15 +130,15 @@ func TestMergeConflict(t *testing.T) {
 	run("commit", "-m", "integration: add a.txt")
 
 	// Create task branch from before the integration commit (from main).
-	run("checkout", "-b", "pod/task-conflict", "HEAD~1")
+	run("checkout", "-b", "orca/task-conflict", "HEAD~1")
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("task\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	run("add", "-A")
 	run("commit", "-m", "task: add a.txt")
-	run("checkout", "pod/integration")
+	run("checkout", "orca/integration")
 
-	ig := New(dir, "pod/integration", nil)
+	ig := New(dir, "orca/integration", nil)
 	err := ig.Merge("conflict")
 	if err == nil {
 		t.Fatal("expected merge conflict error")
@@ -180,7 +180,7 @@ func TestMergeAndValidateRevert(t *testing.T) {
 
 	createTaskBranch(t, dir, "rv1", "revert-test.go", "package main\n")
 
-	ig := New(dir, "pod/integration", []string{"false"})
+	ig := New(dir, "orca/integration", []string{"false"})
 	err := ig.MergeAndValidate("rv1")
 	if err == nil {
 		t.Fatal("expected MergeAndValidate to fail due to validation")
@@ -210,7 +210,7 @@ func TestMergeBatch(t *testing.T) {
 
 	// Task 2: will conflict.
 	// First add a file on integration.
-	run("checkout", "pod/integration")
+	run("checkout", "orca/integration")
 	if err := os.WriteFile(filepath.Join(dir, "conflict.txt"), []byte("integration\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -218,18 +218,18 @@ func TestMergeBatch(t *testing.T) {
 	run("commit", "-m", "add conflict.txt on integration")
 
 	// Create task branch from before that commit.
-	run("checkout", "-b", "pod/task-b2", "HEAD~1")
+	run("checkout", "-b", "orca/task-b2", "HEAD~1")
 	if err := os.WriteFile(filepath.Join(dir, "conflict.txt"), []byte("task b2\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	run("add", "-A")
 	run("commit", "-m", "task b2: conflict")
-	run("checkout", "pod/integration")
+	run("checkout", "orca/integration")
 
 	// Task 3: clean merge.
 	createTaskBranch(t, dir, "b3", "b3.go", "package b3\n")
 
-	ig := New(dir, "pod/integration", nil)
+	ig := New(dir, "orca/integration", nil)
 	merged, failed, err := ig.MergeBatch([]string{"b1", "b2", "b3"})
 	if err != nil {
 		t.Fatalf("MergeBatch: %v", err)
@@ -252,7 +252,7 @@ func TestMergeBatchSortsByDiffSize(t *testing.T) {
 	createTaskBranchWithNFiles(t, dir, "d10", 10)
 	createTaskBranchWithNFiles(t, dir, "d5", 5)
 
-	ig := New(dir, "pod/integration", nil)
+	ig := New(dir, "orca/integration", nil)
 	merged, failed, err := ig.MergeBatch([]string{"d10", "d1", "d5"})
 	if err != nil {
 		t.Fatalf("MergeBatch: %v", err)
@@ -264,7 +264,7 @@ func TestMergeBatchSortsByDiffSize(t *testing.T) {
 		t.Fatalf("merged = %v, want 3 items", merged)
 	}
 
-	cmd := exec.Command("git", "log", "--first-parent", "--reverse", "--pretty=%s", "pod/integration")
+	cmd := exec.Command("git", "log", "--first-parent", "--reverse", "--pretty=%s", "orca/integration")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -273,15 +273,15 @@ func TestMergeBatchSortsByDiffSize(t *testing.T) {
 
 	var merges []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if strings.HasPrefix(line, "pod: merge task-") {
+		if strings.HasPrefix(line, "orca: merge task-") {
 			merges = append(merges, line)
 		}
 	}
 
 	want := []string{
-		"pod: merge task-d1",
-		"pod: merge task-d5",
-		"pod: merge task-d10",
+		"orca: merge task-d1",
+		"orca: merge task-d5",
+		"orca: merge task-d10",
 	}
 	if len(merges) != len(want) {
 		t.Fatalf("merge commits = %v, want %v", merges, want)
@@ -306,26 +306,26 @@ func TestMergeBatchDiffErrorSortsFirst(t *testing.T) {
 	}
 
 	// Create a conflict task branch that will fail to merge.
-	run("checkout", "pod/integration")
+	run("checkout", "orca/integration")
 	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("integration\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	run("add", "-A")
 	run("commit", "-m", "integration: add shared.txt")
 
-	run("checkout", "-b", "pod/task-conflict2", "HEAD~1")
+	run("checkout", "-b", "orca/task-conflict2", "HEAD~1")
 	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("task\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	run("add", "-A")
 	run("commit", "-m", "task conflict2")
-	run("checkout", "pod/integration")
+	run("checkout", "orca/integration")
 
 	// Create then delete a task branch so diffLineCount returns 0 due to git diff error.
 	createTaskBranch(t, dir, "missing", "missing.txt", "x\n")
-	run("branch", "-D", "pod/task-missing")
+	run("branch", "-D", "orca/task-missing")
 
-	ig := New(dir, "pod/integration", nil)
+	ig := New(dir, "orca/integration", nil)
 	_, failed, err := ig.MergeBatch([]string{"conflict2", "missing"})
 	if err != nil {
 		t.Fatalf("MergeBatch: %v", err)
@@ -340,7 +340,7 @@ func TestMergeBatchDiffErrorSortsFirst(t *testing.T) {
 
 func TestAcquireFileLockLifecycle(t *testing.T) {
 	dir := setupRepo(t)
-	ig := New(dir, "pod/integration", nil)
+	ig := New(dir, "orca/integration", nil)
 
 	unlock, err := ig.acquireFileLock()
 	if err != nil {
@@ -362,14 +362,14 @@ func TestMergeWaitsForFileLock(t *testing.T) {
 	dir := setupRepo(t)
 	createTaskBranch(t, dir, "lockwait", "lockwait.go", "package lockwait\n")
 
-	lockOwner := New(dir, "pod/integration", nil)
+	lockOwner := New(dir, "orca/integration", nil)
 	unlock, err := lockOwner.acquireFileLock()
 	if err != nil {
 		t.Fatalf("acquireFileLock: %v", err)
 	}
 	defer unlock()
 
-	ig := New(dir, "pod/integration", nil)
+	ig := New(dir, "orca/integration", nil)
 	done := make(chan error, 1)
 	go func() {
 		done <- ig.Merge("lockwait")

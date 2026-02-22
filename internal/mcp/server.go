@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jasjeetmavi/pod/internal/config"
-	"github.com/jasjeetmavi/pod/internal/sprint"
-	"github.com/jasjeetmavi/pod/internal/task"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
-// Server is a stdio JSON-RPC endpoint exposing Pod operations as MCP tools.
+// Server is a stdio JSON-RPC endpoint exposing Orca operations as MCP tools.
 type Server struct {
 	store    *task.Store
 	planner  *sprint.Planner

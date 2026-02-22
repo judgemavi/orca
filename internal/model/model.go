@@ -2,7 +2,7 @@
 package model
 
 import (
-	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/orca/internal/config"
 )
 
 // Model describes a model available for a tool.

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasjeetmavi/pod/internal/config"
+	"github.com/jasjeetmavi/orca/internal/config"
 )
 
 func TestExtractOutputStdoutMode(t *testing.T) {
@@ -40,7 +40,7 @@ func TestExtractOutputJSONEnvelopeFallbackOnMissingField(t *testing.T) {
 
 func TestExtractOutputFileMode(t *testing.T) {
 	worktree := t.TempDir()
-	target := filepath.Join(worktree, ".pod", "result.txt")
+	target := filepath.Join(worktree, ".orca", "result.txt")
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -50,7 +50,7 @@ func TestExtractOutputFileMode(t *testing.T) {
 
 	got := ExtractOutput(config.ToolOutputConfig{
 		Mode:       "file",
-		ResultPath: "{{worktree}}/.pod/result.txt",
+		ResultPath: "{{worktree}}/.orca/result.txt",
 	}, "stdout fallback", worktree)
 	if got != "file result" {
 		t.Fatalf("ExtractOutput(file) = %q, want %q", got, "file result")
