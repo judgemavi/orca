@@ -38,8 +38,8 @@ Workers never communicate directly. All coordination flows through the superviso
 ## Installation
 
 ```bash
-git clone https://github.com/jasjeetmavi/openorc.git
-cd openorc
+git clone https://github.com/jasjeetmavi/orca.git
+cd orca
 task build
 ```
 
