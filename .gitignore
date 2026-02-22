@@ -1,3 +1,6 @@
+# Taskfile
+.task/
+
 # Build output
 dist/
 *.exe

@@ -18,7 +18,7 @@ import (
 
 func RegisterServe(root *cobra.Command, r *Registry) {
 	serveCmd := &cobra.Command{Use: "serve", Short: "Start the Orca web server", RunE: r.runServe}
-	serveCmd.Flags().String("addr", ":8080", "Listen address")
+	serveCmd.Flags().String("addr", "", "Listen address (overrides config)")
 	root.AddCommand(serveCmd)
 }
 
@@ -30,7 +30,14 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	repoDir, _ := os.Getwd()
+
 	addr, _ := cmd.Flags().GetString("addr")
+	if addr == "" {
+		addr = cfg.Server.Addr
+	}
+	if addr == "" {
+		addr = ":8080"
+	}
 
 	var frontendFS fs.FS
 	if sub, err := fs.Sub(web.DistFS, "dist"); err == nil {

@@ -257,6 +257,12 @@ quality:
   # LLM check: does the diff actually implement the task? Costs tokens.
   alignment_check: false
 
+# Web server settings.
+server:
+  # Listen address for "orca serve". Overridden by --addr flag.
+  # Default from embedded defaults: ":8080".
+  addr: ":8080"
+
 # Stale worktree cleanup.
 cleanup:
   # Remove worktrees older than this. Go duration string. 0 = never auto-clean.

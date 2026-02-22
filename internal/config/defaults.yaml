@@ -95,3 +95,6 @@ quality:
 
 cleanup:
   ttl: 168h
+
+server:
+  addr: ":8080"

@@ -26,6 +26,11 @@ type Config struct {
 	Monitor      MonitorConfig         `yaml:"monitor,omitempty" json:"monitor,omitempty"`
 	Quality      QualityConfig         `yaml:"quality,omitempty" json:"quality,omitempty"`
 	Cleanup      CleanupConfig         `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
+	Server       ServerConfig          `yaml:"server,omitempty" json:"server,omitempty"`
+}
+
+type ServerConfig struct {
+	Addr string `yaml:"addr" json:"addr"`
 }
 
 type ProjectConfig struct {
