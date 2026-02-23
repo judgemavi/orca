@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "orca": {
+      "args": [
+        "mcp"
+      ],
+      "command": "/Users/jasjeetmavi/projects/orca/dist/orca",
+      "cwd": "/Users/jasjeetmavi/projects/orca"
+    }
+  }
+}

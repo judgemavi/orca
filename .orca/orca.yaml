@@ -104,8 +104,8 @@ orchestrator:
       tool: claude
       model: claude-sonnet-4-6
     plan:
-      tool: codex
-      model: gpt-5.3-codex
+      tool: claude
+      model: ""
     review:
       tool: claude
       model: claude-sonnet-4-6
