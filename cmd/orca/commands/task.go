@@ -343,8 +343,7 @@ func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Deleted task %s: %s\n", short(t.ID), t.Title)
 	// End sprint if all its tasks have been deleted.
 	if sprintID != "" {
-		planner := sprint.NewPlanner(db)
-		if ended, err := planner.CompleteSprintIfDone(sprintID); err != nil {
+		if ended, err := sprint.TryComplete(db, sprintID); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: check sprint after delete: %v\n", err)
 		} else if ended {
 			fmt.Printf("Sprint %s completed (no tasks remaining)\n", short(sprintID))
@@ -440,8 +439,7 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 
 	// Complete sprint if all tasks are now merged (or none remain).
 	if tk.SprintID != "" {
-		planner := sprint.NewPlanner(db)
-		if done, err := planner.CompleteSprintIfDone(tk.SprintID); err != nil {
+		if done, err := sprint.TryComplete(db, tk.SprintID); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: check sprint completion: %v\n", err)
 		} else if done {
 			fmt.Printf("Sprint %s completed\n", short(tk.SprintID))

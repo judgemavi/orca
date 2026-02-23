@@ -46,6 +46,12 @@ func NewPlanner(db *state.DB) *Planner {
 	}
 }
 
+// TryComplete checks whether a sprint can be completed and marks it completed
+// when all tasks are merged or when no tasks remain.
+func TryComplete(db *state.DB, sprintID string) (bool, error) {
+	return NewPlanner(db).CompleteSprintIfDone(sprintID)
+}
+
 // DB returns the underlying database for direct queries.
 func (p *Planner) DB() *state.DB { return p.db }
 

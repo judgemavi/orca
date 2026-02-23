@@ -8,6 +8,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -111,7 +112,7 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 	}
 
 	// Complete sprint if all tasks are now merged (or none remain).
-	if done, err := planner.CompleteSprintIfDone(sprintID); err != nil {
+	if done, err := sprint.TryComplete(db, sprintID); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: check sprint completion: %v\n", err)
 	} else if done {
 		fmt.Printf("Sprint %s completed\n", short(sprintID))
