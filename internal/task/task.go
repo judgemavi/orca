@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasjeetmavi/orca/internal/nullable"
 	"github.com/jasjeetmavi/orca/internal/state"
 )
 
@@ -298,7 +299,7 @@ func (s *Store) GetPlan(id string) (string, error) {
 	if err := s.db.QueryRow(`SELECT plan FROM tasks WHERE id = ?`, id).Scan(&plan); err != nil {
 		return "", fmt.Errorf("get task plan: %w", err)
 	}
-	return deref(plan), nil
+	return nullable.Deref(plan), nil
 }
 
 // GetReady returns all pending tasks whose deps are all merged (or have no deps).
@@ -471,15 +472,15 @@ func (s *Store) scanTask(query string, args ...interface{}) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.Description = deref(desc)
-	t.Prompt = deref(prompt)
-	t.Model = deref(model)
+	t.Description = nullable.Deref(desc)
+	t.Prompt = nullable.Deref(prompt)
+	t.Model = nullable.Deref(model)
 	t.PhaseConfig = parsePhaseConfig(phaseConfig)
-	t.Plan = deref(plan)
-	t.SessionID = deref(sessionID)
-	t.ParentID = deref(parentID)
-	t.AssignedTool = deref(tool)
-	t.SprintID = deref(sprintID)
+	t.Plan = nullable.Deref(plan)
+	t.SessionID = nullable.Deref(sessionID)
+	t.ParentID = nullable.Deref(parentID)
+	t.AssignedTool = nullable.Deref(tool)
+	t.SprintID = nullable.Deref(sprintID)
 	return &t, nil
 }
 
@@ -497,15 +498,15 @@ func (s *Store) queryTasks(query string, args ...interface{}) ([]*Task, error) {
 		if err := rows.Scan(&t.ID, &t.Title, &desc, &prompt, &model, &phaseConfig, &plan, &sessionID, &parentID, &t.Status, &tool, &sprintID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
-		t.Description = deref(desc)
-		t.Prompt = deref(prompt)
-		t.Model = deref(model)
+		t.Description = nullable.Deref(desc)
+		t.Prompt = nullable.Deref(prompt)
+		t.Model = nullable.Deref(model)
 		t.PhaseConfig = parsePhaseConfig(phaseConfig)
-		t.Plan = deref(plan)
-		t.SessionID = deref(sessionID)
-		t.ParentID = deref(parentID)
-		t.AssignedTool = deref(tool)
-		t.SprintID = deref(sprintID)
+		t.Plan = nullable.Deref(plan)
+		t.SessionID = nullable.Deref(sessionID)
+		t.ParentID = nullable.Deref(parentID)
+		t.AssignedTool = nullable.Deref(tool)
+		t.SprintID = nullable.Deref(sprintID)
 		tasks = append(tasks, &t)
 	}
 
@@ -633,13 +634,6 @@ func normalizeDeps(deps []string) []string {
 	}
 	slices.Sort(out)
 	return out
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
 
 func parsePhaseConfig(raw *string) *PhaseConfigMap {
