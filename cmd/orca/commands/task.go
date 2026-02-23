@@ -13,6 +13,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/ops"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -388,62 +389,54 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := ensureOperationsTable(db); err != nil {
-		return fmt.Errorf("ensure operations table: %w", err)
-	}
-	opID, err := createOperation(db, "merge", id)
-	if err != nil {
-		return fmt.Errorf("create operation: %w", err)
-	}
-
-	repoDir, _ := os.Getwd()
-	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
-	if auto {
-		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (config.ToolConfig, error) {
-			taskRow, err := store.Get(taskID)
-			if err != nil {
-				return config.ToolConfig{}, err
-			}
-			_, tc, err := cfg.ResolveToolForPhase(taskRow, "merge", "")
-			if err != nil {
-				return config.ToolConfig{}, err
-			}
-			return tc, nil
-		})
-	}
-
-	fmt.Printf("Merging task %s (op %s)\n", short(id), short(opID))
-	if auto {
-		fmt.Println("Auto-resolving conflicts is enabled.")
-	}
-
-	var mergeErr error
-	if auto {
-		mergeErr = ig.MergeWithRerun(id)
-	} else {
-		mergeErr = ig.MergeAndValidate(id)
-	}
-	if mergeErr != nil {
-		_ = failOperation(db, opID, mergeErr.Error())
-		if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
-			worktreePath := filepath.Join(cfg.Project.WorktreeDir, "task-"+id)
-			return fmt.Errorf("merge conflict for task %s (worktree: %s): %w", short(id), worktreePath, mergeErr)
+	if err := ops.WithOperation(db, "merge", id, func() error {
+		repoDir, _ := os.Getwd()
+		ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
+		if auto {
+			ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (config.ToolConfig, error) {
+				taskRow, err := store.Get(taskID)
+				if err != nil {
+					return config.ToolConfig{}, err
+				}
+				_, tc, err := cfg.ResolveToolForPhase(taskRow, "merge", "")
+				if err != nil {
+					return config.ToolConfig{}, err
+				}
+				return tc, nil
+			})
 		}
-		return fmt.Errorf("merge task %s: %w", short(id), mergeErr)
-	}
 
-	if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
-		_ = failOperation(db, opID, err.Error())
-		return fmt.Errorf("set merged status: %w", err)
-	}
-	if err := executor.Worktrees().Remove(id); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: cleanup worktree after merge %s: %v\n", short(id), err)
-	}
-	if err := completeOperation(db, opID, map[string]string{"status": "merged", "task_id": id}); err != nil {
-		return fmt.Errorf("complete operation: %w", err)
-	}
+		fmt.Printf("Merging task %s\n", short(id))
+		if auto {
+			fmt.Println("Auto-resolving conflicts is enabled.")
+		}
 
-	fmt.Printf("Merged task %s\n", short(id))
+		var mergeErr error
+		if auto {
+			mergeErr = ig.MergeWithRerun(id)
+		} else {
+			mergeErr = ig.MergeAndValidate(id)
+		}
+		if mergeErr != nil {
+			if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
+				worktreePath := filepath.Join(cfg.Project.WorktreeDir, "task-"+id)
+				return fmt.Errorf("merge conflict for task %s (worktree: %s): %w", short(id), worktreePath, mergeErr)
+			}
+			return fmt.Errorf("merge task %s: %w", short(id), mergeErr)
+		}
+
+		if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+			return fmt.Errorf("set merged status: %w", err)
+		}
+		if err := executor.Worktrees().Remove(id); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: cleanup worktree after merge %s: %v\n", short(id), err)
+		}
+
+		fmt.Printf("Merged task %s\n", short(id))
+		return nil
+	}); err != nil {
+		return err
+	}
 
 	// Complete sprint if all tasks are now merged (or none remain).
 	if tk.SprintID != "" {
@@ -501,31 +494,24 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	generator := planpkg.New(toolCfg, repoDir)
-	if err := ensureOperationsTable(db); err != nil {
-		return fmt.Errorf("ensure operations table: %w", err)
-	}
-	opID, err := createOperation(db, "plan_generate", id)
-	if err != nil {
-		return fmt.Errorf("create operation: %w", err)
-	}
-
-	fmt.Printf("Generating plan for task %s (op %s)\n", short(id), short(opID))
 	var planContent string
-	spinDone := make(chan struct{})
-	go renderSpinner("Generating plan", spinDone)
-	if modelName != "" {
-		planContent, err = generator.GenerateWithModel(t.Title, t.Description, modelName)
-	} else {
-		planContent, err = generator.Generate(t.Title, t.Description)
-	}
-	close(spinDone)
-	fmt.Print("\r")
-	if err != nil {
-		_ = failOperation(db, opID, err.Error())
-		return fmt.Errorf("generate plan: %w", err)
-	}
-	if err := completeOperation(db, opID, map[string]string{"task_id": id, "plan": planContent}); err != nil {
-		return fmt.Errorf("complete operation: %w", err)
+	if err := ops.WithOperation(db, "plan_generate", id, func() error {
+		fmt.Printf("Generating plan for task %s\n", short(id))
+		spinDone := make(chan struct{})
+		go renderSpinner("Generating plan", spinDone)
+		if modelName != "" {
+			planContent, err = generator.GenerateWithModel(t.Title, t.Description, modelName)
+		} else {
+			planContent, err = generator.Generate(t.Title, t.Description)
+		}
+		close(spinDone)
+		fmt.Print("\r")
+		if err != nil {
+			return fmt.Errorf("generate plan: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	fmt.Println(planContent)
@@ -625,20 +611,25 @@ func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
 	}
 
 	evaluator := evaluate.New(toolCfg, repoDir)
-	fmt.Println("Evaluating task complexity...")
-	done := make(chan struct{})
-	go renderSpinner("Evaluating task complexity", done)
-
 	var result *evaluate.EvaluationResult
-	if modelName != "" {
-		result, err = evaluator.EvaluateWithModel(t.Title, t.Description, modelName)
-	} else {
-		result, err = evaluator.Evaluate(t.Title, t.Description)
-	}
-	close(done)
-	fmt.Print("\r")
-	if err != nil {
-		return fmt.Errorf("evaluate task: %w", err)
+	if err := ops.WithOperation(db, "plan_evaluate", id, func() error {
+		fmt.Println("Evaluating task complexity...")
+		done := make(chan struct{})
+		go renderSpinner("Evaluating task complexity", done)
+
+		if modelName != "" {
+			result, err = evaluator.EvaluateWithModel(t.Title, t.Description, modelName)
+		} else {
+			result, err = evaluator.Evaluate(t.Title, t.Description)
+		}
+		close(done)
+		fmt.Print("\r")
+		if err != nil {
+			return fmt.Errorf("evaluate task: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if jsonOutput {

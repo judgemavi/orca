@@ -3,6 +3,7 @@ package commands
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/review"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
@@ -120,78 +122,71 @@ func (r *Registry) runSprintStart(cmd *cobra.Command, args []string) error {
 	if active.Status != "planning" {
 		return fmt.Errorf("sprint %s is %s, not planning", short(active.ID), active.Status)
 	}
-	if err := ensureOperationsTable(db); err != nil {
-		return fmt.Errorf("ensure operations table: %w", err)
-	}
-	opID, err := createOperation(db, "sprint_start", active.ID)
-	if err != nil {
-		return fmt.Errorf("create operation: %w", err)
-	}
+	errCancelled := errors.New("cancelled")
+	err = ops.WithOperation(db, "sprint_start", active.ID, func() error {
+		pidPath := filepath.Join(".orca", "sprint.pid")
+		_ = os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0644)
+		defer os.Remove(pidPath)
 
-	pidPath := filepath.Join(".orca", "sprint.pid")
-	_ = os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0644)
-	defer os.Remove(pidPath)
+		var cancelled atomic.Bool
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			sig := <-sigCh
+			fmt.Printf("\nReceived %s, cancelling sprint...\n", sig)
+			cancelled.Store(true)
+			executor.Cancel()
+		}()
 
-	var cancelled atomic.Bool
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigCh
-		fmt.Printf("\nReceived %s, cancelling sprint...\n", sig)
-		cancelled.Store(true)
-		executor.Cancel()
-	}()
-
-	fmt.Printf("Starting sprint %s... (op %s)\n\n", short(active.ID), short(opID))
-	fmt.Printf("sprint.started  sprint=%s operation=%s\n", short(active.ID), short(opID))
-	results, err := executor.Run(active)
-	signal.Stop(sigCh)
-
-	if cancelled.Load() {
-		_ = failOperation(db, opID, "cancelled")
-		if cleanupErr := executor.Cleanup(active); cleanupErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: worktree cleanup: %v\n", cleanupErr)
+		fmt.Printf("Starting sprint %s...\n\n", short(active.ID))
+		fmt.Printf("sprint.started  sprint=%s\n", short(active.ID))
+		results, err := executor.Run(active)
+		signal.Stop(sigCh)
+		if err != nil {
+			return fmt.Errorf("run sprint: %w", err)
 		}
-		if resetErr := planner.ResetSprintTasks(active.ID); resetErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: reset tasks: %v\n", resetErr)
+
+		if cancelled.Load() {
+			if cleanupErr := executor.Cleanup(active); cleanupErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: worktree cleanup: %v\n", cleanupErr)
+			}
+			if resetErr := planner.ResetSprintTasks(active.ID); resetErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: reset tasks: %v\n", resetErr)
+			}
+			fmt.Println("Sprint cancelled. Tasks reverted to pending.")
+			return errCancelled
 		}
-		fmt.Println("Sprint cancelled. Tasks reverted to pending.")
+
+		var succeeded, failed int
+		for _, rt := range results {
+			t, _ := planner.GetTask(rt.TaskID)
+			title := rt.TaskID
+			if t != nil {
+				title = t.Title
+			}
+			fmt.Printf("sprint.progress task=%s status=%s duration=%s\n", short(rt.TaskID), rt.Status, rt.Duration.Round(time.Second))
+			fmt.Printf("  %s %s  %s  (%s)\n", statusIcon(rt.Status), short(rt.TaskID), title, rt.Duration.Round(time.Second))
+			if rt.Status == "failed" {
+				failed++
+				if rt.Stderr != "" {
+					stderr := rt.Stderr
+					if len(stderr) > 500 {
+						stderr = stderr[:500] + "..."
+					}
+					fmt.Printf("    stderr: %s\n", stderr)
+				}
+			} else {
+				succeeded++
+			}
+		}
+		fmt.Printf("sprint.completed sprint=%s\n", short(active.ID))
+		fmt.Printf("\nSprint complete: %d succeeded, %d failed\n", succeeded, failed)
+		return nil
+	})
+	if errors.Is(err, errCancelled) {
 		return nil
 	}
-
-	if err != nil {
-		_ = failOperation(db, opID, err.Error())
-		return fmt.Errorf("run sprint: %w", err)
-	}
-
-	var succeeded, failed int
-	for _, rt := range results {
-		t, _ := planner.GetTask(rt.TaskID)
-		title := rt.TaskID
-		if t != nil {
-			title = t.Title
-		}
-		fmt.Printf("sprint.progress task=%s status=%s duration=%s\n", short(rt.TaskID), rt.Status, rt.Duration.Round(time.Second))
-		fmt.Printf("  %s %s  %s  (%s)\n", statusIcon(rt.Status), short(rt.TaskID), title, rt.Duration.Round(time.Second))
-		if rt.Status == "failed" {
-			failed++
-			if rt.Stderr != "" {
-				stderr := rt.Stderr
-				if len(stderr) > 500 {
-					stderr = stderr[:500] + "..."
-				}
-				fmt.Printf("    stderr: %s\n", stderr)
-			}
-		} else {
-			succeeded++
-		}
-	}
-	if err := completeOperation(db, opID, map[string]interface{}{"sprint_id": active.ID, "succeeded": succeeded, "failed": failed, "task_count": len(results)}); err != nil {
-		return fmt.Errorf("complete operation: %w", err)
-	}
-	fmt.Printf("sprint.completed sprint=%s operation=%s\n", short(active.ID), short(opID))
-	fmt.Printf("\nSprint complete: %d succeeded, %d failed\n", succeeded, failed)
-	return nil
+	return err
 }
 
 func (r *Registry) runSprintStatus(cmd *cobra.Command, args []string) error {
@@ -411,27 +406,28 @@ func (r *Registry) runSprintCancel(cmd *cobra.Command, args []string) error {
 	if active.Status != "running" {
 		return fmt.Errorf("sprint %s is %s, not running", short(active.ID), active.Status)
 	}
+	return ops.WithOperation(db, "sprint_cancel", active.ID, func() error {
+		pidData, err := os.ReadFile(filepath.Join(".orca", "sprint.pid"))
+		if err != nil {
+			return fmt.Errorf("read sprint PID file: %w (is a sprint running?)", err)
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(pidData)))
+		if err != nil {
+			return fmt.Errorf("parse sprint PID: %w", err)
+		}
 
-	pidData, err := os.ReadFile(filepath.Join(".orca", "sprint.pid"))
-	if err != nil {
-		return fmt.Errorf("read sprint PID file: %w (is a sprint running?)", err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(pidData)))
-	if err != nil {
-		return fmt.Errorf("parse sprint PID: %w", err)
-	}
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			return fmt.Errorf("find process %d: %w", pid, err)
+		}
+		if err := proc.Signal(syscall.SIGTERM); err != nil {
+			return fmt.Errorf("signal process %d: %w", pid, err)
+		}
 
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return fmt.Errorf("find process %d: %w", pid, err)
-	}
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("signal process %d: %w", pid, err)
-	}
-
-	fmt.Printf("Sprint %s cancelled. Sent SIGTERM to pid %d.\n", short(active.ID), pid)
-	fmt.Println("Tasks will be reverted to pending.")
-	return nil
+		fmt.Printf("Sprint %s cancelled. Sent SIGTERM to pid %d.\n", short(active.ID), pid)
+		fmt.Println("Tasks will be reverted to pending.")
+		return nil
+	})
 }
 
 func (r *Registry) runSprintResume(cmd *cobra.Command, args []string) error {
@@ -599,13 +595,6 @@ func (r *Registry) runSprintReview(cmd *cobra.Command, args []string) error {
 	if !auto {
 		return nil
 	}
-	if err := ensureOperationsTable(db); err != nil {
-		return fmt.Errorf("ensure operations table: %w", err)
-	}
-	opID, err := createOperation(db, "review", s.ID)
-	if err != nil {
-		return fmt.Errorf("create operation: %w", err)
-	}
 
 	repoDir, _ := os.Getwd()
 	resolveReviewTool := func(taskTool string) (config.ToolConfig, error) {
@@ -627,59 +616,56 @@ func (r *Registry) runSprintReview(cmd *cobra.Command, args []string) error {
 		return config.ToolConfig{}, fmt.Errorf("no tools configured")
 	}
 
-	fmt.Printf("\nRunning automated review... (op %s)\n", short(opID))
-	fmt.Printf("review.started sprint=%s operation=%s\n", short(s.ID), short(opID))
+	return ops.WithOperation(db, "review", s.ID, func() error {
+		fmt.Printf("\nRunning automated review...\n")
+		fmt.Printf("review.started sprint=%s\n", short(s.ID))
 
-	var inputs []review.ReviewInput
-	var toolForReview config.ToolConfig
-	for _, ta := range artifacts {
-		if !ta.hasArt || ta.diff == "" || ta.task.Status != "approved" {
-			continue
-		}
-		inputs = append(inputs, review.ReviewInput{TaskID: ta.task.ID, Title: ta.task.Title, Description: ta.task.Description, Diff: ta.diff})
-		if toolForReview.Binary == "" {
-			tc, err := resolveReviewTool(ta.task.AssignedTool)
-			if err != nil {
-				return fmt.Errorf("resolve review tool: %w", err)
+		var inputs []review.ReviewInput
+		var toolForReview config.ToolConfig
+		for _, ta := range artifacts {
+			if !ta.hasArt || ta.diff == "" || ta.task.Status != "approved" {
+				continue
 			}
-			toolForReview = tc
+			inputs = append(inputs, review.ReviewInput{TaskID: ta.task.ID, Title: ta.task.Title, Description: ta.task.Description, Diff: ta.diff})
+			if toolForReview.Binary == "" {
+				tc, err := resolveReviewTool(ta.task.AssignedTool)
+				if err != nil {
+					return fmt.Errorf("resolve review tool: %w", err)
+				}
+				toolForReview = tc
+			}
 		}
-	}
-	if len(inputs) == 0 {
-		fmt.Println("No approved tasks with diffs to review.")
+		if len(inputs) == 0 {
+			fmt.Println("No approved tasks with diffs to review.")
+			return nil
+		}
+
+		reviewer := review.New(toolForReview, repoDir)
+		results, err := reviewer.ReviewBatch(inputs)
+		if err != nil {
+			return fmt.Errorf("run reviews: %w", err)
+		}
+
+		fmt.Println()
+		var approved, rejected int
+		for _, rt := range results {
+			t, _ := planner.GetTask(rt.TaskID)
+			title := rt.TaskID
+			if t != nil {
+				title = t.Title
+			}
+			if rt.Approved {
+				approved++
+				fmt.Printf("review.progress task=%s status=approved\n", short(rt.TaskID))
+				fmt.Printf("  ✓ Approved: %s\n", title)
+			} else {
+				rejected++
+				fmt.Printf("review.progress task=%s status=rejected\n", short(rt.TaskID))
+				fmt.Printf("  ✗ Rejected: %s\n    feedback: %s\n", title, rt.Feedback)
+			}
+		}
+		fmt.Printf("review.completed sprint=%s\n", short(s.ID))
+		fmt.Printf("\nReview: %d approved, %d rejected\n", approved, rejected)
 		return nil
-	}
-
-	reviewer := review.New(toolForReview, repoDir)
-	results, err := reviewer.ReviewBatch(inputs)
-	if err != nil {
-		_ = failOperation(db, opID, err.Error())
-		return fmt.Errorf("run reviews: %w", err)
-	}
-
-	fmt.Println()
-	var approved, rejected int
-	for _, rt := range results {
-		t, _ := planner.GetTask(rt.TaskID)
-		title := rt.TaskID
-		if t != nil {
-			title = t.Title
-		}
-		if rt.Approved {
-			approved++
-			fmt.Printf("review.progress task=%s status=approved\n", short(rt.TaskID))
-			fmt.Printf("  ✓ Approved: %s\n", title)
-		} else {
-			rejected++
-			fmt.Printf("review.progress task=%s status=rejected\n", short(rt.TaskID))
-			fmt.Printf("  ✗ Rejected: %s\n    feedback: %s\n", title, rt.Feedback)
-		}
-	}
-	if err := completeOperation(db, opID, map[string]interface{}{"sprint_id": s.ID, "approved": approved, "rejected": rejected}); err != nil {
-		return fmt.Errorf("complete operation: %w", err)
-	}
-	fmt.Printf("review.completed sprint=%s operation=%s\n", short(s.ID), short(opID))
-	fmt.Printf("\nReview: %d approved, %d rejected\n", approved, rejected)
-
-	return nil
+	})
 }

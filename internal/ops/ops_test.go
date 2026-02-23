@@ -1,7 +1,9 @@
 package ops
 
 import (
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,5 +159,67 @@ func TestListByTypeAndMarkStaleAsFailed(t *testing.T) {
 	}
 	if doneOp.Status != "completed" {
 		t.Fatalf("status = %q, want completed", doneOp.Status)
+	}
+}
+
+func TestWithOperationSuccess(t *testing.T) {
+	db := testDB(t)
+	store := NewStore(db)
+	targetID := "task-xyz"
+
+	if err := WithOperation(db, "plan_generate", targetID, func() error {
+		return nil
+	}); err != nil {
+		t.Fatalf("with operation success: %v", err)
+	}
+
+	opsByType, err := store.ListByType("plan_generate")
+	if err != nil {
+		t.Fatalf("list by type after success: %v", err)
+	}
+	if len(opsByType) == 0 {
+		t.Fatal("expected at least one plan_generate operation")
+	}
+	op := opsByType[0]
+	if op.TargetID != targetID {
+		t.Fatalf("target_id = %q, want %q", op.TargetID, targetID)
+	}
+	if op.Status != "completed" {
+		t.Fatalf("status = %q, want completed", op.Status)
+	}
+}
+
+func TestWithOperationFailure(t *testing.T) {
+	db := testDB(t)
+	store := NewStore(db)
+	targetID := "task-fail"
+	wantErr := "boom"
+
+	err := WithOperation(db, "merge", targetID, func() error {
+		return errors.New(wantErr)
+	})
+	if err == nil {
+		t.Fatal("expected error from WithOperation")
+	}
+	if !strings.Contains(err.Error(), wantErr) {
+		t.Fatalf("error = %q, want contains %q", err.Error(), wantErr)
+	}
+
+	opsByType, listErr := store.ListByType("merge")
+	if listErr != nil {
+		t.Fatalf("list by type: %v", listErr)
+	}
+	if len(opsByType) == 0 {
+		t.Fatal("expected at least one merge operation")
+	}
+	op := opsByType[0]
+	if op.TargetID != targetID {
+		t.Fatalf("target_id = %q, want %q", op.TargetID, targetID)
+	}
+	if op.Status != "failed" {
+		t.Fatalf("status = %q, want failed", op.Status)
+	}
+	if !strings.Contains(op.Error, wantErr) {
+		t.Fatalf("operation error = %q, want contains %q", op.Error, wantErr)
 	}
 }

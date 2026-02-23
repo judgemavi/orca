@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/spf13/cobra"
@@ -86,29 +87,21 @@ func (r *Registry) runCleanup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := ensureOperationsTable(db); err != nil {
-		return fmt.Errorf("ensure operations table: %w", err)
-	}
-	opID, err := createOperation(db, "cleanup", "")
-	if err != nil {
-		return fmt.Errorf("create operation: %w", err)
-	}
-	fmt.Printf("cleanup.started operation=%s\n", short(opID))
+	return ops.WithOperation(db, "cleanup", "", func() error {
+		fmt.Println("cleanup.started")
 
-	var removed int
-	for _, s := range stale {
-		if err := wm.Remove(s.taskID); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: remove %s: %v\n", s.branch, err)
-			fmt.Printf("cleanup.progress branch=%s status=failed\n", s.branch)
-			continue
+		var removed int
+		for _, s := range stale {
+			if err := wm.Remove(s.taskID); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: remove %s: %v\n", s.branch, err)
+				fmt.Printf("cleanup.progress branch=%s status=failed\n", s.branch)
+				continue
+			}
+			removed++
+			fmt.Printf("cleanup.progress branch=%s status=removed\n", s.branch)
 		}
-		removed++
-		fmt.Printf("cleanup.progress branch=%s status=removed\n", s.branch)
-	}
-	if err := completeOperation(db, opID, map[string]interface{}{"removed": removed}); err != nil {
-		return fmt.Errorf("complete operation: %w", err)
-	}
-	fmt.Printf("cleanup.completed operation=%s removed=%d\n", short(opID), removed)
-	fmt.Printf("\nRemoved %d worktrees\n", removed)
-	return nil
+		fmt.Printf("cleanup.completed removed=%d\n", removed)
+		fmt.Printf("\nRemoved %d worktrees\n", removed)
+		return nil
+	})
 }

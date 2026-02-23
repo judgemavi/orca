@@ -1,12 +1,10 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/google/uuid"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
@@ -33,11 +31,11 @@ func short(id string) string {
 	return id
 }
 
-func allTasks(_ *task.Task) bool       { return true }
-func failedTasks(t *task.Task) bool    { return t.Status == "failed" }
+func allTasks(_ *task.Task) bool      { return true }
+func failedTasks(t *task.Task) bool   { return t.Status == "failed" }
 func approvedTasks(t *task.Task) bool { return t.Status == "approved" }
-func reviewTasks(t *task.Task) bool    { return t.Status == "review" }
-func pendingTasks(t *task.Task) bool   { return t.Status == "pending" }
+func reviewTasks(t *task.Task) bool   { return t.Status == "review" }
+func pendingTasks(t *task.Task) bool  { return t.Status == "pending" }
 
 func pickTask(store *task.Store, title string, filter func(*task.Task) bool) (string, error) {
 	tasks, err := store.List()
@@ -124,55 +122,6 @@ CREATE TABLE IF NOT EXISTS operations (
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`)
 	return err
-}
-
-func createOperation(db *state.DB, opType, targetID string) (string, error) {
-	id := uuid.New().String()
-	now := time.Now().UTC()
-	_, err := db.Exec(
-		`INSERT INTO operations (id, type, target_id, status, created_at, updated_at) VALUES (?, ?, ?, 'running', ?, ?)`,
-		id, opType, targetID, now, now,
-	)
-	if err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
-func completeOperation(db *state.DB, id string, result interface{}) error {
-	resultJSON, err := marshalOperationResult(result)
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec(
-		`UPDATE operations SET status = 'completed', result = ?, error = NULL, updated_at = ? WHERE id = ?`,
-		resultJSON, time.Now().UTC(), id,
-	)
-	return err
-}
-
-func failOperation(db *state.DB, id, errMsg string) error {
-	_, err := db.Exec(
-		`UPDATE operations SET status = 'failed', error = ?, updated_at = ? WHERE id = ?`,
-		errMsg, time.Now().UTC(), id,
-	)
-	return err
-}
-
-func marshalOperationResult(result interface{}) (string, error) {
-	if result == nil {
-		return "", nil
-	}
-	switch v := result.(type) {
-	case string:
-		return v, nil
-	default:
-		data, err := json.Marshal(v)
-		if err != nil {
-			return "", fmt.Errorf("marshal operation result: %w", err)
-		}
-		return string(data), nil
-	}
 }
 
 func listOperations(db *state.DB, includeAll bool) ([]operationRow, error) {
