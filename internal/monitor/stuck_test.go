@@ -22,12 +22,18 @@ func TestStuckDetectorNoStuckWhenDiffChanges(t *testing.T) {
 	events := make(chan stuckEvent, 10)
 	detector := NewStuckDetector(worktreeDir, 30*time.Millisecond, 100, func(taskID, reason string) {
 		events <- stuckEvent{taskID: taskID, reason: reason}
-	})
+	}, []string{taskID})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	detector.Start(ctx, []string{taskID})
-	t.Cleanup(detector.Stop)
+	if err := detector.Start(ctx); err != nil {
+		t.Fatalf("start stuck detector: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := detector.Stop(); err != nil {
+			t.Fatalf("stop stuck detector: %v", err)
+		}
+	})
 
 	time.Sleep(45 * time.Millisecond)
 	appendToFile(t, filePath, "\nfirst change")
@@ -48,12 +54,18 @@ func TestStuckDetectorFiresAfterNoProgress(t *testing.T) {
 	events := make(chan stuckEvent, 10)
 	detector := NewStuckDetector(worktreeDir, 20*time.Millisecond, 2, func(taskID, reason string) {
 		events <- stuckEvent{taskID: taskID, reason: reason}
-	})
+	}, []string{taskID})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	detector.Start(ctx, []string{taskID})
-	t.Cleanup(detector.Stop)
+	if err := detector.Start(ctx); err != nil {
+		t.Fatalf("start stuck detector: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := detector.Stop(); err != nil {
+			t.Fatalf("stop stuck detector: %v", err)
+		}
+	})
 
 	select {
 	case got := <-events:
@@ -74,12 +86,18 @@ func TestStuckDetectorDetectsEditRevertCycle(t *testing.T) {
 	events := make(chan stuckEvent, 10)
 	detector := NewStuckDetector(worktreeDir, 25*time.Millisecond, 10, func(taskID, reason string) {
 		events <- stuckEvent{taskID: taskID, reason: reason}
-	})
+	}, []string{taskID})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	detector.Start(ctx, []string{taskID})
-	t.Cleanup(detector.Stop)
+	if err := detector.Start(ctx); err != nil {
+		t.Fatalf("start stuck detector: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := detector.Stop(); err != nil {
+			t.Fatalf("stop stuck detector: %v", err)
+		}
+	})
 
 	time.Sleep(40 * time.Millisecond)
 	appendToFile(t, filePath, "\nchange then revert")

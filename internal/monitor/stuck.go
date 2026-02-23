@@ -16,6 +16,7 @@ import (
 // StuckDetector polls task worktrees to detect no-progress loops and edit-revert cycles.
 type StuckDetector struct {
 	worktreeDir string
+	taskIDs     []string
 	interval    time.Duration
 	maxCycles   int // consecutive zero-progress checks before firing (default 3)
 	onStuck     func(taskID string, reason string)
@@ -25,13 +26,13 @@ type StuckDetector struct {
 	history    map[string][]string
 	noProgress map[string]int
 
-	stopOnce sync.Once
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	cancel  context.CancelFunc
+	done    chan struct{}
+	running bool
 }
 
 // NewStuckDetector creates a new detector.
-func NewStuckDetector(worktreeDir string, interval time.Duration, maxCycles int, onStuck func(string, string)) *StuckDetector {
+func NewStuckDetector(worktreeDir string, interval time.Duration, maxCycles int, onStuck func(string, string), taskIDs []string) *StuckDetector {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
@@ -40,56 +41,85 @@ func NewStuckDetector(worktreeDir string, interval time.Duration, maxCycles int,
 	}
 	return &StuckDetector{
 		worktreeDir: worktreeDir,
+		taskIDs:     append([]string(nil), taskIDs...),
 		interval:    interval,
 		maxCycles:   maxCycles,
 		onStuck:     onStuck,
 		lastHash:    make(map[string]string),
 		history:     make(map[string][]string),
 		noProgress:  make(map[string]int),
-		stopCh:      make(chan struct{}),
 	}
 }
 
 // Start runs polling until ctx is cancelled or Stop is called.
-func (d *StuckDetector) Start(ctx context.Context, taskIDs []string) {
-	taskIDsCopy := append([]string(nil), taskIDs...)
-	d.wg.Add(1)
+func (d *StuckDetector) Start(ctx context.Context) error {
+	d.mu.Lock()
+	if d.running {
+		d.mu.Unlock()
+		return nil
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	d.cancel = cancel
+	d.done = make(chan struct{})
+	d.running = true
+	taskIDsCopy := append([]string(nil), d.taskIDs...)
+	interval := d.interval
+	done := d.done
+	d.mu.Unlock()
+
 	go func() {
-		defer d.wg.Done()
+		defer close(done)
 
-		d.wg.Add(1)
-		go func() {
-			defer d.wg.Done()
-			d.poll(taskIDsCopy)
-		}()
+		d.poll(taskIDsCopy)
 
-		ticker := time.NewTicker(d.interval)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-ctx.Done():
-				return
-			case <-d.stopCh:
+			case <-runCtx.Done():
+				d.mu.Lock()
+				d.running = false
+				d.cancel = nil
+				d.done = nil
+				d.mu.Unlock()
 				return
 			case <-ticker.C:
-				d.wg.Add(1)
-				go func(ids []string) {
-					defer d.wg.Done()
-					d.poll(ids)
-				}(taskIDsCopy)
+				d.poll(taskIDsCopy)
 			}
 		}
 	}()
+
+	return nil
 }
 
 // Stop stops polling and waits for in-flight polls to finish.
-func (d *StuckDetector) Stop() {
-	d.stopOnce.Do(func() {
-		close(d.stopCh)
-	})
-	d.wg.Wait()
+func (d *StuckDetector) Stop() error {
+	d.mu.Lock()
+	if !d.running {
+		d.mu.Unlock()
+		return nil
+	}
+
+	cancel := d.cancel
+	done := d.done
+	d.cancel = nil
+	d.done = nil
+	d.running = false
+	d.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+
+	return nil
 }
+
+var _ Monitor = (*StuckDetector)(nil)
 
 func (d *StuckDetector) poll(taskIDs []string) {
 	for _, taskID := range taskIDs {

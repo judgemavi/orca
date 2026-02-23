@@ -36,12 +36,19 @@ func TestBudgetEnforcerTaskBudgetFiresOnce(t *testing.T) {
 		func(taskID string, spent float64, limit float64) {
 			events <- exceededEvent{taskID: taskID, spent: spent, limit: limit}
 		},
+		[]string{"task-1"},
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	enforcer.Start(ctx, []string{"task-1"})
-	defer enforcer.Stop()
+	if err := enforcer.Start(ctx); err != nil {
+		t.Fatalf("start budget enforcer: %v", err)
+	}
+	defer func() {
+		if err := enforcer.Stop(); err != nil {
+			t.Fatalf("stop budget enforcer: %v", err)
+		}
+	}()
 
 	var first exceededEvent
 	select {
@@ -75,12 +82,19 @@ func TestBudgetEnforcerDisabledBudgetsNeverFire(t *testing.T) {
 		func(taskID string, spent float64, limit float64) {
 			events <- exceededEvent{taskID: taskID, spent: spent, limit: limit}
 		},
+		[]string{"task-1", "task-2"},
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	enforcer.Start(ctx, []string{"task-1", "task-2"})
-	defer enforcer.Stop()
+	if err := enforcer.Start(ctx); err != nil {
+		t.Fatalf("start budget enforcer: %v", err)
+	}
+	defer func() {
+		if err := enforcer.Stop(); err != nil {
+			t.Fatalf("stop budget enforcer: %v", err)
+		}
+	}()
 
 	select {
 	case ev := <-events:
@@ -110,12 +124,19 @@ func TestBudgetEnforcerSprintBudgetSumsTasks(t *testing.T) {
 		func(taskID string, spent float64, limit float64) {
 			events <- exceededEvent{taskID: taskID, spent: spent, limit: limit}
 		},
+		[]string{"task-1", "task-2"},
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	enforcer.Start(ctx, []string{"task-1", "task-2"})
-	defer enforcer.Stop()
+	if err := enforcer.Start(ctx); err != nil {
+		t.Fatalf("start budget enforcer: %v", err)
+	}
+	defer func() {
+		if err := enforcer.Stop(); err != nil {
+			t.Fatalf("stop budget enforcer: %v", err)
+		}
+	}()
 
 	select {
 	case ev := <-events:

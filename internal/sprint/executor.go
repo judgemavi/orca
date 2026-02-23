@@ -70,9 +70,7 @@ type Executor struct {
 	// Cost tracking (optional — nil means no tracking).
 	costTracker *cost.Tracker
 	// Runtime monitors.
-	monitorStuck    *monitor.StuckDetector
-	monitorBudget   *monitor.BudgetEnforcer
-	monitorConflict *monitor.ConflictDetector
+	monitors []monitor.Monitor
 
 	// Cancel support.
 	cancel   context.CancelFunc
