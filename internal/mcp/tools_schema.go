@@ -1,0 +1,550 @@
+package mcp
+
+import "encoding/json"
+
+type toolDef struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	InputSchema interface{} `json:"inputSchema"`
+}
+
+type toolCallParams struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+}
+
+type toolContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type toolResult struct {
+	Content           []toolContent `json:"content"`
+	StructuredContent interface{}   `json:"structuredContent,omitempty"`
+}
+
+func (s *Server) handleInitialize(req jsonrpcRequest) jsonrpcResponse {
+	result := map[string]interface{}{
+		"protocolVersion": "2024-11-05",
+		"serverInfo": map[string]string{
+			"name":    "orca",
+			"version": "0.1.0",
+		},
+		"capabilities": map[string]interface{}{
+			"tools": map[string]bool{},
+		},
+	}
+	return jsonrpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result}
+}
+
+func (s *Server) handleToolsList(req jsonrpcRequest) jsonrpcResponse {
+	return jsonrpcResponse{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Result: map[string]interface{}{
+			"tools": s.toolDefinitions(),
+		},
+	}
+}
+
+func (s *Server) handleToolsCall(req jsonrpcRequest) jsonrpcResponse {
+	var params toolCallParams
+	if len(req.Params) == 0 {
+		return jsonrpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32602, Message: "invalid params: missing params"}}
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return jsonrpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32602, Message: "invalid params"}}
+	}
+	if params.Name == "" {
+		return jsonrpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32602, Message: "invalid params: name is required"}}
+	}
+
+	result, err := s.dispatchTool(params.Name, params.Arguments)
+	if err != nil {
+		return jsonrpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32000, Message: err.Error()}}
+	}
+
+	return jsonrpcResponse{JSONRPC: "2.0", ID: req.ID, Result: newToolResult(result)}
+}
+
+func (s *Server) toolDefinitions() []toolDef {
+	return []toolDef{
+		{
+			Name:        "tasks_list",
+			Description: "List all tasks. Optionally filter by status.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"status": map[string]interface{}{
+						"type":        "string",
+						"description": "Filter by status: pending, in_sprint, running, approved, merged, failed",
+					},
+				},
+			},
+		},
+		{
+			Name:        "tasks_create",
+			Description: "Create a new task.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{
+						"type":        "string",
+						"description": "Task title",
+					},
+					"description": map[string]interface{}{
+						"type":        "string",
+						"description": "Detailed description",
+					},
+					"assigned_tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool to use (e.g. claude, codex)",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model to use for this task (must be valid for the assigned tool)",
+					},
+					"depends_on": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "string",
+						},
+						"description": "Task IDs this depends on",
+					},
+				},
+				"required": []string{"title"},
+			},
+		},
+		{
+			Name:        "tasks_update",
+			Description: "Update a task's title, description, status, or assigned tool.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+					"title":   map[string]interface{}{"type": "string"},
+					"description": map[string]interface{}{
+						"type": "string",
+					},
+					"status": map[string]interface{}{"type": "string"},
+					"assigned_tool": map[string]interface{}{
+						"type": "string",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model to use for this task",
+					},
+					"prompt": map[string]interface{}{
+						"type":        "string",
+						"description": "Custom prompt for the task",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_get",
+			Description: "Get full details of a single task by ID (or prefix).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_delete",
+			Description: "Delete a task.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_reopen",
+			Description: "Move a failed task back to pending status.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_add_dependency",
+			Description: "Add a dependency between two existing tasks.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id":    map[string]interface{}{"type": "string", "description": "Task that depends on another"},
+					"depends_on": map[string]interface{}{"type": "string", "description": "Task ID that must complete first"},
+				},
+				"required": []string{"task_id", "depends_on"},
+			},
+		},
+		{
+			Name:        "breakdown",
+			Description: "Break down a goal into tasks using an LLM. Returns proposed tasks for review.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"goal": map[string]interface{}{
+						"type":        "string",
+						"description": "The goal to decompose into tasks",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool to use for decomposition (optional, uses first available)",
+					},
+					"auto_create": map[string]interface{}{
+						"type":        "boolean",
+						"description": "If true, create tasks immediately without confirmation (default: true for MCP)",
+					},
+				},
+				"required": []string{"goal"},
+			},
+		},
+		{
+			Name:        "tasks_plan_generate",
+			Description: "Generate an implementation plan for a task using an LLM.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID"},
+					"tool":    map[string]interface{}{"type": "string", "description": "Tool to use (optional)"},
+					"model":   map[string]interface{}{"type": "string", "description": "Model override (optional)"},
+					"save":    map[string]interface{}{"type": "boolean", "description": "Save plan to task (default: true)"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_plan_evaluate",
+			Description: "Evaluate whether a task should be broken down into subtasks before planning. Returns complexity assessment.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID"},
+					"tool":    map[string]interface{}{"type": "string", "description": "Tool to use for evaluation"},
+					"model":   map[string]interface{}{"type": "string", "description": "Model override"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "sprint_plan",
+			Description: "Create a new sprint and auto-assign ready tasks.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"max_tasks": map[string]interface{}{
+						"type":        "integer",
+						"description": "Max tasks to include",
+					},
+				},
+			},
+		},
+		{
+			Name:        "sprint_assign",
+			Description: "Add tasks to the active sprint (creates one if none exists).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Task IDs to assign to the sprint",
+					},
+				},
+				"required": []string{"task_ids"},
+			},
+		},
+		{
+			Name:        "sprint_unassign",
+			Description: "Remove tasks from the active sprint.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Task IDs to remove from the sprint",
+					},
+				},
+				"required": []string{"task_ids"},
+			},
+		},
+		{
+			Name:        "sprint_start",
+			Description: "Start a planned sprint, executing all assigned tasks.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"sprint_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Sprint ID to start",
+					},
+				},
+				"required": []string{"sprint_id"},
+			},
+		},
+		{
+			Name:        "sprint_status",
+			Description: "Get the active sprint's status, tasks, and progress.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "project_status",
+			Description: "Get project overview: task counts by status, active sprint info, and project name.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "sprint_cancel",
+			Description: "Cancel the currently running sprint and kill all workers.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to cancel"},
+				},
+				"required": []string{"sprint_id"},
+			},
+		},
+		{
+			Name:        "sprint_reset",
+			Description: "Reset a completed or failed sprint: cleanup worktrees and revert tasks to pending.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to reset"},
+				},
+				"required": []string{"sprint_id"},
+			},
+		},
+		{
+			Name:        "sprint_resume",
+			Description: "Detect and recover orphaned tasks from an interrupted sprint.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "review_get",
+			Description: "Get review artifacts (diffs, files changed, duration) for a completed sprint.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to review"},
+				},
+				"required": []string{"sprint_id"},
+			},
+		},
+		{
+			Name:        "review_sprint",
+			Description: "Run automated LLM review on all completed tasks in a sprint. Blocks until review finishes.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to review"},
+				},
+				"required": []string{"sprint_id"},
+			},
+		},
+		{
+			Name:        "tasks_approve",
+			Description: "Approve a task that is in 'review' status, moving it to 'approved'.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_request_changes",
+			Description: "Reject a task in review, store feedback, and re-run the worker with that feedback.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id":  map[string]interface{}{"type": "string"},
+					"feedback": map[string]interface{}{"type": "string", "description": "What needs to change"},
+				},
+				"required": []string{"task_id", "feedback"},
+			},
+		},
+		{
+			Name:        "explore",
+			Description: "Run codebase exploration to build a context summary. Blocks until complete.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "explore_status",
+			Description: "Check if codebase exploration context exists and whether it is stale.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "worktree_cleanup",
+			Description: "Remove stale worktrees older than max_age_hours. Supports dry-run mode.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"dry_run": map[string]interface{}{
+						"type":        "boolean",
+						"description": "If true, only report stale worktrees that would be removed.",
+					},
+					"max_age_hours": map[string]interface{}{
+						"type":        "integer",
+						"description": "Max worktree age in hours before cleanup (default 168).",
+					},
+				},
+			},
+		},
+		{
+			Name:        "worktree_status",
+			Description: "List all task worktrees with age and branch, plus total disk usage.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "budget_status",
+			Description: "Get current total cost, budget, remaining budget, and per-tool breakdown.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"sprint_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional sprint ID for sprint-level totals instead of project totals.",
+					},
+				},
+			},
+		},
+		{
+			Name:        "quality_results",
+			Description: "Get latest quality gate results for a task from stored artifacts.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Task ID to fetch quality results for.",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "log_event",
+			Description: "Write a structured log entry to the application log.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"level": map[string]interface{}{
+						"type":        "string",
+						"description": "Log level: debug, info, warn, error",
+					},
+					"message": map[string]interface{}{
+						"type":        "string",
+						"description": "Log message",
+					},
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional task ID to attach as structured attribute.",
+					},
+					"sprint_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional sprint ID to attach as structured attribute.",
+					},
+					"attrs": map[string]interface{}{
+						"type":                 "object",
+						"additionalProperties": true,
+						"description":          "Optional additional structured attributes.",
+					},
+				},
+				"required": []string{"level", "message"},
+			},
+		},
+		{
+			Name:        "log_query",
+			Description: "Query structured application logs with optional filters.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"level": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional level filter: debug, info, warn, error",
+					},
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional task ID filter.",
+					},
+					"sprint_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional sprint ID filter.",
+					},
+					"since": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional time filter: RFC3339 timestamp or duration (e.g. 30m, 2h).",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Optional max number of matching entries.",
+					},
+					"pattern": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional case-insensitive substring match against message/raw line.",
+					},
+				},
+			},
+		},
+		{
+			Name:        "merge",
+			Description: "Merge all approved tasks into the integration branch.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "tasks_merge",
+			Description: "Merge a single approved task into the integration branch.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Completed task ID to merge"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+	}
+}
+
+func newToolResult(v interface{}) toolResult {
+	b, _ := json.Marshal(v)
+	return toolResult{
+		Content: []toolContent{{
+			Type: "text",
+			Text: string(b),
+		}},
+		StructuredContent: v,
+	}
+}
