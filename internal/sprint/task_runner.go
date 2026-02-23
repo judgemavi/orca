@@ -1,21 +1,18 @@
 package sprint
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/procutil"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worker"
@@ -146,12 +143,29 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	}()
 
 	start := time.Now()
-	stdout, streamErr := e.streamSessionPTY(info.taskID, sess.Pty, outputCh)
+	var output bytes.Buffer
+	streamErr := procutil.Stream(procutil.StreamOptions{
+		TaskID: info.taskID,
+		Stream: "stdout",
+		Reader: sess.Pty,
+		Buffer: &output,
+		EmitLine: func(taskID, stream, line string, ts time.Time) {
+			if outputCh == nil {
+				return
+			}
+			outputCh <- worker.OutputLine{
+				TaskID: taskID,
+				Stream: stream,
+				Line:   line,
+				Time:   ts,
+			}
+		},
+	})
 	close(readDone)
 	result.Duration = time.Since(start)
-	result.Stdout = stdout
+	result.Stdout = output.String()
 
-	if streamErr != nil && !errorsIsEOF(streamErr) {
+	if streamErr != nil {
 		slog.Warn("stream PTY failed", "task_id", info.taskID, "err", streamErr)
 	}
 
@@ -166,18 +180,18 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 
 	result.ExitCode = waitSessionExitCode(sess)
 
-	_, _ = gitOutput(info.worktreePath, "add", "-A")
+	_, _ = procutil.GitOutput(info.worktreePath, "add", "-A")
 	commitMsg := "orca: task " + info.taskID
 	if info.taskTitle != "" {
 		commitMsg = info.taskTitle
 	}
-	_, _ = gitOutput(info.worktreePath, "commit", "-m", commitMsg)
+	_, _ = procutil.GitOutput(info.worktreePath, "commit", "-m", commitMsg)
 
 	base := e.config.Project.IntegrationBranch
-	if diff, err := gitOutput(info.worktreePath, "diff", base+"..HEAD"); err == nil {
+	if diff, err := procutil.GitOutput(info.worktreePath, "diff", base+"..HEAD"); err == nil {
 		result.Diff = diff
 	}
-	if names, err := gitOutput(info.worktreePath, "diff", base+"..HEAD", "--name-only"); err == nil && names != "" {
+	if names, err := procutil.GitOutput(info.worktreePath, "diff", base+"..HEAD", "--name-only"); err == nil && names != "" {
 		for _, f := range strings.Split(strings.TrimSpace(names), "\n") {
 			if f != "" {
 				result.FilesChanged = append(result.FilesChanged, f)
@@ -216,33 +230,6 @@ func parseSessionID(pattern, output string) string {
 	return m[1]
 }
 
-func (e *Executor) streamSessionPTY(taskID string, r io.Reader, outputCh chan<- worker.OutputLine) (string, error) {
-	reader := bufio.NewReader(r)
-	var output bytes.Buffer
-
-	for {
-		chunk, err := reader.ReadBytes('\n')
-		if len(chunk) > 0 {
-			output.Write(chunk)
-			line := strings.ToValidUTF8(strings.TrimRight(string(chunk), "\r\n"), "?")
-			if outputCh != nil {
-				outputCh <- worker.OutputLine{
-					TaskID: taskID,
-					Stream: "stdout",
-					Line:   line,
-					Time:   time.Now().UTC(),
-				}
-			}
-		}
-		if err == io.EOF {
-			return output.String(), nil
-		}
-		if err != nil {
-			return output.String(), err
-		}
-	}
-}
-
 func waitSessionExitCode(sess *pty.Session) int {
 	for i := 0; i < 100; i++ {
 		if sess.ExitCode != -1 {
@@ -256,17 +243,13 @@ func waitSessionExitCode(sess *pty.Session) int {
 	return sess.ExitCode
 }
 
-func errorsIsEOF(err error) bool {
-	return err == io.EOF || strings.Contains(strings.ToLower(err.Error()), "file already closed")
-}
-
 func buildWorkerArgs(toolCfg config.ToolConfig, prompt, model, worktreePath string) []string {
 	argsCfg := toolCfg.HeadlessArgs
 	if strings.EqualFold(toolCfg.Mode, "interactive") && len(toolCfg.InteractiveArgs) > 0 {
 		argsCfg = toolCfg.InteractiveArgs
 	}
 
-	contextContent := loadContextFromWorktree(worktreePath)
+	contextContent := procutil.LoadContextFromWorktree(worktreePath)
 	args := make([]string, len(argsCfg))
 	for i, arg := range argsCfg {
 		arg = strings.ReplaceAll(arg, "{{prompt}}", prompt)
@@ -300,25 +283,6 @@ func buildResumeArgs(toolCfg config.ToolConfig, sessionID, feedback, model strin
 		args = append(args, "--model", selectedModel)
 	}
 	return args
-}
-
-func loadContextFromWorktree(worktreePath string) string {
-	data, err := os.ReadFile(filepath.Join(worktreePath, ".orca", "context.md"))
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
-// gitOutput runs a git command in dir and returns its stdout.
-func gitOutput(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
 }
 
 func (e *Executor) killProcess(taskID string) {
