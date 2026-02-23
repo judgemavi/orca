@@ -245,8 +245,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/sprints/unassign", s.handleSprintUnassign)
 	mux.HandleFunc("/api/v1/sprints/", s.routeSprintByID)
 
-	// Integrate
-	mux.HandleFunc("/api/v1/integrate", s.handleIntegrate)
+	// Merge
+	mux.HandleFunc("/api/v1/merge", s.handleMerge)
 
 	// Explore
 	mux.HandleFunc("/api/v1/explore", s.handleExplore)

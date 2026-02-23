@@ -18,7 +18,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
-// ========== Integrate ==========
+// ========== Merge ==========
 
 // POST /api/v1/tasks/{id}/merge
 func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id string) {
@@ -177,24 +177,24 @@ func (s *Server) resolveToolConfigForTask(taskID string) (config.ToolConfig, err
 	name := t.AssignedTool
 	if name != "" {
 		if tc, ok := s.cfg.Tools[name]; ok {
-			if model := validateIntegrateTaskModel(name, t.Model, tc); model != "" {
+			if model := validateMergeTaskModel(name, t.Model, tc); model != "" {
 				tc.Model = model
 			}
 			return tc, nil
 		}
-		slog.Warn("task assigned_tool not found in config, falling back to integrate phase default", "assigned_tool", name)
+		slog.Warn("task assigned_tool not found in config, falling back to merge phase default", "assigned_tool", name)
 	}
-	resolvedName, toolCfg, err := s.cfg.ResolvePhaseToolConfig("integrate")
+	resolvedName, toolCfg, err := s.cfg.ResolvePhaseToolConfig("merge")
 	if err != nil {
 		return config.ToolConfig{}, err
 	}
-	if model := validateIntegrateTaskModel(resolvedName, t.Model, toolCfg); model != "" {
+	if model := validateMergeTaskModel(resolvedName, t.Model, toolCfg); model != "" {
 		toolCfg.Model = model
 	}
 	return toolCfg, nil
 }
 
-func validateIntegrateTaskModel(toolName, model string, toolCfg config.ToolConfig) string {
+func validateMergeTaskModel(toolName, model string, toolCfg config.ToolConfig) string {
 	if model == "" {
 		return ""
 	}
@@ -210,7 +210,7 @@ func validateIntegrateTaskModel(toolName, model string, toolCfg config.ToolConfi
 	return ""
 }
 
-func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -227,7 +227,7 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 			`SELECT id FROM sprints WHERE status IN ('completed', 'failed') ORDER BY completed_at DESC LIMIT 1`,
 		).Scan(&sprintID)
 		if err == sql.ErrNoRows {
-			jsonError(w, "no completed sprints to integrate", 404)
+			jsonError(w, "no completed sprints to merge", 404)
 			return
 		}
 		if err != nil {
@@ -236,8 +236,8 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := s.ops.GetByTarget("global", "integrate"); err == nil {
-		jsonError(w, "integration already in progress", http.StatusConflict)
+	if _, err := s.ops.GetByTarget("global", "merge"); err == nil {
+		jsonError(w, "merge already in progress", http.StatusConflict)
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		jsonError(w, err, 500)
@@ -259,14 +259,14 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(taskIDs) == 0 {
-		jsonError(w, "no approved tasks to integrate", 400)
+		jsonError(w, "no approved tasks to merge", 400)
 		return
 	}
 
 	opID := uuid.New().String()
 	if err := s.ops.Create(ops.Operation{
 		ID:       opID,
-		Type:     "integrate",
+		Type:     "merge",
 		TargetID: "global",
 		Status:   "running",
 	}); err != nil {
@@ -281,11 +281,11 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 	go func(operationID string, ids []string) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("integrate panic: %v", rec)
+				errMsg := fmt.Sprintf("merge panic: %v", rec)
 				if opErr := s.ops.Fail(operationID, errMsg); opErr != nil {
-					slog.Error("mark integrate operation failed", "operation_id", operationID, "err", opErr)
+					slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
 				}
-				s.hub.Broadcast(Event{Type: "integrate.failed", Data: map[string]interface{}{
+				s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
 					"operation_id": operationID,
 					"error":        errMsg,
 				}})
@@ -297,7 +297,7 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 		merged := make([]string, 0, len(ids))
 		failed := make([]string, 0)
 
-		s.hub.Broadcast(Event{Type: "integrate.started", Data: map[string]interface{}{
+		s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
 			"operation_id": operationID,
 		}})
 
@@ -305,7 +305,7 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 			err := ig.MergeAndValidate(taskID)
 			if err != nil {
 				failed = append(failed, taskID)
-				s.hub.Broadcast(Event{Type: "integrate.progress", Data: map[string]interface{}{
+				s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
 					"operation_id": operationID,
 					"task_id":      taskID,
 					"status":       "failed",
@@ -319,13 +319,13 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("set task merged failed", "task_id", taskID, "err", err)
 			}
 			if err := s.executor.Worktrees().Remove(taskID); err != nil {
-				slog.Warn("cleanup worktree after integrate failed", "task_id", taskID, "err", err)
+				slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
 			}
 			if updated, err := store.Get(taskID); err == nil {
 				s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
 			}
 
-			s.hub.Broadcast(Event{Type: "integrate.progress", Data: map[string]interface{}{
+			s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
 				"operation_id": operationID,
 				"task_id":      taskID,
 				"status":       "merged",
@@ -337,10 +337,10 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 			"failed": failed,
 		})
 		if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-			slog.Debug("complete integrate operation failed", "operation_id", operationID, "err", err)
+			slog.Debug("complete merge operation failed", "operation_id", operationID, "err", err)
 		}
 
-		s.hub.Broadcast(Event{Type: "integrate.completed", Data: map[string]interface{}{
+		s.hub.Broadcast(Event{Type: "merge.completed", Data: map[string]interface{}{
 			"operation_id": operationID,
 			"merged":       merged,
 			"failed":       failed,
