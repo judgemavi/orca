@@ -14,6 +14,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/cost"
 	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/logging"
@@ -240,6 +241,19 @@ func (s *Server) toolDefinitions() []toolDef {
 					"tool":    map[string]interface{}{"type": "string", "description": "Tool to use (optional)"},
 					"model":   map[string]interface{}{"type": "string", "description": "Model override (optional)"},
 					"save":    map[string]interface{}{"type": "boolean", "description": "Save plan to task (default: true)"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_plan_evaluate",
+			Description: "Evaluate whether a task should be broken down into subtasks before planning. Returns complexity assessment.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID"},
+					"tool":    map[string]interface{}{"type": "string", "description": "Tool to use for evaluation"},
+					"model":   map[string]interface{}{"type": "string", "description": "Model override"},
 				},
 				"required": []string{"task_id"},
 			},
@@ -905,6 +919,65 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			"task_id": taskID,
 			"plan":    planContent,
 			"saved":   save,
+		}, nil
+
+	case "tasks_plan_evaluate", "task_plan_evaluate":
+		var args struct {
+			TaskID string `json:"task_id"`
+			Tool   string `json:"tool"`
+			Model  string `json:"model"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("tasks_plan_evaluate args: %w", err)
+		}
+		if strings.TrimSpace(args.TaskID) == "" {
+			return nil, fmt.Errorf("task_id is required")
+		}
+
+		taskID, err := s.store.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		t, err := s.store.Get(taskID)
+		if err != nil {
+			return nil, err
+		}
+
+		toolName := args.Tool
+		if toolName == "" {
+			toolName = t.AssignedTool
+		}
+		if toolName == "" {
+			toolName = s.cfg.Defaults.Tool
+		}
+		if toolName == "" {
+			for name := range s.cfg.Tools {
+				toolName = name
+				break
+			}
+		}
+		if toolName == "" {
+			return nil, fmt.Errorf("no tools configured")
+		}
+		toolCfg, ok := s.cfg.Tools[toolName]
+		if !ok {
+			return nil, fmt.Errorf("tool %q not found in config", toolName)
+		}
+
+		evaluator := evaluate.New(toolCfg, s.repoDir)
+		var evaluationResult *evaluate.EvaluationResult
+		if args.Model != "" {
+			evaluationResult, err = evaluator.EvaluateWithModel(t.Title, t.Description, args.Model)
+		} else {
+			evaluationResult, err = evaluator.Evaluate(t.Title, t.Description)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("evaluate plan: %w", err)
+		}
+
+		return map[string]interface{}{
+			"task_id":    taskID,
+			"evaluation": evaluationResult,
 		}, nil
 
 	case "sprint_plan":
