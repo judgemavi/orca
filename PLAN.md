@@ -44,7 +44,7 @@ Thread a **project mode** through Orca that gates prompt selection, validation, 
 - Add `profiles: map[string][]string` and `dual_mode: bool` to `ValidationConfig`
 - Example: `profiles: {legacy: ["npm test"], new: ["go test ./..."]}` with `dual_mode: true` runs both during migration
 - `ValidateWithProfiles()` on Integrator — runs base + all profiles (dual) or active profile only
-- **Files**: `internal/config/config.go`, `internal/integrator/integrator.go`, `cmd/orca/commands/integrate.go`
+- **Files**: `internal/config/config.go`, `internal/integrator/integrator.go`, `cmd/orca/commands/merge.go`
 
 ### 6. Scaffold Command (Greenfield)
 - `orca scaffold "Go REST API" --template go` — runs headless LLM to generate project structure, commits, then auto-explores
@@ -81,6 +81,6 @@ Each phase is one PR, independently shippable.
 4. `orca task add --category scaffold --priority 1 "Setup project"` — verify task stored correctly
 5. `orca sprint plan` — verify scaffold/high-priority tasks selected first
 6. `orca scaffold "Go REST API"` — verify project structure created (greenfield)
-7. `orca integrate` — verify dual validation runs both profiles (migration modes)
+7. `orca merge` — verify dual validation runs both profiles (migration modes)
 8. `orca migration status` — verify component progress table renders
 9. `go test ./...` — all existing tests pass

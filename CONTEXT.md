@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Orca is a **multi-agent CLI orchestrator** for AI coding tools (Claude Code, Codex, Aider). It coordinates multiple AI workers on shared codebases using git worktree isolation and a scrum-inspired execution model: explore → decompose → sprint → review → integrate. Ships as a single Go binary with an embedded React dashboard and SQLite state.
+Orca is a **multi-agent CLI orchestrator** for AI coding tools (Claude Code, Codex, Aider). It coordinates multiple AI workers on shared codebases using git worktree isolation and a scrum-inspired execution model: explore → decompose → sprint → review → merge. Ships as a single Go binary with an embedded React dashboard and SQLite state.
 
 ---
 
@@ -12,7 +12,7 @@ Orca is a **multi-agent CLI orchestrator** for AI coding tools (Claude Code, Cod
 orca/
 ├── cmd/orca/                  # CLI entry point
 │   ├── main.go                # Runtime state, command registration, lifecycle
-│   └── commands/              # 14 command modules (task, sprint, integrate, etc.)
+│   └── commands/              # 14 command modules (task, sprint, merge, etc.)
 │
 ├── internal/                  # Core business logic (23 packages)
 │   ├── state/                 # SQLite persistence (schema, migrations, change watcher)
@@ -72,7 +72,7 @@ orca/
 ### Architecture: Scrum-Inspired Pipeline
 
 ```
-Explore → Decompose → Sprint Plan → Sprint Execute → Review → Integrate
+Explore → Decompose → Sprint Plan → Sprint Execute → Review → Merge
 ```
 
 Each stage is a CLI command and an internal package. Tasks flow through statuses:
@@ -200,7 +200,7 @@ orca breakdown "Implement JWT auth"    # Decompose goal → tasks
 orca sprint plan                       # Select ready tasks
 orca sprint start                      # Execute workers in parallel
 orca sprint review                     # Quality gates + review
-orca integrate                         # Merge approved → integration branch
+orca merge                             # Merge approved → integration branch
 orca serve                             # Web dashboard on :8080
 orca mcp                               # Start MCP stdio server
 ```
@@ -215,7 +215,7 @@ orca mcp                               # Start MCP stdio server
 | Tasks | `task add/edit/delete/list/show/reopen/merge/plan` |
 | Sprint | `sprint plan/assign/unassign/start/status/review/resume/cancel/reset` |
 | Review | `review approve/request-changes` |
-| Execute | `run`, `integrate`, `breakdown` |
+| Execute | `run`, `merge`, `breakdown` |
 | Server | `serve` (HTTP/WS :8080), `mcp` (stdio JSONRPC) |
 | Meta | `config show`, `models`, `costs`, `ops` |
 
@@ -290,7 +290,7 @@ Accessible via `orca mcp` (stdio JSONRPC 2.0). Key tool groups:
 - **Task mgmt**: `task_list`, `task_create`, `task_update`, `task_delete`
 - **Sprint ops**: `sprint_plan`, `sprint_start`, `sprint_status`
 - **Review**: `review_task`, `approval_status`
-- **Integration**: `integrate`, `merge_status`
+- **Integration**: `merge`, `merge_status`
 - **Orchestration**: `breakdown`, `explore`, `plan_task`
 
 Config for external tools:

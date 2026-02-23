@@ -6,7 +6,7 @@ Here's the context document:
 
 ## Project Overview
 
-Orca is a multi-agent CLI orchestrator that coordinates AI coding tools (Claude Code, Codex, Aider) on shared codebases. It uses git worktree isolation and a scrum-inspired execution model (explore → plan → sprint → review → integrate) without calling LLM APIs directly — it wraps existing CLI agents as workers.
+Orca is a multi-agent CLI orchestrator that coordinates AI coding tools (Claude Code, Codex, Aider) on shared codebases. It uses git worktree isolation and a scrum-inspired execution model (explore → plan → sprint → review → merge) without calling LLM APIs directly — it wraps existing CLI agents as workers.
 
 ---
 
@@ -15,7 +15,7 @@ Orca is a multi-agent CLI orchestrator that coordinates AI coding tools (Claude 
 ```
 orca/
 ├── cmd/orca/              # CLI entry point + 13 command files (Cobra)
-│   └── commands/          # context, explore, integrate, logs, mcp, plan,
+│   └── commands/          # context, explore, logs, mcp, merge, plan,
 │                          #   review, run, serve, sprint, task, helpers, misc
 ├── internal/              # Core packages (26 total)
 │   ├── api/               # HTTP + WebSocket handlers (18 files)
@@ -58,7 +58,7 @@ orca/
 ## Key Patterns
 
 **Architecture**
-- Orchestrator drives a state machine: `pending → in_progress → approved/rejected → integrated`
+- Orchestrator drives a state machine: `pending → in_progress → approved/rejected → merged`
 - Each task gets an isolated git worktree (`orca/task-{id}` branch); workers never share files
 - Workers are spawned as subprocesses via `internal/pty`; output streams to UI via WebSocket
 - MCP server exposes 30 tools for LLM-driven autopilot mode (no human in loop)
