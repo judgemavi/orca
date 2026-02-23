@@ -86,9 +86,6 @@ export async function invalidateQueriesForWSEvent(
     event.type === 'merge.started' ||
     event.type === 'merge.completed' ||
     event.type === 'merge.failed' ||
-    event.type === 'integrate.started' ||
-    event.type === 'integrate.completed' ||
-    event.type === 'integrate.failed' ||
     event.type === 'cleanup.started' ||
     event.type === 'cleanup.completed' ||
     event.type === 'cleanup.failed' ||

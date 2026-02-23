@@ -67,7 +67,7 @@ export function SprintResult({ data, onAction }: Props) {
             <ActionButton
               key={a}
               label={a}
-              variant={a.toLowerCase() === 'integrate' ? 'primary' : 'default'}
+              variant={a.toLowerCase() === 'merge' ? 'primary' : 'default'}
               onClick={() => onAction?.(a)}
             />
           ))}

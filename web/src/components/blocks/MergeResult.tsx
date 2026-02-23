@@ -4,14 +4,14 @@ interface Props {
   data: { merged: TaskSummary[]; failed: TaskSummary[] }
 }
 
-export function IntegrateResult({ data }: Props) {
+export function MergeResult({ data }: Props) {
   const merged = data?.merged ?? []
   const failed = data?.failed ?? []
 
   return (
     <div className="flex flex-col gap-2.5 rounded-lg border border-slate-700 bg-slate-900 p-4">
       <div className="text-sm font-semibold">
-        Integration: {merged.length} merged, {failed.length} failed
+        Merge: {merged.length} merged, {failed.length} failed
       </div>
       {merged.length > 0 && (
         <div className="flex flex-col gap-1">

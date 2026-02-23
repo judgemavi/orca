@@ -254,7 +254,7 @@ export type Block =
       data: { message: string; task_id: string; actions: string[] }
     }
   | {
-      type: 'integrate_result'
+      type: 'merge_result'
       data: { merged: TaskSummary[]; failed: TaskSummary[] }
     }
   | { type: 'help'; data: { commands: CommandHelp[] } }

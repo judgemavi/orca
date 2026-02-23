@@ -41,7 +41,7 @@ export function ReviewResult({ data, onAction }: Props) {
               key={a}
               label={a}
               variant={
-                a.toLowerCase().includes('integrate') ? 'primary' : 'default'
+                a.toLowerCase().includes('merge') ? 'primary' : 'default'
               }
               onClick={() => onAction?.(a)}
             />

@@ -7,7 +7,7 @@ interface Props {
   actionLoading: boolean
   sprintStarting: boolean
   reviewRunning: boolean
-  integrating: boolean
+  merging: boolean
   decomposeRunning: boolean
   cleanupRunning: boolean
   exploring: boolean
@@ -15,7 +15,7 @@ interface Props {
   onStartSprint: (sprintId: string) => void
   onCancelSprint: (sprintId: string) => void
   onToggleReview: () => void
-  onIntegrate: () => void
+  onMerge: () => void
   onResetSprint: (sprintId: string) => void
 }
 
@@ -24,7 +24,7 @@ export function BoardHeader({
   actionLoading,
   sprintStarting,
   reviewRunning,
-  integrating,
+  merging,
   decomposeRunning,
   cleanupRunning,
   exploring,
@@ -32,7 +32,7 @@ export function BoardHeader({
   onStartSprint,
   onCancelSprint,
   onToggleReview,
-  onIntegrate,
+  onMerge,
   onResetSprint,
 }: Props) {
   const sprintTaskCount = sprint ? (sprint.task_ids ?? []).length : 0
@@ -116,10 +116,10 @@ export function BoardHeader({
             </ActionButton>
             <ActionButton
               variant="primary"
-              onClick={onIntegrate}
-              disabled={actionLoading || integrating}
+              onClick={onMerge}
+              disabled={actionLoading || merging}
             >
-              {integrating ? 'Integrating...' : 'Integrate'}
+              {merging ? 'Merging...' : 'Merge'}
             </ActionButton>
             <ActionButton
               variant="default"

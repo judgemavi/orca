@@ -344,7 +344,7 @@ export function BoardView({ lastWSEvent }: Props) {
     activeSprintId !== '' && isRunning('sprint_start', activeSprintId)
   const reviewRunning =
     activeSprintId !== '' && isRunning('review', activeSprintId)
-  const integrating = isRunning('integrate')
+  const merging = isRunning('merge')
   const decomposeRunning = isRunning('decompose')
   const cleanupRunning = isRunning('cleanup')
   const exploring = isRunning('explore')
@@ -357,7 +357,7 @@ export function BoardView({ lastWSEvent }: Props) {
           actionLoading={actionLoading}
           sprintStarting={sprintStarting}
           reviewRunning={reviewRunning}
-          integrating={integrating}
+          merging={merging}
           decomposeRunning={decomposeRunning}
           cleanupRunning={cleanupRunning}
           exploring={exploring}
@@ -371,8 +371,8 @@ export function BoardView({ lastWSEvent }: Props) {
             void runSprintAction(() => api.cancelSprint(sprintId))
           }}
           onToggleReview={() => setShowReview((v) => !v)}
-          onIntegrate={() => {
-            void runSprintAction(() => api.integrate())
+          onMerge={() => {
+            void runSprintAction(() => api.merge())
           }}
           onResetSprint={(sprintId) => {
             void runSprintAction(() => api.resetSprint(sprintId))
@@ -451,7 +451,7 @@ export function BoardView({ lastWSEvent }: Props) {
           <ReviewPanel
             sprint={sprint}
             onClose={() => setShowReview(false)}
-            onIntegrated={() => {
+            onMerged={() => {
               setShowReview(false)
               void invalidateBoard()
             }}
