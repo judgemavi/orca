@@ -597,7 +597,7 @@ func ensureOrcaIgnored(cwd string) error {
 		return fmt.Errorf("read .gitignore: %w", err)
 	}
 
-	entries := []string{".orca/worktrees/", ".orca/*.db", ".orca/*.db-wal", ".orca/*.db-shm"}
+	entries := []string{".orca/worktrees/", ".orca/*.db", ".orca/*.db-wal", ".orca/*.db-shm", ".orca/orca.log*"}
 	var needed []string
 	for _, e := range entries {
 		if !containsIgnoreEntry(existing, e) {
