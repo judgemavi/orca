@@ -431,7 +431,7 @@ func TestResolvePhaseToolConfig_DefaultsFallback(t *testing.T) {
 		Defaults: DefaultsConfig{Tool: "codex"},
 	}
 
-	for _, phase := range []string{"explore", "plan", "sprint", "review", "integrate"} {
+	for _, phase := range []string{"explore", "plan", "sprint", "review", "merge"} {
 		toolName, _, err := cfg.ResolvePhaseToolConfig(phase)
 		if err != nil {
 			t.Fatalf("ResolvePhaseToolConfig(%q): %v", phase, err)

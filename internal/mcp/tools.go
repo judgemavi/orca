@@ -539,7 +539,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "integrate",
+			Name:        "merge",
 			Description: "Merge all approved tasks into the integration branch.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
@@ -1763,13 +1763,13 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return entries, nil
 
-	case "integrate":
+	case "merge":
 		var sprintID string
 		err := s.planner.DB().QueryRow(
 			`SELECT id FROM sprints WHERE status IN ('completed', 'failed') ORDER BY completed_at DESC LIMIT 1`,
 		).Scan(&sprintID)
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no completed sprint to integrate")
+			return nil, fmt.Errorf("no completed sprint to merge")
 		}
 		if err != nil {
 			return nil, err
@@ -1788,7 +1788,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			}
 		}
 		if len(taskIDs) == 0 {
-			return nil, fmt.Errorf("no approved tasks to integrate")
+			return nil, fmt.Errorf("no approved tasks to merge")
 		}
 
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)

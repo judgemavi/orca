@@ -100,7 +100,7 @@ orchestrator:
     explore:
       tool: claude
       model: claude-sonnet-4-6
-    integrate:
+    merge:
       tool: claude
       model: claude-sonnet-4-6
     plan:

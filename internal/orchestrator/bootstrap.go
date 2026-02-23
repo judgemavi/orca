@@ -158,7 +158,7 @@ var AllowedTools = []string{
 	"mcp__orca__review_get",
 	"mcp__orca__review_sprint",
 	// MCP tools — integration
-	"mcp__orca__integrate",
+	"mcp__orca__merge",
 	// MCP tools — exploration
 	"mcp__orca__explore",
 	"mcp__orca__explore_status",
