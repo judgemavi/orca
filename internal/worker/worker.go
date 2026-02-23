@@ -2,11 +2,9 @@
 package worker
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -15,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/procutil"
 )
 
 // Worker executes tasks via either headless or interactive adapter modes.
@@ -127,11 +126,49 @@ func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath stri
 	streamWG.Add(2)
 	go func() {
 		defer streamWG.Done()
-		streamPipe(taskID, "stdout", stdoutPipe, &stdout, a.OutputChan)
+		_ = procutil.Stream(procutil.StreamOptions{
+			TaskID: taskID,
+			Stream: "stdout",
+			Reader: stdoutPipe,
+			Buffer: &stdout,
+			EmitLine: func(taskID, stream, line string, ts time.Time) {
+				if a.OutputChan == nil {
+					return
+				}
+				a.OutputChan <- OutputLine{
+					TaskID: taskID,
+					Stream: stream,
+					Line:   line,
+					Time:   ts,
+				}
+			},
+			OnError: func(err error) {
+				slog.Warn("worker stream read failed", "task_id", taskID, "stream", "stdout", "err", err)
+			},
+		})
 	}()
 	go func() {
 		defer streamWG.Done()
-		streamPipe(taskID, "stderr", stderrPipe, &stderr, a.OutputChan)
+		_ = procutil.Stream(procutil.StreamOptions{
+			TaskID: taskID,
+			Stream: "stderr",
+			Reader: stderrPipe,
+			Buffer: &stderr,
+			EmitLine: func(taskID, stream, line string, ts time.Time) {
+				if a.OutputChan == nil {
+					return
+				}
+				a.OutputChan <- OutputLine{
+					TaskID: taskID,
+					Stream: stream,
+					Line:   line,
+					Time:   ts,
+				}
+			},
+			OnError: func(err error) {
+				slog.Warn("worker stream read failed", "task_id", taskID, "stream", "stderr", "err", err)
+			},
+		})
 	}()
 
 	streamWG.Wait()
@@ -162,20 +199,20 @@ func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath stri
 	slog.Info("worker.exited", "task_id", taskID, "exit_code", result.ExitCode, "duration", duration)
 
 	// Stage all changes (including new files) and commit.
-	_, _ = gitOutput(worktreePath, "add", "-A")
+	_, _ = procutil.GitOutput(worktreePath, "add", "-A")
 	commitMsg := "orca: task " + taskID
 	if a.TaskTitle != "" {
 		commitMsg = a.TaskTitle
 	}
-	_, _ = gitOutput(worktreePath, "commit", "-m", commitMsg)
+	_, _ = procutil.GitOutput(worktreePath, "commit", "-m", commitMsg)
 
 	// Capture git diff from the commit.
-	diff, err := gitOutput(worktreePath, "diff", "HEAD~1..HEAD")
+	diff, err := procutil.GitOutput(worktreePath, "diff", "HEAD~1..HEAD")
 	if err == nil {
 		result.Diff = diff
 	}
 
-	names, err := gitOutput(worktreePath, "diff", "HEAD~1..HEAD", "--name-only")
+	names, err := procutil.GitOutput(worktreePath, "diff", "HEAD~1..HEAD", "--name-only")
 	if err == nil && names != "" {
 		for _, f := range strings.Split(strings.TrimSpace(names), "\n") {
 			if f != "" {
@@ -208,41 +245,4 @@ func filteredEnv() []string {
 		}
 	}
 	return env
-}
-
-// gitOutput runs a git command in dir and returns its stdout.
-func gitOutput(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
-}
-
-func streamPipe(taskID, stream string, r io.Reader, outBuf *bytes.Buffer, outputChan chan<- OutputLine) {
-	reader := bufio.NewReader(r)
-	for {
-		chunk, err := reader.ReadBytes('\n')
-		if len(chunk) > 0 {
-			outBuf.Write(chunk)
-			line := strings.ToValidUTF8(strings.TrimRight(string(chunk), "\r\n"), "?")
-			if outputChan != nil {
-				outputChan <- OutputLine{
-					TaskID: taskID,
-					Stream: stream,
-					Line:   line,
-					Time:   time.Now().UTC(),
-				}
-			}
-		}
-		if err == io.EOF {
-			return
-		}
-		if err != nil {
-			slog.Warn("worker stream read failed", "task_id", taskID, "stream", stream, "err", err)
-			return
-		}
-	}
 }

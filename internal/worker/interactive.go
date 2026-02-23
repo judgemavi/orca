@@ -1,21 +1,19 @@
 package worker
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/creack/pty"
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/procutil"
 )
 
 // InteractiveAdapter runs a CLI tool in a pseudo-terminal for full interactive capability.
@@ -54,7 +52,7 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 	ctx, cancel := context.WithTimeout(ctx, a.Timeout)
 	defer cancel()
 
-	contextContent := loadContextFromWorktree(worktreePath)
+	contextContent := procutil.LoadContextFromWorktree(worktreePath)
 
 	args := make([]string, len(a.Args))
 	for i, arg := range a.Args {
@@ -93,7 +91,26 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 	var output bytes.Buffer
 	copyDone := make(chan struct{})
 	go func() {
-		streamPTY(taskID, ptmx, &output, a.OutputChan)
+		_ = procutil.Stream(procutil.StreamOptions{
+			TaskID: taskID,
+			Stream: "stdout",
+			Reader: ptmx,
+			Buffer: &output,
+			EmitLine: func(taskID, stream, line string, ts time.Time) {
+				if a.OutputChan == nil {
+					return
+				}
+				a.OutputChan <- OutputLine{
+					TaskID: taskID,
+					Stream: stream,
+					Line:   line,
+					Time:   ts,
+				}
+			},
+			OnError: func(err error) {
+				slog.Warn("worker stream PTY failed", "task_id", taskID, "err", err)
+			},
+		})
 		close(copyDone)
 	}()
 
@@ -127,19 +144,19 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 		}
 	}
 
-	_, _ = gitOutput(worktreePath, "add", "-A")
+	_, _ = procutil.GitOutput(worktreePath, "add", "-A")
 	commitMsg := "orca: task " + taskID
 	if a.TaskTitle != "" {
 		commitMsg = a.TaskTitle
 	}
-	_, _ = gitOutput(worktreePath, "commit", "-m", commitMsg)
+	_, _ = procutil.GitOutput(worktreePath, "commit", "-m", commitMsg)
 
-	diff, err := gitOutput(worktreePath, "diff", "HEAD~1..HEAD")
+	diff, err := procutil.GitOutput(worktreePath, "diff", "HEAD~1..HEAD")
 	if err == nil {
 		result.Diff = diff
 	}
 
-	names, err := gitOutput(worktreePath, "diff", "HEAD~1..HEAD", "--name-only")
+	names, err := procutil.GitOutput(worktreePath, "diff", "HEAD~1..HEAD", "--name-only")
 	if err == nil && names != "" {
 		for _, f := range strings.Split(strings.TrimSpace(names), "\n") {
 			if f != "" {
@@ -169,37 +186,3 @@ func (a *InteractiveAdapter) SetTaskTitle(title string) { a.TaskTitle = title }
 
 // SetOutputChan sets the live output stream channel.
 func (a *InteractiveAdapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }
-
-func loadContextFromWorktree(worktreePath string) string {
-	data, err := os.ReadFile(filepath.Join(worktreePath, ".orca", "context.md"))
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
-func streamPTY(taskID string, r io.Reader, outBuf *bytes.Buffer, outputChan chan<- OutputLine) {
-	reader := bufio.NewReader(r)
-	for {
-		chunk, err := reader.ReadBytes('\n')
-		if len(chunk) > 0 {
-			outBuf.Write(chunk)
-			line := strings.ToValidUTF8(strings.TrimRight(string(chunk), "\r\n"), "?")
-			if outputChan != nil {
-				outputChan <- OutputLine{
-					TaskID: taskID,
-					Stream: "stdout",
-					Line:   line,
-					Time:   time.Now().UTC(),
-				}
-			}
-		}
-		if err == io.EOF {
-			return
-		}
-		if err != nil {
-			slog.Warn("worker stream PTY failed", "task_id", taskID, "err", err)
-			return
-		}
-	}
-}
