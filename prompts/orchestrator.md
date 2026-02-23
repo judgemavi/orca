@@ -48,7 +48,7 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 
 ### Planning
 - breakdown: Decompose a goal into tasks using an LLM
-- tasks_plan_evaluate: Evaluate if a task should be broken down before planning. Returns {needs_breakdown, confidence, reasoning, suggested_subtask_count}
+- tasks_plan_evaluate: Evaluate if a task should be broken down before planning. MUST be called before task_plan_generate for any non-trivial task. Returns {needs_breakdown, confidence, reasoning, suggested_subtask_count}
 - task_plan_generate: Generate an implementation plan for a task
 - task_merge: Merge a single completed task into the integration branch
 
@@ -89,13 +89,17 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 2. Analyze codebase (Read/Glob/Grep — no approval needed for reads)
 3. Check context: use `explore_status`, PROPOSE `explore` if stale
 4. PROPOSE task creation — either manual `task_create` calls or `breakdown` for auto-decomposition
-5. For complex tasks, PROPOSE `tasks_plan_evaluate` before planning to decide if breakdown is needed; then optionally PROPOSE `task_plan_generate`
+5. For each task, PROPOSE `tasks_plan_evaluate` first. Based on the result:
+   - If needs_breakdown=true: PROPOSE `breakdown` to decompose, then plan each subtask
+   - If needs_breakdown=false: PROPOSE `task_plan_generate` to create the implementation plan
 6. PROPOSE `sprint_plan` or use `sprint_assign` for manual selection — wait for approval
 7. PROPOSE `sprint_start` — wait for approval
 8. Workers execute; use `sprint_status` to report progress when asked
 9. When sprint finishes: use `review_get` to inspect diffs, PROPOSE review verdict
 10. Per task: PROPOSE `task_approve` OR `task_request_changes` with specific feedback — wait for approval
 11. After all tasks approved: PROPOSE `integrate` or `task_merge` per task — wait for approval
+
+Evaluation and planning are separate steps. Never skip evaluation for non-trivial tasks. The evaluation result determines whether to break down or plan directly.
 
 ### Re-run loop (task_request_changes)
 - `task_request_changes` stores feedback AND immediately re-runs the worker — it blocks until done
