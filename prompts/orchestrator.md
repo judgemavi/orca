@@ -48,6 +48,7 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 
 ### Planning
 - breakdown: Decompose a goal into tasks using an LLM
+- tasks_plan_evaluate: Evaluate if a task should be broken down before planning. Returns {needs_breakdown, confidence, reasoning, suggested_subtask_count}
 - task_plan_generate: Generate an implementation plan for a task
 - task_merge: Merge a single completed task into the integration branch
 
@@ -88,7 +89,7 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 2. Analyze codebase (Read/Glob/Grep — no approval needed for reads)
 3. Check context: use `explore_status`, PROPOSE `explore` if stale
 4. PROPOSE task creation — either manual `task_create` calls or `breakdown` for auto-decomposition
-5. Optionally PROPOSE `task_plan_generate` for complex tasks
+5. For complex tasks, PROPOSE `tasks_plan_evaluate` before planning to decide if breakdown is needed; then optionally PROPOSE `task_plan_generate`
 6. PROPOSE `sprint_plan` or use `sprint_assign` for manual selection — wait for approval
 7. PROPOSE `sprint_start` — wait for approval
 8. Workers execute; use `sprint_status` to report progress when asked
