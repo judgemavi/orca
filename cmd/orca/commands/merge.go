@@ -7,6 +7,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -69,51 +70,45 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := ensureOperationsTable(db); err != nil {
-		return fmt.Errorf("ensure operations table: %w", err)
-	}
-	opID, err := createOperation(db, "merge", sprintID)
-	if err != nil {
-		return fmt.Errorf("create operation: %w", err)
-	}
-	fmt.Printf("merge.started sprint=%s operation=%s\n", short(sprintID), short(opID))
+	if err := ops.WithOperation(db, "merge", sprintID, func() error {
+		fmt.Printf("merge.started sprint=%s\n", short(sprintID))
 
-	repoDir, _ := os.Getwd()
-	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
-	store := task.NewStore(db)
-	ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (config.ToolConfig, error) {
-		t, err := store.Get(taskID)
+		repoDir, _ := os.Getwd()
+		ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
+		store := task.NewStore(db)
+		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (config.ToolConfig, error) {
+			t, err := store.Get(taskID)
+			if err != nil {
+				return config.ToolConfig{}, err
+			}
+			_, tc, err := cfg.ResolveToolForPhase(t, "merge", "")
+			if err != nil {
+				return config.ToolConfig{}, err
+			}
+			return tc, nil
+		})
+		merged, failed, err := ig.MergeBatch(taskIDs)
 		if err != nil {
-			return config.ToolConfig{}, err
+			return fmt.Errorf("merge batch: %w", err)
 		}
-		_, tc, err := cfg.ResolveToolForPhase(t, "merge", "")
-		if err != nil {
-			return config.ToolConfig{}, err
-		}
-		return tc, nil
-	})
-	merged, failed, err := ig.MergeBatch(taskIDs)
-	if err != nil {
-		_ = failOperation(db, opID, err.Error())
-		return fmt.Errorf("merge batch: %w", err)
-	}
 
-	for _, id := range merged {
-		fmt.Printf("merge.progress task=%s status=merged\n", short(id))
-		if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: set task %s merged: %v\n", short(id), err)
+		for _, id := range merged {
+			fmt.Printf("merge.progress task=%s status=merged\n", short(id))
+			if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: set task %s merged: %v\n", short(id), err)
+			}
+			fmt.Printf("  ✓ Merged task-%s\n", short(id))
 		}
-		fmt.Printf("  ✓ Merged task-%s\n", short(id))
+		for _, id := range failed {
+			fmt.Printf("merge.progress task=%s status=failed\n", short(id))
+			fmt.Printf("  ✗ Failed task-%s\n", short(id))
+		}
+		fmt.Printf("merge.completed sprint=%s\n", short(sprintID))
+		fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failed))
+		return nil
+	}); err != nil {
+		return err
 	}
-	for _, id := range failed {
-		fmt.Printf("merge.progress task=%s status=failed\n", short(id))
-		fmt.Printf("  ✗ Failed task-%s\n", short(id))
-	}
-	if err := completeOperation(db, opID, map[string]interface{}{"sprint_id": sprintID, "merged": merged, "failed": failed}); err != nil {
-		return fmt.Errorf("complete operation: %w", err)
-	}
-	fmt.Printf("merge.completed sprint=%s operation=%s\n", short(sprintID), short(opID))
-	fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failed))
 
 	// Complete sprint if all tasks are now merged (or none remain).
 	if done, err := planner.CompleteSprintIfDone(sprintID); err != nil {
