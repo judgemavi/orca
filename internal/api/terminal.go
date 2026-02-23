@@ -67,7 +67,7 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	conn.SetReadLimit(8192)
+	conn.SetReadLimit(1 << 20) // 1 MiB – allow large pastes
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
