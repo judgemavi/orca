@@ -214,7 +214,23 @@ func (i *Integrator) resolveTaskBranch(taskID string) string {
 	if i.worktreeDir != "" {
 		return worktree.ResolveTaskBranch(i.worktreeDir, taskID)
 	}
-	return "orca/task-" + taskID
+	// No worktree dir — resolve via git branch listing to handle title-suffixed branches.
+	exact := "orca/task-" + taskID
+	cmd := exec.Command("git", "branch", "--list", exact)
+	cmd.Dir = i.repoDir
+	if out, err := cmd.Output(); err == nil && strings.TrimSpace(string(out)) != "" {
+		return exact
+	}
+	cmd = exec.Command("git", "branch", "--list", exact+"--*")
+	cmd.Dir = i.repoDir
+	if out, err := cmd.Output(); err == nil {
+		if branch := strings.TrimSpace(string(out)); branch != "" {
+			// Take first match (should be exactly one).
+			lines := strings.SplitN(branch, "\n", 2)
+			return strings.TrimSpace(strings.TrimPrefix(lines[0], "*"))
+		}
+	}
+	return exact
 }
 
 func (i *Integrator) resolveWorktreePath(taskID string) string {
