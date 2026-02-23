@@ -101,6 +101,11 @@ quality:
   test_delta: true
   alignment_check: false
 
+logging:
+  level: info
+  file: .orca/orca.log
+  max_size: 50mb
+
 cleanup:
   ttl: 168h
 
