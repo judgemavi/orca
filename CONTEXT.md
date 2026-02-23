@@ -257,9 +257,9 @@ quality:
   alignment_check: false     # LLM alignment verification
 
 monitor:
-  stuck_check_interval: 30s
-  max_stuck_cycles: 3
-  conflict_check_interval: 15s
+  stuck_check_interval: 60s
+  max_stuck_cycles: 10
+  conflict_check_interval: 30s
 
 server:
   addr: :8080

@@ -170,9 +170,9 @@ validation:
     - "go test ./..."
 
 monitor:
-  stuck_check_interval: 30s
-  max_stuck_cycles: 3
-  conflict_check_interval: 15s
+  stuck_check_interval: 60s
+  max_stuck_cycles: 10
+  conflict_check_interval: 30s
   task_budget: 0
 
 quality:

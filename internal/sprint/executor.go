@@ -238,7 +238,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 	stuckCheckInterval := 30 * time.Second
 	if raw := strings.TrimSpace(e.config.Monitor.StuckCheckInterval); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err != nil {
-			slog.Warn("monitor invalid stuck_check_interval, using default", "raw", raw, "default", "30s", "err", err)
+			slog.Warn("monitor invalid stuck_check_interval, using default", "raw", raw, "default", "60s", "err", err)
 		} else {
 			stuckCheckInterval = parsed
 		}
@@ -252,7 +252,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 	conflictInterval := 15 * time.Second
 	if raw := strings.TrimSpace(e.config.Monitor.ConflictInterval); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err != nil {
-			slog.Warn("monitor invalid conflict_check_interval, using default", "raw", raw, "default", "15s", "err", err)
+			slog.Warn("monitor invalid conflict_check_interval, using default", "raw", raw, "default", "30s", "err", err)
 		} else {
 			conflictInterval = parsed
 		}
