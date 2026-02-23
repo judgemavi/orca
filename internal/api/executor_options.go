@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/sprint"
@@ -45,7 +45,7 @@ func NewExecutorOptions(db *state.DB, hub *Hub) sprint.ExecutorOptions {
 			store := task.NewStore(db)
 			updated, err := store.Get(taskID)
 			if err != nil {
-				log.Printf("broadcast task update %s (%s): %v", taskID, status, err)
+				slog.Warn("broadcast task update load failed", "task_id", taskID, "status", status, "err", err)
 				hub.Broadcast(Event{Type: "task.updated", Data: map[string]string{"id": taskID}})
 				return
 			}

@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -44,7 +44,7 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 			if rec := recover(); rec != nil {
 				errMsg := fmt.Sprintf("explore panic: %v", rec)
 				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					log.Printf("mark explore operation failed %s: %v", opID, opErr)
+					slog.Error("mark explore operation failed", "operation_id", opID, "err", opErr)
 				}
 				s.hub.Broadcast(Event{Type: "explore.failed", Data: map[string]string{"error": errMsg}})
 			}
@@ -54,14 +54,14 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		outPath, err := explorer.Run()
 		if err != nil {
 			if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
-				log.Printf("mark explore operation failed %s: %v", opID, opErr)
+				slog.Error("mark explore operation failed", "operation_id", opID, "err", opErr)
 			}
 			s.hub.Broadcast(Event{Type: "explore.failed", Data: map[string]string{"error": err.Error()}})
 			return
 		}
 		resultBytes, _ := json.Marshal(map[string]string{"path": outPath})
 		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			log.Printf("complete explore operation %s: %v", opID, err)
+			slog.Debug("complete explore operation failed", "operation_id", opID, "err", err)
 		}
 		s.hub.Broadcast(Event{Type: "explore.completed", Data: map[string]string{"path": outPath}})
 	}()

@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -198,7 +198,7 @@ func streamPTY(taskID string, r io.Reader, outBuf *bytes.Buffer, outputChan chan
 			return
 		}
 		if err != nil {
-			log.Printf("stream PTY (%s): %v", taskID, err)
+			slog.Warn("worker stream PTY failed", "task_id", taskID, "err", err)
 			return
 		}
 	}

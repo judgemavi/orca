@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -38,7 +38,7 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("terminal ws upgrade: %v", err)
+		slog.Warn("terminal ws upgrade failed", "session_id", sessionID, "err", err)
 		return
 	}
 	defer conn.Close()
@@ -130,7 +130,7 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		case websocket.BinaryMessage:
 			if _, err := s.sessionMgr.Write(sessionID, data); err != nil {
 				if !errors.Is(err, io.EOF) {
-					log.Printf("terminal ws write pty %s: %v", sessionID, err)
+					slog.Warn("terminal ws write pty failed", "session_id", sessionID, "err", err)
 				}
 				closeBridge()
 				return
@@ -142,7 +142,7 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 			}
 			if ctrl.Type == "resize" {
 				if err := s.sessionMgr.Resize(sessionID, ctrl.Cols, ctrl.Rows); err != nil {
-					log.Printf("terminal ws resize %s: %v", sessionID, err)
+					slog.Warn("terminal ws resize failed", "session_id", sessionID, "cols", ctrl.Cols, "rows", ctrl.Rows, "err", err)
 				}
 			}
 		}

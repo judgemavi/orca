@@ -2,8 +2,7 @@ package worker
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -76,7 +75,7 @@ func extractFromFile(resultPath, worktreePath, stdout string) string {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		log.Printf("worker: extract output file mode failed (%s): %v", path, fmt.Errorf("read file: %w", err))
+		slog.Warn("worker extract output file mode failed", "path", path, "err", err)
 		return stdout
 	}
 	return string(data)
@@ -90,7 +89,7 @@ func extractByRegex(stdout, pattern string) string {
 
 	re, err := regexp.Compile(p)
 	if err != nil {
-		log.Printf("worker: extract output regex mode failed (%s): %v", p, fmt.Errorf("compile regex: %w", err))
+		slog.Warn("worker extract output regex mode failed", "pattern", p, "err", err)
 		return stdout
 	}
 	matches := re.FindStringSubmatch(stdout)
