@@ -49,13 +49,15 @@ func TestInit_UsesJSONAndLevel(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(old) })
 
 	logFile := filepath.Join(t.TempDir(), "orca.log")
-	if err := Init(Config{
+	cleanup, err := Init(Config{
 		Level:   "warn",
 		File:    logFile,
 		MaxSize: "1mb",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("init: %v", err)
 	}
+	t.Cleanup(cleanup)
 
 	slog.Info("skip-me", "k", "v")
 	slog.Warn("keep-me", "k", "v")
@@ -83,7 +85,7 @@ func TestInit_UsesJSONAndLevel(t *testing.T) {
 }
 
 func TestInit_InvalidLevel(t *testing.T) {
-	err := Init(Config{
+	_, err := Init(Config{
 		Level:   "verbose",
 		File:    filepath.Join(t.TempDir(), "orca.log"),
 		MaxSize: "1mb",

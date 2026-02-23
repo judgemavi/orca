@@ -38,7 +38,8 @@ func DefaultConfig() Config {
 }
 
 // Init configures slog with JSON output and a rotating file writer.
-func Init(cfg Config) error {
+// Returned cleanup closes the underlying writer and restores prior default logger.
+func Init(cfg Config) (func(), error) {
 	if strings.TrimSpace(cfg.Level) == "" {
 		cfg.Level = defaultLevel
 	}
@@ -51,22 +52,27 @@ func Init(cfg Config) error {
 
 	level, err := parseLevel(cfg.Level)
 	if err != nil {
-		return fmt.Errorf("parse log level: %w", err)
+		return nil, fmt.Errorf("parse log level: %w", err)
 	}
 
 	maxSize, err := ParseMaxSize(cfg.MaxSize)
 	if err != nil {
-		return fmt.Errorf("parse max_size: %w", err)
+		return nil, fmt.Errorf("parse max_size: %w", err)
 	}
 
 	writer, err := NewRotatingWriter(cfg.File, maxSize)
 	if err != nil {
-		return fmt.Errorf("create log writer: %w", err)
+		return nil, fmt.Errorf("create log writer: %w", err)
 	}
 
+	old := slog.Default()
 	handler := slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: level})
 	slog.SetDefault(slog.New(handler))
-	return nil
+	cleanup := func() {
+		_ = writer.Close()
+		slog.SetDefault(old)
+	}
+	return cleanup, nil
 }
 
 func parseLevel(level string) (slog.Level, error) {
