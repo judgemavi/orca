@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"log"
 	"sort"
 	"time"
 )
@@ -106,6 +107,7 @@ func (w *Watcher) Run(ctx context.Context) {
 func (w *Watcher) poll() {
 	version, err := w.db.DBVersion()
 	if err != nil {
+		log.Printf("watcher poll: db version: %v", err)
 		return
 	}
 	if version == w.lastVersion {
@@ -114,18 +116,22 @@ func (w *Watcher) poll() {
 
 	currentTasks, err := w.snapshotTasks()
 	if err != nil {
+		log.Printf("watcher poll: snapshot tasks: %v", err)
 		return
 	}
 	currentSprints, err := w.snapshotStatusTable(`SELECT id, status FROM sprints`)
 	if err != nil {
+		log.Printf("watcher poll: snapshot sprints: %v", err)
 		return
 	}
 	currentOperations, err := w.snapshotStatusTable(`SELECT id, status FROM operations`)
 	if err != nil {
+		log.Printf("watcher poll: snapshot operations: %v", err)
 		return
 	}
 	currentSessions, err := w.snapshotStatusTable(`SELECT id, status FROM sessions`)
 	if err != nil {
+		log.Printf("watcher poll: snapshot sessions: %v", err)
 		return
 	}
 

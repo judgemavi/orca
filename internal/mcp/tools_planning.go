@@ -80,7 +80,9 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 	for i, t := range tasks {
 		for _, depIdx := range t.DependsOnIndices {
 			if depIdx >= 0 && depIdx < len(createdIDs) {
-				_ = s.store.AddDependency(createdIDs[i], createdIDs[depIdx])
+				if err := s.store.AddDependency(createdIDs[i], createdIDs[depIdx]); err != nil {
+					return nil, fmt.Errorf("add dependency %q -> %q: %w", createdIDs[i], createdIDs[depIdx], err)
+				}
 			}
 		}
 	}

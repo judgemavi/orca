@@ -108,9 +108,6 @@ func (d *ConflictDetector) check(taskIDs []string) {
 	for _, taskID := range taskIDs {
 		worktreePath := worktree.ResolveTaskDir(d.worktreeDir, taskID)
 		if _, err := os.Stat(worktreePath); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
 			continue
 		}
 

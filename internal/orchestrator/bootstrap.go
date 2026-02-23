@@ -46,7 +46,9 @@ func WriteMCPConfig(repoDir, orcaBinary string, tools map[string]config.ToolConf
 
 	// Codex: .codex/config.toml (auto-discovered from project dir)
 	if _, ok := tools["codex"]; ok {
-		writeCodexMCPConfig(repoDir, orcaBinary)
+		if err := writeCodexMCPConfig(repoDir, orcaBinary); err != nil {
+			return "", fmt.Errorf("write codex mcp config: %w", err)
+		}
 	}
 
 	return claudePath, nil
@@ -54,10 +56,10 @@ func WriteMCPConfig(repoDir, orcaBinary string, tools map[string]config.ToolConf
 
 // writeCodexMCPConfig merges the orca MCP server into .codex/config.toml.
 // It preserves any existing content outside the [mcp_servers.orca] block.
-func writeCodexMCPConfig(repoDir, orcaBinary string) {
+func writeCodexMCPConfig(repoDir, orcaBinary string) error {
 	codexDir := filepath.Join(repoDir, ".codex")
 	if err := os.MkdirAll(codexDir, 0755); err != nil {
-		return
+		return err
 	}
 
 	codexPath := filepath.Join(codexDir, "config.toml")
@@ -67,8 +69,10 @@ func writeCodexMCPConfig(repoDir, orcaBinary string) {
 	existing, err := os.ReadFile(codexPath)
 	if err != nil {
 		// No existing file — write fresh.
-		os.WriteFile(codexPath, []byte(orcaBlock), 0644)
-		return
+		if writeErr := os.WriteFile(codexPath, []byte(orcaBlock), 0644); writeErr != nil {
+			return writeErr
+		}
+		return nil
 	}
 
 	content := string(existing)
@@ -89,7 +93,10 @@ func writeCodexMCPConfig(repoDir, orcaBinary string) {
 		content += "\n" + orcaBlock
 	}
 
-	os.WriteFile(codexPath, []byte(content), 0644)
+	if err := os.WriteFile(codexPath, []byte(content), 0644); err != nil {
+		return err
+	}
+	return nil
 }
 
 func ResolveSupervisorTool(cfg *config.Config) (string, config.ToolConfig, error) {

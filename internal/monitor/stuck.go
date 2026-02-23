@@ -96,9 +96,6 @@ func (d *StuckDetector) poll(taskIDs []string) {
 		worktreePath := worktree.ResolveTaskDir(d.worktreeDir, taskID)
 
 		if _, err := os.Stat(worktreePath); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
 			continue
 		}
 
