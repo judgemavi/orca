@@ -252,7 +252,14 @@ func (s *Store) UpdateDependencies(taskID string, deps []string) error {
 	normalized := normalizeDeps(deps)
 	graph[taskID] = normalized
 
-	if cycle, ok := detectDependencyCycle(graph); ok {
+	nodes := make([]string, 0, len(graph))
+	for id := range graph {
+		nodes = append(nodes, id)
+	}
+
+	if cycle, ok := DetectCycle(nodes, func(taskID string) []string {
+		return graph[taskID]
+	}); ok {
 		return fmt.Errorf("circular dependency: %s", strings.Join(cycle, " -> "))
 	}
 
@@ -626,63 +633,6 @@ func normalizeDeps(deps []string) []string {
 	}
 	slices.Sort(out)
 	return out
-}
-
-func detectDependencyCycle(graph map[string][]string) ([]string, bool) {
-	const (
-		stateUnvisited = 0
-		stateVisiting  = 1
-		stateDone      = 2
-	)
-
-	nodes := make([]string, 0, len(graph))
-	for id := range graph {
-		nodes = append(nodes, id)
-	}
-	slices.Sort(nodes)
-
-	state := make(map[string]int, len(graph))
-	stack := make([]string, 0, len(graph))
-	stackIndex := make(map[string]int, len(graph))
-
-	var visit func(string) ([]string, bool)
-	visit = func(node string) ([]string, bool) {
-		state[node] = stateVisiting
-		stackIndex[node] = len(stack)
-		stack = append(stack, node)
-
-		for _, dep := range graph[node] {
-			if _, ok := graph[dep]; !ok {
-				continue
-			}
-			switch state[dep] {
-			case stateUnvisited:
-				if cycle, ok := visit(dep); ok {
-					return cycle, true
-				}
-			case stateVisiting:
-				start := stackIndex[dep]
-				cycle := append([]string{}, stack[start:]...)
-				cycle = append(cycle, dep)
-				return cycle, true
-			}
-		}
-
-		stack = stack[:len(stack)-1]
-		delete(stackIndex, node)
-		state[node] = stateDone
-		return nil, false
-	}
-
-	for _, node := range nodes {
-		if state[node] != stateUnvisited {
-			continue
-		}
-		if cycle, ok := visit(node); ok {
-			return cycle, true
-		}
-	}
-	return nil, false
 }
 
 func deref(s *string) string {
