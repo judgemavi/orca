@@ -160,11 +160,29 @@ func (s *Store) Update(id string, fields map[string]interface{}) error {
 }
 
 func (s *Store) Delete(id string) error {
-	_, err := s.db.Exec(`DELETE FROM task_deps WHERE task_id = ? OR depends_on = ?`, id, id)
-	if err != nil {
-		return fmt.Errorf("delete task deps: %w", err)
+	// Clean up all child records that reference this task.
+	for _, q := range []struct {
+		sql  string
+		desc string
+	}{
+		{`DELETE FROM task_reviews WHERE task_id = ?`, "reviews"},
+		{`DELETE FROM costs WHERE task_id = ?`, "costs"},
+		{`DELETE FROM artifacts WHERE task_id = ?`, "artifacts"},
+		{`DELETE FROM task_deps WHERE task_id = ? OR depends_on = ?`, "deps"},
+	} {
+		if q.desc == "deps" {
+			_, err := s.db.Exec(q.sql, id, id)
+			if err != nil {
+				return fmt.Errorf("delete task %s: %w", q.desc, err)
+			}
+		} else {
+			_, err := s.db.Exec(q.sql, id)
+			if err != nil {
+				return fmt.Errorf("delete task %s: %w", q.desc, err)
+			}
+		}
 	}
-	_, err = s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete task: %w", err)
 	}
