@@ -502,16 +502,49 @@ func (s *Store) queryTasks(query string, args ...interface{}) ([]*Task, error) {
 		tasks = append(tasks, &t)
 	}
 
-	// Load deps for each task.
+	depsByTask, err := s.loadDepsForTasks(tasks)
+	if err != nil {
+		return nil, err
+	}
 	for _, t := range tasks {
-		deps, err := s.loadDeps(t.ID)
-		if err != nil {
-			return nil, err
-		}
-		t.DependsOn = deps
+		t.DependsOn = depsByTask[t.ID]
 	}
 
 	return tasks, nil
+}
+
+func (s *Store) loadDepsForTasks(tasks []*Task) (map[string][]string, error) {
+	depsByTask := make(map[string][]string, len(tasks))
+	if len(tasks) == 0 {
+		return depsByTask, nil
+	}
+
+	args := make([]interface{}, 0, len(tasks))
+	for _, t := range tasks {
+		args = append(args, t.ID)
+		depsByTask[t.ID] = nil
+	}
+
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(tasks)), ",")
+	query := fmt.Sprintf(`SELECT task_id, depends_on FROM task_deps WHERE task_id IN (%s)`, placeholders)
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("load deps for tasks: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var taskID, dep string
+		if err := rows.Scan(&taskID, &dep); err != nil {
+			return nil, fmt.Errorf("scan dep: %w", err)
+		}
+		depsByTask[taskID] = append(depsByTask[taskID], dep)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate deps: %w", err)
+	}
+
+	return depsByTask, nil
 }
 
 func (s *Store) loadDeps(taskID string) ([]string, error) {

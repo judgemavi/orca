@@ -2,11 +2,14 @@ package task
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/testutil"
 )
 
@@ -701,6 +704,44 @@ func TestTaskReviewsLifecycle(t *testing.T) {
 	}
 	if !foundAddressed {
 		t.Fatalf("review list missing addressed review id %q", addressedID)
+	}
+}
+
+func BenchmarkListWithDependencies(b *testing.B) {
+	db, err := state.Open(filepath.Join(b.TempDir(), "bench.db"))
+	if err != nil {
+		b.Fatalf("open test db: %v", err)
+	}
+	b.Cleanup(func() { db.Close() })
+	store := NewStore(db)
+
+	const taskCount = 300
+	tasks := make([]*Task, 0, taskCount)
+	for i := 0; i < taskCount; i++ {
+		tk, err := store.Create(fmt.Sprintf("Task %d", i), "", "", "")
+		if err != nil {
+			b.Fatalf("create task %d: %v", i, err)
+		}
+		tasks = append(tasks, tk)
+	}
+	for i := 1; i < taskCount; i++ {
+		for j := max(0, i-3); j < i; j++ {
+			if err := store.AddDependency(tasks[i].ID, tasks[j].ID); err != nil {
+				b.Fatalf("add dep %d->%d: %v", i, j, err)
+			}
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		got, err := store.List()
+		if err != nil {
+			b.Fatalf("list: %v", err)
+		}
+		if len(got) != taskCount {
+			b.Fatalf("tasks = %d, want %d", len(got), taskCount)
+		}
 	}
 }
 
