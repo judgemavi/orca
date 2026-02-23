@@ -7,8 +7,9 @@ Multi-agent CLI orchestrator for AI coding tools. Coordinates Claude Code, Codex
 Orca wraps existing AI CLI tools as workers — it doesn't call LLM APIs directly. The execution model mirrors a dev team:
 
 1. **Explore** — Analyze the codebase and generate context
-2. **Plan** — Decompose goals into small, dependency-aware tasks
-3. **Sprint** — Execute tasks in parallel on isolated git worktrees
+2. **Evaluate** — Assess task complexity and decide if decomposition is needed
+3. **Plan** — Decompose goals into small, dependency-aware tasks
+4. **Sprint** — Execute tasks in parallel on isolated git worktrees
 4. **Review** — Review diffs with quality gates (scope check, test delta, alignment)
 5. **Integrate** — Merge approved work into an integration branch with validation
 
@@ -84,6 +85,8 @@ orca init                          Initialize Orca in a git repo
 orca explore                       Analyze codebase, generate context
 orca explore --check               Check if context is stale
 orca explore --manual <file>       Use a markdown file as context
+orca explore --stdin               Read context from stdin
+orca explore --tool <tool>         Use a specific tool for exploration
 
 orca breakdown "goal"              Break down a goal into tasks
 orca tasks                          List all tasks
@@ -94,6 +97,7 @@ orca tasks delete <id>              Delete a task
 orca tasks reopen <id...>           Move failed tasks back to pending
 orca tasks merge <id>               Merge an approved task
 orca tasks plan <id>                Generate implementation plan for a task
+orca tasks evaluate <id>            Evaluate if a task needs decomposition
 
 orca sprint plan                   Select tasks for next sprint
 orca sprint assign <id...>         Manually add tasks to sprint
@@ -119,7 +123,10 @@ orca costs                         Show cost summary
 orca ops                           List tracked operations
 orca config show                   Print current config
 orca models                        List available models
+orca logs                          Show application logs
 orca serve                         Start web UI
+orca serve --addr <addr>           Listen address (overrides config)
+orca serve --orchestrator          Auto-start the orchestrator agent
 orca mcp                           Run MCP server (stdio)
 orca orc                           Launch orchestrator agent
 ```
@@ -234,6 +241,7 @@ internal/
   config/           YAML config loading + defaults
   cost/             Cost tracking and parsing
   decompose/        Goal -> task decomposition via LLM
+  evaluate/         Task complexity evaluation
   explore/          Codebase exploration + staleness
   integrator/       Merge ordering, conflict resolution
   llm/              Low-level LLM invocation helpers
@@ -252,7 +260,7 @@ internal/
   testutil/         Shared test helpers
   worker/           Worker execution (headless + interactive)
   worktree/         Git worktree management
-prompts/            LLM prompt templates
+prompts/            LLM prompt templates (explore, plan, evaluate, review, etc.)
 web/                React + Vite frontend
 ```
 
