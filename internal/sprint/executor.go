@@ -520,7 +520,8 @@ func (e *Executor) finalizeSprint(sprintID string, results []TaskResult) error {
 	}
 
 	slog.Info("sprint.executed", "sprint_id", sprintID, "succeeded", succeededCount, "failed", failedCount)
-	return e.planner.CompleteSprintIfDone(sprintID)
+	_, err := e.planner.CompleteSprintIfDone(sprintID)
+	return err
 }
 
 func (e *Executor) executeTaskLegacy(ctx context.Context, info taskInfo, outputCh chan<- worker.OutputLine) TaskResult {

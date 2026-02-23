@@ -199,7 +199,7 @@ func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 	if tk.SprintID != "" {
-		if err := s.planner.CompleteSprintIfDone(tk.SprintID); err != nil {
+		if _, err := s.planner.CompleteSprintIfDone(tk.SprintID); err != nil {
 			slog.Warn("check sprint completion after approve failed", "sprint_id", tk.SprintID, "err", err)
 		}
 	}
@@ -313,7 +313,7 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id str
 	}
 	// End sprint if all its tasks have been deleted.
 	if sprintID != "" {
-		if _, err := s.planner.CompleteSprintIfEmpty(sprintID); err != nil {
+		if _, err := s.planner.CompleteSprintIfDone(sprintID); err != nil {
 			slog.Warn("check sprint after delete", "sprint_id", sprintID[:8], "err", err)
 		}
 	}

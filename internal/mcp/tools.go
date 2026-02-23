@@ -732,7 +732,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		_ = s.executor.Worktrees().Remove(taskID)
 		// End sprint if all its tasks have been deleted.
 		if sprintID != "" {
-			_, _ = s.planner.CompleteSprintIfEmpty(sprintID)
+			_, _ = s.planner.CompleteSprintIfDone(sprintID)
 		}
 		return map[string]interface{}{"task_id": taskID, "deleted": true}, nil
 
@@ -1423,7 +1423,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			return nil, err
 		}
 		if t.SprintID != "" {
-			if err := s.planner.CompleteSprintIfDone(t.SprintID); err != nil {
+			if _, err := s.planner.CompleteSprintIfDone(t.SprintID); err != nil {
 				slog.Warn("check sprint completion after approve failed", "sprint_id", t.SprintID, "err", err)
 			}
 		}
@@ -1806,6 +1806,11 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			}
 		}
 
+		// Complete sprint if all tasks are now merged (or none remain).
+		if sprintID != "" {
+			_, _ = s.planner.CompleteSprintIfDone(sprintID)
+		}
+
 		return map[string]interface{}{
 			"sprint_id": sprintID,
 			"merged":    merged,
@@ -1842,6 +1847,10 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			return nil, err
 		}
 		_ = s.executor.Worktrees().Remove(taskID)
+		// Complete sprint if all tasks are now merged (or none remain).
+		if t.SprintID != "" {
+			_, _ = s.planner.CompleteSprintIfDone(t.SprintID)
+		}
 		return map[string]interface{}{"task_id": taskID, "status": "merged"}, nil
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)

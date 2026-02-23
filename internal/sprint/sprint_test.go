@@ -418,7 +418,7 @@ func TestCompleteSprintIfDoneCompletesWhenTasksAreTerminal(t *testing.T) {
 		t.Fatalf("merge t2: %v", err)
 	}
 
-	if err := planner.CompleteSprintIfDone(s.ID); err != nil {
+	if _, err := planner.CompleteSprintIfDone(s.ID); err != nil {
 		t.Fatalf("complete sprint if done: %v", err)
 	}
 
@@ -460,7 +460,7 @@ func TestCompleteSprintIfDoneStaysRunningWhenTaskFailed(t *testing.T) {
 		t.Fatalf("merge t2: %v", err)
 	}
 
-	if err := planner.CompleteSprintIfDone(s.ID); err != nil {
+	if _, err := planner.CompleteSprintIfDone(s.ID); err != nil {
 		t.Fatalf("complete sprint if done: %v", err)
 	}
 

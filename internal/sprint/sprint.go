@@ -429,33 +429,20 @@ func (p *Planner) CompleteTask(_ string, taskID, status string) error {
 	return nil
 }
 
-// CompleteSprintIfDone completes a sprint when all tasks are merged.
-func (p *Planner) CompleteSprintIfDone(sprintID string) error {
-	var remaining int
+// CompleteSprintIfDone completes a sprint when all tasks are merged or all
+// tasks have been deleted (zero remaining). Returns true if the sprint was
+// completed by this call.
+func (p *Planner) CompleteSprintIfDone(sprintID string) (bool, error) {
+	var total, unmerged int
 	err := p.db.QueryRow(
-		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status != 'merged'`,
+		`SELECT COUNT(*), COUNT(CASE WHEN status != 'merged' THEN 1 END) FROM tasks WHERE sprint_id = ?`,
 		sprintID,
-	).Scan(&remaining)
+	).Scan(&total, &unmerged)
 	if err != nil {
-		return fmt.Errorf("check remaining: %w", err)
+		return false, fmt.Errorf("check remaining: %w", err)
 	}
-	if remaining > 0 {
-		return nil
-	}
-	return p.Complete(sprintID)
-}
-
-// CompleteSprintIfEmpty completes a sprint when it has no remaining tasks
-// (e.g. all were deleted). Returns true if the sprint was completed.
-func (p *Planner) CompleteSprintIfEmpty(sprintID string) (bool, error) {
-	var count int
-	err := p.db.QueryRow(
-		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ?`, sprintID,
-	).Scan(&count)
-	if err != nil {
-		return false, fmt.Errorf("count sprint tasks: %w", err)
-	}
-	if count > 0 {
+	// Complete when: no tasks left (all deleted) OR all tasks are merged.
+	if total > 0 && unmerged > 0 {
 		return false, nil
 	}
 	return true, p.Complete(sprintID)

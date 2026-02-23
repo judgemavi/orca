@@ -121,5 +121,13 @@ func (r *Registry) runIntegrate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("integrate.completed sprint=%s operation=%s\n", short(sprintID), short(opID))
 	fmt.Printf("\nIntegrated: %d merged, %d failed\n", len(merged), len(failed))
+
+	// Complete sprint if all tasks are now merged (or none remain).
+	if done, err := planner.CompleteSprintIfDone(sprintID); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: check sprint completion: %v\n", err)
+	} else if done {
+		fmt.Printf("Sprint %s completed\n", short(sprintID))
+	}
+
 	return nil
 }

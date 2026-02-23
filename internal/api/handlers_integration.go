@@ -141,7 +141,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 			return
 		}
 		if tk.SprintID != "" {
-			if err := s.planner.CompleteSprintIfDone(tk.SprintID); err != nil {
+			if _, err := s.planner.CompleteSprintIfDone(tk.SprintID); err != nil {
 				slog.Warn("check sprint completion after merge failed", "sprint_id", tk.SprintID, "err", err)
 			}
 		}
