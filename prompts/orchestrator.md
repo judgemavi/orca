@@ -48,7 +48,7 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 ### Planning
 - breakdown: Decompose a goal into tasks using an LLM
 - task_plan_generate: Generate an implementation plan for a task
-- task_merge: Merge a single completed task into the integration branch
+- task_merge: Merge a single approved task into the integration branch
 
 ### Sprint
 - sprint_plan: Create a sprint from ready tasks
@@ -62,12 +62,12 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 
 ### Review
 - review_get: Fetch diffs and output from the latest worker run for each task
-- review_sprint: Run automated LLM review on all completed tasks (blocks until done)
-- task_approve: Move a task from `review` → `completed`
+- review_sprint: Run automated LLM review on all approved tasks (blocks until done)
+- task_approve: Move a task from `review` → `approved`
 - task_request_changes: Reject a task, store feedback, re-run the worker with that feedback
 
 ### Integration
-- integrate: Merge all completed tasks into the integration branch
+- integrate: Merge all approved tasks into the integration branch
 
 ### Exploration
 - explore: Run codebase analysis to build context for workers

@@ -66,7 +66,7 @@ orca breakdown "Add comprehensive error handling across the API layer"
 orca sprint plan
 orca sprint start
 
-# Review completed work
+# Review work
 orca sprint review
 orca sprint review --auto    # LLM-assisted review
 
@@ -92,7 +92,7 @@ orca task show <id>                Show full task details
 orca task edit <id>                Edit a task
 orca task delete <id>              Delete a task
 orca task reopen <id...>           Move failed tasks back to pending
-orca task merge <id>               Merge a completed task
+orca task merge <id>               Merge an approved task
 orca task plan <id>                Generate implementation plan for a task
 
 orca sprint plan                   Select tasks for next sprint
@@ -100,7 +100,7 @@ orca sprint assign <id...>         Manually add tasks to sprint
 orca sprint unassign <id...>       Remove tasks from sprint
 orca sprint start                  Execute the sprint
 orca sprint status                 Check worker progress
-orca sprint review                 Review completed work
+orca sprint review                 Review sprint work
 orca sprint resume                 Recover interrupted sprint
 orca sprint cancel                 Cancel running sprint
 orca sprint reset                  Reset sprint, revert tasks

@@ -47,8 +47,8 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 		jsonError(w, err, 404)
 		return
 	}
-	if tk.Status != "completed" {
-		jsonError(w, "only completed tasks can be merged", 400)
+	if tk.Status != "approved" {
+		jsonError(w, "only approved tasks can be merged", 400)
 		return
 	}
 
@@ -253,13 +253,13 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 	var taskIDs []string
 	for _, id := range sp.TaskIDs {
 		t, err := s.planner.GetTask(id)
-		if err == nil && t.Status == "completed" {
+		if err == nil && t.Status == "approved" {
 			taskIDs = append(taskIDs, id)
 		}
 	}
 
 	if len(taskIDs) == 0 {
-		jsonError(w, "no completed tasks to integrate", 400)
+		jsonError(w, "no approved tasks to integrate", 400)
 		return
 	}
 

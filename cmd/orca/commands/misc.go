@@ -725,7 +725,7 @@ func (r *Registry) runCleanup(cmd *cobra.Command, args []string) error {
 			stale = append(stale, staleEntry{taskID: taskID, branch: wt.Branch, reason: "orphan"})
 			continue
 		}
-		if t.Status == "completed" || t.Status == "failed" {
+		if t.Status == "approved" || t.Status == "failed" {
 			stale = append(stale, staleEntry{taskID: taskID, branch: wt.Branch, reason: t.Status})
 		}
 	}
@@ -874,7 +874,7 @@ func (r *Registry) runLog(cmd *cobra.Command, args []string) error {
 	for _, s := range sprints {
 		var total, completed, failed int
 		db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE sprint_id = ?`, s.id).Scan(&total)
-		db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status = 'completed'`, s.id).Scan(&completed)
+		db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status = 'approved'`, s.id).Scan(&completed)
 		db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status = 'failed'`, s.id).Scan(&failed)
 
 		fmt.Printf("Sprint %s  %s  %s\n", short(s.id), s.status, s.createdAt.Format("2006-01-02 15:04"))
@@ -1054,7 +1054,7 @@ func (r *Registry) runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Tasks: %d total\n", len(tasks))
 	fmt.Printf("  ○ pending:     %d\n", counts["pending"])
 	fmt.Printf("  ● in progress: %d\n", counts["in_sprint"]+counts["running"])
-	fmt.Printf("  ✓ completed:   %d\n", counts["completed"])
+	fmt.Printf("  ✓ approved:    %d\n", counts["approved"])
 	fmt.Printf("  ✗ failed:      %d\n", counts["failed"])
 
 	if active != nil {

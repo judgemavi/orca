@@ -30,7 +30,7 @@ export function ReviewPanel({ sprint, onClose, onIntegrated }: Props) {
     }
   }
 
-  const completed = artifacts.filter((a) => a.status === 'completed')
+  const completed = artifacts.filter((a) => a.status === 'approved')
 
   return (
     <div className="flex w-[480px] shrink-0 flex-col overflow-hidden border-l border-border bg-[var(--bg-primary)]">

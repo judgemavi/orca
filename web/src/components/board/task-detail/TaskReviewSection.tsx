@@ -139,7 +139,7 @@ export function TaskReviewSection({
         </div>
       )}
 
-      {['review', 'completed', 'merged'].includes(task.status) &&
+      {['review', 'approved', 'merged'].includes(task.status) &&
         reviews.length > 0 && <ReviewHistorySection reviews={reviews} />}
 
       {task.status === 'review' && (

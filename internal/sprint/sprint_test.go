@@ -297,10 +297,10 @@ func TestCompleteTaskDoesNotCompleteSprint(t *testing.T) {
 	}
 
 	// Complete both
-	if err := planner.CompleteTask(s.ID, t1.ID, "completed"); err != nil {
+	if err := planner.CompleteTask(s.ID, t1.ID, "approved"); err != nil {
 		t.Fatalf("complete t1: %v", err)
 	}
-	if err := planner.CompleteTask(s.ID, t2.ID, "completed"); err != nil {
+	if err := planner.CompleteTask(s.ID, t2.ID, "approved"); err != nil {
 		t.Fatalf("complete t2: %v", err)
 	}
 
@@ -335,7 +335,7 @@ func TestCompleteTaskWithFailureDoesNotFailSprint(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 
-	if err := planner.CompleteTask(s.ID, t1.ID, "completed"); err != nil {
+	if err := planner.CompleteTask(s.ID, t1.ID, "approved"); err != nil {
 		t.Fatalf("complete t1: %v", err)
 	}
 	if err := planner.CompleteTask(s.ID, t2.ID, "failed"); err != nil {
@@ -376,7 +376,7 @@ func TestCompleteTaskWithReviewDoesNotCompleteSprint(t *testing.T) {
 	if err := planner.CompleteTask(s.ID, t1.ID, "review"); err != nil {
 		t.Fatalf("complete t1 as review: %v", err)
 	}
-	if err := planner.CompleteTask(s.ID, t2.ID, "completed"); err != nil {
+	if err := planner.CompleteTask(s.ID, t2.ID, "approved"); err != nil {
 		t.Fatalf("complete t2: %v", err)
 	}
 

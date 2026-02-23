@@ -26,15 +26,26 @@ import { useOperationsQuery } from '../../hooks/queries/useOperations'
 import { BoardHeader } from './BoardHeader'
 import { BoardColumn } from './BoardColumn'
 
-const COLUMNS: { id: Task['status']; label: string }[] = [
-  { id: 'pending', label: 'Pending' },
-  { id: 'in_sprint', label: 'In Sprint' },
-  { id: 'running', label: 'Running' },
-  { id: 'review', label: 'Review' },
-  { id: 'completed', label: 'Completed' },
-  { id: 'merged', label: 'Merged' },
-  { id: 'failed', label: 'Failed' },
+type ColumnDef =
+  | { kind: 'single'; id: Task['status']; label: string }
+  | { kind: 'grouped'; id: string; label: string; sections: { id: Task['status']; label: string }[] }
+
+const COLUMNS: ColumnDef[] = [
+  { kind: 'single', id: 'pending', label: 'Backlog' },
+  { kind: 'single', id: 'in_sprint', label: 'In Sprint' },
+  { kind: 'single', id: 'running', label: 'Running' },
+  { kind: 'grouped', id: 'outcome', label: 'Outcome', sections: [
+    { id: 'review', label: 'Review' },
+    { id: 'failed', label: 'Failed' },
+  ]},
+  { kind: 'single', id: 'approved', label: 'Approved' },
+  { kind: 'single', id: 'merged', label: 'Merged' },
 ]
+
+// Flat list of all status IDs used for drag/drop and filtering.
+const ALL_STATUS_IDS: Task['status'][] = COLUMNS.flatMap((col) =>
+  col.kind === 'grouped' ? col.sections.map((s) => s.id) : [col.id as Task['status']],
+)
 
 interface Props {
   lastWSEvent: WSEvent | null
@@ -164,10 +175,11 @@ export function BoardView({ lastWSEvent }: Props) {
   }, [tasks])
 
   const tasksByStatus = useMemo(() => {
-    return COLUMNS.reduce<Record<string, Task[]>>((acc, col) => {
-      acc[col.id] = tasks.filter((t) => t.status === col.id)
-      return acc
-    }, {})
+    const acc: Record<string, Task[]> = {}
+    for (const status of ALL_STATUS_IDS) {
+      acc[status] = tasks.filter((t) => t.status === status)
+    }
+    return acc
   }, [tasks])
 
   const activeTask = useMemo(
@@ -190,7 +202,7 @@ export function BoardView({ lastWSEvent }: Props) {
           dependency.status === 'in_sprint' || dependency.status === 'running'
         return (
           !inSprint &&
-          dependency.status !== 'completed' &&
+          dependency.status !== 'approved' &&
           dependency.status !== 'merged'
         )
       })
@@ -200,10 +212,10 @@ export function BoardView({ lastWSEvent }: Props) {
 
   const canDropTaskToColumn = useCallback(
     (task: Task, targetCol: string) => {
-      if (!COLUMNS.some((col) => col.id === targetCol)) return false
+      if (!ALL_STATUS_IDS.includes(targetCol as Task['status'])) return false
       if (task.status === targetCol) return true
       if (
-        task.status === 'completed' ||
+        task.status === 'approved' ||
         task.status === 'merged' ||
         task.status === 'running' ||
         task.status === 'review'
@@ -211,7 +223,7 @@ export function BoardView({ lastWSEvent }: Props) {
         return false
       if (
         targetCol === 'running' ||
-        targetCol === 'completed' ||
+        targetCol === 'approved' ||
         targetCol === 'review'
       )
         return false
@@ -260,11 +272,11 @@ export function BoardView({ lastWSEvent }: Props) {
     if (!task) return
 
     const targetCol = String(over.id)
-    if (!COLUMNS.some((col) => col.id === targetCol)) return
+    if (!ALL_STATUS_IDS.includes(targetCol as Task['status'])) return
     if (task.status === targetCol) return
 
     if (
-      task.status === 'completed' ||
+      task.status === 'approved' ||
       task.status === 'merged' ||
       task.status === 'running' ||
       task.status === 'review'
@@ -272,7 +284,7 @@ export function BoardView({ lastWSEvent }: Props) {
       return
     if (
       targetCol === 'running' ||
-      targetCol === 'completed' ||
+      targetCol === 'approved' ||
       targetCol === 'review'
     )
       return
@@ -374,25 +386,53 @@ export function BoardView({ lastWSEvent }: Props) {
           onDragEnd={handleDragEnd}
         >
           <div className="flex flex-1 gap-0 overflow-x-auto overflow-y-hidden">
-            {COLUMNS.map((col) => (
-              <BoardColumn
-                key={col.id}
-                id={col.id}
-                label={col.label}
-                tasks={tasksByStatus[col.id] ?? []}
-                activeTask={activeTask}
-                canDrop={activeTask ? canDropTaskToColumn(activeTask, col.id) : true}
-                onCreateTask={() => setShowCreate(true)}
-                renderTask={(task) => (
-                  <DraggableTaskCardWithModels
-                    key={task.id}
-                    task={task}
-                    onClick={() => setSelectedTaskId(task.id)}
-                    onRefresh={refreshAfterTaskUpdate}
-                  />
-                )}
-              />
-            ))}
+            {COLUMNS.map((col) =>
+              col.kind === 'single' ? (
+                <BoardColumn
+                  key={col.id}
+                  id={col.id as Task['status']}
+                  label={col.label}
+                  tasks={tasksByStatus[col.id] ?? []}
+                  activeTask={activeTask}
+                  canDrop={activeTask ? canDropTaskToColumn(activeTask, col.id) : true}
+                  onCreateTask={() => setShowCreate(true)}
+                  renderTask={(task) => (
+                    <DraggableTaskCardWithModels
+                      key={task.id}
+                      task={task}
+                      onClick={() => setSelectedTaskId(task.id)}
+                      onRefresh={refreshAfterTaskUpdate}
+                    />
+                  )}
+                />
+              ) : (
+                <div
+                  key={col.id}
+                  className="flex min-w-[200px] flex-1 flex-col overflow-hidden border-r border-border last:border-r-0"
+                >
+                  {col.sections.map((section) => (
+                    <BoardColumn
+                      key={section.id}
+                      id={section.id}
+                      label={section.label}
+                      tasks={tasksByStatus[section.id] ?? []}
+                      activeTask={activeTask}
+                      canDrop={activeTask ? canDropTaskToColumn(activeTask, section.id) : true}
+                      onCreateTask={() => setShowCreate(true)}
+                      grouped
+                      renderTask={(task) => (
+                        <DraggableTaskCardWithModels
+                          key={task.id}
+                          task={task}
+                          onClick={() => setSelectedTaskId(task.id)}
+                          onRefresh={refreshAfterTaskUpdate}
+                        />
+                      )}
+                    />
+                  ))}
+                </div>
+              ),
+            )}
           </div>
 
           <DragOverlay>

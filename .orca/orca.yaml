@@ -95,17 +95,20 @@ workers:
 orchestrator:
   cost_budget: 0
   supervisor_tool: claude
-  supervisor_model: ""
+  supervisor_model: claude-opus-4-6
   phases:
     explore:
       tool: claude
-      model: ""
+      model: claude-sonnet-4-6
     integrate:
+      tool: claude
+      model: claude-sonnet-4-6
+    plan:
       tool: codex
-      model: ""
+      model: gpt-5.3-codex
     review:
       tool: claude
-      model: "claude-sonnet-4-6"
+      model: claude-sonnet-4-6
     sprint:
       tool: codex
       model: ""
@@ -121,6 +124,11 @@ quality:
   scope_check: true
   test_delta: true
   alignment_check: false
+# Application logging config — level, file path, rotation size
+logging:
+  level: info
+  file: .orca/orca.log
+  max_size: 50mb
 # Worktree cleanup settings
 cleanup:
   ttl: 168h

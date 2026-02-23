@@ -11,7 +11,7 @@ interface Props {
 
 export function DraggableTaskCard({ task, onClick, onRefresh }: Props) {
   const draggable =
-    task.status !== 'completed' &&
+    task.status !== 'approved' &&
     task.status !== 'merged' &&
     task.status !== 'running' &&
     task.status !== 'review'

@@ -10,7 +10,7 @@ import (
 )
 
 func RegisterReview(root *cobra.Command, r *Registry) {
-	reviewCmd := &cobra.Command{Use: "review", Short: "Review completed tasks"}
+	reviewCmd := &cobra.Command{Use: "review", Short: "Review approved tasks"}
 	approveCmd := &cobra.Command{Use: "approve [task-id]", Short: "Approve a task in review", Args: cobra.MaximumNArgs(1), RunE: r.runReviewApprove}
 	requestChangesCmd := &cobra.Command{Use: "request-changes [task-id] [feedback]", Short: "Request changes on a task in review", Args: cobra.RangeArgs(0, 2), RunE: r.runReviewRequestChanges}
 	reviewCmd.AddCommand(approveCmd, requestChangesCmd)
@@ -45,7 +45,7 @@ func (r *Registry) runReviewApprove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("task %s is %q, expected %q", short(taskID), tk.Status, "review")
 	}
 
-	if err := store.Update(taskID, map[string]interface{}{"status": "completed"}); err != nil {
+	if err := store.Update(taskID, map[string]interface{}{"status": "approved"}); err != nil {
 		return fmt.Errorf("approve task %s: %w", short(taskID), err)
 	}
 

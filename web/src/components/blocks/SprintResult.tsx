@@ -18,7 +18,7 @@ function formatDuration(ms: number): string {
 export function SprintResult({ data, onAction }: Props) {
   const results = data?.results ?? []
   const actions = data?.actions ?? []
-  const succeeded = results.filter((r) => r.status === 'completed').length
+  const succeeded = results.filter((r) => r.status === 'approved').length
   const failed = results.filter((r) => r.status === 'failed').length
 
   return (

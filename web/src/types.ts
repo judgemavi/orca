@@ -9,7 +9,7 @@ export interface Task {
     | 'in_sprint'
     | 'running'
     | 'review'
-    | 'completed'
+    | 'approved'
     | 'merged'
     | 'failed'
   assigned_tool: string | null

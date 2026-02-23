@@ -12,6 +12,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
+	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -51,7 +52,7 @@ func RegisterTask(root *cobra.Command, r *Registry) {
 	deleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
 	taskCmd.AddCommand(deleteCmd)
 
-	mergeCmd := &cobra.Command{Use: "merge [task-id]", Short: "Merge a completed task into integration branch", Args: cobra.MaximumNArgs(1), RunE: r.runTaskMerge}
+	mergeCmd := &cobra.Command{Use: "merge [task-id]", Short: "Merge an approved task into integration branch", Args: cobra.MaximumNArgs(1), RunE: r.runTaskMerge}
 	mergeCmd.Flags().Bool("auto", false, "Auto-resolve merge conflicts by rerunning task in worktree")
 	taskCmd.AddCommand(mergeCmd)
 
@@ -277,11 +278,12 @@ func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
-	db, store, err := r.openStoreOrErr()
+	db, cfg, _, executor, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+	store := task.NewStore(db)
 
 	var id string
 	if len(args) > 0 {
@@ -313,10 +315,26 @@ func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	sprintID := t.SprintID
 	if err := store.Delete(id); err != nil {
 		return fmt.Errorf("delete task: %w", err)
 	}
+	// Best-effort worktree cleanup.
+	if _, statErr := os.Stat(filepath.Join(cfg.Project.WorktreeDir, "task-"+id)); statErr == nil {
+		if rmErr := executor.Worktrees().Remove(id); rmErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: cleanup worktree for %s: %v\n", short(id), rmErr)
+		}
+	}
 	fmt.Printf("Deleted task %s: %s\n", short(t.ID), t.Title)
+	// End sprint if all its tasks have been deleted.
+	if sprintID != "" {
+		planner := sprint.NewPlanner(db)
+		if ended, err := planner.CompleteSprintIfEmpty(sprintID); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: check sprint after delete: %v\n", err)
+		} else if ended {
+			fmt.Printf("Sprint %s completed (no tasks remaining)\n", short(sprintID))
+		}
+	}
 	return nil
 }
 
@@ -334,7 +352,7 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		id, err = resolveTaskID(store, args[0])
 	} else {
-		id, err = pickTask(store, "Completed task", completedTasks)
+		id, err = pickTask(store, "Approved task", approvedTasks)
 	}
 	if err != nil {
 		return err
@@ -343,8 +361,8 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get task: %w", err)
 	}
-	if tk.Status != "completed" {
-		return fmt.Errorf("only completed tasks can be merged (task %s is %s)", short(id), tk.Status)
+	if tk.Status != "approved" {
+		return fmt.Errorf("only approved tasks can be merged (task %s is %s)", short(id), tk.Status)
 	}
 	for _, depID := range tk.DependsOn {
 		dep, err := store.Get(depID)

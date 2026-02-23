@@ -45,3 +45,5 @@ dist-ssr
 *.sw?
 # Orca orchestrator
 .orca/*.db
+# Orca orchestrator
+.orca/orca.log*

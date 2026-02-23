@@ -19,6 +19,7 @@ export function BoardTaskCard({
 }: Props) {
   const [saving, setSaving] = useState(false)
   const isEditable = task.status === 'pending' || task.status === 'failed'
+  const isDeletable = task.status !== 'running' && task.status !== 'merged'
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -81,7 +82,7 @@ export function BoardTaskCard({
         )}
       </div>
 
-      {interactive && isEditable && (
+      {interactive && (isEditable || isDeletable) && (
         <div className="absolute right-2 top-1.5 hidden gap-1 group-hover:flex">
           {task.status === 'failed' && (
             <button
@@ -93,13 +94,15 @@ export function BoardTaskCard({
               Reopen
             </button>
           )}
-          <button
-            className="rounded px-1 py-0.5 text-[11px] leading-none text-[var(--text-secondary)] hover:bg-[var(--bg-sidebar)] hover:text-[var(--status-failed)]"
-            onClick={handleDelete}
-            title="Delete"
-          >
-            ✕
-          </button>
+          {isDeletable && (
+            <button
+              className="rounded px-1 py-0.5 text-[11px] leading-none text-[var(--text-secondary)] hover:bg-[var(--bg-sidebar)] hover:text-[var(--status-failed)]"
+              onClick={handleDelete}
+              title="Delete"
+            >
+              ✕
+            </button>
+          )}
         </div>
       )}
     </div>

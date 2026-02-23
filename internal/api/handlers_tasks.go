@@ -158,7 +158,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 		case "in_sprint":
 			jsonError(w, "use /api/v1/sprints/assign to add tasks to sprint", 400)
 			return
-		case "completed", "running", "merged", "review":
+		case "approved", "running", "merged", "review":
 			jsonError(w, "cannot manually set status to "+newStatus, 400)
 			return
 		}
@@ -193,7 +193,7 @@ func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	if err := store.Update(resolved, map[string]interface{}{"status": "completed"}); err != nil {
+	if err := store.Update(resolved, map[string]interface{}{"status": "approved"}); err != nil {
 		jsonError(w, err, 500)
 		return
 	}
@@ -295,10 +295,26 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id str
 		jsonError(w, err, 404)
 		return
 	}
-
-	if err := store.Delete(resolved); err != nil {
-		jsonError(w, err, 500)
+	tk, err := store.Get(resolved)
+	if err != nil {
+		jsonError(w, err, 404)
 		return
+	}
+
+	sprintID := tk.SprintID
+	if err := store.Delete(resolved); err != nil {
+		jsonError(w, err, 400)
+		return
+	}
+	// Best-effort worktree cleanup.
+	if err := s.executor.Worktrees().Remove(resolved); err != nil {
+		slog.Warn("cleanup worktree after delete", "task_id", resolved[:8], "err", err)
+	}
+	// End sprint if all its tasks have been deleted.
+	if sprintID != "" {
+		if _, err := s.planner.CompleteSprintIfEmpty(sprintID); err != nil {
+			slog.Warn("check sprint after delete", "sprint_id", sprintID[:8], "err", err)
+		}
 	}
 
 	s.hub.Broadcast(Event{Type: "task.deleted", Data: map[string]string{"id": resolved}})
@@ -703,7 +719,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 			stale = append(stale, staleEntry{taskID: taskID, branch: wt.Branch})
 			continue
 		}
-		if tk.Status == "completed" || tk.Status == "failed" {
+		if tk.Status == "approved" || tk.Status == "failed" {
 			stale = append(stale, staleEntry{taskID: taskID, branch: wt.Branch})
 		}
 	}

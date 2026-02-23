@@ -159,7 +159,32 @@ func (s *Store) Update(id string, fields map[string]interface{}) error {
 	return nil
 }
 
+var deletableStatuses = map[string]bool{
+	"pending":   true,
+	"in_sprint": true,
+	"review":    true,
+	"approved":  true,
+	"failed":    true,
+}
+
 func (s *Store) Delete(id string) error {
+	t, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if !deletableStatuses[t.Status] {
+		return fmt.Errorf("cannot delete task in %q status", t.Status)
+	}
+
+	// Block deletion if other tasks depend on this one.
+	var depCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM task_deps WHERE depends_on = ?`, id).Scan(&depCount); err != nil {
+		return fmt.Errorf("check dependents: %w", err)
+	}
+	if depCount > 0 {
+		return fmt.Errorf("cannot delete task: %d other task(s) depend on it", depCount)
+	}
+
 	// Clean up all child records that reference this task.
 	for _, q := range []struct {
 		sql  string
@@ -168,21 +193,13 @@ func (s *Store) Delete(id string) error {
 		{`DELETE FROM task_reviews WHERE task_id = ?`, "reviews"},
 		{`DELETE FROM costs WHERE task_id = ?`, "costs"},
 		{`DELETE FROM artifacts WHERE task_id = ?`, "artifacts"},
-		{`DELETE FROM task_deps WHERE task_id = ? OR depends_on = ?`, "deps"},
+		{`DELETE FROM task_deps WHERE task_id = ?`, "deps"},
 	} {
-		if q.desc == "deps" {
-			_, err := s.db.Exec(q.sql, id, id)
-			if err != nil {
-				return fmt.Errorf("delete task %s: %w", q.desc, err)
-			}
-		} else {
-			_, err := s.db.Exec(q.sql, id)
-			if err != nil {
-				return fmt.Errorf("delete task %s: %w", q.desc, err)
-			}
+		if _, err := s.db.Exec(q.sql, id); err != nil {
+			return fmt.Errorf("delete task %s: %w", q.desc, err)
 		}
 	}
-	_, err := s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	_, err = s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete task: %w", err)
 	}

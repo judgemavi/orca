@@ -78,7 +78,7 @@ Explore → Decompose → Sprint Plan → Sprint Execute → Review → Integrat
 Each stage is a CLI command and an internal package. Tasks flow through statuses:
 
 ```
-pending → in_sprint → running → completed → merged
+pending → in_sprint → running → review → approved → merged
                               ↘ failed (can reopen)
 ```
 

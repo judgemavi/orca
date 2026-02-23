@@ -8,14 +8,15 @@ interface Props {
   activeTask: Task | null
   canDrop: boolean
   onCreateTask: () => void
+  grouped?: boolean
   renderTask: (task: Task) => React.ReactNode
 }
 
 function badgeColorClass(status: Task['status']) {
   if (status === 'running') return 'bg-blue-500/15 text-[var(--status-running)]'
   if (status === 'review') return 'bg-amber-500/15 text-amber-400'
-  if (status === 'completed')
-    return 'bg-green-500/15 text-[var(--status-completed)]'
+  if (status === 'approved')
+    return 'bg-green-500/15 text-[var(--status-approved)]'
   if (status === 'merged') return 'bg-emerald-500/15 text-[var(--status-merged)]'
   if (status === 'failed') return 'bg-red-500/15 text-[var(--status-failed)]'
   if (status === 'in_sprint')
@@ -30,14 +31,17 @@ export function BoardColumn({
   activeTask,
   canDrop,
   onCreateTask,
+  grouped,
   renderTask,
 }: Props) {
   return (
     <DroppableColumn
       id={id}
       className={[
-        'flex min-w-[200px] flex-1 flex-col overflow-hidden border-r border-border last:border-r-0',
-        id === 'completed' ? '[&_[data-col-cards]]:opacity-80' : '',
+        grouped
+          ? 'flex flex-1 flex-col overflow-hidden'
+          : 'flex min-w-[200px] flex-1 flex-col overflow-hidden border-r border-border last:border-r-0',
+        id === 'failed' ? '[&_[data-col-cards]]:opacity-80' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -77,7 +81,7 @@ export function BoardColumn({
         className="flex flex-1 flex-col gap-2 overflow-y-auto px-2 py-2.5"
       >
         {tasks.map((task) => renderTask(task))}
-        {tasks.length === 0 && (
+        {tasks.length === 0 && !grouped && (
           <div className="py-5 text-center text-[13px] text-[var(--text-secondary)] opacity-40">
             -
           </div>

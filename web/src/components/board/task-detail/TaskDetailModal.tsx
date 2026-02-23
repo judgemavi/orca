@@ -114,6 +114,7 @@ export function TaskDetailModal({
     null,
   )
   const isEditable = task.status === 'pending' || task.status === 'failed'
+  const isDeletable = task.status !== 'running' && task.status !== 'merged'
 
   const [plan, setPlan] = useState<string | null>(task.plan ?? null)
   const [planDraft, setPlanDraft] = useState('')
@@ -170,14 +171,14 @@ export function TaskDetailModal({
 
   const effectiveSprintId = sprintId || task.sprint_id
   const reviewSprintId =
-    ['review', 'completed', 'merged'].includes(task.status) && effectiveSprintId
+    ['review', 'approved', 'merged'].includes(task.status) && effectiveSprintId
       ? effectiveSprintId
       : ''
   const reviewQuery = useReviewQuery(reviewSprintId)
   const { data: reviewsData } = useQuery({
     queryKey: ['task-reviews', task.id],
     queryFn: () => api.getTaskReviews(task.id),
-    enabled: ['review', 'completed', 'merged'].includes(task.status),
+    enabled: ['review', 'approved', 'merged'].includes(task.status),
   })
   const reviews = useMemo(
     () =>
@@ -279,7 +280,7 @@ export function TaskDetailModal({
       const status = String((lastWSEvent.data as any)?.status ?? '')
       if (
         status === 'merged' ||
-        status === 'completed' ||
+        status === 'approved' ||
         status === 'failed'
       ) {
         setMerging(false)
@@ -574,6 +575,7 @@ export function TaskDetailModal({
           task={task}
           artifact={artifact}
           isEditable={isEditable}
+          isDeletable={isDeletable}
           deleting={deleting}
           saving={saving}
           merging={merging}

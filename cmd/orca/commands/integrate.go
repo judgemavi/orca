@@ -47,12 +47,12 @@ func (r *Registry) runIntegrate(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("get task %s: %w", id, err)
 		}
-		if t.Status == "completed" {
+		if t.Status == "approved" {
 			taskIDs = append(taskIDs, id)
 		}
 	}
 	if len(taskIDs) == 0 {
-		fmt.Println("No completed tasks to integrate")
+		fmt.Println("No approved tasks to integrate")
 		return nil
 	}
 

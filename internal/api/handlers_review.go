@@ -115,7 +115,7 @@ func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprint
 	var inputs []review.ReviewInput
 	for _, taskID := range sp.TaskIDs {
 		t, err := s.planner.GetTask(taskID)
-		if err != nil || t.Status != "completed" {
+		if err != nil || t.Status != "approved" {
 			continue
 		}
 

@@ -231,6 +231,15 @@ END;
 			return hasColumn(tx, "artifacts", "quality_json")
 		},
 	},
+	{
+		version: 9,
+		sql:     `UPDATE tasks SET status = 'approved' WHERE status = 'completed'`,
+		isApplied: func(tx *sql.Tx) (bool, error) {
+			var count int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM tasks WHERE status = 'completed'`).Scan(&count)
+			return count == 0, err
+		},
+	},
 }
 
 // DBVersion returns the current persisted db_version sentinel value.

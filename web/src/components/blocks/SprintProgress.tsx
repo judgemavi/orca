@@ -43,8 +43,8 @@ export function SprintProgress({ data }: Props) {
                   style={{
                     width: `${Math.min(task.progress_pct ?? 0, 99)}%`,
                     background:
-                      task.status === 'completed'
-                        ? 'var(--status-completed)'
+                      task.status === 'approved'
+                        ? 'var(--status-approved)'
                         : task.status === 'failed'
                           ? 'var(--status-failed)'
                           : 'var(--status-running)',
@@ -52,7 +52,7 @@ export function SprintProgress({ data }: Props) {
                 />
               </div>
               <span className="min-w-9 text-right font-mono text-xs text-slate-400">
-                {task.status === 'completed'
+                {task.status === 'approved'
                   ? 'done'
                   : `${Math.min(task.progress_pct ?? 0, 99)}%`}
               </span>

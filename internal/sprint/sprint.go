@@ -414,9 +414,9 @@ func (p *Planner) GetTask(id string) (*task.Task, error) {
 	return p.tasks.Get(id)
 }
 
-// CompleteTask marks a task as completed/review/failed.
+// CompleteTask marks a task as approved/review/failed.
 func (p *Planner) CompleteTask(_ string, taskID, status string) error {
-	if status != "completed" && status != "failed" && status != "review" {
+	if status != "approved" && status != "failed" && status != "review" {
 		return fmt.Errorf("invalid task completion status: %s", status)
 	}
 
@@ -443,6 +443,22 @@ func (p *Planner) CompleteSprintIfDone(sprintID string) error {
 		return nil
 	}
 	return p.Complete(sprintID)
+}
+
+// CompleteSprintIfEmpty completes a sprint when it has no remaining tasks
+// (e.g. all were deleted). Returns true if the sprint was completed.
+func (p *Planner) CompleteSprintIfEmpty(sprintID string) (bool, error) {
+	var count int
+	err := p.db.QueryRow(
+		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ?`, sprintID,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("count sprint tasks: %w", err)
+	}
+	if count > 0 {
+		return false, nil
+	}
+	return true, p.Complete(sprintID)
 }
 
 // RecoverOrphans finds tasks in "running" status and determines their state.

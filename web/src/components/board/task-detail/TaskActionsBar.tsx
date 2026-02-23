@@ -6,6 +6,7 @@ interface Props {
   task: Task
   artifact: ReviewArtifact | null
   isEditable: boolean
+  isDeletable: boolean
   deleting: boolean
   saving: boolean
   merging: boolean
@@ -20,6 +21,7 @@ export function TaskActionsBar({
   task,
   artifact,
   isEditable,
+  isDeletable,
   deleting,
   saving,
   merging,
@@ -31,7 +33,7 @@ export function TaskActionsBar({
 }: Props) {
   return (
     <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
-      {isEditable ? (
+      {isDeletable ? (
         <ActionButton variant="danger" onClick={onDelete} disabled={deleting}>
           {deleting ? 'Deleting…' : 'Delete'}
         </ActionButton>
@@ -39,7 +41,7 @@ export function TaskActionsBar({
         <div />
       )}
       <div className="flex gap-2">
-        {task.status === 'completed' && artifact?.diff && (
+        {task.status === 'approved' && artifact?.diff && (
           <ActionButton variant="primary" onClick={onMerge} disabled={merging}>
             {merging ? 'Merging…' : conflictError ? 'Retry Merge' : 'Merge'}
           </ActionButton>

@@ -12,7 +12,7 @@ const STATUS_ORDER = [
   'running',
   'in_sprint',
   'pending',
-  'completed',
+  'approved',
   'merged',
   'failed',
 ] as const

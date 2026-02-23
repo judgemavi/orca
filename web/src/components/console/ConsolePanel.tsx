@@ -132,7 +132,7 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
           const status: TabStatus =
             task.status === 'failed'
               ? 'failed'
-              : task.status === 'completed'
+              : task.status === 'approved'
                 ? 'done'
                 : 'running'
           nextTabs.push({
@@ -243,7 +243,7 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
       const status = String(lastWSEvent.data.status ?? '')
       let nextStatus: TabStatus | null = null
       if (status === 'failed') nextStatus = 'failed'
-      if (status === 'completed' || status === 'merged') nextStatus = 'done'
+      if (status === 'approved' || status === 'merged') nextStatus = 'done'
       if (status === 'running') nextStatus = 'running'
       if (!nextStatus) return
       ensureTab(taskID)

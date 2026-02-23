@@ -69,7 +69,7 @@ func (r *Registry) runRun(cmd *cobra.Command, args []string) error {
 
 	var taskIDs []string
 	for _, rt := range results {
-		if rt.Status == "completed" {
+		if rt.Status == "approved" {
 			taskIDs = append(taskIDs, rt.TaskID)
 		}
 	}

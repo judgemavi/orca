@@ -537,6 +537,15 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("add dep: %v", err)
 	}
 
+	// Cannot delete A because B depends on it.
+	if err := store.Delete(a.ID); err == nil {
+		t.Fatal("expected error deleting task with dependents")
+	}
+
+	// Delete B first (no dependents), then A.
+	if err := store.Delete(b.ID); err != nil {
+		t.Fatalf("delete B: %v", err)
+	}
 	if err := store.Delete(a.ID); err != nil {
 		t.Fatalf("delete A: %v", err)
 	}
@@ -544,6 +553,39 @@ func TestDelete(t *testing.T) {
 	_, err = store.Get(a.ID)
 	if err == nil {
 		t.Fatal("expected error getting deleted task")
+	}
+}
+
+func TestDeleteBlockedByStatus(t *testing.T) {
+	store := NewStore(testutil.DB(t))
+
+	tk, err := store.Create("Task", "", "", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Running and merged tasks cannot be deleted.
+	for _, status := range []string{"running", "merged"} {
+		if err := store.Update(tk.ID, map[string]interface{}{"status": status}); err != nil {
+			t.Fatalf("set %s: %v", status, err)
+		}
+		if err := store.Delete(tk.ID); err == nil {
+			t.Fatalf("expected error deleting %s task", status)
+		}
+	}
+
+	// Deletable statuses should work.
+	for _, status := range []string{"pending", "in_sprint", "review", "approved", "failed"} {
+		tk, err := store.Create("Task "+status, "", "", "")
+		if err != nil {
+			t.Fatalf("create %s: %v", status, err)
+		}
+		if err := store.Update(tk.ID, map[string]interface{}{"status": status}); err != nil {
+			t.Fatalf("set %s: %v", status, err)
+		}
+		if err := store.Delete(tk.ID); err != nil {
+			t.Fatalf("delete %s task: %v", status, err)
+		}
 	}
 }
 

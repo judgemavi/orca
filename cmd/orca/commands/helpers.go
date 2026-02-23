@@ -13,7 +13,7 @@ import (
 
 func statusIcon(status string) string {
 	switch status {
-	case "completed":
+	case "approved":
 		return "✓"
 	case "running", "in_sprint":
 		return "●"
@@ -33,7 +33,7 @@ func short(id string) string {
 
 func allTasks(_ *task.Task) bool       { return true }
 func failedTasks(t *task.Task) bool    { return t.Status == "failed" }
-func completedTasks(t *task.Task) bool { return t.Status == "completed" }
+func approvedTasks(t *task.Task) bool { return t.Status == "approved" }
 func reviewTasks(t *task.Task) bool    { return t.Status == "review" }
 func pendingTasks(t *task.Task) bool   { return t.Status == "pending" }
 

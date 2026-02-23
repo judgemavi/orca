@@ -98,7 +98,7 @@ func (s *Server) toolDefinitions() []toolDef {
 				"properties": map[string]interface{}{
 					"status": map[string]interface{}{
 						"type":        "string",
-						"description": "Filter by status: pending, in_sprint, running, completed, merged, failed",
+						"description": "Filter by status: pending, in_sprint, running, approved, merged, failed",
 					},
 				},
 			},
@@ -371,7 +371,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "task_approve",
-			Description: "Approve a task that is in 'review' status, moving it to 'completed'.",
+			Description: "Approve a task that is in 'review' status, moving it to 'approved'.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -526,7 +526,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "integrate",
-			Description: "Merge all completed tasks into the integration branch.",
+			Description: "Merge all approved tasks into the integration branch.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
@@ -534,7 +534,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "task_merge",
-			Description: "Merge a single completed task into the integration branch.",
+			Description: "Merge a single approved task into the integration branch.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -706,8 +706,19 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		if err != nil {
 			return nil, err
 		}
+		tk, err := s.store.Get(taskID)
+		if err != nil {
+			return nil, err
+		}
+		sprintID := tk.SprintID
 		if err := s.store.Delete(taskID); err != nil {
 			return nil, err
+		}
+		// Best-effort worktree cleanup.
+		_ = s.executor.Worktrees().Remove(taskID)
+		// End sprint if all its tasks have been deleted.
+		if sprintID != "" {
+			_, _ = s.planner.CompleteSprintIfEmpty(sprintID)
 		}
 		return map[string]interface{}{"task_id": taskID, "deleted": true}, nil
 
@@ -1054,7 +1065,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 
 		tasks := make([]interface{}, 0, len(sp.TaskIDs))
-		completed := 0
+		approved := 0
 		failed := 0
 		for _, taskID := range sp.TaskIDs {
 			t, err := s.planner.GetTask(taskID)
@@ -1063,8 +1074,8 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 				continue
 			}
 			tasks = append(tasks, t)
-			if t.Status == "completed" {
-				completed++
+			if t.Status == "approved" {
+				approved++
 			}
 			if t.Status == "failed" {
 				failed++
@@ -1074,9 +1085,9 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			"active_sprint": sp,
 			"tasks":         tasks,
 			"progress": map[string]int{
-				"total":     len(sp.TaskIDs),
-				"completed": completed,
-				"failed":    failed,
+				"total":    len(sp.TaskIDs),
+				"approved": approved,
+				"failed":   failed,
 			},
 		}, nil
 
@@ -1268,7 +1279,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		results := make([]review.ReviewResult, 0, len(sp.TaskIDs))
 		for _, taskID := range sp.TaskIDs {
 			t, err := s.planner.GetTask(taskID)
-			if err != nil || t.Status != "completed" {
+			if err != nil || t.Status != "approved" {
 				continue
 			}
 
@@ -1335,7 +1346,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			return nil, fmt.Errorf("task must be in review status to approve")
 		}
 
-		if err := s.store.Update(taskID, map[string]interface{}{"status": "completed"}); err != nil {
+		if err := s.store.Update(taskID, map[string]interface{}{"status": "approved"}); err != nil {
 			return nil, err
 		}
 		if t.SprintID != "" {
@@ -1343,7 +1354,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 				slog.Warn("check sprint completion after approve failed", "sprint_id", t.SprintID, "err", err)
 			}
 		}
-		return map[string]interface{}{"task_id": taskID, "status": "completed"}, nil
+		return map[string]interface{}{"task_id": taskID, "status": "approved"}, nil
 
 	case "task_request_changes":
 		var args struct {
@@ -1699,12 +1710,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		taskIDs := make([]string, 0, len(sp.TaskIDs))
 		for _, id := range sp.TaskIDs {
 			t, err := s.planner.GetTask(id)
-			if err == nil && t.Status == "completed" {
+			if err == nil && t.Status == "approved" {
 				taskIDs = append(taskIDs, id)
 			}
 		}
 		if len(taskIDs) == 0 {
-			return nil, fmt.Errorf("no completed tasks to integrate")
+			return nil, fmt.Errorf("no approved tasks to integrate")
 		}
 
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
@@ -1746,8 +1757,8 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		if err != nil {
 			return nil, err
 		}
-		if t.Status != "completed" {
-			return nil, fmt.Errorf("task %s is %q, only completed tasks can be merged", taskID, t.Status)
+		if t.Status != "approved" {
+			return nil, fmt.Errorf("task %s is %q, only approved tasks can be merged", taskID, t.Status)
 		}
 
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)

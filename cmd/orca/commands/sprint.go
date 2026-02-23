@@ -576,7 +576,7 @@ func (r *Registry) runSprintReview(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  %s %s  %s\n", icon, short(t.ID), t.Title)
 		}
-		if !auto && (t.Status == "review" || t.Status == "completed") {
+		if !auto && (t.Status == "review" || t.Status == "approved") {
 			action := "skip"
 			if err := huh.NewSelect[string]().
 				Title(fmt.Sprintf("Task %s: %s", short(t.ID), t.Title)).
@@ -588,7 +588,7 @@ func (r *Registry) runSprintReview(cmd *cobra.Command, args []string) error {
 				return err
 			}
 			if action == "approve" {
-				if err := store.Update(t.ID, map[string]interface{}{"status": "completed"}); err != nil {
+				if err := store.Update(t.ID, map[string]interface{}{"status": "approved"}); err != nil {
 					return fmt.Errorf("approve task %s: %w", t.ID, err)
 				}
 			}
@@ -633,7 +633,7 @@ func (r *Registry) runSprintReview(cmd *cobra.Command, args []string) error {
 	var inputs []review.ReviewInput
 	var toolForReview config.ToolConfig
 	for _, ta := range artifacts {
-		if !ta.hasArt || ta.diff == "" || ta.task.Status != "completed" {
+		if !ta.hasArt || ta.diff == "" || ta.task.Status != "approved" {
 			continue
 		}
 		inputs = append(inputs, review.ReviewInput{TaskID: ta.task.ID, Title: ta.task.Title, Description: ta.task.Description, Diff: ta.diff})
@@ -646,7 +646,7 @@ func (r *Registry) runSprintReview(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(inputs) == 0 {
-		fmt.Println("No completed tasks with diffs to review.")
+		fmt.Println("No approved tasks with diffs to review.")
 		return nil
 	}
 
