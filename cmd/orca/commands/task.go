@@ -404,16 +404,11 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return config.ToolConfig{}, err
 			}
-			if taskRow.AssignedTool != "" {
-				if tc, ok := cfg.Tools[taskRow.AssignedTool]; ok {
-					return tc, nil
-				}
-				return config.ToolConfig{}, fmt.Errorf("tool %q not found", taskRow.AssignedTool)
+			_, tc, err := cfg.ResolveToolForPhase(taskRow, "merge", "")
+			if err != nil {
+				return config.ToolConfig{}, err
 			}
-			for _, tc := range cfg.Tools {
-				return tc, nil
-			}
-			return config.ToolConfig{}, fmt.Errorf("no tools configured")
+			return tc, nil
 		})
 	}
 
@@ -490,30 +485,14 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	toolOverride, _ := cmd.Flags().GetString("tool")
 	modelOverride, _ := cmd.Flags().GetString("model")
 
-	toolName := toolOverride
-	if toolName == "" {
-		toolName = t.AssignedTool
-	}
-	if toolName == "" {
-		toolNames := make([]string, 0, len(cfg.Tools))
-		for name := range cfg.Tools {
-			toolNames = append(toolNames, name)
-		}
-		sort.Strings(toolNames)
-		if len(toolNames) == 0 {
-			return fmt.Errorf("no tools configured")
-		}
-		toolName = toolNames[0]
+	toolName, toolCfg, err := cfg.ResolveToolForPhase(t, "plan", toolOverride)
+	if err != nil {
+		return err
 	}
 
-	toolCfg, ok := cfg.Tools[toolName]
-	if !ok {
-		return fmt.Errorf("tool %q not found in config", toolName)
-	}
-
-	modelName := modelOverride
-	if modelName == "" && t.Model != "" {
-		modelName = t.Model
+	modelName := config.ValidateModel(toolName, modelOverride, toolCfg)
+	if modelName == "" {
+		modelName = toolCfg.Model
 	}
 
 	repoDir, err := os.Getwd()
@@ -630,33 +609,14 @@ func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
 	modelOverride, _ := cmd.Flags().GetString("model")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
-	toolName := toolOverride
-	if toolName == "" {
-		toolName = t.AssignedTool
-	}
-	if toolName == "" {
-		toolName = cfg.Defaults.Tool
-	}
-	if toolName == "" {
-		toolNames := make([]string, 0, len(cfg.Tools))
-		for name := range cfg.Tools {
-			toolNames = append(toolNames, name)
-		}
-		sort.Strings(toolNames)
-		if len(toolNames) == 0 {
-			return fmt.Errorf("no tools configured")
-		}
-		toolName = toolNames[0]
+	toolName, toolCfg, err := cfg.ResolveToolForPhase(t, "explore", toolOverride)
+	if err != nil {
+		return err
 	}
 
-	toolCfg, ok := cfg.Tools[toolName]
-	if !ok {
-		return fmt.Errorf("tool %q not found in config", toolName)
-	}
-
-	modelName := modelOverride
-	if modelName == "" && t.Model != "" {
-		modelName = t.Model
+	modelName := config.ValidateModel(toolName, modelOverride, toolCfg)
+	if modelName == "" {
+		modelName = toolCfg.Model
 	}
 
 	repoDir, err := os.Getwd()

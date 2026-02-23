@@ -20,7 +20,6 @@ import (
 	"github.com/jasjeetmavi/orca/internal/logging"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/review"
-	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
@@ -1364,7 +1363,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 				continue
 			}
 
-			toolName, toolCfg, err := resolveTaskPhaseToolConfig(t, "review", s.cfg)
+			toolName, toolCfg, err := s.cfg.ResolveToolForPhase(t, "review", "")
 			if err != nil {
 				results = append(results, review.ReviewResult{
 					TaskID:   taskID,
@@ -1866,76 +1865,6 @@ func newToolResult(v interface{}) toolResult {
 		}},
 		StructuredContent: v,
 	}
-}
-
-func resolveTaskPhaseToolConfig(t *task.Task, phase string, cfg *config.Config) (string, config.ToolConfig, error) {
-	var phaseCfg *task.PhaseOverride
-	if t != nil && t.PhaseConfig != nil && !t.PhaseConfig.UseDefaults {
-		if p, ok := t.PhaseConfig.Phases[phase]; ok {
-			phaseCfg = &p
-		}
-	}
-
-	var (
-		toolName string
-		toolCfg  config.ToolConfig
-	)
-	if phaseCfg != nil && phaseCfg.Tool != "" {
-		if tc, ok := cfg.Tools[phaseCfg.Tool]; ok {
-			toolName = phaseCfg.Tool
-			toolCfg = tc
-		} else {
-			slog.Warn("task phase_config tool not found in config, falling back", "tool", phaseCfg.Tool, "phase", phase)
-		}
-	}
-	if toolName == "" && t != nil && t.AssignedTool != "" {
-		if tc, ok := cfg.Tools[t.AssignedTool]; ok {
-			toolName = t.AssignedTool
-			toolCfg = tc
-		} else {
-			slog.Warn("task assigned_tool not found in config, falling back to phase default", "assigned_tool", t.AssignedTool, "phase", phase)
-		}
-	}
-	if toolName == "" {
-		var err error
-		toolName, toolCfg, err = cfg.ResolvePhaseToolConfig(phase)
-		if err != nil {
-			return "", config.ToolConfig{}, err
-		}
-	}
-
-	if phaseCfg != nil {
-		if model := validateTaskModel(toolName, phaseCfg.Model, toolCfg); model != "" {
-			toolCfg.Model = model
-			return toolName, toolCfg, nil
-		}
-	}
-	if t != nil {
-		if model := validateTaskModel(toolName, t.Model, toolCfg); model != "" {
-			toolCfg.Model = model
-			return toolName, toolCfg, nil
-		}
-	}
-
-	if _, phaseToolCfg, err := cfg.ResolvePhaseToolConfig(phase); err == nil {
-		if model := validateTaskModel(toolName, phaseToolCfg.Model, toolCfg); model != "" {
-			toolCfg.Model = model
-		}
-	}
-	return toolName, toolCfg, nil
-}
-
-func validateTaskModel(toolName, model string, toolCfg config.ToolConfig) string {
-	if model == "" {
-		return ""
-	}
-	for _, m := range toolCfg.Models {
-		if m == model {
-			return model
-		}
-	}
-	slog.Warn("task model not in tool models list, using default", "model", model, "tool", toolName)
-	return ""
 }
 
 func parseSlogLevel(raw string) (slog.Level, error) {

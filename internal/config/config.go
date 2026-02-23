@@ -4,6 +4,7 @@ package config
 import (
 	_ "embed"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/logging"
+	"github.com/jasjeetmavi/orca/internal/task"
 	"gopkg.in/yaml.v3"
 )
 
@@ -334,4 +336,108 @@ func (c *Config) ResolvePhaseToolConfig(phase string) (string, ToolConfig, error
 	}
 
 	return toolName, toolCfg, nil
+}
+
+// ResolveToolForPhase resolves effective tool config for a task and phase.
+// Resolution: override -> task phase tool -> task assigned tool -> config phase/default tool.
+// Model resolution: task phase model -> task model -> config phase/default model.
+func (c *Config) ResolveToolForPhase(t *task.Task, phase, override string) (string, ToolConfig, error) {
+	if len(c.Tools) == 0 {
+		return "", ToolConfig{}, fmt.Errorf("no tools configured")
+	}
+
+	var phaseCfg *task.PhaseOverride
+	if t != nil && t.PhaseConfig != nil && !t.PhaseConfig.UseDefaults {
+		if p, ok := t.PhaseConfig.Phases[phase]; ok {
+			phaseCfg = &p
+		}
+	}
+
+	toolName := strings.TrimSpace(override)
+	if toolName != "" {
+		toolCfg, ok := c.Tools[toolName]
+		if !ok {
+			return "", ToolConfig{}, fmt.Errorf("tool %q not found", toolName)
+		}
+		if phaseCfg != nil {
+			if model := ValidateModel(toolName, phaseCfg.Model, toolCfg); model != "" {
+				toolCfg.Model = model
+				return toolName, toolCfg, nil
+			}
+		}
+		if t != nil {
+			if model := ValidateModel(toolName, t.Model, toolCfg); model != "" {
+				toolCfg.Model = model
+				return toolName, toolCfg, nil
+			}
+		}
+		if _, phaseToolCfg, err := c.ResolvePhaseToolConfig(phase); err == nil {
+			if model := ValidateModel(toolName, phaseToolCfg.Model, toolCfg); model != "" {
+				toolCfg.Model = model
+			}
+		}
+		return toolName, toolCfg, nil
+	}
+
+	var toolCfg ToolConfig
+	if phaseCfg != nil && phaseCfg.Tool != "" {
+		if tc, ok := c.Tools[phaseCfg.Tool]; ok {
+			toolName = phaseCfg.Tool
+			toolCfg = tc
+		} else {
+			slog.Warn(fmt.Sprintf("task phase_config tool %q for phase %q not found in config, falling back", phaseCfg.Tool, phase))
+		}
+	}
+	if toolName == "" && t != nil && t.AssignedTool != "" {
+		if tc, ok := c.Tools[t.AssignedTool]; ok {
+			toolName = t.AssignedTool
+			toolCfg = tc
+		} else {
+			slog.Warn(fmt.Sprintf("task assigned_tool %q not found in config, falling back to %s phase default", t.AssignedTool, phase))
+		}
+	}
+	if toolName == "" {
+		var err error
+		toolName, toolCfg, err = c.ResolvePhaseToolConfig(phase)
+		if err != nil {
+			return "", ToolConfig{}, err
+		}
+	}
+
+	if phaseCfg != nil {
+		if model := ValidateModel(toolName, phaseCfg.Model, toolCfg); model != "" {
+			toolCfg.Model = model
+			return toolName, toolCfg, nil
+		}
+	}
+	if t != nil {
+		if model := ValidateModel(toolName, t.Model, toolCfg); model != "" {
+			toolCfg.Model = model
+			return toolName, toolCfg, nil
+		}
+	}
+	if _, phaseToolCfg, err := c.ResolvePhaseToolConfig(phase); err == nil {
+		if model := ValidateModel(toolName, phaseToolCfg.Model, toolCfg); model != "" {
+			toolCfg.Model = model
+		}
+	}
+	return toolName, toolCfg, nil
+}
+
+// ValidateModel returns model only when it's allowed by toolCfg.Models.
+func ValidateModel(toolName, model string, toolCfg ToolConfig) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	for _, m := range toolCfg.Models {
+		if m == model {
+			return model
+		}
+	}
+	if toolName == "" {
+		toolName = toolCfg.Binary
+	}
+	slog.Warn(fmt.Sprintf("task model %q not in %s models list, using default", model, toolName))
+	return ""
 }
