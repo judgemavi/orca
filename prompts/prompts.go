@@ -13,6 +13,9 @@ var Decompose string
 //go:embed explore.md
 var Explore string
 
+//go:embed evaluate.md
+var Evaluate string
+
 //go:embed plan.md
 var Plan string
 
