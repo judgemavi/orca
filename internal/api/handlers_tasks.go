@@ -102,7 +102,11 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	t, _ = store.Get(t.ID)
+	t, err = store.Get(t.ID)
+	if err != nil {
+		jsonError(w, err, 500)
+		return
+	}
 
 	s.hub.Broadcast(Event{Type: "task.created", Data: t})
 	jsonResponse(w, 201, map[string]interface{}{"data": t})
@@ -171,7 +175,11 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
-	t, _ := store.Get(resolved)
+	t, err := store.Get(resolved)
+	if err != nil {
+		jsonError(w, err, 500)
+		return
+	}
 	s.hub.Broadcast(Event{Type: "task.updated", Data: t})
 	jsonOK(w, t)
 }
