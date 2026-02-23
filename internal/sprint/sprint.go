@@ -429,11 +429,11 @@ func (p *Planner) CompleteTask(_ string, taskID, status string) error {
 	return nil
 }
 
-// CompleteSprintIfDone completes or fails a sprint when all tasks are terminal.
+// CompleteSprintIfDone completes a sprint when all tasks are merged.
 func (p *Planner) CompleteSprintIfDone(sprintID string) error {
 	var remaining int
 	err := p.db.QueryRow(
-		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status NOT IN ('completed', 'merged', 'failed')`,
+		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status != 'merged'`,
 		sprintID,
 	).Scan(&remaining)
 	if err != nil {
@@ -441,18 +441,6 @@ func (p *Planner) CompleteSprintIfDone(sprintID string) error {
 	}
 	if remaining > 0 {
 		return nil
-	}
-
-	var failCount int
-	if err := p.db.QueryRow(
-		`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status = 'failed'`,
-		sprintID,
-	).Scan(&failCount); err != nil {
-		return fmt.Errorf("check failed: %w", err)
-	}
-
-	if failCount > 0 {
-		return p.Fail(sprintID)
 	}
 	return p.Complete(sprintID)
 }

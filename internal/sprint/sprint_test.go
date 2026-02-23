@@ -411,8 +411,8 @@ func TestCompleteSprintIfDoneCompletesWhenTasksAreTerminal(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 
-	if err := store.Update(t1.ID, map[string]interface{}{"status": "completed"}); err != nil {
-		t.Fatalf("complete t1: %v", err)
+	if err := store.Update(t1.ID, map[string]interface{}{"status": "merged"}); err != nil {
+		t.Fatalf("merge t1: %v", err)
 	}
 	if err := store.Update(t2.ID, map[string]interface{}{"status": "merged"}); err != nil {
 		t.Fatalf("merge t2: %v", err)
@@ -431,7 +431,7 @@ func TestCompleteSprintIfDoneCompletesWhenTasksAreTerminal(t *testing.T) {
 	}
 }
 
-func TestCompleteSprintIfDoneFailsWhenAnyFailedAndRestTerminal(t *testing.T) {
+func TestCompleteSprintIfDoneStaysRunningWhenTaskFailed(t *testing.T) {
 	db := testutil.DB(t)
 	store := task.NewStore(db)
 	planner := NewPlanner(db)
@@ -456,8 +456,8 @@ func TestCompleteSprintIfDoneFailsWhenAnyFailedAndRestTerminal(t *testing.T) {
 	if err := store.Update(t1.ID, map[string]interface{}{"status": "failed"}); err != nil {
 		t.Fatalf("fail t1: %v", err)
 	}
-	if err := store.Update(t2.ID, map[string]interface{}{"status": "completed"}); err != nil {
-		t.Fatalf("complete t2: %v", err)
+	if err := store.Update(t2.ID, map[string]interface{}{"status": "merged"}); err != nil {
+		t.Fatalf("merge t2: %v", err)
 	}
 
 	if err := planner.CompleteSprintIfDone(s.ID); err != nil {
@@ -468,50 +468,8 @@ func TestCompleteSprintIfDoneFailsWhenAnyFailedAndRestTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sprint: %v", err)
 	}
-	if got.Status != "failed" {
-		t.Errorf("sprint status = %q, want %q", got.Status, "failed")
-	}
-}
-
-func TestCompleteSprintIfDoneFailsWhenAllFailed(t *testing.T) {
-	db := testutil.DB(t)
-	store := task.NewStore(db)
-	planner := NewPlanner(db)
-
-	t1, err := store.Create("Task 1", "", "", "")
-	if err != nil {
-		t.Fatalf("create t1: %v", err)
-	}
-	t2, err := store.Create("Task 2", "", "", "")
-	if err != nil {
-		t.Fatalf("create t2: %v", err)
-	}
-
-	s, err := planner.Plan(10)
-	if err != nil {
-		t.Fatalf("plan: %v", err)
-	}
-	if err := planner.Start(s.ID); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-
-	if err := store.Update(t1.ID, map[string]interface{}{"status": "failed"}); err != nil {
-		t.Fatalf("fail t1: %v", err)
-	}
-	if err := store.Update(t2.ID, map[string]interface{}{"status": "failed"}); err != nil {
-		t.Fatalf("fail t2: %v", err)
-	}
-
-	if err := planner.CompleteSprintIfDone(s.ID); err != nil {
-		t.Fatalf("complete sprint if done: %v", err)
-	}
-
-	got, err := planner.Get(s.ID)
-	if err != nil {
-		t.Fatalf("get sprint: %v", err)
-	}
-	if got.Status != "failed" {
-		t.Errorf("sprint status = %q, want %q", got.Status, "failed")
+	if got.Status != "running" {
+		t.Errorf("sprint status = %q, want %q (failed task should keep sprint running)", got.Status, "running")
 	}
 }
 

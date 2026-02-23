@@ -36,17 +36,17 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 
 ## MCP Tools (your ONLY way to act — each requires user approval)
 
-### Backlog
+### Tasks
 - task_list: List/filter tasks by status
 - task_get: Get full details of a single task by ID
 - task_create: Create a task with a description a worker can execute
 - task_update: Update task fields (title, description, status, assigned_tool, model, prompt)
-- task_delete: Delete a task from the backlog
+- task_delete: Delete a task
 - task_reopen: Move a failed task back to pending
 - task_add_dependency: Wire a dependency between two tasks
 
 ### Planning
-- breakdown: Decompose a goal into backlog tasks using an LLM
+- breakdown: Decompose a goal into tasks using an LLM
 - task_plan_generate: Generate an implementation plan for a task
 - task_merge: Merge a single completed task into the integration branch
 

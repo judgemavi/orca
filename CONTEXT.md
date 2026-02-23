@@ -12,11 +12,11 @@ Orca is a **multi-agent CLI orchestrator** for AI coding tools (Claude Code, Cod
 orca/
 ├── cmd/orca/                  # CLI entry point
 │   ├── main.go                # Runtime state, command registration, lifecycle
-│   └── commands/              # 14 command modules (backlog, sprint, integrate, etc.)
+│   └── commands/              # 14 command modules (task, sprint, integrate, etc.)
 │
 ├── internal/                  # Core business logic (23 packages)
 │   ├── state/                 # SQLite persistence (schema, migrations, change watcher)
-│   ├── task/                  # Backlog CRUD & dependency graph (Store: 16 methods)
+│   ├── task/                  # Task CRUD & dependency graph (Store: 16 methods)
 │   ├── config/                # YAML config parsing + embedded defaults
 │   ├── sprint/                # Planning, execution, monitoring
 │   ├── worker/                # CLI tool adapter (headless/interactive/resume modes)
@@ -126,7 +126,7 @@ SQLite triggers increment `meta.db_version` on every write. Watcher polls this s
 
 | Table | Purpose |
 |-------|---------|
-| `tasks` | Backlog entries (id, title, status, sprint_id, parent_id, prompt, phase_config) |
+| `tasks` | Task entries (id, title, status, sprint_id, parent_id, prompt, phase_config) |
 | `task_deps` | Dependency graph (task_id → depends_on) |
 | `task_reviews` | Review feedback (status: pending/addressed) |
 | `sprints` | Sprint batches (status: planning/in_progress/in_review/finalized) |
@@ -212,7 +212,7 @@ orca mcp                               # Start MCP stdio server
 | Group | Commands |
 |-------|----------|
 | Setup | `init`, `explore`, `status`, `log` |
-| Backlog | `backlog add/edit/delete/list/show/reopen/merge/plan` |
+| Tasks | `task add/edit/delete/list/show/reopen/merge/plan` |
 | Sprint | `sprint plan/assign/unassign/start/status/review/resume/cancel/reset` |
 | Review | `review approve/request-changes` |
 | Execute | `run`, `integrate`, `breakdown` |

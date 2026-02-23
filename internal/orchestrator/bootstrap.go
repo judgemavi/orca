@@ -130,7 +130,7 @@ func ResolveSupervisorTool(cfg *config.Config) (string, config.ToolConfig, error
 // MCP tools for coordination + read-only tools for codebase understanding.
 // No Write, Edit, Bash, or any file-mutation tools.
 var AllowedTools = []string{
-	// MCP tools — backlog
+	// MCP tools — tasks
 	"mcp__orca__task_list",
 	"mcp__orca__task_get",
 	"mcp__orca__task_create",

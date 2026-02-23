@@ -55,9 +55,9 @@ orca init
 # Explore the codebase (generates context for workers)
 orca explore
 
-# Add tasks to the backlog
-orca backlog add "Implement user authentication"
-orca backlog add "Add rate limiting to API endpoints"
+# Add tasks
+orca task add "Implement user authentication"
+orca task add "Add rate limiting to API endpoints"
 
 # Or break down a goal into tasks automatically
 orca breakdown "Add comprehensive error handling across the API layer"
@@ -86,14 +86,14 @@ orca explore --check               Check if context is stale
 orca explore --manual <file>       Use a markdown file as context
 
 orca breakdown "goal"              Break down a goal into tasks
-orca backlog                       List all tasks
-orca backlog add "title"           Add a task
-orca backlog show <id>             Show full task details
-orca backlog edit <id>             Edit a task
-orca backlog delete <id>           Delete a task
-orca backlog reopen <id...>        Move failed tasks back to pending
-orca backlog merge <id>            Merge a completed task
-orca backlog plan <id>             Generate implementation plan for a task
+orca task                          List all tasks
+orca task add "title"              Add a task
+orca task show <id>                Show full task details
+orca task edit <id>                Edit a task
+orca task delete <id>              Delete a task
+orca task reopen <id...>           Move failed tasks back to pending
+orca task merge <id>               Merge a completed task
+orca task plan <id>                Generate implementation plan for a task
 
 orca sprint plan                   Select tasks for next sprint
 orca sprint assign <id...>         Manually add tasks to sprint

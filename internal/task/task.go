@@ -1,4 +1,4 @@
-// Package task handles backlog CRUD, dependency graph, and sprint batching.
+// Package task handles task CRUD, dependency graph, and sprint batching.
 package task
 
 import (

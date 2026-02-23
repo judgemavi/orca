@@ -13,7 +13,7 @@ import (
 )
 
 func RegisterPlan(root *cobra.Command, r *Registry) {
-	planCmd := &cobra.Command{Use: "breakdown [goal]", Short: "Break down a goal into backlog tasks using an LLM", Args: cobra.MinimumNArgs(1), RunE: r.runPlan}
+	planCmd := &cobra.Command{Use: "breakdown [goal]", Short: "Break down a goal into tasks using an LLM", Args: cobra.MinimumNArgs(1), RunE: r.runPlan}
 	planCmd.Flags().String("tool", "", "Tool to use for decomposition")
 	planCmd.Flags().Bool("auto", false, "Skip confirmation and create tasks immediately")
 	root.AddCommand(planCmd)

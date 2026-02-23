@@ -161,7 +161,7 @@ func main() {
 	commands.RegisterExplore(root, reg)
 	commands.RegisterPlan(root, reg)
 	commands.RegisterRun(root, reg)
-	commands.RegisterBacklog(root, reg)
+	commands.RegisterTask(root, reg)
 	commands.RegisterSprint(root, reg)
 	commands.RegisterReview(root, reg)
 	commands.RegisterIntegrate(root, reg)

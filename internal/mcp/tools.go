@@ -92,7 +92,7 @@ func (s *Server) toolDefinitions() []toolDef {
 	return []toolDef{
 		{
 			Name:        "task_list",
-			Description: "List all tasks in the backlog. Optionally filter by status.",
+			Description: "List all tasks. Optionally filter by status.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -105,7 +105,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "task_create",
-			Description: "Create a new task in the backlog.",
+			Description: "Create a new task.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -176,7 +176,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "task_delete",
-			Description: "Delete a task from the backlog.",
+			Description: "Delete a task.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -210,7 +210,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "breakdown",
-			Description: "Break down a goal into backlog tasks using an LLM. Returns proposed tasks for review.",
+			Description: "Break down a goal into tasks using an LLM. Returns proposed tasks for review.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -232,7 +232,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "task_plan_generate",
-			Description: "Generate an implementation plan for a backlog task using an LLM.",
+			Description: "Generate an implementation plan for a task using an LLM.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{

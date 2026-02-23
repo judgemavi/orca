@@ -16,59 +16,59 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func RegisterBacklog(root *cobra.Command, r *Registry) {
-	backlog := &cobra.Command{
-		Use:   "backlog",
-		Short: "Manage task backlog",
-		RunE:  r.runBacklogList,
+func RegisterTask(root *cobra.Command, r *Registry) {
+	taskCmd := &cobra.Command{
+		Use:   "task",
+		Short: "Manage tasks",
+		RunE:  r.runTaskList,
 	}
 
 	addCmd := &cobra.Command{
 		Use:   "add [title]",
-		Short: "Add a task to the backlog",
+		Short: "Add a task",
 		Args:  cobra.MinimumNArgs(1),
-		RunE:  r.runBacklogAdd,
+		RunE:  r.runTaskAdd,
 	}
 	addCmd.Flags().String("description", "", "Task description")
 	addCmd.Flags().String("parent", "", "Parent task ID")
 	addCmd.Flags().StringSlice("depends-on", nil, "Task IDs this task depends on")
 	addCmd.Flags().String("tool", "", "Assigned tool")
 	addCmd.Flags().String("model", "", "Assigned model")
-	backlog.AddCommand(addCmd)
+	taskCmd.AddCommand(addCmd)
 
-	backlog.AddCommand(&cobra.Command{Use: "list", Short: "List backlog tasks", RunE: r.runBacklogList})
+	taskCmd.AddCommand(&cobra.Command{Use: "list", Short: "List tasks", RunE: r.runTaskList})
 
-	editCmd := &cobra.Command{Use: "edit [id]", Short: "Edit a backlog task", Args: cobra.MaximumNArgs(1), RunE: r.runBacklogEdit}
+	editCmd := &cobra.Command{Use: "edit [id]", Short: "Edit a task", Args: cobra.MaximumNArgs(1), RunE: r.runTaskEdit}
 	editCmd.Flags().String("title", "", "New title")
 	editCmd.Flags().String("description", "", "New description")
 	editCmd.Flags().String("prompt", "", "New prompt")
 	editCmd.Flags().String("status", "", "New status")
 	editCmd.Flags().String("tool", "", "Assigned tool")
 	editCmd.Flags().String("model", "", "Assigned model")
-	backlog.AddCommand(editCmd)
+	taskCmd.AddCommand(editCmd)
 
-	deleteCmd := &cobra.Command{Use: "delete [task-id]", Short: "Delete a backlog task", Args: cobra.MaximumNArgs(1), RunE: r.runBacklogDelete}
+	deleteCmd := &cobra.Command{Use: "delete [task-id]", Short: "Delete a task", Args: cobra.MaximumNArgs(1), RunE: r.runTaskDelete}
 	deleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
-	backlog.AddCommand(deleteCmd)
+	taskCmd.AddCommand(deleteCmd)
 
-	mergeCmd := &cobra.Command{Use: "merge [task-id]", Short: "Merge a completed backlog task into integration branch", Args: cobra.MaximumNArgs(1), RunE: r.runBacklogMerge}
+	mergeCmd := &cobra.Command{Use: "merge [task-id]", Short: "Merge a completed task into integration branch", Args: cobra.MaximumNArgs(1), RunE: r.runTaskMerge}
 	mergeCmd.Flags().Bool("auto", false, "Auto-resolve merge conflicts by rerunning task in worktree")
-	backlog.AddCommand(mergeCmd)
+	taskCmd.AddCommand(mergeCmd)
 
-	planCmd := &cobra.Command{Use: "plan [task-id]", Short: "Generate an implementation plan for a backlog task", Args: cobra.MaximumNArgs(1), RunE: r.runBacklogPlan}
+	planCmd := &cobra.Command{Use: "plan [task-id]", Short: "Generate an implementation plan for a task", Args: cobra.MaximumNArgs(1), RunE: r.runTaskPlan}
 	planCmd.Flags().Bool("save", false, "Save generated plan to the task")
 	planCmd.Flags().Bool("edit", false, "Open generated plan in $EDITOR and save edits")
 	planCmd.Flags().String("tool", "", "Tool to use for plan generation")
 	planCmd.Flags().String("model", "", "Model to use for plan generation")
-	backlog.AddCommand(planCmd)
+	taskCmd.AddCommand(planCmd)
 
-	backlog.AddCommand(&cobra.Command{Use: "show [task-id]", Short: "Show full task details", Args: cobra.MaximumNArgs(1), RunE: r.runBacklogShow})
-	backlog.AddCommand(&cobra.Command{Use: "reopen [task-id...]", Short: "Move failed tasks back to pending", Args: cobra.ArbitraryArgs, RunE: r.runBacklogReopen})
+	taskCmd.AddCommand(&cobra.Command{Use: "show [task-id]", Short: "Show full task details", Args: cobra.MaximumNArgs(1), RunE: r.runTaskShow})
+	taskCmd.AddCommand(&cobra.Command{Use: "reopen [task-id...]", Short: "Move failed tasks back to pending", Args: cobra.ArbitraryArgs, RunE: r.runTaskReopen})
 
-	root.AddCommand(backlog)
+	root.AddCommand(taskCmd)
 }
 
-func (r *Registry) runBacklogAdd(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskAdd(cmd *cobra.Command, args []string) error {
 	db, store, err := r.openStoreOrErr()
 	if err != nil {
 		return err
@@ -123,7 +123,7 @@ func (r *Registry) runBacklogAdd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runBacklogList(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskList(cmd *cobra.Command, args []string) error {
 	db, store, err := r.openStoreOrErr()
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func (r *Registry) runBacklogList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("list tasks: %w", err)
 	}
 	if len(tasks) == 0 {
-		fmt.Println("No tasks in backlog.")
+		fmt.Println("No tasks.")
 		return nil
 	}
 
@@ -163,7 +163,7 @@ func (r *Registry) runBacklogList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runBacklogEdit(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 	db, cfg, _, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
@@ -276,7 +276,7 @@ func (r *Registry) runBacklogEdit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runBacklogDelete(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 	db, store, err := r.openStoreOrErr()
 	if err != nil {
 		return err
@@ -320,7 +320,7 @@ func (r *Registry) runBacklogDelete(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runBacklogMerge(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 	db, cfg, _, executor, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
@@ -420,7 +420,7 @@ func (r *Registry) runBacklogMerge(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runBacklogPlan(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	db, cfg, _, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
@@ -560,7 +560,7 @@ func (r *Registry) runBacklogPlan(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runBacklogShow(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskShow(cmd *cobra.Command, args []string) error {
 	db, store, err := r.openStoreOrErr()
 	if err != nil {
 		return err
@@ -615,7 +615,7 @@ func (r *Registry) runBacklogShow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runBacklogReopen(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskReopen(cmd *cobra.Command, args []string) error {
 	db, store, err := r.openStoreOrErr()
 	if err != nil {
 		return err

@@ -78,7 +78,7 @@ Each phase is one PR, independently shippable.
 1. `orca init` — verify mode selection appears, config writes correctly
 2. `orca explore` — verify mode-aware prompt is used (check with `--verbose`)
 3. `orca breakdown "goal"` — verify decompose produces category/priority/metadata fields for migration modes
-4. `orca backlog add --category scaffold --priority 1 "Setup project"` — verify task stored correctly
+4. `orca task add --category scaffold --priority 1 "Setup project"` — verify task stored correctly
 5. `orca sprint plan` — verify scaffold/high-priority tasks selected first
 6. `orca scaffold "Go REST API"` — verify project structure created (greenfield)
 7. `orca integrate` — verify dual validation runs both profiles (migration modes)

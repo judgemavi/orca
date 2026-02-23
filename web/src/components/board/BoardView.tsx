@@ -27,7 +27,7 @@ import { BoardHeader } from './BoardHeader'
 import { BoardColumn } from './BoardColumn'
 
 const COLUMNS: { id: Task['status']; label: string }[] = [
-  { id: 'pending', label: 'Backlog' },
+  { id: 'pending', label: 'Pending' },
   { id: 'in_sprint', label: 'In Sprint' },
   { id: 'running', label: 'Running' },
   { id: 'review', label: 'Review' },
@@ -312,7 +312,7 @@ export function BoardView({ lastWSEvent }: Props) {
           await api.updateTask(task.id, { status: 'pending' } as any)
           await invalidateBoard()
         } catch (err: any) {
-          showError(err?.message ?? 'Failed to move task to backlog')
+          showError(err?.message ?? 'Failed to move task to pending')
         }
       }
       return
