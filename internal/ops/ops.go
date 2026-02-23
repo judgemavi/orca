@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jasjeetmavi/orca/internal/nullable"
 	"github.com/jasjeetmavi/orca/internal/state"
 )
 
@@ -41,19 +42,10 @@ func (s *Store) Create(op Operation) error {
 	}
 
 	now := time.Now().UTC()
-	var result interface{}
-	if op.Result != "" {
-		result = op.Result
-	}
-	var errText interface{}
-	if op.Error != "" {
-		errText = op.Error
-	}
-
 	_, err := s.db.Exec(
 		`INSERT INTO operations (id, type, target_id, status, result, error, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		op.ID, op.Type, op.TargetID, op.Status, result, errText, now, now,
+		op.ID, op.Type, op.TargetID, op.Status, nullable.IfEmpty(op.Result), nullable.IfEmpty(op.Error), now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("create operation: %w", err)
@@ -66,7 +58,7 @@ func (s *Store) Complete(id string, result string) error {
 		`UPDATE operations
 		 SET status = 'completed', result = ?, error = NULL, updated_at = ?
 		 WHERE id = ?`,
-		nullIfEmpty(result), time.Now().UTC(), id,
+		nullable.IfEmpty(result), time.Now().UTC(), id,
 	)
 	if err != nil {
 		return fmt.Errorf("complete operation: %w", err)
@@ -176,8 +168,8 @@ func scanOperation(scan func(dest ...interface{}) error) (*Operation, error) {
 	); err != nil {
 		return nil, err
 	}
-	op.Result = nullableToString(result)
-	op.Error = nullableToString(errText)
+	op.Result = nullable.ToString(result)
+	op.Error = nullable.ToString(errText)
 	return &op, nil
 }
 
@@ -194,20 +186,6 @@ func readOperations(rows *sql.Rows) ([]Operation, error) {
 		return nil, fmt.Errorf("iterate operations: %w", err)
 	}
 	return ops, nil
-}
-
-func nullableToString(v sql.NullString) string {
-	if !v.Valid {
-		return ""
-	}
-	return v.String
-}
-
-func nullIfEmpty(v string) interface{} {
-	if v == "" {
-		return nil
-	}
-	return v
 }
 
 func ensureRowsAffected(res sql.Result, id string) error {
