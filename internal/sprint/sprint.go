@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -74,7 +73,17 @@ func (p *Planner) Plan(maxParallel int) (*Sprint, error) {
 		if err != nil {
 			return nil, fmt.Errorf("list pending tasks: %w", err)
 		}
-		if cycle, ok := detectTaskCycle(pending); ok {
+
+		pendingIDs := make([]string, len(pending))
+		depsByID := make(map[string][]string, len(pending))
+		for i, t := range pending {
+			pendingIDs[i] = t.ID
+			depsByID[t.ID] = t.DependsOn
+		}
+
+		if cycle, ok := task.DetectCycle(pendingIDs, func(taskID string) []string {
+			return depsByID[taskID]
+		}); ok {
 			return nil, fmt.Errorf("circular dependency: %s", strings.Join(cycle, " -> "))
 		}
 		return nil, fmt.Errorf("no ready tasks")
@@ -113,71 +122,6 @@ func (p *Planner) Plan(maxParallel int) (*Sprint, error) {
 		TaskIDs:   taskIDs,
 		CreatedAt: now,
 	}, nil
-}
-
-func detectTaskCycle(tasks []*task.Task) ([]string, bool) {
-	const (
-		stateUnvisited = 0
-		stateVisiting  = 1
-		stateDone      = 2
-	)
-
-	graph := make(map[string][]string, len(tasks))
-	for _, t := range tasks {
-		graph[t.ID] = append([]string{}, t.DependsOn...)
-	}
-	for id := range graph {
-		slices.Sort(graph[id])
-	}
-
-	nodes := make([]string, 0, len(graph))
-	for id := range graph {
-		nodes = append(nodes, id)
-	}
-	slices.Sort(nodes)
-
-	state := make(map[string]int, len(graph))
-	stack := make([]string, 0, len(graph))
-	stackIndex := make(map[string]int, len(graph))
-
-	var visit func(string) ([]string, bool)
-	visit = func(node string) ([]string, bool) {
-		state[node] = stateVisiting
-		stackIndex[node] = len(stack)
-		stack = append(stack, node)
-
-		for _, dep := range graph[node] {
-			if _, ok := graph[dep]; !ok {
-				continue
-			}
-			switch state[dep] {
-			case stateUnvisited:
-				if cycle, ok := visit(dep); ok {
-					return cycle, true
-				}
-			case stateVisiting:
-				start := stackIndex[dep]
-				cycle := append([]string{}, stack[start:]...)
-				cycle = append(cycle, dep)
-				return cycle, true
-			}
-		}
-
-		stack = stack[:len(stack)-1]
-		delete(stackIndex, node)
-		state[node] = stateDone
-		return nil, false
-	}
-
-	for _, node := range nodes {
-		if state[node] != stateUnvisited {
-			continue
-		}
-		if cycle, ok := visit(node); ok {
-			return cycle, true
-		}
-	}
-	return nil, false
 }
 
 // CreateEmpty creates a sprint in "planning" status with no tasks.
