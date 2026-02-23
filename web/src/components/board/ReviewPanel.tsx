@@ -8,25 +8,25 @@ import { useReviewQuery } from '../../hooks/queries/useSprints'
 interface Props {
   sprint: Sprint
   onClose: () => void
-  onIntegrated: () => void
+  onMerged: () => void
 }
 
-export function ReviewPanel({ sprint, onClose, onIntegrated }: Props) {
+export function ReviewPanel({ sprint, onClose, onMerged }: Props) {
   const [expandedDiff, setExpandedDiff] = useState<string | null>(null)
-  const [integrating, setIntegrating] = useState(false)
+  const [merging, setMerging] = useState(false)
   const reviewQuery = useReviewQuery(sprint.id)
 
   const artifacts = reviewQuery.data?.artifacts ?? []
 
-  const handleIntegrate = async () => {
-    setIntegrating(true)
+  const handleMerge = async () => {
+    setMerging(true)
     try {
-      await api.integrate(sprint.id)
-      onIntegrated()
+      await api.merge(sprint.id)
+      onMerged()
     } catch (err: any) {
-      alert(err.message ?? 'Integration failed')
+      alert(err.message ?? 'Merge failed')
     } finally {
-      setIntegrating(false)
+      setMerging(false)
     }
   }
 
@@ -118,14 +118,14 @@ export function ReviewPanel({ sprint, onClose, onIntegrated }: Props) {
         <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3">
           <span className="text-xs text-[var(--text-secondary)]">
             {completed.length} task{completed.length !== 1 ? 's' : ''} ready to
-            integrate
+            merge
           </span>
           <ActionButton
             variant="primary"
-            onClick={handleIntegrate}
-            disabled={integrating}
+            onClick={handleMerge}
+            disabled={merging}
           >
-            {integrating ? 'Integrating...' : 'Integrate All'}
+            {merging ? 'Merging...' : 'Merge All'}
           </ActionButton>
         </div>
       )}

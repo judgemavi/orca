@@ -121,8 +121,8 @@ export const api = {
       }),
     }),
 
-  integrate: (sprintId?: string) =>
-    request<{ operation_id: string }>('/integrate', {
+  merge: (sprintId?: string) =>
+    request<{ operation_id: string }>('/merge', {
       method: 'POST',
       body: JSON.stringify(sprintId ? { sprint_id: sprintId } : {}),
     }),
