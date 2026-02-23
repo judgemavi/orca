@@ -1,11 +1,14 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -154,7 +157,7 @@ func NewServerWithHub(db *state.DB, cfg *config.Config, planner *sprint.Planner,
 	go watcher.Run(ctx)
 
 	if err := opsStore.MarkStaleAsFailed(); err != nil {
-		log.Printf("mark stale operations failed: %v", err)
+		slog.Error("mark stale operations failed", "err", err)
 	}
 
 	planner.SetEventHook(func(eventType string, id string) {
@@ -209,6 +212,11 @@ func (s *Server) Shutdown() {
 	if s.cancel != nil {
 		s.cancel()
 	}
+}
+
+// LogStarted records server startup once listener bind succeeds.
+func (s *Server) LogStarted(addr string) {
+	slog.Info("server.started", "addr", addr)
 }
 
 // Routes returns the HTTP handler with all API routes and middleware.
@@ -302,23 +310,23 @@ func (s *Server) BootstrapOrchestrator() {
 
 	orcaBinary, err := os.Executable()
 	if err != nil {
-		log.Printf("resolve orca binary: %v", err)
+		slog.Error("resolve orca binary failed", "err", err)
 		return
 	}
 
 	mcpConfigPath, err := orchestrator.WriteMCPConfig(s.repoDir, orcaBinary, s.cfg.Tools)
 	if err != nil {
-		log.Printf("write mcp config: %v", err)
+		slog.Error("write mcp config failed", "err", err)
 		return
 	}
 
 	toolName, supervisorTool, err := orchestrator.ResolveSupervisorTool(s.cfg)
 	if err != nil {
-		log.Printf("resolve supervisor tool: %v", err)
+		slog.Error("resolve supervisor tool failed", "err", err)
 		return
 	}
 	if strings.TrimSpace(supervisorTool.Binary) == "" {
-		log.Printf("resolve supervisor tool: tool %q has empty binary", toolName)
+		slog.Error("resolve supervisor tool binary empty", "tool", toolName)
 		return
 	}
 
@@ -334,11 +342,11 @@ func (s *Server) BootstrapOrchestrator() {
 		Env:     []string{"ORCA_MCP_CONFIG=" + mcpConfigPath},
 	})
 	if err != nil {
-		log.Printf("bootstrap orchestrator: %v", err)
+		slog.Error("bootstrap orchestrator failed", "tool", toolName, "err", err)
 		return
 	}
 
-	log.Printf("orchestrator session started (%s): %s", toolName, sess.ID)
+	slog.Info("orchestrator session started", "tool", toolName, "session_id", sess.ID)
 }
 
 // --- routing helpers ---
@@ -533,11 +541,53 @@ func extractPathParam(path, prefix string) string {
 	return strings.TrimPrefix(path, prefix)
 }
 
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) Write(p []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(p)
+}
+
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("response writer does not support hijacking")
+	}
+	return h.Hijack()
+}
+
+func (r *statusRecorder) Push(target string, opts *http.PushOptions) error {
+	if p, ok := r.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
 func logMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+		if rec.status == 0 {
+			rec.status = http.StatusOK
+		}
+		slog.Info("http request", "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(start).Round(time.Millisecond))
 	})
 }
 

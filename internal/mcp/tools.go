@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/decompose"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/logging"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/review"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -455,6 +458,70 @@ func (s *Server) toolDefinitions() []toolDef {
 					},
 				},
 				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "log_event",
+			Description: "Write a structured log entry to the application log.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"level": map[string]interface{}{
+						"type":        "string",
+						"description": "Log level: debug, info, warn, error",
+					},
+					"message": map[string]interface{}{
+						"type":        "string",
+						"description": "Log message",
+					},
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional task ID to attach as structured attribute.",
+					},
+					"sprint_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional sprint ID to attach as structured attribute.",
+					},
+					"attrs": map[string]interface{}{
+						"type":                 "object",
+						"additionalProperties": true,
+						"description":          "Optional additional structured attributes.",
+					},
+				},
+				"required": []string{"level", "message"},
+			},
+		},
+		{
+			Name:        "log_query",
+			Description: "Query structured application logs with optional filters.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"level": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional level filter: debug, info, warn, error",
+					},
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional task ID filter.",
+					},
+					"sprint_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional sprint ID filter.",
+					},
+					"since": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional time filter: RFC3339 timestamp or duration (e.g. 30m, 2h).",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Optional max number of matching entries.",
+					},
+					"pattern": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional case-insensitive substring match against message/raw line.",
+					},
+				},
 			},
 		},
 		{
@@ -1273,7 +1340,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		if t.SprintID != "" {
 			if err := s.planner.CompleteSprintIfDone(t.SprintID); err != nil {
-				log.Printf("check sprint completion after approve %s: %v", t.SprintID, err)
+				slog.Warn("check sprint completion after approve failed", "sprint_id", t.SprintID, "err", err)
 			}
 		}
 		return map[string]interface{}{"task_id": taskID, "status": "completed"}, nil
@@ -1531,6 +1598,87 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			"quality": quality,
 		}, nil
 
+	case "log_event":
+		var args struct {
+			Level    string         `json:"level"`
+			Message  string         `json:"message"`
+			TaskID   string         `json:"task_id"`
+			SprintID string         `json:"sprint_id"`
+			Attrs    map[string]any `json:"attrs"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("log_event args: %w", err)
+		}
+
+		level, err := parseSlogLevel(args.Level)
+		if err != nil {
+			return nil, fmt.Errorf("log_event level: %w", err)
+		}
+		msg := strings.TrimSpace(args.Message)
+		if msg == "" {
+			return nil, fmt.Errorf("message is required")
+		}
+
+		kv := make([]any, 0, 2+len(args.Attrs)*2)
+		if taskID := strings.TrimSpace(args.TaskID); taskID != "" {
+			kv = append(kv, "task_id", taskID)
+		}
+		if sprintID := strings.TrimSpace(args.SprintID); sprintID != "" {
+			kv = append(kv, "sprint_id", sprintID)
+		}
+		if len(args.Attrs) > 0 {
+			keys := make([]string, 0, len(args.Attrs))
+			for key := range args.Attrs {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				kv = append(kv, key, args.Attrs[key])
+			}
+		}
+
+		slog.Log(context.Background(), level, msg, kv...)
+		return map[string]interface{}{"logged": true}, nil
+
+	case "log_query":
+		var args struct {
+			Level    string `json:"level"`
+			TaskID   string `json:"task_id"`
+			SprintID string `json:"sprint_id"`
+			Since    string `json:"since"`
+			Limit    int    `json:"limit"`
+			Pattern  string `json:"pattern"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("log_query args: %w", err)
+		}
+		if strings.TrimSpace(args.Level) != "" {
+			if _, err := parseSlogLevel(args.Level); err != nil {
+				return nil, fmt.Errorf("log_query level: %w", err)
+			}
+		}
+		if args.Limit < 0 {
+			return nil, fmt.Errorf("limit must be >= 0")
+		}
+
+		since, err := parseLogQuerySince(args.Since)
+		if err != nil {
+			return nil, fmt.Errorf("log_query since: %w", err)
+		}
+
+		entries, err := logging.Query(resolveLogPath(s.repoDir, s.cfg), logging.Filter{
+			Level:    strings.ToLower(strings.TrimSpace(args.Level)),
+			TaskID:   strings.TrimSpace(args.TaskID),
+			SprintID: strings.TrimSpace(args.SprintID),
+			Since:    since,
+			Pattern:  strings.TrimSpace(args.Pattern),
+			Limit:    args.Limit,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("query logs: %w", err)
+		}
+		return entries, nil
+
 	case "integrate":
 		var sprintID string
 		err := s.planner.DB().QueryRow(
@@ -1644,7 +1792,7 @@ func resolveTaskPhaseToolConfig(t *task.Task, phase string, cfg *config.Config) 
 			toolName = phaseCfg.Tool
 			toolCfg = tc
 		} else {
-			log.Printf("task phase_config tool %q for phase %q not found in config, falling back", phaseCfg.Tool, phase)
+			slog.Warn("task phase_config tool not found in config, falling back", "tool", phaseCfg.Tool, "phase", phase)
 		}
 	}
 	if toolName == "" && t != nil && t.AssignedTool != "" {
@@ -1652,7 +1800,7 @@ func resolveTaskPhaseToolConfig(t *task.Task, phase string, cfg *config.Config) 
 			toolName = t.AssignedTool
 			toolCfg = tc
 		} else {
-			log.Printf("task assigned_tool %q not found in config, falling back to %s phase default", t.AssignedTool, phase)
+			slog.Warn("task assigned_tool not found in config, falling back to phase default", "assigned_tool", t.AssignedTool, "phase", phase)
 		}
 	}
 	if toolName == "" {
@@ -1693,6 +1841,50 @@ func validateTaskModel(toolName, model string, toolCfg config.ToolConfig) string
 			return model
 		}
 	}
-	log.Printf("task model %q not in %s models list, using default", model, toolName)
+	slog.Warn("task model not in tool models list, using default", "model", model, "tool", toolName)
 	return ""
+}
+
+func parseSlogLevel(raw string) (slog.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return 0, fmt.Errorf("invalid level %q (must be one of: debug|info|warn|error)", raw)
+	}
+}
+
+func parseLogQuerySince(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	if d, err := time.ParseDuration(raw); err == nil {
+		if d < 0 {
+			return time.Time{}, fmt.Errorf("duration must be >= 0")
+		}
+		return time.Now().Add(-d), nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("must be RFC3339 timestamp or duration")
+	}
+	return t, nil
+}
+
+func resolveLogPath(repoDir string, cfg *config.Config) string {
+	logPath := strings.TrimSpace(logging.DefaultConfig().File)
+	if cfg != nil && strings.TrimSpace(cfg.Logging.File) != "" {
+		logPath = strings.TrimSpace(cfg.Logging.File)
+	}
+	if filepath.IsAbs(logPath) || strings.TrimSpace(repoDir) == "" {
+		return logPath
+	}
+	return filepath.Join(repoDir, logPath)
 }

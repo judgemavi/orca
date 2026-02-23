@@ -2,17 +2,21 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jasjeetmavi/orca/cmd/orca/commands"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/logging"
 	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 const skipRuntimeInitAnnotation = "orca.skip_runtime_init"
@@ -53,6 +57,7 @@ func (rt *runtimeState) init() error {
 	rt.store = task.NewStore(db)
 	rt.planner = sprint.NewPlanner(db)
 	rt.executor = sprint.NewExecutor(rt.planner, wm, cfg, repoDir, sprint.ExecutorOptions{CostTracker: cost.NewTracker(db)})
+	slog.Info("runtime.initialized", "db_path", dbPath)
 	return nil
 }
 
@@ -99,15 +104,58 @@ func shouldSkipRuntimeInit(cmd *cobra.Command) bool {
 func main() {
 	rt := &runtimeState{}
 	reg := commands.NewRegistry(rt.openStore, rt.loadRuntime)
+	var loggingCleanup func()
 
 	root := &cobra.Command{Use: "orca", Short: "Multi-agent CLI orchestrator"}
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		logCfg := logging.DefaultConfig()
+		configPath := filepath.Join(".orca", "orca.yaml")
+		data, err := os.ReadFile(configPath)
+		if err == nil {
+			var parsed struct {
+				Logging logging.Config `yaml:"logging"`
+			}
+			if unmarshalErr := yaml.Unmarshal(data, &parsed); unmarshalErr == nil {
+				if strings.TrimSpace(parsed.Logging.Level) != "" {
+					logCfg.Level = parsed.Logging.Level
+				}
+				if strings.TrimSpace(parsed.Logging.File) != "" {
+					logCfg.File = parsed.Logging.File
+				}
+				if strings.TrimSpace(parsed.Logging.MaxSize) != "" {
+					logCfg.MaxSize = parsed.Logging.MaxSize
+				}
+			}
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("read logging config: %w", err)
+		}
+
+		cleanup, err := logging.Init(logCfg)
+		if err != nil {
+			return fmt.Errorf("init logging: %w", err)
+		}
+		loggingCleanup = cleanup
+		slog.Info("orca command start", "cmd", cmd.CommandPath(), "args", args)
+
 		if shouldSkipRuntimeInit(cmd) {
 			return nil
 		}
-		return rt.init()
+		if err := rt.init(); err != nil {
+			if loggingCleanup != nil {
+				loggingCleanup()
+				loggingCleanup = nil
+			}
+			return err
+		}
+		return nil
 	}
-	root.PersistentPostRun = func(cmd *cobra.Command, args []string) { rt.close() }
+	root.PersistentPostRun = func(cmd *cobra.Command, args []string) {
+		rt.close()
+		if loggingCleanup != nil {
+			loggingCleanup()
+			loggingCleanup = nil
+		}
+	}
 
 	commands.RegisterMisc(root, reg, commands.MiscOptions{MarkSkipRuntimeInit: markSkipRuntimeInit})
 	commands.RegisterExplore(root, reg)

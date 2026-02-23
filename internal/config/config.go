@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasjeetmavi/orca/internal/logging"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,6 +26,7 @@ type Config struct {
 	Orchestrator OrchestratorConfig    `yaml:"orchestrator" json:"orchestrator"`
 	Monitor      MonitorConfig         `yaml:"monitor" json:"monitor"`
 	Quality      QualityConfig         `yaml:"quality" json:"quality"`
+	Logging      logging.Config        `yaml:"logging" json:"logging"`
 	Cleanup      CleanupConfig         `yaml:"cleanup" json:"cleanup"`
 	Server       ServerConfig          `yaml:"server" json:"server"`
 }
@@ -188,6 +190,7 @@ var sectionComments = map[string]string{
 	"orchestrator": "Supervisor agent config — tool, model, cost budget, per-phase overrides",
 	"monitor":      "Stuck detection, conflict checking, per-task budget",
 	"quality":      "Quality gates applied during review",
+	"logging":      "Application logging config — level, file path, rotation size",
 	"cleanup":      "Worktree cleanup settings",
 	"server":       "Web UI server settings",
 }

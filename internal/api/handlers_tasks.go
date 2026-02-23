@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -199,7 +199,7 @@ func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id st
 	}
 	if tk.SprintID != "" {
 		if err := s.planner.CompleteSprintIfDone(tk.SprintID); err != nil {
-			log.Printf("check sprint completion after approve %s: %v", tk.SprintID, err)
+			slog.Warn("check sprint completion after approve failed", "sprint_id", tk.SprintID, "err", err)
 		}
 	}
 
@@ -263,7 +263,7 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 
 	go func(ctx context.Context, taskID string) {
 		if err := s.executor.RunSingle(ctx, taskID); err != nil {
-			log.Printf("request changes rerun failed for task %s: %v", taskID, err)
+			slog.Error("request changes rerun failed", "task_id", taskID, "err", err)
 		}
 	}(s.ctx, resolved)
 
@@ -481,7 +481,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 				toolName = phaseOverride.Tool
 				toolCfg = tc
 			} else {
-				log.Printf("task phase_config tool %q for phase %q not found in config, falling back", phaseOverride.Tool, "plan")
+				slog.Warn("task phase_config tool not found in config, falling back", "tool", phaseOverride.Tool, "phase", "plan")
 			}
 		}
 		if toolName == "" && tk.AssignedTool != "" {
@@ -489,7 +489,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 				toolName = tk.AssignedTool
 				toolCfg = tc
 			} else {
-				log.Printf("task assigned_tool %q not found in config, falling back to plan phase default", tk.AssignedTool)
+				slog.Warn("task assigned_tool not found in config, falling back to plan phase default", "assigned_tool", tk.AssignedTool)
 			}
 		}
 		if toolName == "" {
@@ -536,7 +536,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 			if rec := recover(); rec != nil {
 				errMsg := fmt.Sprintf("plan_generate panic: %v", rec)
 				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					log.Printf("mark plan operation failed %s: %v", opID, opErr)
+					slog.Error("mark plan operation failed", "operation_id", opID, "err", opErr)
 				}
 				s.hub.Broadcast(Event{
 					Type: "plan.failed",
@@ -558,7 +558,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 		}
 		if genErr != nil {
 			if err := s.ops.Fail(opID, genErr.Error()); err != nil {
-				log.Printf("mark plan operation failed %s: %v", opID, err)
+				slog.Error("mark plan operation failed", "operation_id", opID, "err", err)
 			}
 			s.hub.Broadcast(Event{
 				Type: "plan.failed",
@@ -573,7 +573,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 		store := task.NewStore(s.db)
 		if err := store.SetPlan(taskID, content); err != nil {
 			if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
-				log.Printf("mark plan operation failed %s: %v", opID, opErr)
+				slog.Error("mark plan operation failed", "operation_id", opID, "err", opErr)
 			}
 			s.hub.Broadcast(Event{
 				Type: "plan.failed",
@@ -590,7 +590,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 			"plan":    content,
 		})
 		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			log.Printf("complete plan operation %s: %v", opID, err)
+			slog.Debug("complete plan operation failed", "operation_id", opID, "err", err)
 		}
 
 		s.hub.Broadcast(Event{
@@ -616,7 +616,7 @@ func validateTaskModelOverride(toolName, model string, toolCfg config.ToolConfig
 			return model
 		}
 	}
-	log.Printf("task model %q not in %s models list, using default", model, toolName)
+	slog.Warn("task model not in tool models list, using default", "model", model, "tool", toolName)
 	return ""
 }
 
@@ -736,7 +736,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 			if rec := recover(); rec != nil {
 				errMsg := fmt.Sprintf("cleanup panic: %v", rec)
 				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					log.Printf("mark cleanup operation failed %s: %v", opID, opErr)
+					slog.Error("mark cleanup operation failed", "operation_id", opID, "err", opErr)
 				}
 				s.hub.Broadcast(Event{Type: "cleanup.failed", Data: map[string]interface{}{
 					"operation_id": opID,
@@ -752,7 +752,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		removedBranches := make([]string, 0, len(stale))
 		for _, st := range stale {
 			if err := wm.Remove(st.taskID); err != nil {
-				log.Printf("cleanup worktree %s: %v", st.branch, err)
+				slog.Warn("cleanup worktree failed", "branch", st.branch, "task_id", st.taskID, "err", err)
 				continue
 			}
 			removedBranches = append(removedBranches, st.branch)
@@ -769,7 +769,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			errMsg := fmt.Sprintf("marshal cleanup result: %v", err)
 			if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-				log.Printf("mark cleanup operation failed %s: %v", opID, opErr)
+				slog.Error("mark cleanup operation failed", "operation_id", opID, "err", opErr)
 			}
 			s.hub.Broadcast(Event{Type: "cleanup.failed", Data: map[string]interface{}{
 				"operation_id": opID,
@@ -778,7 +778,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			log.Printf("complete cleanup operation %s: %v", opID, err)
+			slog.Debug("complete cleanup operation failed", "operation_id", opID, "err", err)
 		}
 
 		s.hub.Broadcast(Event{Type: "cleanup.completed", Data: map[string]interface{}{

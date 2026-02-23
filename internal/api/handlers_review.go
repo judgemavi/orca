@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -149,7 +149,7 @@ func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprint
 			if rec := recover(); rec != nil {
 				errMsg := fmt.Sprintf("review panic: %v", rec)
 				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					log.Printf("mark review operation failed %s: %v", opID, opErr)
+					slog.Error("mark review operation failed", "operation_id", opID, "err", opErr)
 				}
 				s.hub.Broadcast(Event{Type: "review.failed", Data: map[string]interface{}{
 					"operation_id": opID,
@@ -188,7 +188,7 @@ func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprint
 		if err != nil {
 			errMsg := fmt.Sprintf("marshal review results: %v", err)
 			if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-				log.Printf("mark review operation failed %s: %v", opID, opErr)
+				slog.Error("mark review operation failed", "operation_id", opID, "err", opErr)
 			}
 			s.hub.Broadcast(Event{Type: "review.failed", Data: map[string]interface{}{
 				"operation_id": opID,
@@ -197,7 +197,7 @@ func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprint
 			return
 		}
 		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			log.Printf("complete review operation %s: %v", opID, err)
+			slog.Debug("complete review operation failed", "operation_id", opID, "err", err)
 		}
 
 		s.hub.Broadcast(Event{Type: "review.completed", Data: map[string]interface{}{

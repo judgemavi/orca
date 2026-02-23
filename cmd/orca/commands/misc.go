@@ -49,6 +49,19 @@ func RegisterMisc(root *cobra.Command, r *Registry, opts MiscOptions) {
 	logCmd.Flags().Bool("all", false, "Show all sprints (default: last 10)")
 	root.AddCommand(logCmd)
 
+	logsCmd := &cobra.Command{Use: "logs", Short: "Show application logs", RunE: r.runLogs}
+	logsCmd.Flags().String("level", "", "Filter by level: debug|info|warn|error")
+	logsCmd.Flags().String("task", "", "Filter by task ID")
+	logsCmd.Flags().String("sprint", "", "Filter by sprint ID")
+	logsCmd.Flags().String("since", "", "Show logs since duration ago (e.g. 30m, 2h)")
+	logsCmd.Flags().Int("tail", 50, "Show last N matching lines")
+	logsCmd.Flags().BoolP("follow", "f", false, "Stream new matching lines")
+	logsCmd.Flags().Bool("json", false, "Output as JSON lines")
+	if opts.MarkSkipRuntimeInit != nil {
+		opts.MarkSkipRuntimeInit(logsCmd)
+	}
+	root.AddCommand(logsCmd)
+
 	root.AddCommand(&cobra.Command{Use: "status", Short: "Show overall project status", RunE: r.runStatus})
 
 	costsCmd := &cobra.Command{Use: "costs", Short: "Show cost tracking summary", RunE: r.runCosts}
@@ -584,7 +597,7 @@ func ensureOrcaIgnored(cwd string) error {
 		return fmt.Errorf("read .gitignore: %w", err)
 	}
 
-	entries := []string{".orca/worktrees/", ".orca/*.db", ".orca/*.db-wal", ".orca/*.db-shm"}
+	entries := []string{".orca/worktrees/", ".orca/*.db", ".orca/*.db-wal", ".orca/*.db-shm", ".orca/orca.log*"}
 	var needed []string
 	for _, e := range entries {
 		if !containsIgnoreEntry(existing, e) {

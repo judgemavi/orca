@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -83,7 +83,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 			if rec := recover(); rec != nil {
 				errMsg := fmt.Sprintf("merge panic: %v", rec)
 				if opErr := s.ops.Fail(operationID, errMsg); opErr != nil {
-					log.Printf("mark merge operation failed %s: %v", operationID, opErr)
+					slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
 				}
 				s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
 					"operation_id": operationID,
@@ -114,7 +114,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 		}
 		if mergeErr != nil {
 			if opErr := s.ops.Fail(operationID, mergeErr.Error()); opErr != nil {
-				log.Printf("mark merge operation failed %s: %v", operationID, opErr)
+				slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
 			}
 			failData := map[string]interface{}{
 				"operation_id": operationID,
@@ -131,7 +131,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 
 		if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
 			if opErr := s.ops.Fail(operationID, err.Error()); opErr != nil {
-				log.Printf("mark merge operation failed %s: %v", operationID, opErr)
+				slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
 			}
 			s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
 				"operation_id": operationID,
@@ -142,21 +142,21 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 		}
 		if tk.SprintID != "" {
 			if err := s.planner.CompleteSprintIfDone(tk.SprintID); err != nil {
-				log.Printf("check sprint completion after merge %s: %v", tk.SprintID, err)
+				slog.Warn("check sprint completion after merge failed", "sprint_id", tk.SprintID, "err", err)
 			}
 		}
 		if err := s.executor.Worktrees().Remove(taskID); err != nil {
-			log.Printf("cleanup worktree after merge %s: %v", taskID[:8], err)
+			slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
 		}
 
 		updated, getErr := store.Get(taskID)
 		if getErr != nil {
-			log.Printf("load task after merge %s: %v", taskID[:8], getErr)
+			slog.Warn("load task after merge failed", "task_id", taskID, "err", getErr)
 			updated = &task.Task{ID: taskID, Status: "merged"}
 		}
 		resultBytes, _ := json.Marshal(updated)
 		if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-			log.Printf("complete merge operation %s: %v", operationID, err)
+			slog.Debug("complete merge operation failed", "operation_id", operationID, "err", err)
 		}
 		s.hub.Broadcast(Event{Type: "merge.completed", Data: updated})
 		s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
@@ -182,7 +182,7 @@ func (s *Server) resolveToolConfigForTask(taskID string) (config.ToolConfig, err
 			}
 			return tc, nil
 		}
-		log.Printf("task assigned_tool %q not found in config, falling back to integrate phase default", name)
+		slog.Warn("task assigned_tool not found in config, falling back to integrate phase default", "assigned_tool", name)
 	}
 	resolvedName, toolCfg, err := s.cfg.ResolvePhaseToolConfig("integrate")
 	if err != nil {
@@ -206,7 +206,7 @@ func validateIntegrateTaskModel(toolName, model string, toolCfg config.ToolConfi
 	if toolName == "" {
 		toolName = toolCfg.Binary
 	}
-	log.Printf("task model %q not in %s models list, using default", model, toolName)
+	slog.Warn("task model not in tool models list, using default", "model", model, "tool", toolName)
 	return ""
 }
 
@@ -283,7 +283,7 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 			if rec := recover(); rec != nil {
 				errMsg := fmt.Sprintf("integrate panic: %v", rec)
 				if opErr := s.ops.Fail(operationID, errMsg); opErr != nil {
-					log.Printf("mark integrate operation failed %s: %v", operationID, opErr)
+					slog.Error("mark integrate operation failed", "operation_id", operationID, "err", opErr)
 				}
 				s.hub.Broadcast(Event{Type: "integrate.failed", Data: map[string]interface{}{
 					"operation_id": operationID,
@@ -316,10 +316,10 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 
 			merged = append(merged, taskID)
 			if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
-				log.Printf("set task %s merged: %v", taskID, err)
+				slog.Warn("set task merged failed", "task_id", taskID, "err", err)
 			}
 			if err := s.executor.Worktrees().Remove(taskID); err != nil {
-				log.Printf("cleanup worktree after integrate %s: %v", taskID[:8], err)
+				slog.Warn("cleanup worktree after integrate failed", "task_id", taskID, "err", err)
 			}
 			if updated, err := store.Get(taskID); err == nil {
 				s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
@@ -337,7 +337,7 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 			"failed": failed,
 		})
 		if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-			log.Printf("complete integrate operation %s: %v", operationID, err)
+			slog.Debug("complete integrate operation failed", "operation_id", operationID, "err", err)
 		}
 
 		s.hub.Broadcast(Event{Type: "integrate.completed", Data: map[string]interface{}{

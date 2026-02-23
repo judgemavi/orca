@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -240,9 +240,9 @@ func (s *Server) handleStartSprint(w http.ResponseWriter, r *http.Request, id st
 			if rec := recover(); rec != nil {
 				errMsg := fmt.Sprintf("sprint panic: %v", rec)
 				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					log.Printf("mark sprint operation failed %s: %v", opID, opErr)
+					slog.Error("mark sprint operation failed", "operation_id", opID, "err", opErr)
 				}
-				log.Printf("sprint %s panicked: %v", id, rec)
+				slog.Error("sprint panicked", "sprint_id", id, "panic", rec)
 				s.hub.Broadcast(Event{Type: "sprint.failed", Data: map[string]interface{}{"sprint_id": id, "error": errMsg}})
 			}
 		}()
@@ -252,9 +252,9 @@ func (s *Server) handleStartSprint(w http.ResponseWriter, r *http.Request, id st
 		results, err := s.executor.Run(sp)
 		if err != nil {
 			if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
-				log.Printf("mark sprint operation failed %s: %v", opID, opErr)
+				slog.Error("mark sprint operation failed", "operation_id", opID, "err", opErr)
 			}
-			log.Printf("sprint %s failed: %v", id, err)
+			slog.Error("sprint failed", "sprint_id", id, "err", err)
 			s.hub.Broadcast(Event{Type: "sprint.failed", Data: map[string]interface{}{"sprint_id": id, "error": err.Error()}})
 			return
 		}
@@ -264,7 +264,7 @@ func (s *Server) handleStartSprint(w http.ResponseWriter, r *http.Request, id st
 			"results":   results,
 		})
 		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			log.Printf("complete sprint operation %s: %v", opID, err)
+			slog.Debug("complete sprint operation failed", "operation_id", opID, "err", err)
 		}
 
 		s.hub.Broadcast(Event{Type: "sprint.completed", Data: map[string]interface{}{

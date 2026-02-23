@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -96,7 +96,7 @@ func (h *Hub) Broadcast(e Event) {
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("ws upgrade: %v", err)
+		slog.Warn("ws upgrade failed", "err", err)
 		return
 	}
 	client := &Client{hub: h, conn: conn, send: make(chan Event, 64)}
@@ -141,7 +141,7 @@ func (c *Client) writePump() {
 			}
 			data, err := json.Marshal(event)
 			if err != nil {
-				log.Printf("ws marshal: %v", err)
+				slog.Warn("ws marshal failed", "err", err)
 				return
 			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {

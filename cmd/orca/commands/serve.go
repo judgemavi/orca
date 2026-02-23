@@ -69,6 +69,7 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 	defer ln.Close()
+	srv.LogStarted(addr)
 
 	banner.Print()
 	fmt.Printf("Orca server listening on %s\n", addr)
