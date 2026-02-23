@@ -19,9 +19,10 @@ import (
 
 func RegisterTask(root *cobra.Command, r *Registry) {
 	taskCmd := &cobra.Command{
-		Use:   "task",
-		Short: "Manage tasks",
-		RunE:  r.runTaskList,
+		Use:     "tasks",
+		Aliases: []string{"task"},
+		Short:   "Manage tasks",
+		RunE:    r.runTaskList,
 	}
 
 	addCmd := &cobra.Command{

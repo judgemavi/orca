@@ -91,7 +91,7 @@ func (s *Server) handleToolsCall(req jsonrpcRequest) jsonrpcResponse {
 func (s *Server) toolDefinitions() []toolDef {
 	return []toolDef{
 		{
-			Name:        "task_list",
+			Name:        "tasks_list",
 			Description: "List all tasks. Optionally filter by status.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -104,7 +104,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_create",
+			Name:        "tasks_create",
 			Description: "Create a new task.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -137,7 +137,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_update",
+			Name:        "tasks_update",
 			Description: "Update a task's title, description, status, or assigned tool.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -164,7 +164,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_get",
+			Name:        "tasks_get",
 			Description: "Get full details of a single task by ID (or prefix).",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -175,7 +175,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_delete",
+			Name:        "tasks_delete",
 			Description: "Delete a task.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -186,7 +186,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_reopen",
+			Name:        "tasks_reopen",
 			Description: "Move a failed task back to pending status.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -197,7 +197,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_add_dependency",
+			Name:        "tasks_add_dependency",
 			Description: "Add a dependency between two existing tasks.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -231,7 +231,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_plan_generate",
+			Name:        "tasks_plan_generate",
 			Description: "Generate an implementation plan for a task using an LLM.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -370,7 +370,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_approve",
+			Name:        "tasks_approve",
 			Description: "Approve a task that is in 'review' status, moving it to 'approved'.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -381,7 +381,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_request_changes",
+			Name:        "tasks_request_changes",
 			Description: "Reject a task in review, store feedback, and re-run the worker with that feedback.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -533,7 +533,7 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "task_merge",
+			Name:        "tasks_merge",
 			Description: "Merge a single approved task into the integration branch.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -552,12 +552,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 	}
 
 	switch name {
-	case "task_list":
+	case "tasks_list", "task_list":
 		var args struct {
 			Status string `json:"status"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_list args: %w", err)
+			return nil, fmt.Errorf("tasks_list args: %w", err)
 		}
 
 		if args.Status != "" {
@@ -574,7 +574,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return map[string]interface{}{"tasks": tasks}, nil
 
-	case "task_create":
+	case "tasks_create", "task_create":
 		var args struct {
 			Title        string   `json:"title"`
 			Description  string   `json:"description"`
@@ -583,7 +583,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			DependsOn    []string `json:"depends_on"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_create args: %w", err)
+			return nil, fmt.Errorf("tasks_create args: %w", err)
 		}
 		if strings.TrimSpace(args.Title) == "" {
 			return nil, fmt.Errorf("title is required")
@@ -618,7 +618,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return map[string]interface{}{"task": created}, nil
 
-	case "task_update":
+	case "tasks_update", "task_update":
 		var args struct {
 			TaskID       string  `json:"task_id"`
 			Title        *string `json:"title"`
@@ -629,7 +629,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			Prompt       *string `json:"prompt"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_update args: %w", err)
+			return nil, fmt.Errorf("tasks_update args: %w", err)
 		}
 		if strings.TrimSpace(args.TaskID) == "" {
 			return nil, fmt.Errorf("task_id is required")
@@ -672,12 +672,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return map[string]interface{}{"task": updated}, nil
 
-	case "task_get":
+	case "tasks_get", "task_get":
 		var args struct {
 			TaskID string `json:"task_id"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_get args: %w", err)
+			return nil, fmt.Errorf("tasks_get args: %w", err)
 		}
 		if strings.TrimSpace(args.TaskID) == "" {
 			return nil, fmt.Errorf("task_id is required")
@@ -692,12 +692,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return map[string]interface{}{"task": t}, nil
 
-	case "task_delete":
+	case "tasks_delete", "task_delete":
 		var args struct {
 			TaskID string `json:"task_id"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_delete args: %w", err)
+			return nil, fmt.Errorf("tasks_delete args: %w", err)
 		}
 		if strings.TrimSpace(args.TaskID) == "" {
 			return nil, fmt.Errorf("task_id is required")
@@ -722,12 +722,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return map[string]interface{}{"task_id": taskID, "deleted": true}, nil
 
-	case "task_reopen":
+	case "tasks_reopen", "task_reopen":
 		var args struct {
 			TaskID string `json:"task_id"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_reopen args: %w", err)
+			return nil, fmt.Errorf("tasks_reopen args: %w", err)
 		}
 		if strings.TrimSpace(args.TaskID) == "" {
 			return nil, fmt.Errorf("task_id is required")
@@ -748,13 +748,13 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return map[string]interface{}{"task_id": taskID, "status": "pending"}, nil
 
-	case "task_add_dependency":
+	case "tasks_add_dependency", "task_add_dependency":
 		var args struct {
 			TaskID    string `json:"task_id"`
 			DependsOn string `json:"depends_on"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_add_dependency args: %w", err)
+			return nil, fmt.Errorf("tasks_add_dependency args: %w", err)
 		}
 		taskID, err := s.store.ResolveID(args.TaskID)
 		if err != nil {
@@ -848,7 +848,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			"count":    len(createdIDs),
 		}, nil
 
-	case "task_plan_generate":
+	case "tasks_plan_generate", "task_plan_generate":
 		var args struct {
 			TaskID string `json:"task_id"`
 			Tool   string `json:"tool"`
@@ -856,7 +856,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			Save   *bool  `json:"save"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_plan_generate args: %w", err)
+			return nil, fmt.Errorf("tasks_plan_generate args: %w", err)
 		}
 		if strings.TrimSpace(args.TaskID) == "" {
 			return nil, fmt.Errorf("task_id is required")
@@ -1322,12 +1322,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return map[string]interface{}{"sprint_id": args.SprintID, "results": results}, nil
 
-	case "task_approve":
+	case "tasks_approve", "task_approve":
 		var args struct {
 			TaskID string `json:"task_id"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_approve args: %w", err)
+			return nil, fmt.Errorf("tasks_approve args: %w", err)
 		}
 		if strings.TrimSpace(args.TaskID) == "" {
 			return nil, fmt.Errorf("task_id is required")
@@ -1356,13 +1356,13 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		return map[string]interface{}{"task_id": taskID, "status": "approved"}, nil
 
-	case "task_request_changes":
+	case "tasks_request_changes", "task_request_changes":
 		var args struct {
 			TaskID   string `json:"task_id"`
 			Feedback string `json:"feedback"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_request_changes args: %w", err)
+			return nil, fmt.Errorf("tasks_request_changes args: %w", err)
 		}
 		if strings.TrimSpace(args.TaskID) == "" {
 			return nil, fmt.Errorf("task_id is required")
@@ -1739,12 +1739,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			"failed":    failed,
 		}, nil
 
-	case "task_merge":
+	case "tasks_merge", "task_merge":
 		var args struct {
 			TaskID string `json:"task_id"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
-			return nil, fmt.Errorf("task_merge args: %w", err)
+			return nil, fmt.Errorf("tasks_merge args: %w", err)
 		}
 		if strings.TrimSpace(args.TaskID) == "" {
 			return nil, fmt.Errorf("task_id is required")

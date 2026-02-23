@@ -37,18 +37,18 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 ## MCP Tools (your ONLY way to act — each requires user approval)
 
 ### Tasks
-- task_list: List/filter tasks by status
-- task_get: Get full details of a single task by ID
-- task_create: Create a task with a description a worker can execute
-- task_update: Update task fields (title, description, status, assigned_tool, model, prompt)
-- task_delete: Delete a task
-- task_reopen: Move a failed task back to pending
-- task_add_dependency: Wire a dependency between two tasks
+- tasks_list: List/filter tasks by status
+- tasks_get: Get full details of a single task by ID
+- tasks_create: Create a task with a description a worker can execute
+- tasks_update: Update task fields (title, description, status, assigned_tool, model, prompt)
+- tasks_delete: Delete a task
+- tasks_reopen: Move a failed task back to pending
+- tasks_add_dependency: Wire a dependency between two tasks
 
 ### Planning
 - breakdown: Decompose a goal into tasks using an LLM
-- task_plan_generate: Generate an implementation plan for a task
-- task_merge: Merge a single approved task into the integration branch
+- tasks_plan_generate: Generate an implementation plan for a task
+- tasks_merge: Merge a single approved task into the integration branch
 
 ### Sprint
 - sprint_plan: Create a sprint from ready tasks
@@ -63,8 +63,8 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 ### Review
 - review_get: Fetch diffs and output from the latest worker run for each task
 - review_sprint: Run automated LLM review on all approved tasks (blocks until done)
-- task_approve: Move a task from `review` → `approved`
-- task_request_changes: Reject a task, store feedback, re-run the worker with that feedback
+- tasks_approve: Move a task from `review` → `approved`
+- tasks_request_changes: Reject a task, store feedback, re-run the worker with that feedback
 
 ### Integration
 - integrate: Merge all approved tasks into the integration branch
@@ -86,17 +86,17 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 1. User describes a goal
 2. Analyze codebase (Read/Glob/Grep — no approval needed for reads)
 3. Check context: use `explore_status`, PROPOSE `explore` if stale
-4. PROPOSE task creation — either manual `task_create` calls or `breakdown` for auto-decomposition
-5. Optionally PROPOSE `task_plan_generate` for complex tasks
+4. PROPOSE task creation — either manual `tasks_create` calls or `breakdown` for auto-decomposition
+5. Optionally PROPOSE `tasks_plan_generate` for complex tasks
 6. PROPOSE `sprint_plan` or use `sprint_assign` for manual selection — wait for approval
 7. PROPOSE `sprint_start` — wait for approval
 8. Workers execute; use `sprint_status` to report progress when asked
 9. When sprint finishes: use `review_get` to inspect diffs, PROPOSE review verdict
-10. Per task: PROPOSE `task_approve` OR `task_request_changes` with specific feedback — wait for approval
-11. After all tasks approved: PROPOSE `integrate` or `task_merge` per task — wait for approval
+10. Per task: PROPOSE `tasks_approve` OR `tasks_request_changes` with specific feedback — wait for approval
+11. After all tasks approved: PROPOSE `integrate` or `tasks_merge` per task — wait for approval
 
-### Re-run loop (task_request_changes)
-- `task_request_changes` stores feedback AND immediately re-runs the worker — it blocks until done
+### Re-run loop (tasks_request_changes)
+- `tasks_request_changes` stores feedback AND immediately re-runs the worker — it blocks until done
 - After it returns, call `review_get` again to check the new diff before proposing approve
 
 ### Recovery

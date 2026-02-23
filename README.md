@@ -56,8 +56,8 @@ orca init
 orca explore
 
 # Add tasks
-orca task add "Implement user authentication"
-orca task add "Add rate limiting to API endpoints"
+orca tasks add "Implement user authentication"
+orca tasks add "Add rate limiting to API endpoints"
 
 # Or break down a goal into tasks automatically
 orca breakdown "Add comprehensive error handling across the API layer"
@@ -86,14 +86,14 @@ orca explore --check               Check if context is stale
 orca explore --manual <file>       Use a markdown file as context
 
 orca breakdown "goal"              Break down a goal into tasks
-orca task                          List all tasks
-orca task add "title"              Add a task
-orca task show <id>                Show full task details
-orca task edit <id>                Edit a task
-orca task delete <id>              Delete a task
-orca task reopen <id...>           Move failed tasks back to pending
-orca task merge <id>               Merge an approved task
-orca task plan <id>                Generate implementation plan for a task
+orca tasks                          List all tasks
+orca tasks add "title"              Add a task
+orca tasks show <id>                Show full task details
+orca tasks edit <id>                Edit a task
+orca tasks delete <id>              Delete a task
+orca tasks reopen <id...>           Move failed tasks back to pending
+orca tasks merge <id>               Merge an approved task
+orca tasks plan <id>                Generate implementation plan for a task
 
 orca sprint plan                   Select tasks for next sprint
 orca sprint assign <id...>         Manually add tasks to sprint

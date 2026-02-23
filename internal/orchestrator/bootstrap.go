@@ -131,19 +131,19 @@ func ResolveSupervisorTool(cfg *config.Config) (string, config.ToolConfig, error
 // No Write, Edit, Bash, or any file-mutation tools.
 var AllowedTools = []string{
 	// MCP tools — tasks
-	"mcp__orca__task_list",
-	"mcp__orca__task_get",
-	"mcp__orca__task_create",
-	"mcp__orca__task_update",
-	"mcp__orca__task_delete",
-	"mcp__orca__task_reopen",
-	"mcp__orca__task_add_dependency",
-	"mcp__orca__task_approve",
-	"mcp__orca__task_request_changes",
+	"mcp__orca__tasks_list",
+	"mcp__orca__tasks_get",
+	"mcp__orca__tasks_create",
+	"mcp__orca__tasks_update",
+	"mcp__orca__tasks_delete",
+	"mcp__orca__tasks_reopen",
+	"mcp__orca__tasks_add_dependency",
+	"mcp__orca__tasks_approve",
+	"mcp__orca__tasks_request_changes",
 	// MCP tools — planning
 	"mcp__orca__breakdown",
-	"mcp__orca__task_plan_generate",
-	"mcp__orca__task_merge",
+	"mcp__orca__tasks_plan_generate",
+	"mcp__orca__tasks_merge",
 	// MCP tools — sprint
 	"mcp__orca__sprint_plan",
 	"mcp__orca__sprint_start",
