@@ -96,7 +96,7 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 		for _, id := range merged {
 			fmt.Printf("merge.progress task=%s status=merged\n", short(id))
 			if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: set task %s merged: %v\n", short(id), err)
+				warnf("set task %s merged: %v", short(id), err)
 			}
 			fmt.Printf("  ✓ Merged task-%s\n", short(id))
 		}
@@ -113,7 +113,7 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 
 	// Complete sprint if all tasks are now merged (or none remain).
 	if done, err := sprint.TryComplete(db, sprintID); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: check sprint completion: %v\n", err)
+		warnf("check sprint completion: %v", err)
 	} else if done {
 		fmt.Printf("Sprint %s completed\n", short(sprintID))
 	}

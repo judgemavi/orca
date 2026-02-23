@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -43,7 +42,7 @@ func (r *Registry) runCleanup(cmd *cobra.Command, args []string) error {
 	for _, wt := range worktreeList {
 		if wt.Branch == "main" || wt.Branch == "master" || wt.Branch == "" {
 			if wt.Branch == "" {
-				fmt.Fprintf(os.Stderr, "warning: skipping worktree with no branch: %s\n", wt.Path)
+				warnf("skipping worktree with no branch: %s", wt.Path)
 			}
 			continue
 		}
@@ -93,7 +92,7 @@ func (r *Registry) runCleanup(cmd *cobra.Command, args []string) error {
 		var removed int
 		for _, s := range stale {
 			if err := wm.Remove(s.taskID); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: remove %s: %v\n", s.branch, err)
+				warnf("remove %s: %v", s.branch, err)
 				fmt.Printf("cleanup.progress branch=%s status=failed\n", s.branch)
 				continue
 			}

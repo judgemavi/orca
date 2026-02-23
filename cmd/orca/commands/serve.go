@@ -48,9 +48,9 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 
 	sessionMgr := pty.NewSessionManager(db)
 	if n, err := sessionMgr.Reconcile(); err != nil {
-		fmt.Fprintf(os.Stderr, "mark stale sessions: %v\n", err)
+		warnf("mark stale sessions: %v", err)
 	} else if n > 0 {
-		fmt.Fprintf(os.Stderr, "marked %d stale sessions as exited\n", n)
+		warnf("marked %d stale sessions as exited", n)
 	}
 	defer sessionMgr.Cleanup()
 

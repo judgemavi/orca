@@ -148,10 +148,10 @@ func (r *Registry) runSprintStart(cmd *cobra.Command, args []string) error {
 
 		if cancelled.Load() {
 			if cleanupErr := executor.Cleanup(active); cleanupErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: worktree cleanup: %v\n", cleanupErr)
+				warnf("worktree cleanup: %v", cleanupErr)
 			}
 			if resetErr := planner.ResetSprintTasks(active.ID); resetErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: reset tasks: %v\n", resetErr)
+				warnf("reset tasks: %v", resetErr)
 			}
 			fmt.Println("Sprint cancelled. Tasks reverted to pending.")
 			return errCancelled
@@ -249,11 +249,11 @@ func (r *Registry) runSprintAssign(cmd *cobra.Command, args []string) error {
 	for _, arg := range args {
 		id, err := resolveTaskID(store, arg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			errorf("%v", err)
 			continue
 		}
 		if err := planner.AddTaskToSprintWithLimit(active.ID, id, cfg.Workers.MaxParallel); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			errorf("%v", err)
 			continue
 		}
 		assigned++
@@ -308,11 +308,11 @@ func (r *Registry) runSprintUnassign(cmd *cobra.Command, args []string) error {
 	for _, arg := range args {
 		id, err := resolveTaskID(store, arg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			errorf("%v", err)
 			continue
 		}
 		if err := planner.RemoveTaskFromSprint(active.ID, id); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			errorf("%v", err)
 			continue
 		}
 		removed++
@@ -375,7 +375,7 @@ func (r *Registry) runSprintReset(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := executor.Cleanup(active); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: worktree cleanup: %v\n", err)
+		warnf("worktree cleanup: %v", err)
 	}
 	if err := planner.ResetSprintTasks(active.ID); err != nil {
 		return fmt.Errorf("reset tasks: %w", err)
