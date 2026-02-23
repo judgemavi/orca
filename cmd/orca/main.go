@@ -57,6 +57,7 @@ func (rt *runtimeState) init() error {
 	rt.store = task.NewStore(db)
 	rt.planner = sprint.NewPlanner(db)
 	rt.executor = sprint.NewExecutor(rt.planner, wm, cfg, repoDir, sprint.ExecutorOptions{CostTracker: cost.NewTracker(db)})
+	slog.Info("runtime.initialized", "db_path", dbPath)
 	return nil
 }
 

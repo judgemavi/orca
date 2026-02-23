@@ -214,6 +214,11 @@ func (s *Server) Shutdown() {
 	}
 }
 
+// LogStarted records server startup once listener bind succeeds.
+func (s *Server) LogStarted(addr string) {
+	slog.Info("server.started", "addr", addr)
+}
+
 // Routes returns the HTTP handler with all API routes and middleware.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()

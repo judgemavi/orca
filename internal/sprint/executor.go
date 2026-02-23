@@ -150,6 +150,7 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 	if err := e.planner.Start(s.ID); err != nil {
 		return nil, fmt.Errorf("start sprint: %w", err)
 	}
+	slog.Info("sprint.started", "sprint_id", s.ID, "task_count", len(s.TaskIDs))
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.runCtx = ctx
@@ -379,10 +380,12 @@ func (e *Executor) collectResults(prepared []taskInfo, outputCh chan worker.Outp
 						Stderr:       fmt.Sprintf("worker panic: %v", r),
 						WorktreePath: info.worktreePath,
 					}
+					slog.Info("task.completed", "task_id", info.taskID, "status", results[idx].Status, "exit_code", results[idx].ExitCode, "duration", results[idx].Duration)
 					e.emitDone(info.taskID, -1)
 				}
 			}()
 
+			slog.Info("task.started", "task_id", info.taskID, "tool", info.toolName, "sprint_id", e.sprintID)
 			var taskResult TaskResult
 			if e.sessionMgr != nil {
 				taskResult = e.executeTaskPTY(runCtx, info, outputCh)
@@ -390,6 +393,7 @@ func (e *Executor) collectResults(prepared []taskInfo, outputCh chan worker.Outp
 				taskResult = e.executeTaskLegacy(runCtx, info, outputCh)
 			}
 			results[idx] = taskResult
+			slog.Info("task.completed", "task_id", info.taskID, "status", taskResult.Status, "exit_code", taskResult.ExitCode, "duration", taskResult.Duration)
 			e.emitDone(info.taskID, taskResult.ExitCode)
 		}(i, ti)
 	}
@@ -502,25 +506,32 @@ func (e *Executor) recordCosts(sprintID string, prepared []taskInfo, results []T
 }
 
 func (e *Executor) finalizeSprint(sprintID string, results []TaskResult) error {
-	failed := false
+	anyFailed := false
+	failedCount := 0
+	succeededCount := 0
 	for _, r := range results {
 		if err := e.planner.CompleteTask(sprintID, r.TaskID, r.Status); err != nil {
 			slog.Warn("complete task failed", "task_id", r.TaskID, "sprint_id", sprintID, "err", err)
 		}
 		if r.Status == "failed" {
-			failed = true
+			anyFailed = true
+			failedCount++
+		} else {
+			succeededCount++
 		}
 	}
 
-	if failed {
+	if anyFailed {
 		if err := e.planner.Fail(sprintID); err != nil {
 			return fmt.Errorf("fail sprint: %w", err)
 		}
+		slog.Info("sprint.completed", "sprint_id", sprintID, "succeeded", succeededCount, "failed", failedCount)
 		return nil
 	}
 	if err := e.planner.Complete(sprintID); err != nil {
 		return fmt.Errorf("complete sprint: %w", err)
 	}
+	slog.Info("sprint.completed", "sprint_id", sprintID, "succeeded", succeededCount, "failed", failedCount)
 	return nil
 }
 

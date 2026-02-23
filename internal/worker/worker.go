@@ -120,6 +120,7 @@ func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath stri
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("exec %s: %w", a.Binary, err)
 	}
+	slog.Info("worker.spawned", "task_id", taskID, "binary", a.Binary, "pid", cmd.Process.Pid)
 
 	var stdout, stderr bytes.Buffer
 	var streamWG sync.WaitGroup
@@ -154,9 +155,11 @@ func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath stri
 		if ee, ok := runErr.(*exec.ExitError); ok {
 			result.ExitCode = ee.ExitCode()
 		} else {
+			slog.Info("worker.exited", "task_id", taskID, "exit_code", -1, "duration", duration)
 			return nil, fmt.Errorf("exec %s: %w", a.Binary, runErr)
 		}
 	}
+	slog.Info("worker.exited", "task_id", taskID, "exit_code", result.ExitCode, "duration", duration)
 
 	// Stage all changes (including new files) and commit.
 	_, _ = gitOutput(worktreePath, "add", "-A")
