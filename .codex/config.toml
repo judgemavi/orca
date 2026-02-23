@@ -1,0 +1,4 @@
+[mcp_servers.orca]
+command = "/Users/jasjeetmavi/projects/orca/dist/orca"
+args = ["mcp"]
+cwd = "/Users/jasjeetmavi/projects/orca"
