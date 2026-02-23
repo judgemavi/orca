@@ -1,0 +1,112 @@
+package sprint
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/jasjeetmavi/orca/internal/monitor"
+)
+
+func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.CancelFunc {
+	monCtx, monCancel := context.WithCancel(ctx)
+
+	stuckCheckInterval := 30 * time.Second
+	if raw := strings.TrimSpace(e.config.Monitor.StuckCheckInterval); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err != nil {
+			slog.Warn("monitor invalid stuck_check_interval, using default", "raw", raw, "default", "60s", "err", err)
+		} else {
+			stuckCheckInterval = parsed
+		}
+	}
+
+	maxStuckCycles := e.config.Monitor.MaxStuckCycles
+	if maxStuckCycles == 0 {
+		maxStuckCycles = 3
+	}
+
+	conflictInterval := 15 * time.Second
+	if raw := strings.TrimSpace(e.config.Monitor.ConflictInterval); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err != nil {
+			slog.Warn("monitor invalid conflict_check_interval, using default", "raw", raw, "default", "30s", "err", err)
+		} else {
+			conflictInterval = parsed
+		}
+	}
+
+	e.monitorStuck = monitor.NewStuckDetector(
+		e.config.Project.WorktreeDir,
+		stuckCheckInterval,
+		maxStuckCycles,
+		e.checkStuck,
+	)
+	e.monitorStuck.Start(monCtx, taskIDs)
+
+	e.monitorBudget = nil
+	if (e.config.Orchestrator.CostBudget > 0 || e.config.Monitor.TaskBudget > 0) && e.costTracker != nil && len(taskIDs) > 0 {
+		taskBudget := e.config.Monitor.TaskBudget
+		if taskBudget <= 0 {
+			taskBudget = e.config.Orchestrator.CostBudget / float64(len(taskIDs))
+		}
+		e.monitorBudget = monitor.NewBudgetEnforcer(
+			stuckCheckInterval,
+			taskBudget,
+			e.config.Orchestrator.CostBudget,
+			e.checkBudget,
+			func(taskID string, spent, limit float64) {
+				msg := fmt.Sprintf("budget exceeded ($%.2f/$%.2f)", spent, limit)
+				slog.Warn("monitor budget alert", "task_id", taskID, "spent", spent, "limit", limit, "message", msg)
+				e.emitMonitorAlert("budget", taskID, msg)
+				e.killProcess(taskID)
+			},
+		)
+		e.monitorBudget.Start(monCtx, taskIDs)
+	}
+
+	e.monitorConflict = monitor.NewConflictDetector(
+		e.config.Project.WorktreeDir,
+		conflictInterval,
+		e.checkConflicts,
+	)
+	e.monitorConflict.Start(monCtx, taskIDs)
+
+	return monCancel
+}
+
+func (e *Executor) stopMonitors(cancel context.CancelFunc) {
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (e *Executor) checkStuck(taskID, reason string) {
+	slog.Warn("monitor task stuck", "task_id", taskID, "reason", reason)
+	e.emitMonitorAlert("stuck", taskID, reason)
+	e.killProcess(taskID)
+}
+
+func (e *Executor) checkConflicts(taskIDs, files []string) {
+	msg := fmt.Sprintf("conflict detected between %v on files %v", taskIDs, files)
+	slog.Warn("monitor conflict detected", "task_ids", taskIDs, "files", files, "message", msg)
+	for _, taskID := range taskIDs {
+		e.emitMonitorAlert("conflict", taskID, msg)
+	}
+}
+
+func (e *Executor) checkBudget(taskID string) float64 {
+	var total sql.NullFloat64
+	if err := e.planner.DB().QueryRow(
+		`SELECT SUM(estimated_cost) FROM costs WHERE sprint_id = ? AND task_id = ?`,
+		e.sprintID, taskID,
+	).Scan(&total); err != nil {
+		slog.Warn("monitor query task cost failed", "task_id", taskID, "sprint_id", e.sprintID, "err", err)
+		return 0
+	}
+	if !total.Valid {
+		return 0
+	}
+	return total.Float64
+}
