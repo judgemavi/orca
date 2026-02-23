@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/model"
 	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/plan"
@@ -620,6 +621,74 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]string{"status": "generating"},
+	})
+}
+
+// POST /api/v1/tasks/{id}/evaluate
+func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id string) {
+	var req struct {
+		Tool  string `json:"tool"`
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		jsonError(w, "invalid JSON", 400)
+		return
+	}
+
+	store := task.NewStore(s.db)
+	resolved, err := store.ResolveID(id)
+	if err != nil {
+		jsonError(w, err, 404)
+		return
+	}
+
+	tk, err := store.Get(resolved)
+	if err != nil {
+		jsonError(w, err, 404)
+		return
+	}
+
+	toolName := strings.TrimSpace(req.Tool)
+	if toolName == "" {
+		toolName = strings.TrimSpace(tk.AssignedTool)
+	}
+	if toolName == "" {
+		toolName = strings.TrimSpace(s.cfg.Defaults.Tool)
+	}
+	if toolName == "" {
+		for name := range s.cfg.Tools {
+			toolName = name
+			break
+		}
+	}
+	if toolName == "" {
+		jsonError(w, "no tools configured", 500)
+		return
+	}
+
+	toolCfg, ok := s.cfg.Tools[toolName]
+	if !ok {
+		jsonError(w, fmt.Sprintf("tool %q not found in config", toolName), 500)
+		return
+	}
+
+	evaluator := evaluate.New(toolCfg, s.repoDir)
+	modelOverride := strings.TrimSpace(req.Model)
+
+	var result *evaluate.EvaluationResult
+	if modelOverride != "" {
+		result, err = evaluator.EvaluateWithModel(tk.Title, tk.Description, modelOverride)
+	} else {
+		result, err = evaluator.Evaluate(tk.Title, tk.Description)
+	}
+	if err != nil {
+		jsonError(w, fmt.Sprintf("evaluate plan: %v", err), 500)
+		return
+	}
+
+	jsonOK(w, map[string]interface{}{
+		"task_id":    resolved,
+		"evaluation": result,
 	})
 }
 

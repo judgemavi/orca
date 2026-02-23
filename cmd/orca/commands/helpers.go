@@ -15,6 +15,8 @@ func statusIcon(status string) string {
 	switch status {
 	case "approved":
 		return "✓"
+	case "decomposed":
+		return "◈"
 	case "running", "in_sprint":
 		return "●"
 	case "failed":

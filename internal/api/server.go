@@ -227,6 +227,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/tasks", s.routeTasks)
 	mux.HandleFunc("/api/v1/tasks/ready", s.handleGetReady)
 	mux.HandleFunc("/api/v1/tasks/", s.routeTaskByID)
+	mux.HandleFunc("/api/tasks/", s.routeTaskByID)
 	mux.HandleFunc("/api/v1/models", s.handleListModels)
 	mux.HandleFunc("/api/v1/cleanup", s.handleCleanup)
 
@@ -364,6 +365,9 @@ func (s *Server) routeTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 	id := extractPathParam(r.URL.Path, "/api/v1/tasks/")
+	if id == r.URL.Path {
+		id = extractPathParam(r.URL.Path, "/api/tasks/")
+	}
 	if id == "" {
 		jsonError(w, "missing task id", http.StatusBadRequest)
 		return
@@ -443,6 +447,16 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			http.NotFound(w, r)
+		case "evaluate":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleEvaluateTask(w, r, taskID)
 		default:
 			http.NotFound(w, r)
 		}

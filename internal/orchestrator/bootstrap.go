@@ -142,8 +142,9 @@ var AllowedTools = []string{
 	"mcp__orca__tasks_request_changes",
 	// MCP tools — planning
 	"mcp__orca__breakdown",
-	"mcp__orca__tasks_plan_generate",
-	"mcp__orca__tasks_merge",
+	"mcp__orca__tasks_plan_evaluate",
+	"mcp__orca__task_plan_generate",
+	"mcp__orca__task_merge",
 	// MCP tools — sprint
 	"mcp__orca__sprint_plan",
 	"mcp__orca__sprint_start",

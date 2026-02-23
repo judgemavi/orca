@@ -124,6 +124,21 @@ func (s *Store) ListByStatus(status string) ([]*Task, error) {
 	)
 }
 
+func (s *Store) ListByParent(parentID string) ([]*Task, error) {
+	tasks, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]*Task, 0, len(tasks))
+	for _, t := range tasks {
+		if t.ParentID == parentID {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered, nil
+}
+
 func (s *Store) Update(id string, fields map[string]interface{}) error {
 	if len(fields) == 0 {
 		return nil
