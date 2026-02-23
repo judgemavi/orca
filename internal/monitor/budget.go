@@ -9,8 +9,9 @@ import (
 // BudgetEnforcer periodically checks task and sprint spend against configured limits.
 type BudgetEnforcer struct {
 	interval     time.Duration
-	taskBudget   float64 // max $ per task (0 = disabled)
-	sprintBudget float64 // max $ per sprint (0 = disabled)
+	taskIDs      []string
+	taskBudget   float64                     // max $ per task (0 = disabled)
+	sprintBudget float64                     // max $ per sprint (0 = disabled)
 	costFn       func(taskID string) float64 // returns current cost for a task
 	onExceeded   func(taskID string, spent float64, limit float64)
 
@@ -25,6 +26,7 @@ type BudgetEnforcer struct {
 func NewBudgetEnforcer(interval time.Duration, taskBudget, sprintBudget float64,
 	costFn func(string) float64,
 	onExceeded func(string, float64, float64),
+	taskIDs []string,
 ) *BudgetEnforcer {
 	if interval <= 0 {
 		interval = 30 * time.Second
@@ -32,6 +34,7 @@ func NewBudgetEnforcer(interval time.Duration, taskBudget, sprintBudget float64,
 
 	return &BudgetEnforcer{
 		interval:     interval,
+		taskIDs:      append([]string(nil), taskIDs...),
 		taskBudget:   taskBudget,
 		sprintBudget: sprintBudget,
 		costFn:       costFn,
@@ -41,15 +44,15 @@ func NewBudgetEnforcer(interval time.Duration, taskBudget, sprintBudget float64,
 }
 
 // Start begins periodic budget checks and runs until context cancellation or Stop.
-func (b *BudgetEnforcer) Start(ctx context.Context, taskIDs []string) {
+func (b *BudgetEnforcer) Start(ctx context.Context) error {
 	if b.costFn == nil || b.onExceeded == nil {
-		return
+		return nil
 	}
 
 	b.mu.Lock()
 	if b.running {
 		b.mu.Unlock()
-		return
+		return nil
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -58,7 +61,7 @@ func (b *BudgetEnforcer) Start(ctx context.Context, taskIDs []string) {
 	b.fired = make(map[string]bool)
 	b.running = true
 
-	ids := append([]string(nil), taskIDs...)
+	ids := append([]string(nil), b.taskIDs...)
 	interval := b.interval
 	done := b.done
 	b.mu.Unlock()
@@ -74,20 +77,27 @@ func (b *BudgetEnforcer) Start(ctx context.Context, taskIDs []string) {
 		for {
 			select {
 			case <-runCtx.Done():
+				b.mu.Lock()
+				b.running = false
+				b.cancel = nil
+				b.done = nil
+				b.mu.Unlock()
 				return
 			case <-ticker.C:
 				b.check(ids)
 			}
 		}
 	}()
+
+	return nil
 }
 
 // Stop terminates the polling goroutine.
-func (b *BudgetEnforcer) Stop() {
+func (b *BudgetEnforcer) Stop() error {
 	b.mu.Lock()
 	if !b.running {
 		b.mu.Unlock()
-		return
+		return nil
 	}
 
 	cancel := b.cancel
@@ -103,7 +113,11 @@ func (b *BudgetEnforcer) Stop() {
 	if done != nil {
 		<-done
 	}
+
+	return nil
 }
+
+var _ Monitor = (*BudgetEnforcer)(nil)
 
 func (b *BudgetEnforcer) check(taskIDs []string) {
 	total := 0.0

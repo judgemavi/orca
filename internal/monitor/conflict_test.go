@@ -25,12 +25,18 @@ func TestConflictDetectorNoConflictForDifferentFiles(t *testing.T) {
 	events := make(chan conflictEvent, 4)
 	detector := NewConflictDetector(worktreeDir, 20*time.Millisecond, func(taskIDs []string, files []string) {
 		events <- conflictEvent{taskIDs: taskIDs, files: files}
-	})
+	}, []string{"1", "2"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	detector.Start(ctx, []string{"1", "2"})
-	t.Cleanup(detector.Stop)
+	if err := detector.Start(ctx); err != nil {
+		t.Fatalf("start conflict detector: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := detector.Stop(); err != nil {
+			t.Fatalf("stop conflict detector: %v", err)
+		}
+	})
 
 	select {
 	case ev := <-events:
@@ -47,12 +53,18 @@ func TestConflictDetectorFiresForSameFile(t *testing.T) {
 	events := make(chan conflictEvent, 4)
 	detector := NewConflictDetector(worktreeDir, 20*time.Millisecond, func(taskIDs []string, files []string) {
 		events <- conflictEvent{taskIDs: taskIDs, files: files}
-	})
+	}, []string{"1", "2"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	detector.Start(ctx, []string{"1", "2"})
-	t.Cleanup(detector.Stop)
+	if err := detector.Start(ctx); err != nil {
+		t.Fatalf("start conflict detector: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := detector.Stop(); err != nil {
+			t.Fatalf("stop conflict detector: %v", err)
+		}
+	})
 
 	select {
 	case ev := <-events:
@@ -75,12 +87,18 @@ func TestConflictDetectorDeduplicatesSameConflict(t *testing.T) {
 	events := make(chan conflictEvent, 8)
 	detector := NewConflictDetector(worktreeDir, 15*time.Millisecond, func(taskIDs []string, files []string) {
 		events <- conflictEvent{taskIDs: taskIDs, files: files}
-	})
+	}, []string{"1", "2"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	detector.Start(ctx, []string{"1", "2"})
-	t.Cleanup(detector.Stop)
+	if err := detector.Start(ctx); err != nil {
+		t.Fatalf("start conflict detector: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := detector.Stop(); err != nil {
+			t.Fatalf("stop conflict detector: %v", err)
+		}
+	})
 
 	select {
 	case <-events:
@@ -103,12 +121,18 @@ func TestConflictDetectorSkipsRemovedWorktreeAndContinues(t *testing.T) {
 	events := make(chan conflictEvent, 8)
 	detector := NewConflictDetector(worktreeDir, 20*time.Millisecond, func(taskIDs []string, files []string) {
 		events <- conflictEvent{taskIDs: taskIDs, files: files}
-	})
+	}, []string{"1", "2", "3"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	detector.Start(ctx, []string{"1", "2", "3"})
-	t.Cleanup(detector.Stop)
+	if err := detector.Start(ctx); err != nil {
+		t.Fatalf("start conflict detector: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := detector.Stop(); err != nil {
+			t.Fatalf("stop conflict detector: %v", err)
+		}
+	})
 
 	first := waitConflictEvent(t, events)
 	if !reflect.DeepEqual(first.taskIDs, []string{"1", "2"}) || !reflect.DeepEqual(first.files, []string{"shared.txt"}) {

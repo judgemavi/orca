@@ -13,6 +13,7 @@ import (
 
 func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.CancelFunc {
 	monCtx, monCancel := context.WithCancel(ctx)
+	e.monitors = nil
 
 	stuckCheckInterval := 30 * time.Second
 	if raw := strings.TrimSpace(e.config.Monitor.StuckCheckInterval); raw != "" {
@@ -37,21 +38,21 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 		}
 	}
 
-	e.monitorStuck = monitor.NewStuckDetector(
+	stuck := monitor.NewStuckDetector(
 		e.config.Project.WorktreeDir,
 		stuckCheckInterval,
 		maxStuckCycles,
 		e.checkStuck,
+		taskIDs,
 	)
-	e.monitorStuck.Start(monCtx, taskIDs)
+	e.monitors = append(e.monitors, stuck)
 
-	e.monitorBudget = nil
 	if (e.config.Orchestrator.CostBudget > 0 || e.config.Monitor.TaskBudget > 0) && e.costTracker != nil && len(taskIDs) > 0 {
 		taskBudget := e.config.Monitor.TaskBudget
 		if taskBudget <= 0 {
 			taskBudget = e.config.Orchestrator.CostBudget / float64(len(taskIDs))
 		}
-		e.monitorBudget = monitor.NewBudgetEnforcer(
+		budget := monitor.NewBudgetEnforcer(
 			stuckCheckInterval,
 			taskBudget,
 			e.config.Orchestrator.CostBudget,
@@ -62,16 +63,24 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 				e.emitMonitorAlert("budget", taskID, msg)
 				e.killProcess(taskID)
 			},
+			taskIDs,
 		)
-		e.monitorBudget.Start(monCtx, taskIDs)
+		e.monitors = append(e.monitors, budget)
 	}
 
-	e.monitorConflict = monitor.NewConflictDetector(
+	conflict := monitor.NewConflictDetector(
 		e.config.Project.WorktreeDir,
 		conflictInterval,
 		e.checkConflicts,
+		taskIDs,
 	)
-	e.monitorConflict.Start(monCtx, taskIDs)
+	e.monitors = append(e.monitors, conflict)
+
+	for _, m := range e.monitors {
+		if err := m.Start(monCtx); err != nil {
+			slog.Warn("monitor start failed", "err", err)
+		}
+	}
 
 	return monCancel
 }
@@ -80,6 +89,12 @@ func (e *Executor) stopMonitors(cancel context.CancelFunc) {
 	if cancel != nil {
 		cancel()
 	}
+	for _, m := range e.monitors {
+		if err := m.Stop(); err != nil {
+			slog.Warn("monitor stop failed", "err", err)
+		}
+	}
+	e.monitors = nil
 }
 
 func (e *Executor) checkStuck(taskID, reason string) {

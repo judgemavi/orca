@@ -16,6 +16,7 @@ import (
 // ConflictDetector polls active worktrees and reports overlapping file edits.
 type ConflictDetector struct {
 	worktreeDir string
+	taskIDs     []string
 	interval    time.Duration
 	onConflict  func(taskIDs []string, files []string)
 	fired       map[string]bool // dedup key: sorted taskIDs + files
@@ -29,6 +30,7 @@ type ConflictDetector struct {
 // NewConflictDetector creates a conflict detector with sane defaults.
 func NewConflictDetector(worktreeDir string, interval time.Duration,
 	onConflict func([]string, []string),
+	taskIDs []string,
 ) *ConflictDetector {
 	if interval <= 0 {
 		interval = 15 * time.Second
@@ -36,6 +38,7 @@ func NewConflictDetector(worktreeDir string, interval time.Duration,
 
 	return &ConflictDetector{
 		worktreeDir: worktreeDir,
+		taskIDs:     append([]string(nil), taskIDs...),
 		interval:    interval,
 		onConflict:  onConflict,
 		fired:       make(map[string]bool),
@@ -43,11 +46,11 @@ func NewConflictDetector(worktreeDir string, interval time.Duration,
 }
 
 // Start begins periodic conflict checks until context cancellation or Stop.
-func (d *ConflictDetector) Start(ctx context.Context, taskIDs []string) {
+func (d *ConflictDetector) Start(ctx context.Context) error {
 	d.mu.Lock()
 	if d.running {
 		d.mu.Unlock()
-		return
+		return nil
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -55,7 +58,7 @@ func (d *ConflictDetector) Start(ctx context.Context, taskIDs []string) {
 	d.done = make(chan struct{})
 	d.running = true
 
-	ids := append([]string(nil), taskIDs...)
+	ids := append([]string(nil), d.taskIDs...)
 	interval := d.interval
 	done := d.done
 	d.mu.Unlock()
@@ -71,20 +74,27 @@ func (d *ConflictDetector) Start(ctx context.Context, taskIDs []string) {
 		for {
 			select {
 			case <-runCtx.Done():
+				d.mu.Lock()
+				d.running = false
+				d.cancel = nil
+				d.done = nil
+				d.mu.Unlock()
 				return
 			case <-ticker.C:
 				d.check(ids)
 			}
 		}
 	}()
+
+	return nil
 }
 
 // Stop halts the monitoring goroutine.
-func (d *ConflictDetector) Stop() {
+func (d *ConflictDetector) Stop() error {
 	d.mu.Lock()
 	if !d.running {
 		d.mu.Unlock()
-		return
+		return nil
 	}
 
 	cancel := d.cancel
@@ -100,7 +110,11 @@ func (d *ConflictDetector) Stop() {
 	if done != nil {
 		<-done
 	}
+
+	return nil
 }
+
+var _ Monitor = (*ConflictDetector)(nil)
 
 func (d *ConflictDetector) check(taskIDs []string) {
 	filesToTasks := make(map[string][]string)
