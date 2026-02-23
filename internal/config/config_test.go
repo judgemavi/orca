@@ -17,6 +17,13 @@ func normalizeSlice(v []string) []string {
 	return v
 }
 
+func normalizePhases(m map[string]PhaseConfig) map[string]PhaseConfig {
+	if len(m) == 0 {
+		return map[string]PhaseConfig{}
+	}
+	return m
+}
+
 func assertConfigEquivalent(t *testing.T, got, want *Config) {
 	t.Helper()
 
@@ -35,7 +42,7 @@ func assertConfigEquivalent(t *testing.T, got, want *Config) {
 	if got.Orchestrator.CostBudget != want.Orchestrator.CostBudget ||
 		got.Orchestrator.SupervisorTool != want.Orchestrator.SupervisorTool ||
 		got.Orchestrator.SupervisorModel != want.Orchestrator.SupervisorModel ||
-		!reflect.DeepEqual(got.Orchestrator.Phases, want.Orchestrator.Phases) {
+		!reflect.DeepEqual(normalizePhases(got.Orchestrator.Phases), normalizePhases(want.Orchestrator.Phases)) {
 		t.Fatalf("orchestrator mismatch: got=%+v want=%+v", got.Orchestrator, want.Orchestrator)
 	}
 	if got.Monitor != want.Monitor {
@@ -94,6 +101,10 @@ func TestDefault(t *testing.T) {
 	if !reflect.DeepEqual(claude.HeadlessArgs, wantClaudeArgs) {
 		t.Fatalf("claude headless_args = %v, want %v", claude.HeadlessArgs, wantClaudeArgs)
 	}
+	wantClaudeInteractive := []string{"--mcp-config", "{{mcp_config}}", "--allowedTools", "{{allowed_tools}}", "--append-system-prompt", "{{context}}"}
+	if !reflect.DeepEqual(claude.InteractiveArgs, wantClaudeInteractive) {
+		t.Fatalf("claude interactive_args = %v, want %v", claude.InteractiveArgs, wantClaudeInteractive)
+	}
 	wantClaudeModels := []string{"claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101", "claude-sonnet-4-5-20250929"}
 	if !reflect.DeepEqual(claude.Models, wantClaudeModels) {
 		t.Fatalf("claude models = %v, want %v", claude.Models, wantClaudeModels)
@@ -121,6 +132,10 @@ func TestDefault(t *testing.T) {
 	}
 	if codex.Cost.Mode != "none" {
 		t.Fatalf("codex cost.mode = %q, want none", codex.Cost.Mode)
+	}
+	wantCodexInteractive := []string{"-a", "never", "{{context}}"}
+	if !reflect.DeepEqual(codex.InteractiveArgs, wantCodexInteractive) {
+		t.Fatalf("codex interactive_args = %v, want %v", codex.InteractiveArgs, wantCodexInteractive)
 	}
 
 	if _, ok := cfg.Tools["aider"]; ok {

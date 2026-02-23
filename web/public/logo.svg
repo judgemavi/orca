@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 200">
+  <defs>
+    <linearGradient id="text-gradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="25%" stop-color="#abd5ff"/>
+      <stop offset="50%" stop-color="#3ea8ff"/>
+      <stop offset="75%" stop-color="#0077cc"/>
+      <stop offset="100%" stop-color="#005f87"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ORCA text with ocean gradient -->
+  <text x="256" y="120"
+        text-anchor="middle"
+        font-family="system-ui, -apple-system, Helvetica Neue, sans-serif"
+        font-size="120" font-weight="900" letter-spacing="16"
+        fill="url(#text-gradient)">ORCA</text>
+
+  <!-- Tagline -->
+  <text x="256" y="170"
+        text-anchor="middle"
+        font-family="system-ui, -apple-system, Helvetica Neue, sans-serif"
+        font-size="22" font-weight="400" letter-spacing="2"
+        fill="#005f87">multi-agent orchestrator</text>
+</svg>

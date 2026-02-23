@@ -12,7 +12,7 @@ tasks:
 
   build:go:
     desc: Build all Go binaries
-    deps: [build:orca, build:mcp]
+    deps: [build:orca]
 
   build:orca:
     desc: Build orca CLI
@@ -26,17 +26,6 @@ tasks:
       - go.mod
     generates:
       - "{{.DIST}}/orca"
-
-  build:mcp:
-    desc: Build MCP server
-    cmds:
-      - go build -o {{.DIST}}/orca-mcp ./cmd/mcp
-    sources:
-      - cmd/mcp/**/*.go
-      - internal/**/*.go
-      - go.mod
-    generates:
-      - "{{.DIST}}/orca-mcp"
 
   web:install:
     desc: Install web dependencies

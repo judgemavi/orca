@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/review"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -30,8 +31,8 @@ func RegisterSprint(root *cobra.Command, r *Registry) {
 	sprintCmd.AddCommand(&cobra.Command{Use: "plan", Short: "Select next batch of tasks for sprint", RunE: r.runSprintPlan})
 	sprintCmd.AddCommand(&cobra.Command{Use: "start", Short: "Execute current sprint batch", RunE: r.runSprintStart})
 	sprintCmd.AddCommand(&cobra.Command{Use: "status", Short: "Check worker progress", RunE: r.runSprintStatus})
-	sprintCmd.AddCommand(&cobra.Command{Use: "assign [task-id...]", Short: "Add tasks to the current sprint", Args: cobra.MinimumNArgs(1), RunE: r.runSprintAssign})
-	sprintCmd.AddCommand(&cobra.Command{Use: "unassign [task-id...]", Short: "Remove tasks from the current sprint", Args: cobra.MinimumNArgs(1), RunE: r.runSprintUnassign})
+	sprintCmd.AddCommand(&cobra.Command{Use: "assign [task-id...]", Short: "Add tasks to the current sprint", Args: cobra.ArbitraryArgs, RunE: r.runSprintAssign})
+	sprintCmd.AddCommand(&cobra.Command{Use: "unassign [task-id...]", Short: "Remove tasks from the current sprint", Args: cobra.ArbitraryArgs, RunE: r.runSprintUnassign})
 
 	reviewCmd := &cobra.Command{Use: "review", Short: "Review completed sprint work", RunE: r.runSprintReview}
 	reviewCmd.Flags().Bool("verbose", false, "Show full diffs")
@@ -64,6 +65,32 @@ func (r *Registry) runSprintPlan(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("plan sprint: %w", err)
 	}
+
+	opts := make([]huh.Option[string], len(s.TaskIDs))
+	for i, id := range s.TaskIDs {
+		label := short(id)
+		if t, err := planner.GetTask(id); err == nil && t != nil {
+			label = fmt.Sprintf("%s  %s", short(id), t.Title)
+		}
+		opts[i] = huh.NewOption(label, id).Selected(true)
+	}
+	var selected []string
+	if err := huh.NewMultiSelect[string]().Title("Sprint tasks").Options(opts...).Value(&selected).Run(); err != nil {
+		return err
+	}
+	selectedSet := make(map[string]struct{}, len(selected))
+	for _, id := range selected {
+		selectedSet[id] = struct{}{}
+	}
+	for _, id := range s.TaskIDs {
+		if _, ok := selectedSet[id]; ok {
+			continue
+		}
+		if err := planner.RemoveTaskFromSprint(s.ID, id); err != nil {
+			return fmt.Errorf("remove task %s from sprint: %w", id, err)
+		}
+	}
+	s.TaskIDs = selected
 
 	fmt.Printf("Sprint %s planned (%d tasks)\n\n", short(s.ID), len(s.TaskIDs))
 	for _, id := range s.TaskIDs {
@@ -214,6 +241,13 @@ func (r *Registry) runSprintAssign(cmd *cobra.Command, args []string) error {
 	if active.Status != "planning" {
 		return fmt.Errorf("sprint is running, cannot assign tasks")
 	}
+	if len(args) == 0 {
+		ids, err := pickTasks(store, "Assign to sprint", pendingTasks)
+		if err != nil {
+			return err
+		}
+		args = ids
+	}
 
 	var assigned int
 	var lastAssignedID string
@@ -257,6 +291,21 @@ func (r *Registry) runSprintUnassign(cmd *cobra.Command, args []string) error {
 	}
 	if active.Status != "planning" {
 		return fmt.Errorf("sprint is running, cannot unassign tasks")
+	}
+	if len(args) == 0 {
+		sprintFilter := func(t *task.Task) bool {
+			for _, id := range active.TaskIDs {
+				if t.ID == id {
+					return true
+				}
+			}
+			return false
+		}
+		ids, err := pickTasks(store, "Remove from sprint", sprintFilter)
+		if err != nil {
+			return err
+		}
+		args = ids
 	}
 
 	var removed int
@@ -317,6 +366,17 @@ func (r *Registry) runSprintReset(cmd *cobra.Command, args []string) error {
 			fmt.Println("No active or recent sprint to reset")
 			return nil
 		}
+	}
+
+	confirm := false
+	if err := huh.NewConfirm().
+		Title(fmt.Sprintf("Reset sprint %s?", short(active.ID))).
+		Description("Tasks will revert to pending and worktrees will be cleaned up.").
+		Value(&confirm).Run(); err != nil {
+		return err
+	}
+	if !confirm {
+		return nil
 	}
 
 	if err := executor.Cleanup(active); err != nil {
@@ -429,6 +489,7 @@ func (r *Registry) runSprintReview(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	auto, _ := cmd.Flags().GetBool("auto")
 	reviewToolName, _ := cmd.Flags().GetString("review-tool")
+	store := task.NewStore(db)
 
 	var sprintID string
 	err = db.QueryRow(`SELECT id FROM sprints WHERE status IN ('completed', 'failed') ORDER BY completed_at DESC LIMIT 1`).Scan(&sprintID)
@@ -514,6 +575,23 @@ func (r *Registry) runSprintReview(cmd *cobra.Command, args []string) error {
 			}
 		} else {
 			fmt.Printf("  %s %s  %s\n", icon, short(t.ID), t.Title)
+		}
+		if !auto && (t.Status == "review" || t.Status == "completed") {
+			action := "skip"
+			if err := huh.NewSelect[string]().
+				Title(fmt.Sprintf("Task %s: %s", short(t.ID), t.Title)).
+				Options(
+					huh.NewOption("Approve", "approve"),
+					huh.NewOption("Skip", "skip"),
+				).
+				Value(&action).Run(); err != nil {
+				return err
+			}
+			if action == "approve" {
+				if err := store.Update(t.ID, map[string]interface{}{"status": "completed"}); err != nil {
+					return fmt.Errorf("approve task %s: %w", t.ID, err)
+				}
+			}
 		}
 		artifacts = append(artifacts, ta)
 	}

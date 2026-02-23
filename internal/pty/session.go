@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -92,16 +93,31 @@ func (m *Manager) Create(opts CreateOpts) (*Session, error) {
 		rows = 24
 	}
 
-	cmd := exec.Command(opts.Command, opts.Args...)
+	command, args := resolveCommand(opts.Command, opts.Args)
+	env := mergeEnv(filteredEnv(), opts.Env)
+	ws := &pty.Winsize{Rows: rows, Cols: cols}
+
+	cmd := exec.Command(command, args...)
 	if opts.Dir != "" {
 		cmd.Dir = opts.Dir
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Env = mergeEnv(filteredEnv(), opts.Env)
+	cmd.Env = env
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
+	ptmx, err := pty.StartWithSize(cmd, ws)
 	if err != nil {
-		return nil, fmt.Errorf("start pty: %w", err)
+		// macOS may block Setpgid for certain binaries (e.g. nvm-installed node).
+		// Retry without process group creation — Kill will target the process directly.
+		log.Printf("pty: Setpgid failed for %q, retrying without process group: %v", opts.Command, err)
+		cmd = exec.Command(command, args...)
+		if opts.Dir != "" {
+			cmd.Dir = opts.Dir
+		}
+		cmd.Env = env
+		ptmx, err = pty.StartWithSize(cmd, ws)
+		if err != nil {
+			return nil, fmt.Errorf("start pty: %w", err)
+		}
 	}
 
 	s := &Session{
@@ -266,8 +282,15 @@ func signalProcessGroup(s *Session, sig syscall.Signal) error {
 		return nil
 	}
 
-	// Negative PID targets the entire process group created by Setpgid.
-	err := syscall.Kill(-s.Cmd.Process.Pid, sig)
+	pid := s.Cmd.Process.Pid
+
+	// Try process group first (works when Setpgid was used).
+	if err := syscall.Kill(-pid, sig); err == nil {
+		return nil
+	}
+
+	// Fallback: signal the process directly (Setpgid wasn't set or pgid not found).
+	err := syscall.Kill(pid, sig)
 	if err == nil {
 		return nil
 	}
@@ -346,6 +369,59 @@ func mergeEnv(base, extra []string) []string {
 	}
 
 	return out
+}
+
+// resolveCommand detects shebang scripts and returns the interpreter + script
+// as the command so that fork/exec targets a real binary. This avoids macOS
+// "operation not permitted" errors when execve hits a quarantined script via
+// PTY with Setpgid.
+func resolveCommand(command string, args []string) (string, []string) {
+	path, err := exec.LookPath(command)
+	if err != nil {
+		return command, args
+	}
+
+	// Follow symlinks to the real file.
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		real = path
+	}
+
+	f, err := os.Open(real)
+	if err != nil {
+		return command, args
+	}
+	defer f.Close()
+
+	buf := make([]byte, 256)
+	n, err := f.Read(buf)
+	if err != nil || n < 4 || string(buf[:2]) != "#!" {
+		return command, args
+	}
+
+	line := string(buf[2:n])
+	if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+		line = line[:idx]
+	}
+	line = strings.TrimSpace(line)
+
+	// Handle "#!/usr/bin/env node" style shebangs.
+	parts := strings.Fields(line)
+	if len(parts) == 0 {
+		return command, args
+	}
+
+	interp := parts[len(parts)-1] // e.g. "node" from "/usr/bin/env node"
+	if filepath.Base(parts[0]) == "env" && len(parts) > 1 {
+		interp = parts[1]
+	}
+
+	interpPath, err := exec.LookPath(interp)
+	if err != nil {
+		return command, args
+	}
+
+	return interpPath, append([]string{real}, args...)
 }
 
 func envKey(kv string) string {

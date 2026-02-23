@@ -19,14 +19,14 @@ var defaultsYAML []byte
 type Config struct {
 	Project      ProjectConfig         `yaml:"project" json:"project"`
 	Tools        map[string]ToolConfig `yaml:"tools" json:"tools"`
-	Defaults     DefaultsConfig        `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Defaults     DefaultsConfig        `yaml:"defaults" json:"defaults"`
 	Validation   ValidationConfig      `yaml:"validation" json:"validation"`
 	Workers      WorkersConfig         `yaml:"workers" json:"workers"`
 	Orchestrator OrchestratorConfig    `yaml:"orchestrator" json:"orchestrator"`
-	Monitor      MonitorConfig         `yaml:"monitor,omitempty" json:"monitor,omitempty"`
-	Quality      QualityConfig         `yaml:"quality,omitempty" json:"quality,omitempty"`
-	Cleanup      CleanupConfig         `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
-	Server       ServerConfig          `yaml:"server,omitempty" json:"server,omitempty"`
+	Monitor      MonitorConfig         `yaml:"monitor" json:"monitor"`
+	Quality      QualityConfig         `yaml:"quality" json:"quality"`
+	Cleanup      CleanupConfig         `yaml:"cleanup" json:"cleanup"`
+	Server       ServerConfig          `yaml:"server" json:"server"`
 }
 
 type ServerConfig struct {
@@ -96,27 +96,27 @@ type WorkersConfig struct {
 }
 
 type PhaseConfig struct {
-	Tool  string `yaml:"tool,omitempty" json:"tool,omitempty"`
-	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+	Tool  string `yaml:"tool" json:"tool"`
+	Model string `yaml:"model" json:"model"`
 }
 
 type DefaultsConfig struct {
-	Tool  string `yaml:"tool,omitempty" json:"tool,omitempty"`
-	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+	Tool  string `yaml:"tool" json:"tool"`
+	Model string `yaml:"model" json:"model"`
 }
 
 type OrchestratorConfig struct {
 	CostBudget      float64                `yaml:"cost_budget" json:"cost_budget"`
-	SupervisorTool  string                 `yaml:"supervisor_tool,omitempty" json:"supervisor_tool,omitempty"`
-	SupervisorModel string                 `yaml:"supervisor_model,omitempty" json:"supervisor_model,omitempty"`
-	Phases          map[string]PhaseConfig `yaml:"phases,omitempty" json:"phases,omitempty"`
+	SupervisorTool  string                 `yaml:"supervisor_tool" json:"supervisor_tool"`
+	SupervisorModel string                 `yaml:"supervisor_model" json:"supervisor_model"`
+	Phases          map[string]PhaseConfig `yaml:"phases" json:"phases"`
 }
 
 type MonitorConfig struct {
-	StuckCheckInterval string  `yaml:"stuck_check_interval,omitempty" json:"stuck_check_interval,omitempty"`
-	MaxStuckCycles     int     `yaml:"max_stuck_cycles,omitempty" json:"max_stuck_cycles,omitempty"`
-	ConflictInterval   string  `yaml:"conflict_check_interval,omitempty" json:"conflict_check_interval,omitempty"`
-	TaskBudget         float64 `yaml:"task_budget,omitempty" json:"task_budget,omitempty"`
+	StuckCheckInterval string  `yaml:"stuck_check_interval" json:"stuck_check_interval"`
+	MaxStuckCycles     int     `yaml:"max_stuck_cycles" json:"max_stuck_cycles"`
+	ConflictInterval   string  `yaml:"conflict_check_interval" json:"conflict_check_interval"`
+	TaskBudget         float64 `yaml:"task_budget" json:"task_budget"`
 }
 
 type QualityConfig struct {
@@ -127,7 +127,7 @@ type QualityConfig struct {
 }
 
 type CleanupConfig struct {
-	TTL string `yaml:"ttl,omitempty" json:"ttl,omitempty"`
+	TTL string `yaml:"ttl" json:"ttl"`
 }
 
 // Load reads and parses a orca.yaml config file.
@@ -176,6 +176,55 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
+}
+
+// sectionComments maps top-level yaml keys to descriptive comments.
+var sectionComments = map[string]string{
+	"project":      "Project identity and branch settings",
+	"tools":        "CLI tool adapters — binary paths, args, models, timeouts",
+	"defaults":     "Default tool and model used when not overridden per-phase",
+	"validation":   "Commands to run after integration (e.g. test suites)",
+	"workers":      "Parallel worker settings",
+	"orchestrator": "Supervisor agent config — tool, model, cost budget, per-phase overrides",
+	"monitor":      "Stuck detection, conflict checking, per-task budget",
+	"quality":      "Quality gates applied during review",
+	"cleanup":      "Worktree cleanup settings",
+	"server":       "Web UI server settings",
+}
+
+// SaveAnnotated writes the config with section header comments.
+func (c *Config) SaveAnnotated(path string) error {
+	var node yaml.Node
+	if err := node.Encode(c); err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+
+	// node.Encode produces a MappingNode; find it whether wrapped in a document or not.
+	mapping := &node
+	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+		mapping = node.Content[0]
+	}
+	if mapping.Kind == yaml.MappingNode {
+		for i := 0; i < len(mapping.Content)-1; i += 2 {
+			key := mapping.Content[i]
+			if comment, ok := sectionComments[key.Value]; ok {
+				key.HeadComment = comment
+			}
+		}
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create config file: %w", err)
+	}
+	defer f.Close()
+
+	enc := yaml.NewEncoder(f)
+	enc.SetIndent(2)
+	if err := enc.Encode(&node); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return enc.Close()
 }
 
 // Validate checks config values for semantic correctness.

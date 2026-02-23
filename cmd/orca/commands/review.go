@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
 func RegisterReview(root *cobra.Command, r *Registry) {
 	reviewCmd := &cobra.Command{Use: "review", Short: "Review completed tasks"}
-	approveCmd := &cobra.Command{Use: "approve <task-id>", Short: "Approve a task in review", Args: cobra.ExactArgs(1), RunE: r.runReviewApprove}
-	requestChangesCmd := &cobra.Command{Use: "request-changes <task-id> <feedback>", Short: "Request changes on a task in review", Args: cobra.ExactArgs(2), RunE: r.runReviewRequestChanges}
+	approveCmd := &cobra.Command{Use: "approve [task-id]", Short: "Approve a task in review", Args: cobra.MaximumNArgs(1), RunE: r.runReviewApprove}
+	requestChangesCmd := &cobra.Command{Use: "request-changes [task-id] [feedback]", Short: "Request changes on a task in review", Args: cobra.RangeArgs(0, 2), RunE: r.runReviewRequestChanges}
 	reviewCmd.AddCommand(approveCmd, requestChangesCmd)
 	root.AddCommand(reviewCmd)
 }
@@ -23,9 +24,17 @@ func (r *Registry) runReviewApprove(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	taskID, err := store.ResolveID(args[0])
-	if err != nil {
-		return fmt.Errorf("resolve %q: %w", args[0], err)
+	var taskID string
+	if len(args) > 0 {
+		taskID, err = store.ResolveID(args[0])
+		if err != nil {
+			return fmt.Errorf("resolve %q: %w", args[0], err)
+		}
+	} else {
+		taskID, err = pickTask(store, "Approve task", reviewTasks)
+		if err != nil {
+			return err
+		}
 	}
 
 	tk, err := store.Get(taskID)
@@ -51,9 +60,33 @@ func (r *Registry) runReviewRequestChanges(cmd *cobra.Command, args []string) er
 	}
 	defer db.Close()
 
-	taskID, err := store.ResolveID(args[0])
-	if err != nil {
-		return fmt.Errorf("resolve %q: %w", args[0], err)
+	var (
+		taskID   string
+		feedback string
+	)
+	switch len(args) {
+	case 0:
+		taskID, err = pickTask(store, "Request changes", reviewTasks)
+		if err != nil {
+			return err
+		}
+		if err := huh.NewText().Title("Feedback").Value(&feedback).Run(); err != nil {
+			return err
+		}
+	case 1:
+		taskID, err = store.ResolveID(args[0])
+		if err != nil {
+			return fmt.Errorf("resolve %q: %w", args[0], err)
+		}
+		if err := huh.NewText().Title("Feedback").Value(&feedback).Run(); err != nil {
+			return err
+		}
+	default:
+		taskID, err = store.ResolveID(args[0])
+		if err != nil {
+			return fmt.Errorf("resolve %q: %w", args[0], err)
+		}
+		feedback = args[1]
 	}
 
 	tk, err := store.Get(taskID)
@@ -64,7 +97,7 @@ func (r *Registry) runReviewRequestChanges(cmd *cobra.Command, args []string) er
 		return fmt.Errorf("task %s is %q, expected %q", short(taskID), tk.Status, "review")
 	}
 
-	feedback := strings.TrimSpace(args[1])
+	feedback = strings.TrimSpace(feedback)
 	if feedback == "" {
 		return fmt.Errorf("feedback cannot be empty")
 	}

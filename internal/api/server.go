@@ -306,7 +306,7 @@ func (s *Server) BootstrapOrchestrator() {
 		return
 	}
 
-	mcpConfigPath, err := orchestrator.WriteMCPConfig(s.repoDir, orcaBinary)
+	mcpConfigPath, err := orchestrator.WriteMCPConfig(s.repoDir, orcaBinary, s.cfg.Tools)
 	if err != nil {
 		log.Printf("write mcp config: %v", err)
 		return
@@ -522,8 +522,6 @@ func (s *Server) routeConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.handleGetConfig(w, r)
-	case http.MethodPatch:
-		s.handlePatchConfig(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

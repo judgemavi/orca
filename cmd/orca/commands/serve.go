@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/jasjeetmavi/orca/internal/api"
+	"github.com/jasjeetmavi/orca/internal/banner"
 	"github.com/jasjeetmavi/orca/internal/cost"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/sprint"
@@ -68,6 +69,7 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer ln.Close()
 
+	banner.Print()
 	fmt.Printf("Orca server listening on %s\n", addr)
 	srv.BootstrapOrchestrator()
 	return http.Serve(ln, srv.Routes())

@@ -11,8 +11,10 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/decompose"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/review"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
@@ -43,7 +45,7 @@ func (s *Server) handleInitialize(req jsonrpcRequest) jsonrpcResponse {
 	result := map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"serverInfo": map[string]string{
-			"name":    "orca-mcp",
+			"name":    "orca",
 			"version": "0.1.0",
 		},
 		"capabilities": map[string]interface{}{
@@ -116,6 +118,10 @@ func (s *Server) toolDefinitions() []toolDef {
 						"type":        "string",
 						"description": "Tool to use (e.g. claude, codex)",
 					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model to use for this task (must be valid for the assigned tool)",
+					},
 					"depends_on": map[string]interface{}{
 						"type": "array",
 						"items": map[string]interface{}{
@@ -142,6 +148,95 @@ func (s *Server) toolDefinitions() []toolDef {
 					"assigned_tool": map[string]interface{}{
 						"type": "string",
 					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model to use for this task",
+					},
+					"prompt": map[string]interface{}{
+						"type":        "string",
+						"description": "Custom prompt for the task",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "task_get",
+			Description: "Get full details of a single task by ID (or prefix).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "task_delete",
+			Description: "Delete a task from the backlog.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "task_reopen",
+			Description: "Move a failed task back to pending status.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "task_add_dependency",
+			Description: "Add a dependency between two existing tasks.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id":    map[string]interface{}{"type": "string", "description": "Task that depends on another"},
+					"depends_on": map[string]interface{}{"type": "string", "description": "Task ID that must complete first"},
+				},
+				"required": []string{"task_id", "depends_on"},
+			},
+		},
+		{
+			Name:        "breakdown",
+			Description: "Break down a goal into backlog tasks using an LLM. Returns proposed tasks for review.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"goal": map[string]interface{}{
+						"type":        "string",
+						"description": "The goal to decompose into tasks",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool to use for decomposition (optional, uses first available)",
+					},
+					"auto_create": map[string]interface{}{
+						"type":        "boolean",
+						"description": "If true, create tasks immediately without confirmation (default: true for MCP)",
+					},
+				},
+				"required": []string{"goal"},
+			},
+		},
+		{
+			Name:        "task_plan_generate",
+			Description: "Generate an implementation plan for a backlog task using an LLM.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID"},
+					"tool":    map[string]interface{}{"type": "string", "description": "Tool to use (optional)"},
+					"model":   map[string]interface{}{"type": "string", "description": "Model override (optional)"},
+					"save":    map[string]interface{}{"type": "boolean", "description": "Save plan to task (default: true)"},
 				},
 				"required": []string{"task_id"},
 			},
@@ -157,6 +252,36 @@ func (s *Server) toolDefinitions() []toolDef {
 						"description": "Max tasks to include",
 					},
 				},
+			},
+		},
+		{
+			Name:        "sprint_assign",
+			Description: "Add tasks to the active sprint (creates one if none exists).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Task IDs to assign to the sprint",
+					},
+				},
+				"required": []string{"task_ids"},
+			},
+		},
+		{
+			Name:        "sprint_unassign",
+			Description: "Remove tasks from the active sprint.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Task IDs to remove from the sprint",
+					},
+				},
+				"required": []string{"task_ids"},
 			},
 		},
 		{
@@ -182,6 +307,14 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
+			Name:        "project_status",
+			Description: "Get project overview: task counts by status, active sprint info, and project name.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
 			Name:        "sprint_cancel",
 			Description: "Cancel the currently running sprint and kill all workers.",
 			InputSchema: map[string]interface{}{
@@ -201,6 +334,14 @@ func (s *Server) toolDefinitions() []toolDef {
 					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to reset"},
 				},
 				"required": []string{"sprint_id"},
+			},
+		},
+		{
+			Name:        "sprint_resume",
+			Description: "Detect and recover orphaned tasks from an interrupted sprint.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
 			},
 		},
 		{
@@ -324,6 +465,17 @@ func (s *Server) toolDefinitions() []toolDef {
 				"properties": map[string]interface{}{},
 			},
 		},
+		{
+			Name:        "task_merge",
+			Description: "Merge a single completed task into the integration branch.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Completed task ID to merge"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
 	}
 }
 
@@ -360,6 +512,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			Title        string   `json:"title"`
 			Description  string   `json:"description"`
 			AssignedTool string   `json:"assigned_tool"`
+			Model        string   `json:"model"`
 			DependsOn    []string `json:"depends_on"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
@@ -386,6 +539,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			}
 		}
 
+		if args.Model != "" {
+			if err := s.store.Update(t.ID, map[string]interface{}{"model": args.Model}); err != nil {
+				return nil, fmt.Errorf("set model: %w", err)
+			}
+		}
+
 		created, err := s.store.Get(t.ID)
 		if err != nil {
 			return nil, err
@@ -399,6 +558,8 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			Description  *string `json:"description"`
 			Status       *string `json:"status"`
 			AssignedTool *string `json:"assigned_tool"`
+			Model        *string `json:"model"`
+			Prompt       *string `json:"prompt"`
 		}
 		if err := json.Unmarshal(argsRaw, &args); err != nil {
 			return nil, fmt.Errorf("task_update args: %w", err)
@@ -425,6 +586,12 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		if args.AssignedTool != nil {
 			fields["assigned_tool"] = *args.AssignedTool
 		}
+		if args.Model != nil {
+			fields["model"] = *args.Model
+		}
+		if args.Prompt != nil {
+			fields["prompt"] = *args.Prompt
+		}
 
 		if len(fields) > 0 {
 			if err := s.store.Update(resolved, fields); err != nil {
@@ -437,6 +604,241 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			return nil, err
 		}
 		return map[string]interface{}{"task": updated}, nil
+
+	case "task_get":
+		var args struct {
+			TaskID string `json:"task_id"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("task_get args: %w", err)
+		}
+		if strings.TrimSpace(args.TaskID) == "" {
+			return nil, fmt.Errorf("task_id is required")
+		}
+		taskID, err := s.store.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		t, err := s.store.Get(taskID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"task": t}, nil
+
+	case "task_delete":
+		var args struct {
+			TaskID string `json:"task_id"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("task_delete args: %w", err)
+		}
+		if strings.TrimSpace(args.TaskID) == "" {
+			return nil, fmt.Errorf("task_id is required")
+		}
+		taskID, err := s.store.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.store.Delete(taskID); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"task_id": taskID, "deleted": true}, nil
+
+	case "task_reopen":
+		var args struct {
+			TaskID string `json:"task_id"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("task_reopen args: %w", err)
+		}
+		if strings.TrimSpace(args.TaskID) == "" {
+			return nil, fmt.Errorf("task_id is required")
+		}
+		taskID, err := s.store.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		t, err := s.store.Get(taskID)
+		if err != nil {
+			return nil, err
+		}
+		if t.Status != "failed" {
+			return nil, fmt.Errorf("task %s is %q, only failed tasks can be reopened", taskID, t.Status)
+		}
+		if err := s.store.Update(taskID, map[string]interface{}{"status": "pending", "sprint_id": nil}); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"task_id": taskID, "status": "pending"}, nil
+
+	case "task_add_dependency":
+		var args struct {
+			TaskID    string `json:"task_id"`
+			DependsOn string `json:"depends_on"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("task_add_dependency args: %w", err)
+		}
+		taskID, err := s.store.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve task: %w", err)
+		}
+		depID, err := s.store.ResolveID(args.DependsOn)
+		if err != nil {
+			return nil, fmt.Errorf("resolve dependency: %w", err)
+		}
+		if err := s.store.AddDependency(taskID, depID); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"task_id": taskID, "depends_on": depID}, nil
+
+	case "breakdown":
+		var args struct {
+			Goal       string `json:"goal"`
+			Tool       string `json:"tool"`
+			AutoCreate *bool  `json:"auto_create"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("breakdown args: %w", err)
+		}
+		if strings.TrimSpace(args.Goal) == "" {
+			return nil, fmt.Errorf("goal is required")
+		}
+
+		var (
+			toolCfg config.ToolConfig
+			found   bool
+		)
+		if args.Tool != "" {
+			tc, ok := s.cfg.Tools[args.Tool]
+			if !ok {
+				return nil, fmt.Errorf("tool %q not found in config", args.Tool)
+			}
+			toolCfg = tc
+			found = true
+		} else {
+			for _, tc := range s.cfg.Tools {
+				toolCfg = tc
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("no tools configured")
+		}
+
+		d := decompose.New(toolCfg, s.repoDir)
+		tasks, err := d.Run(args.Goal)
+		if err != nil {
+			return nil, fmt.Errorf("decompose: %w", err)
+		}
+
+		autoCreate := true
+		if args.AutoCreate != nil {
+			autoCreate = *args.AutoCreate
+		}
+		if !autoCreate {
+			proposed := make([]map[string]interface{}, len(tasks))
+			for i, t := range tasks {
+				proposed[i] = map[string]interface{}{
+					"title":       t.Title,
+					"description": t.Description,
+					"tool":        t.SuggestedTool,
+					"depends_on":  t.DependsOnIndices,
+				}
+			}
+			return map[string]interface{}{"proposed_tasks": proposed, "created": false}, nil
+		}
+
+		createdIDs := make([]string, len(tasks))
+		for i, t := range tasks {
+			created, err := s.store.Create(t.Title, t.Description, "", t.SuggestedTool)
+			if err != nil {
+				return nil, fmt.Errorf("create task %d: %w", i+1, err)
+			}
+			createdIDs[i] = created.ID
+		}
+		for i, t := range tasks {
+			for _, depIdx := range t.DependsOnIndices {
+				if depIdx >= 0 && depIdx < len(createdIDs) {
+					_ = s.store.AddDependency(createdIDs[i], createdIDs[depIdx])
+				}
+			}
+		}
+		return map[string]interface{}{
+			"created":  true,
+			"task_ids": createdIDs,
+			"count":    len(createdIDs),
+		}, nil
+
+	case "task_plan_generate":
+		var args struct {
+			TaskID string `json:"task_id"`
+			Tool   string `json:"tool"`
+			Model  string `json:"model"`
+			Save   *bool  `json:"save"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("task_plan_generate args: %w", err)
+		}
+		if strings.TrimSpace(args.TaskID) == "" {
+			return nil, fmt.Errorf("task_id is required")
+		}
+
+		taskID, err := s.store.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		t, err := s.store.Get(taskID)
+		if err != nil {
+			return nil, err
+		}
+
+		toolName := args.Tool
+		if toolName == "" {
+			toolName = t.AssignedTool
+		}
+		if toolName == "" {
+			toolName = s.cfg.Defaults.Tool
+		}
+		if toolName == "" {
+			for name := range s.cfg.Tools {
+				toolName = name
+				break
+			}
+		}
+		if toolName == "" {
+			return nil, fmt.Errorf("no tools configured")
+		}
+		toolCfg, ok := s.cfg.Tools[toolName]
+		if !ok {
+			return nil, fmt.Errorf("tool %q not found in config", toolName)
+		}
+
+		generator := planpkg.New(toolCfg, s.repoDir)
+		var planContent string
+		if args.Model != "" {
+			planContent, err = generator.GenerateWithModel(t.Title, t.Description, args.Model)
+		} else {
+			planContent, err = generator.Generate(t.Title, t.Description)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("generate plan: %w", err)
+		}
+
+		save := true
+		if args.Save != nil {
+			save = *args.Save
+		}
+		if save {
+			if err := s.store.SetPlan(taskID, planContent); err != nil {
+				return nil, fmt.Errorf("save plan: %w", err)
+			}
+		}
+		return map[string]interface{}{
+			"task_id": taskID,
+			"plan":    planContent,
+			"saved":   save,
+		}, nil
 
 	case "sprint_plan":
 		var args struct {
@@ -458,6 +860,93 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			return nil, err
 		}
 		return map[string]interface{}{"sprint": sp}, nil
+
+	case "sprint_assign":
+		var args struct {
+			TaskIDs []string `json:"task_ids"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("sprint_assign args: %w", err)
+		}
+		if len(args.TaskIDs) == 0 {
+			return nil, fmt.Errorf("task_ids is required")
+		}
+
+		active, err := s.planner.GetActive()
+		if err != nil {
+			return nil, err
+		}
+		if active == nil {
+			active, err = s.planner.CreateEmpty()
+			if err != nil {
+				return nil, fmt.Errorf("create sprint: %w", err)
+			}
+		}
+		if active.Status != "planning" {
+			return nil, fmt.Errorf("sprint %s is %s, cannot assign tasks", active.ID, active.Status)
+		}
+
+		var assigned []string
+		var errors []string
+		for _, rawID := range args.TaskIDs {
+			taskID, err := s.store.ResolveID(rawID)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("resolve %q: %v", rawID, err))
+				continue
+			}
+			if err := s.planner.AddTaskToSprint(active.ID, taskID); err != nil {
+				errors = append(errors, fmt.Sprintf("assign %s: %v", taskID, err))
+				continue
+			}
+			assigned = append(assigned, taskID)
+		}
+		return map[string]interface{}{
+			"sprint_id": active.ID,
+			"assigned":  assigned,
+			"errors":    errors,
+		}, nil
+
+	case "sprint_unassign":
+		var args struct {
+			TaskIDs []string `json:"task_ids"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("sprint_unassign args: %w", err)
+		}
+		if len(args.TaskIDs) == 0 {
+			return nil, fmt.Errorf("task_ids is required")
+		}
+
+		active, err := s.planner.GetActive()
+		if err != nil {
+			return nil, err
+		}
+		if active == nil {
+			return nil, fmt.Errorf("no active sprint")
+		}
+		if active.Status != "planning" {
+			return nil, fmt.Errorf("sprint %s is %s, cannot unassign tasks", active.ID, active.Status)
+		}
+
+		var removed []string
+		var errors []string
+		for _, rawID := range args.TaskIDs {
+			taskID, err := s.store.ResolveID(rawID)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("resolve %q: %v", rawID, err))
+				continue
+			}
+			if err := s.planner.RemoveTaskFromSprint(active.ID, taskID); err != nil {
+				errors = append(errors, fmt.Sprintf("unassign %s: %v", taskID, err))
+				continue
+			}
+			removed = append(removed, taskID)
+		}
+		return map[string]interface{}{
+			"sprint_id": active.ID,
+			"removed":   removed,
+			"errors":    errors,
+		}, nil
 
 	case "sprint_start":
 		var args struct {
@@ -524,6 +1013,34 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			},
 		}, nil
 
+	case "project_status":
+		tasks, err := s.store.List()
+		if err != nil {
+			return nil, err
+		}
+
+		counts := map[string]int{}
+		for _, t := range tasks {
+			counts[t.Status]++
+		}
+
+		active, _ := s.planner.GetActive()
+		var sprintInfo interface{}
+		if active != nil {
+			sprintInfo = map[string]interface{}{
+				"id":     active.ID,
+				"status": active.Status,
+				"tasks":  len(active.TaskIDs),
+			}
+		}
+
+		return map[string]interface{}{
+			"project":       s.cfg.Project.Name,
+			"total_tasks":   len(tasks),
+			"by_status":     counts,
+			"active_sprint": sprintInfo,
+		}, nil
+
 	case "sprint_cancel":
 		var args struct {
 			SprintID string `json:"sprint_id"`
@@ -568,6 +1085,41 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		_ = s.planner.Fail(args.SprintID)
 		return map[string]interface{}{"status": "reset", "sprint_id": args.SprintID}, nil
+
+	case "sprint_resume":
+		orphans, err := s.planner.RecoverOrphans(s.cfg.Project.WorktreeDir, s.cfg.Project.IntegrationBranch)
+		if err != nil {
+			return nil, fmt.Errorf("detect orphans: %w", err)
+		}
+		if len(orphans) == 0 {
+			return map[string]interface{}{"orphans": []string{}, "recovered": 0}, nil
+		}
+
+		recovered := make([]map[string]interface{}, 0, len(orphans))
+		for _, o := range orphans {
+			action := "failed"
+			if o.HasCommits {
+				action = "review"
+			}
+			if err := s.planner.ResolveOrphan(o.TaskID, o.HasCommits); err != nil {
+				return nil, fmt.Errorf("resolve orphan %s: %w", o.TaskID, err)
+			}
+			recovered = append(recovered, map[string]interface{}{
+				"task_id":     o.TaskID,
+				"has_commits": o.HasCommits,
+				"action":      action,
+			})
+		}
+
+		active, _ := s.planner.GetActive()
+		if active != nil && active.Status == "running" {
+			_ = s.planner.RecoverSprint(active.ID)
+		}
+
+		return map[string]interface{}{
+			"recovered": recovered,
+			"count":     len(recovered),
+		}, nil
 
 	case "review_get":
 		var args struct {
@@ -1027,6 +1579,38 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 			"merged":    merged,
 			"failed":    failed,
 		}, nil
+
+	case "task_merge":
+		var args struct {
+			TaskID string `json:"task_id"`
+		}
+		if err := json.Unmarshal(argsRaw, &args); err != nil {
+			return nil, fmt.Errorf("task_merge args: %w", err)
+		}
+		if strings.TrimSpace(args.TaskID) == "" {
+			return nil, fmt.Errorf("task_id is required")
+		}
+		taskID, err := s.store.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		t, err := s.store.Get(taskID)
+		if err != nil {
+			return nil, err
+		}
+		if t.Status != "completed" {
+			return nil, fmt.Errorf("task %s is %q, only completed tasks can be merged", taskID, t.Status)
+		}
+
+		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
+		if err := ig.MergeAndValidate(taskID); err != nil {
+			return nil, fmt.Errorf("merge task %s: %w", taskID, err)
+		}
+		if err := s.store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
+			return nil, err
+		}
+		_ = s.executor.Worktrees().Remove(taskID)
+		return map[string]interface{}{"task_id": taskID, "status": "merged"}, nil
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}

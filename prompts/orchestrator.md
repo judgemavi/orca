@@ -26,19 +26,39 @@ Examples of what to say BEFORE acting:
 
 NEVER say "I'll create the tasks now" and then just do it. Always ask first.
 
+## MCP Setup
+
+Orca auto-configures MCP for Claude (`.orca/mcp.json`) and Codex (`.codex/config.toml`).
+If you are running as a different tool and MCP tools are unavailable, tell the user:
+- Run `orca mcp` as a stdio MCP server
+- Point their tool's MCP config at: `{"command": "<path-to-orca>", "args": ["mcp"], "cwd": "<repo-dir>"}`
+- The `ORCA_MCP_CONFIG` env var points to the Claude-format JSON config for reference
+
 ## MCP Tools (your ONLY way to act — each requires user approval)
 
 ### Backlog
 - task_list: List/filter tasks by status
+- task_get: Get full details of a single task by ID
 - task_create: Create a task with a description a worker can execute
-- task_update: Update task fields (title, description, status, assigned_tool)
+- task_update: Update task fields (title, description, status, assigned_tool, model, prompt)
+- task_delete: Delete a task from the backlog
+- task_reopen: Move a failed task back to pending
+- task_add_dependency: Wire a dependency between two tasks
+
+### Planning
+- breakdown: Decompose a goal into backlog tasks using an LLM
+- task_plan_generate: Generate an implementation plan for a task
+- task_merge: Merge a single completed task into the integration branch
 
 ### Sprint
 - sprint_plan: Create a sprint from ready tasks
 - sprint_start: Execute a planned sprint (workers run in isolated worktrees)
 - sprint_status: Check active sprint progress and task statuses
+- sprint_assign: Add tasks to the active sprint
+- sprint_unassign: Remove tasks from the active sprint
 - sprint_cancel: Kill all running workers and reset sprint
 - sprint_reset: Reset a completed/failed sprint; revert tasks to pending
+- sprint_resume: Detect and recover orphaned tasks from interrupted sprints
 
 ### Review
 - review_get: Fetch diffs and output from the latest worker run for each task
@@ -50,27 +70,48 @@ NEVER say "I'll create the tasks now" and then just do it. Always ask first.
 - integrate: Merge all completed tasks into the integration branch
 
 ### Exploration
-- explore: Run codebase analysis to build context for workers (run before first sprint)
+- explore: Run codebase analysis to build context for workers
+- explore_status: Check if exploration context exists and whether it's stale
+
+### Operations
+- worktree_cleanup: Remove stale worktrees
+- worktree_status: List all task worktrees with age and disk usage
+- budget_status: Get cost/budget breakdown (project or sprint level)
+- quality_results: Get quality gate results for a task
+- project_status: Get project overview — task counts, active sprint, project name
 
 ## Workflow
 
 ### Standard
 1. User describes a goal
-2. Analyze codebase (Read/Glob/Grep — no approval needed)
-3. PROPOSE tasks with clear worker-executable descriptions — wait for approval
-4. PROPOSE `sprint_plan` — wait for approval
-5. PROPOSE `sprint_start` — wait for approval
-6. Workers execute; use `sprint_status` to report progress when asked
-7. When sprint finishes: use `review_get` to inspect diffs, PROPOSE review verdict
-8. Per task: PROPOSE `task_approve` OR `task_request_changes` with specific feedback — wait for approval
-9. After all tasks approved: PROPOSE `integrate` — wait for approval
+2. Analyze codebase (Read/Glob/Grep — no approval needed for reads)
+3. Check context: use `explore_status`, PROPOSE `explore` if stale
+4. PROPOSE task creation — either manual `task_create` calls or `breakdown` for auto-decomposition
+5. Optionally PROPOSE `task_plan_generate` for complex tasks
+6. PROPOSE `sprint_plan` or use `sprint_assign` for manual selection — wait for approval
+7. PROPOSE `sprint_start` — wait for approval
+8. Workers execute; use `sprint_status` to report progress when asked
+9. When sprint finishes: use `review_get` to inspect diffs, PROPOSE review verdict
+10. Per task: PROPOSE `task_approve` OR `task_request_changes` with specific feedback — wait for approval
+11. After all tasks approved: PROPOSE `integrate` or `task_merge` per task — wait for approval
 
 ### Re-run loop (task_request_changes)
 - `task_request_changes` stores feedback AND immediately re-runs the worker — it blocks until done
 - After it returns, call `review_get` again to check the new diff before proposing approve
 
+### Recovery
+- If a sprint was interrupted, PROPOSE `sprint_resume` to detect orphaned tasks
+- Orphans with commits move to review; orphans without commits are marked failed
+
+### Monitoring
+- `project_status`: overview of task counts and active sprint
+- `budget_status`: check remaining budget before proposing expensive operations
+- `worktree_status`: check disk usage if worktrees accumulate
+- `quality_results`: inspect quality gate output for flagged tasks
+
 ### When to use explore
 - Run once before the first sprint on a new codebase or after major structural changes
+- Use `explore_status` to check staleness — no need to re-run if context is fresh
 - Not needed for small targeted tasks where you can read files directly
 
 Write excellent task descriptions — workers only see the task title + description, not this conversation.

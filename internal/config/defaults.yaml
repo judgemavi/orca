@@ -12,6 +12,10 @@ tools:
       - claude-opus-4-5-20251101
       - claude-sonnet-4-5-20250929
     interactive_args:
+      - "--mcp-config"
+      - "{{mcp_config}}"
+      - "--allowedTools"
+      - "{{allowed_tools}}"
       - "--append-system-prompt"
       - "{{context}}"
     headless_args:
@@ -52,6 +56,10 @@ tools:
       - gpt-5.1-codex
       - gpt-5-codex
       - gpt-5-codex-mini
+    interactive_args:
+      - "-a"
+      - "never"
+      - "{{context}}"
     headless_args:
       - exec
       - "{{prompt}}"

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/decompose"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -12,7 +13,7 @@ import (
 )
 
 func RegisterPlan(root *cobra.Command, r *Registry) {
-	planCmd := &cobra.Command{Use: "plan [goal]", Short: "Decompose a goal into backlog tasks using an LLM", Args: cobra.MinimumNArgs(1), RunE: r.runPlan}
+	planCmd := &cobra.Command{Use: "breakdown [goal]", Short: "Break down a goal into backlog tasks using an LLM", Args: cobra.MinimumNArgs(1), RunE: r.runPlan}
 	planCmd.Flags().String("tool", "", "Tool to use for decomposition")
 	planCmd.Flags().Bool("auto", false, "Skip confirmation and create tasks immediately")
 	root.AddCommand(planCmd)
@@ -74,10 +75,11 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	if !auto {
-		fmt.Print("\nCreate these tasks? [y/N] ")
-		var answer string
-		fmt.Scanln(&answer)
-		if answer != "y" && answer != "Y" {
+		confirm := false
+		if err := huh.NewConfirm().Title("Create these tasks?").Value(&confirm).Run(); err != nil {
+			return err
+		}
+		if !confirm {
 			fmt.Println("Cancelled.")
 			return nil
 		}

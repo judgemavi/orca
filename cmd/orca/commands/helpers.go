@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/google/uuid"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -28,6 +29,65 @@ func short(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+func allTasks(_ *task.Task) bool       { return true }
+func failedTasks(t *task.Task) bool    { return t.Status == "failed" }
+func completedTasks(t *task.Task) bool { return t.Status == "completed" }
+func reviewTasks(t *task.Task) bool    { return t.Status == "review" }
+func pendingTasks(t *task.Task) bool   { return t.Status == "pending" }
+
+func pickTask(store *task.Store, title string, filter func(*task.Task) bool) (string, error) {
+	tasks, err := store.List()
+	if err != nil {
+		return "", err
+	}
+
+	opts := make([]huh.Option[string], 0, len(tasks))
+	for _, t := range tasks {
+		if !filter(t) {
+			continue
+		}
+		label := fmt.Sprintf("%s  %s (%s)", short(t.ID), t.Title, t.Status)
+		opts = append(opts, huh.NewOption(label, t.ID))
+	}
+	if len(opts) == 0 {
+		return "", fmt.Errorf("no tasks found")
+	}
+
+	var selected string
+	if err := huh.NewSelect[string]().Title(title).Options(opts...).Value(&selected).Run(); err != nil {
+		return "", err
+	}
+	return selected, nil
+}
+
+func pickTasks(store *task.Store, title string, filter func(*task.Task) bool) ([]string, error) {
+	tasks, err := store.List()
+	if err != nil {
+		return nil, err
+	}
+
+	opts := make([]huh.Option[string], 0, len(tasks))
+	for _, t := range tasks {
+		if !filter(t) {
+			continue
+		}
+		label := fmt.Sprintf("%s  %s (%s)", short(t.ID), t.Title, t.Status)
+		opts = append(opts, huh.NewOption(label, t.ID).Selected(true))
+	}
+	if len(opts) == 0 {
+		return nil, fmt.Errorf("no tasks found")
+	}
+
+	var selected []string
+	if err := huh.NewMultiSelect[string]().Title(title).Options(opts...).Value(&selected).Run(); err != nil {
+		return nil, err
+	}
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("no tasks selected")
+	}
+	return selected, nil
 }
 
 func resolveTaskID(store *task.Store, prefix string) (string, error) {

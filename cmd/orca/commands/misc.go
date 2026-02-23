@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
+	"github.com/jasjeetmavi/orca/internal/banner"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/cost"
 	"github.com/jasjeetmavi/orca/internal/model"
@@ -70,55 +71,58 @@ func RegisterMisc(root *cobra.Command, r *Registry, opts MiscOptions) {
 		opts.MarkSkipRuntimeInit(configShowCmd)
 	}
 	configCmd.AddCommand(configShowCmd)
-	configCmd.AddCommand(&cobra.Command{Use: "set [key] [value]", Short: "Set a config value (e.g., orchestrator.cost_budget 10.0)", Args: cobra.ExactArgs(2), RunE: r.runConfigSet})
 	root.AddCommand(configCmd)
 
 	root.AddCommand(&cobra.Command{Use: "orc", Short: "Launch orchestrator in current terminal", RunE: r.runOrc})
 }
 
 func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
+	banner.Print()
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 	yes, _ := cmd.Flags().GetBool("yes")
-	scanner := bufio.NewScanner(os.Stdin)
 	orcaDir := filepath.Join(cwd, ".orca")
 
+	// --- Pre-flight: reinit check + load existing config ---
+	var existingCfg *config.Config
 	if _, err := os.Stat(orcaDir); err == nil {
 		fmt.Println("Orca already initialized. Run 'orca config' to view settings.")
-		reinit := false
+		reinit := yes
 		if !yes {
-			ok, promptErr := promptYesNo(scanner, "Reinitialize? This will reset your config. [y/N] ", false)
-			if promptErr != nil {
-				return promptErr
+			if err := huh.NewConfirm().Title("Reinitialize?").Description("Existing config will be used as defaults.").Affirmative("Yes").Negative("No").Value(&reinit).Run(); err != nil {
+				return err
 			}
-			reinit = ok
 		}
 		if !reinit {
 			return nil
 		}
+		cfgPath := filepath.Join(orcaDir, "orca.yaml")
+		if loaded, loadErr := config.Load(cfgPath); loadErr == nil {
+			existingCfg = loaded
+		}
 	}
 
+	// --- Pre-flight: git repo ---
 	if _, err := os.Stat(filepath.Join(cwd, ".git")); os.IsNotExist(err) {
 		initRepo := yes
 		if !yes {
-			ok, promptErr := promptYesNo(scanner, "No git repository found. Initialize one? [Y/n] ", true)
-			if promptErr != nil {
-				return promptErr
+			if err := huh.NewConfirm().Title("No git repository found").Description("Orca requires a git repo. Initialize one?").Affirmative("Yes").Negative("No").Value(&initRepo).Run(); err != nil {
+				return err
 			}
-			initRepo = ok
 		}
 		if !initRepo {
 			return fmt.Errorf("orca init requires a git repository")
 		}
-		initCmd := exec.Command("git", "init")
-		initCmd.Dir = cwd
-		if err := initCmd.Run(); err != nil {
+		gitInit := exec.Command("git", "init")
+		gitInit.Dir = cwd
+		if err := gitInit.Run(); err != nil {
 			return fmt.Errorf("git init: %w", err)
 		}
 	}
 
+	// --- Pre-flight: ensure at least one commit ---
 	headCheck := exec.Command("git", "rev-parse", "HEAD")
 	headCheck.Dir = cwd
 	if err := headCheck.Run(); err != nil {
@@ -128,7 +132,6 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 		if err := addCmd.Run(); err != nil {
 			return fmt.Errorf("git add -A: %w", err)
 		}
-
 		hasStaged := exec.Command("git", "diff", "--cached", "--quiet")
 		hasStaged.Dir = cwd
 		commitArgs := []string{"commit", "-m", "Initial commit"}
@@ -142,28 +145,16 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	projectNameDefault := filepath.Base(cwd)
-	integrationBranchDefault := "orca/integration"
-	maxParallelDefault := 2
-
-	projectName, err := promptString(scanner, yes, fmt.Sprintf("Project name [%s]: ", projectNameDefault), projectNameDefault)
-	if err != nil {
-		return err
-	}
-	integrationBranch, err := promptString(scanner, yes, fmt.Sprintf("Integration branch [%s]: ", integrationBranchDefault), integrationBranchDefault)
-	if err != nil {
-		return err
-	}
-
+	// --- Detect tools ---
 	fmt.Println("Detecting tools...")
-	available := detectTools()
-	if len(available) == 0 {
+	detected := detectTools()
+	if len(detected) == 0 {
 		return fmt.Errorf("no supported tools found on PATH (need at least one of: claude, codex, aider)")
 	}
 	for _, name := range []string{"claude", "codex", "aider"} {
 		found := false
-		for _, a := range available {
-			if a == name {
+		for _, d := range detected {
+			if d == name {
 				found = true
 				break
 			}
@@ -174,76 +165,356 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ✗ %s (not found)\n", name)
 		}
 	}
-	fmt.Printf("Enabled tools: %s\n", strings.Join(available, ", "))
 
-	defaultToolDefault := available[0]
-	defaultTool, err := promptTool(
-		scanner,
-		yes,
-		fmt.Sprintf("Default tool (%s) [%s]: ", strings.Join(available, "/"), defaultToolDefault),
-		defaultToolDefault,
-		available...,
-	)
-	if err != nil {
-		return err
+	// --- Tool selection ---
+	available := detected
+	if !yes && len(detected) > 1 {
+		toolOpts := make([]huh.Option[string], len(detected))
+		for i, name := range detected {
+			preSelected := true
+			if existingCfg != nil {
+				// Only pre-select tools that were previously enabled
+				_, preSelected = existingCfg.Tools[name]
+			}
+			toolOpts[i] = huh.NewOption(name, name).Selected(preSelected)
+		}
+		var selected []string
+		if err := huh.NewMultiSelect[string]().Title("Enable tools").Options(toolOpts...).Value(&selected).Run(); err != nil {
+			return err
+		}
+		if len(selected) == 0 {
+			return fmt.Errorf("at least one tool must be enabled")
+		}
+		available = selected
 	}
-	maxParallel, err := promptInt(scanner, yes, fmt.Sprintf("Max parallel workers [%d]: ", maxParallelDefault), maxParallelDefault)
-	if err != nil {
-		return err
-	}
 
-	if err := os.MkdirAll(orcaDir, 0755); err != nil {
-		return fmt.Errorf("create .orca directory: %w", err)
-	}
-
-	cfgPath := filepath.Join(orcaDir, "orca.yaml")
-	dbPath := filepath.Join(orcaDir, "state.db")
-
+	// --- Load defaults for config building ---
 	cfg, err := config.Default()
 	if err != nil {
 		return fmt.Errorf("load default config: %w", err)
 	}
+
+	// --- Build model options per tool ---
+	type toolModelInfo struct {
+		name   string
+		models []string
+	}
+	var toolModels []toolModelInfo
+	for _, name := range available {
+		if tc, ok := cfg.Tools[name]; ok {
+			ms := model.FromConfig(name, tc)
+			ids := make([]string, len(ms))
+			for i, m := range ms {
+				ids[i] = m.ID
+			}
+			toolModels = append(toolModels, toolModelInfo{name: name, models: ids})
+		}
+	}
+
+	// --- Interactive form defaults (seeded from existing config if reinitializing) ---
+	projectName := filepath.Base(cwd)
+	integrationBranch := "orca/integration"
+	maxParallelStr := "3"
+	defaultTool := available[0]
+	supervisorTool := available[0]
+	supervisorModel := ""
+	costBudget := "0"
+	validationCmd := ""
+	qualityScopeCheck := true
+	qualityTestDelta := true
+	qualityAlignment := false
+
+	if existingCfg != nil {
+		if existingCfg.Project.Name != "" {
+			projectName = existingCfg.Project.Name
+		}
+		if existingCfg.Project.IntegrationBranch != "" {
+			integrationBranch = existingCfg.Project.IntegrationBranch
+		}
+		if existingCfg.Workers.MaxParallel > 0 {
+			maxParallelStr = strconv.Itoa(existingCfg.Workers.MaxParallel)
+		}
+		if existingCfg.Defaults.Tool != "" && containsTool(available, existingCfg.Defaults.Tool) {
+			defaultTool = existingCfg.Defaults.Tool
+		}
+		if existingCfg.Orchestrator.SupervisorTool != "" && containsTool(available, existingCfg.Orchestrator.SupervisorTool) {
+			supervisorTool = existingCfg.Orchestrator.SupervisorTool
+		}
+		supervisorModel = existingCfg.Orchestrator.SupervisorModel
+		costBudget = strconv.FormatFloat(existingCfg.Orchestrator.CostBudget, 'f', -1, 64)
+		if len(existingCfg.Validation.Commands) > 0 {
+			validationCmd = existingCfg.Validation.Commands[0]
+		}
+		qualityScopeCheck = existingCfg.Quality.ScopeCheck
+		qualityTestDelta = existingCfg.Quality.TestDelta
+		qualityAlignment = existingCfg.Quality.AlignmentCheck
+	}
+
+	if !yes {
+		// Default tool select options
+		defaultToolOpts := make([]huh.Option[string], len(available))
+		for i, name := range available {
+			defaultToolOpts[i] = huh.NewOption(name, name)
+		}
+
+		// Model select fields per tool — use slice of pointers so huh can bind
+		type modelBinding struct {
+			name  string
+			value string
+		}
+		modelBindings := make([]*modelBinding, 0, len(toolModels))
+		var modelFields []huh.Field
+		for _, tm := range toolModels {
+			if len(tm.models) == 0 {
+				continue
+			}
+			defaultModel := tm.models[0]
+			if existingCfg != nil {
+				if tc, ok := existingCfg.Tools[tm.name]; ok && tc.Model != "" {
+					defaultModel = tc.Model
+				}
+			}
+			mb := &modelBinding{name: tm.name, value: defaultModel}
+			modelBindings = append(modelBindings, mb)
+			opts := make([]huh.Option[string], len(tm.models))
+			for i, m := range tm.models {
+				opts[i] = huh.NewOption(m, m)
+			}
+			modelFields = append(modelFields, huh.NewSelect[string]().
+				Title(fmt.Sprintf("Default model for %s", tm.name)).
+				Options(opts...).
+				Value(&mb.value))
+		}
+
+		// Quality gate options
+		qualityOpts := []huh.Option[string]{
+			huh.NewOption("Scope check", "scope").Selected(qualityScopeCheck),
+			huh.NewOption("Test delta", "test").Selected(qualityTestDelta),
+			huh.NewOption("LLM alignment check", "alignment").Selected(qualityAlignment),
+		}
+		var qualitySelected []string
+
+		// Build form groups
+		groups := []*huh.Group{
+			huh.NewGroup(
+				huh.NewInput().Title("Project name").Value(&projectName),
+				huh.NewInput().Title("Integration branch").Value(&integrationBranch),
+				huh.NewSelect[string]().Title("Default tool").Options(defaultToolOpts...).Value(&defaultTool),
+				huh.NewInput().Title("Max parallel workers").Value(&maxParallelStr).
+					Validate(func(v string) error {
+						n, err := strconv.Atoi(v)
+						if err != nil || n < 1 {
+							return fmt.Errorf("must be a positive integer")
+						}
+						return nil
+					}),
+			),
+		}
+
+		if len(modelFields) > 0 {
+			groups = append(groups, huh.NewGroup(modelFields...))
+		}
+
+		groups = append(groups,
+			huh.NewGroup(
+				huh.NewInput().Title("Validation command").Description("Test command to run after integration (leave empty to skip)").Placeholder("e.g. go test ./...").Value(&validationCmd),
+				huh.NewInput().Title("Cost budget (USD)").Description("0 = unlimited").Value(&costBudget),
+				huh.NewMultiSelect[string]().Title("Quality gates").Options(qualityOpts...).Value(&qualitySelected),
+			),
+		)
+
+		form := huh.NewForm(groups...)
+		if err := form.Run(); err != nil {
+			return err
+		}
+
+		// Orchestrator: tool then model (sequential so model is filtered)
+		supervisorToolOpts := make([]huh.Option[string], len(available))
+		for i, name := range available {
+			supervisorToolOpts[i] = huh.NewOption(name, name)
+		}
+		if err := huh.NewSelect[string]().
+			Title("Orchestrator tool").
+			Description("CLI tool that drives orca orc (autopilot)").
+			Options(supervisorToolOpts...).
+			Value(&supervisorTool).
+			Run(); err != nil {
+			return err
+		}
+
+		for _, tm := range toolModels {
+			if tm.name == supervisorTool && len(tm.models) > 0 {
+				modelOpts := []huh.Option[string]{huh.NewOption("(tool default)", "")}
+				for _, m := range tm.models {
+					modelOpts = append(modelOpts, huh.NewOption(m, m))
+				}
+				if err := huh.NewSelect[string]().
+					Title("Orchestrator model").
+					Description(fmt.Sprintf("Model for %s supervisor agent", supervisorTool)).
+					Options(modelOpts...).
+					Value(&supervisorModel).
+					Run(); err != nil {
+					return err
+				}
+				break
+			}
+		}
+
+		// Per-phase tool/model config
+		phases := []string{"explore", "plan", "sprint", "review", "integrate"}
+		phaseToolSelections := make(map[string]string, len(phases))
+
+		// Seed from existing config
+		for _, phase := range phases {
+			phaseToolSelections[phase] = ""
+			if existingCfg != nil {
+				if pc, ok := existingCfg.Orchestrator.Phases[phase]; ok && pc.Tool != "" {
+					phaseToolSelections[phase] = pc.Tool
+				}
+			}
+		}
+
+		// Build phase tool selects
+		type phaseToolBinding struct {
+			phase string
+			value string
+		}
+		phaseBindings := make([]*phaseToolBinding, len(phases))
+		var phaseFields []huh.Field
+		for i, phase := range phases {
+			pb := &phaseToolBinding{phase: phase, value: phaseToolSelections[phase]}
+			phaseBindings[i] = pb
+			opts := []huh.Option[string]{huh.NewOption(fmt.Sprintf("(default: %s)", defaultTool), "")}
+			for _, name := range available {
+				opts = append(opts, huh.NewOption(name, name))
+			}
+			phaseFields = append(phaseFields, huh.NewSelect[string]().
+				Title(fmt.Sprintf("%s phase tool", phase)).
+				Options(opts...).
+				Value(&pb.value))
+		}
+		if err := huh.NewForm(huh.NewGroup(phaseFields...)).Run(); err != nil {
+			return err
+		}
+
+		// For phases with an overridden tool, ask for model
+		phaseModelSelections := make(map[string]string, len(phases))
+		for _, pb := range phaseBindings {
+			if pb.value == "" {
+				continue
+			}
+			// Seed from existing config
+			phaseModelSelections[pb.phase] = ""
+			if existingCfg != nil {
+				if pc, ok := existingCfg.Orchestrator.Phases[pb.phase]; ok {
+					phaseModelSelections[pb.phase] = pc.Model
+				}
+			}
+
+			for _, tm := range toolModels {
+				if tm.name == pb.value && len(tm.models) > 0 {
+					modelVal := phaseModelSelections[pb.phase]
+					modelOpts := []huh.Option[string]{huh.NewOption("(tool default)", "")}
+					for _, m := range tm.models {
+						modelOpts = append(modelOpts, huh.NewOption(m, m))
+					}
+					if err := huh.NewSelect[string]().
+						Title(fmt.Sprintf("%s phase model", pb.phase)).
+						Description(fmt.Sprintf("Model for %s using %s", pb.phase, pb.value)).
+						Options(modelOpts...).
+						Value(&modelVal).
+						Run(); err != nil {
+						return err
+					}
+					phaseModelSelections[pb.phase] = modelVal
+					break
+				}
+			}
+		}
+
+		// Parse quality selections
+		qualityScopeCheck = false
+		qualityTestDelta = false
+		qualityAlignment = false
+		for _, v := range qualitySelected {
+			switch v {
+			case "scope":
+				qualityScopeCheck = true
+			case "test":
+				qualityTestDelta = true
+			case "alignment":
+				qualityAlignment = true
+			}
+		}
+
+		// Apply model selections
+		for _, mb := range modelBindings {
+			if tc, ok := cfg.Tools[mb.name]; ok {
+				tc.Model = mb.value
+				cfg.Tools[mb.name] = tc
+			}
+		}
+
+		// Apply phase overrides
+		phaseConfigs := make(map[string]config.PhaseConfig)
+		for _, pb := range phaseBindings {
+			if pb.value == "" {
+				continue
+			}
+			phaseConfigs[pb.phase] = config.PhaseConfig{
+				Tool:  pb.value,
+				Model: phaseModelSelections[pb.phase],
+			}
+		}
+		if len(phaseConfigs) > 0 {
+			cfg.Orchestrator.Phases = phaseConfigs
+		}
+	}
+
+	// --- Apply config ---
+	maxParallel, _ := strconv.Atoi(maxParallelStr)
+	if maxParallel < 1 {
+		maxParallel = 3
+	}
+
 	cfg.Project.Name = projectName
 	cfg.Project.IntegrationBranch = integrationBranch
 	cfg.Workers.MaxParallel = maxParallel
+	cfg.Defaults.Tool = defaultTool
+	cfg.Orchestrator.SupervisorTool = supervisorTool
+	cfg.Orchestrator.SupervisorModel = supervisorModel
 
-	detected := make(map[string]config.ToolConfig)
+	budget, _ := strconv.ParseFloat(costBudget, 64)
+	cfg.Orchestrator.CostBudget = budget
+
+	if validationCmd != "" {
+		cfg.Validation.Commands = []string{validationCmd}
+	}
+
+	cfg.Quality.Enabled = qualityScopeCheck || qualityTestDelta || qualityAlignment
+	cfg.Quality.ScopeCheck = qualityScopeCheck
+	cfg.Quality.TestDelta = qualityTestDelta
+	cfg.Quality.AlignmentCheck = qualityAlignment
+
+	enabledTools := make(map[string]config.ToolConfig)
 	for _, name := range available {
 		if tc, ok := cfg.Tools[name]; ok {
-			detected[name] = tc
+			enabledTools[name] = tc
 		}
 	}
-	if len(detected) == 0 {
-		return fmt.Errorf("none of the detected tools are present in config defaults")
+	if len(enabledTools) == 0 {
+		return fmt.Errorf("none of the selected tools are present in config defaults")
 	}
-	if _, ok := detected[defaultTool]; !ok {
-		return fmt.Errorf("default tool %q not present in detected tool config", defaultTool)
+	cfg.Tools = enabledTools
+
+	// --- Write config + DB ---
+	if err := os.MkdirAll(orcaDir, 0755); err != nil {
+		return fmt.Errorf("create .orca directory: %w", err)
 	}
-	cfg.Tools = detected
+	cfgPath := filepath.Join(orcaDir, "orca.yaml")
+	dbPath := filepath.Join(orcaDir, "state.db")
 
-	if !yes {
-		fmt.Println("Set default model per tool (press Enter to skip):")
-		for _, toolName := range available {
-			tc := cfg.Tools[toolName]
-			models := model.FromConfig(toolName, tc)
-			if len(models) > 0 {
-				preview := make([]string, 0, 3)
-				for i := 0; i < len(models) && i < 3; i++ {
-					preview = append(preview, models[i].ID)
-				}
-				fmt.Printf("  %s models: %s\n", toolName, strings.Join(preview, ", "))
-			}
-
-			value, promptErr := promptString(scanner, false, fmt.Sprintf("  Default model for %s []: ", toolName), "")
-			if promptErr != nil {
-				return promptErr
-			}
-			tc.Model = strings.TrimSpace(value)
-			cfg.Tools[toolName] = tc
-		}
-	}
-
-	if err := cfg.Save(cfgPath); err != nil {
+	if err := cfg.SaveAnnotated(cfgPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
@@ -269,38 +540,30 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("✓ Orca initialized in %s\n\n", cwd)
+	fmt.Printf("\n✓ Orca initialized in %s\n\n", cwd)
 	fmt.Println("Getting started:")
+	fmt.Println("  orca explore                      Analyze codebase for context")
 	fmt.Println("  orca backlog add \"task title\"     Add tasks to the backlog")
-	fmt.Println("  orca backlog                      View all tasks")
-	fmt.Println("  orca backlog edit <id> --tool codex  Assign a tool")
-	fmt.Println("  orca sprint plan                  Plan a sprint from ready tasks")
-	fmt.Println("  orca sprint assign <id>           Manually add task to sprint")
-	fmt.Println("  orca start                        Execute the sprint")
-	fmt.Println("  orca review                       Review completed work")
-	fmt.Println("  orca integrate                    Merge into integration branch")
-	fmt.Println("  orca serve                        Open web UI at localhost:8080")
-	fmt.Println()
-	fmt.Println("Tip: Run 'orca explore' to analyze your codebase before planning.")
+	fmt.Println("  orca backlog list                  View all tasks")
+	fmt.Println("  orca breakdown \"goal\"             Break down a goal into tasks")
+	fmt.Println("  orca sprint plan                  Select tasks for a sprint")
+	fmt.Println("  orca sprint start                 Execute the sprint")
+	fmt.Println("  orca sprint review                Review completed work")
+	fmt.Println("  orca integrate                    Merge approved tasks")
+	fmt.Println("  orca run                          Do all of the above in one shot")
+	fmt.Println("  orca status                       Show project overview")
+	fmt.Println("  orca serve                        Open web UI")
+	fmt.Println("  orca orc                          Launch orchestrator (autopilot)")
 	return nil
 }
 
-func promptString(scanner *bufio.Scanner, yes bool, prompt, defaultValue string) (string, error) {
-	if yes {
-		return defaultValue, nil
-	}
-	fmt.Print(prompt)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return "", fmt.Errorf("read input: %w", err)
+func containsTool(tools []string, name string) bool {
+	for _, t := range tools {
+		if t == name {
+			return true
 		}
-		return defaultValue, nil
 	}
-	input := strings.TrimSpace(scanner.Text())
-	if input == "" {
-		return defaultValue, nil
-	}
-	return input, nil
+	return false
 }
 
 func detectTools() []string {
@@ -314,66 +577,6 @@ func detectTools() []string {
 	return found
 }
 
-func promptTool(scanner *bufio.Scanner, yes bool, prompt, defaultValue string, valid ...string) (string, error) {
-	validSet := map[string]bool{}
-	for _, v := range valid {
-		validSet[v] = true
-	}
-	for {
-		value, err := promptString(scanner, yes, prompt, defaultValue)
-		if err != nil {
-			return "", err
-		}
-		if validSet[value] {
-			return value, nil
-		}
-		if yes {
-			return "", fmt.Errorf("invalid default tool %q", value)
-		}
-		fmt.Printf("Please enter one of: %s\n", strings.Join(valid, ", "))
-	}
-}
-
-func promptInt(scanner *bufio.Scanner, yes bool, prompt string, defaultValue int) (int, error) {
-	for {
-		value, err := promptString(scanner, yes, prompt, strconv.Itoa(defaultValue))
-		if err != nil {
-			return 0, err
-		}
-		n, parseErr := strconv.Atoi(value)
-		if parseErr != nil || n <= 0 {
-			if yes {
-				return 0, fmt.Errorf("invalid integer %q", value)
-			}
-			fmt.Println("Please enter a positive integer.")
-			continue
-		}
-		return n, nil
-	}
-}
-
-func promptYesNo(scanner *bufio.Scanner, prompt string, defaultYes bool) (bool, error) {
-	fmt.Print(prompt)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return false, fmt.Errorf("read input: %w", err)
-		}
-		return defaultYes, nil
-	}
-	value := strings.ToLower(strings.TrimSpace(scanner.Text()))
-	if value == "" {
-		return defaultYes, nil
-	}
-	switch value {
-	case "y", "yes":
-		return true, nil
-	case "n", "no":
-		return false, nil
-	default:
-		return defaultYes, nil
-	}
-}
-
 func ensureOrcaIgnored(cwd string) error {
 	gitignorePath := filepath.Join(cwd, ".gitignore")
 	existing, err := os.ReadFile(gitignorePath)
@@ -381,7 +584,7 @@ func ensureOrcaIgnored(cwd string) error {
 		return fmt.Errorf("read .gitignore: %w", err)
 	}
 
-	entries := []string{".orca/worktrees/", ".orca/*.db-wal", ".orca/*.db-shm"}
+	entries := []string{".orca/worktrees/", ".orca/*.db", ".orca/*.db-wal", ".orca/*.db-shm"}
 	var needed []string
 	for _, e := range entries {
 		if !containsIgnoreEntry(existing, e) {
@@ -526,6 +729,19 @@ func (r *Registry) runCleanup(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\nDry run: would remove %d worktrees\n", len(stale))
 		return nil
 	}
+
+	confirm := false
+	if err := huh.NewConfirm().
+		Title(fmt.Sprintf("Remove %d stale worktrees?", len(stale))).
+		Affirmative("Yes").
+		Negative("No").
+		Value(&confirm).Run(); err != nil {
+		return err
+	}
+	if !confirm {
+		return nil
+	}
+
 	if err := ensureOperationsTable(db); err != nil {
 		return fmt.Errorf("ensure operations table: %w", err)
 	}
@@ -674,7 +890,7 @@ func (r *Registry) runOrc(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	mcpConfigPath, err := orchestrator.WriteMCPConfig(repoDir, orcaBinary)
+	mcpConfigPath, err := orchestrator.WriteMCPConfig(repoDir, orcaBinary, cfg.Tools)
 	if err != nil {
 		return fmt.Errorf("write mcp config: %w", err)
 	}
@@ -705,40 +921,6 @@ func (r *Registry) runConfigShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 	fmt.Print(string(data))
-	return nil
-}
-
-func (r *Registry) runConfigSet(cmd *cobra.Command, args []string) error {
-	cfgPath := filepath.Join(".orca", "orca.yaml")
-	_, cfg, _, _, err := r.loadRuntimeOrErr()
-	if err != nil {
-		return err
-	}
-
-	key, value := args[0], args[1]
-	switch key {
-	case "orchestrator.cost_budget":
-		f, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return fmt.Errorf("invalid float %q: %w", value, err)
-		}
-		cfg.Orchestrator.CostBudget = f
-	case "orchestrator.supervisor_tool":
-		cfg.Orchestrator.SupervisorTool = value
-	case "workers.max_parallel":
-		n, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("invalid int %q: %w", value, err)
-		}
-		cfg.Workers.MaxParallel = n
-	default:
-		return fmt.Errorf("unknown config key: %s", key)
-	}
-
-	if err := cfg.Save(cfgPath); err != nil {
-		return err
-	}
-	fmt.Printf("Set %s = %s\n", key, value)
 	return nil
 }
 
