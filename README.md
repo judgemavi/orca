@@ -11,7 +11,7 @@ Orca wraps existing AI CLI tools as workers — it doesn't call LLM APIs directl
 3. **Plan** — Decompose goals into small, dependency-aware tasks
 4. **Sprint** — Execute tasks in parallel on isolated git worktrees
 4. **Review** — Review diffs with quality gates (scope check, test delta, alignment)
-5. **Integrate** — Merge approved work into an integration branch with validation
+5. **Merge** — Merge approved work into an integration branch with validation
 
 Workers never communicate directly. All coordination flows through the supervisor (you, or an LLM in autopilot mode).
 
@@ -71,8 +71,8 @@ orca sprint start
 orca sprint review
 orca sprint review --auto    # LLM-assisted review
 
-# Integrate approved tasks
-orca integrate
+# Merge approved tasks
+orca merge
 
 # Launch web UI
 orca serve
@@ -112,10 +112,10 @@ orca sprint reset                  Reset sprint, revert tasks
 orca review approve <id>           Approve a reviewed task
 orca review request-changes <id>   Request changes on a task
 
-orca integrate                     Merge approved tasks
-orca integrate --dry-run           Preview integration
+orca merge                         Merge approved tasks
+orca merge --dry-run               Preview merge
 
-orca run                           Plan, start, review, integrate in one shot
+orca run                           Plan, start, review, merge in one shot
 orca cleanup                       Remove stale worktrees
 orca status                        Show project overview
 orca log                           Show sprint history

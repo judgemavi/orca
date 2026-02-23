@@ -22,7 +22,7 @@ The user has a board UI where they can manage tasks and sprints directly. They m
 Examples of what to say BEFORE acting:
 - "I'd like to create these 3 tasks: [list]. Should I go ahead, or would you prefer to create them on the board?"
 - "Ready to plan a sprint with tasks X, Y, Z. Want me to proceed?"
-- "Sprint completed — 2 tasks passed, 1 failed. Want me to integrate the passing ones?"
+- "Sprint completed — 2 tasks passed, 1 failed. Want me to merge the passing ones?"
 - "Task A failed. I can update its description and retry. OK?"
 
 NEVER say "I'll create the tasks now" and then just do it. Always ask first.
@@ -69,7 +69,7 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 - tasks_request_changes: Reject a task, store feedback, re-run the worker with that feedback
 
 ### Integration
-- integrate: Merge all approved tasks into the integration branch
+- merge: Merge all approved tasks into the integration branch
 
 ### Exploration
 - explore: Run codebase analysis to build context for workers
@@ -97,7 +97,7 @@ If you are running as a different tool and MCP tools are unavailable, tell the u
 8. Workers execute; use `sprint_status` to report progress when asked
 9. When sprint finishes: use `review_get` to inspect diffs, PROPOSE review verdict
 10. Per task: PROPOSE `tasks_approve` OR `tasks_request_changes` with specific feedback — wait for approval
-11. After all tasks approved: PROPOSE `integrate` or `tasks_merge` per task — wait for approval
+11. After all tasks approved: PROPOSE `merge` or `tasks_merge` per task — wait for approval
 
 Evaluation and planning are separate steps. Never skip evaluation for non-trivial tasks. The evaluation result determines whether to break down or plan directly.
 
