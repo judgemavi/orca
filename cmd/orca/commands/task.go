@@ -10,6 +10,8 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -58,6 +60,7 @@ func RegisterTask(root *cobra.Command, r *Registry) {
 	planCmd := &cobra.Command{Use: "plan [task-id]", Short: "Generate an implementation plan for a task", Args: cobra.MaximumNArgs(1), RunE: r.runTaskPlan}
 	planCmd.Flags().Bool("save", false, "Save generated plan to the task")
 	planCmd.Flags().Bool("edit", false, "Open generated plan in $EDITOR and save edits")
+	planCmd.Flags().Bool("skip-evaluate", false, "Skip complexity evaluation and go straight to plan generation")
 	planCmd.Flags().String("tool", "", "Tool to use for plan generation")
 	planCmd.Flags().String("model", "", "Model to use for plan generation")
 	taskCmd.AddCommand(planCmd)
@@ -444,6 +447,7 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 
 	save, _ := cmd.Flags().GetBool("save")
 	edit, _ := cmd.Flags().GetBool("edit")
+	skipEvaluate, _ := cmd.Flags().GetBool("skip-evaluate")
 	toolOverride, _ := cmd.Flags().GetString("tool")
 	modelOverride, _ := cmd.Flags().GetString("model")
 
@@ -476,6 +480,131 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	repoDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	if !skipEvaluate {
+		evaluator := evaluate.New(toolCfg, repoDir)
+		fmt.Println("Evaluating task complexity...")
+		evalDone := make(chan struct{})
+		go renderSpinner("Evaluating complexity", evalDone)
+
+		var evalResult *evaluate.EvaluationResult
+		if modelName != "" {
+			evalResult, err = evaluator.EvaluateWithModel(t.Title, t.Description, modelName)
+		} else {
+			evalResult, err = evaluator.Evaluate(t.Title, t.Description)
+		}
+		close(evalDone)
+		fmt.Print("\r")
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: evaluation failed: %v (proceeding to plan)\n", err)
+		} else if evalResult.NeedsBreakdown {
+			fmt.Println("Evaluation: task may be too complex")
+			fmt.Printf("  Reasoning: %s\n", evalResult.Reasoning)
+			fmt.Printf("  Suggested subtasks: %d\n", evalResult.SuggestedSubtaskCount)
+
+			breakDown := false
+			if err := huh.NewConfirm().Title("This task may be too complex. Break into subtasks?").Value(&breakDown).Run(); err != nil {
+				return err
+			}
+
+			if breakDown {
+				d := decompose.New(toolCfg, repoDir)
+				decompDone := make(chan struct{})
+				go renderSpinner("Decomposing task", decompDone)
+				proposed, decompErr := d.Run(t.Title + "\n\n" + t.Description)
+				close(decompDone)
+				fmt.Print("\r")
+				if decompErr != nil {
+					return fmt.Errorf("decompose: %w", decompErr)
+				}
+
+				if len(proposed) == 0 {
+					fmt.Fprintln(os.Stderr, "warning: decomposition returned no subtasks (proceeding to plan)")
+				} else {
+					fmt.Printf("\nProposed %d subtasks:\n\n", len(proposed))
+					for i, p := range proposed {
+						deps := ""
+						if len(p.DependsOnIndices) > 0 {
+							depStrs := make([]string, len(p.DependsOnIndices))
+							for j, idx := range p.DependsOnIndices {
+								depStrs[j] = fmt.Sprintf("#%d", idx+1)
+							}
+							deps = fmt.Sprintf("  [depends on %s]", strings.Join(depStrs, ", "))
+						}
+						tool := ""
+						if p.SuggestedTool != "" {
+							tool = fmt.Sprintf("  [tool: %s]", p.SuggestedTool)
+						}
+						fmt.Printf("  %d. %s%s%s\n", i+1, p.Title, deps, tool)
+						if p.Description != "" {
+							fmt.Printf("     %s\n", p.Description)
+						}
+					}
+
+					createConfirm := false
+					if err := huh.NewConfirm().Title("Create these subtasks?").Value(&createConfirm).Run(); err != nil {
+						return err
+					}
+
+					if createConfirm {
+						createdIDs := make([]string, len(proposed))
+						for i, p := range proposed {
+							created, err := store.Create(p.Title, p.Description, t.ID, p.SuggestedTool)
+							if err != nil {
+								return fmt.Errorf("create subtask %d: %w", i+1, err)
+							}
+							createdIDs[i] = created.ID
+							fmt.Printf("  Created subtask %s: %s\n", short(created.ID), p.Title)
+						}
+
+						for i, p := range proposed {
+							for _, depIdx := range p.DependsOnIndices {
+								if depIdx >= 0 && depIdx < len(createdIDs) {
+									if err := store.AddDependency(createdIDs[i], createdIDs[depIdx]); err != nil {
+										return fmt.Errorf("add dep for subtask %d: %w", i+1, err)
+									}
+								}
+							}
+						}
+
+						if err := store.Update(id, map[string]interface{}{"status": "decomposed"}); err != nil {
+							return fmt.Errorf("update parent status: %w", err)
+						}
+						fmt.Printf("\nTask %s marked as decomposed\n", short(id))
+
+						if save {
+							generator := planpkg.New(toolCfg, repoDir)
+							for i, cid := range createdIDs {
+								p := proposed[i]
+								fmt.Printf("Planning subtask %d/%d: %s\n", i+1, len(createdIDs), p.Title)
+								planDone := make(chan struct{})
+								go renderSpinner("Generating plan", planDone)
+								var subtaskPlan string
+								if modelName != "" {
+									subtaskPlan, err = generator.GenerateWithModel(p.Title, p.Description, modelName)
+								} else {
+									subtaskPlan, err = generator.Generate(p.Title, p.Description)
+								}
+								close(planDone)
+								fmt.Print("\r")
+								if err != nil {
+									fmt.Fprintf(os.Stderr, "warning: plan subtask %s: %v\n", short(cid), err)
+									continue
+								}
+								if err := store.SetPlan(cid, subtaskPlan); err != nil {
+									fmt.Fprintf(os.Stderr, "warning: save plan for %s: %v\n", short(cid), err)
+									continue
+								}
+								fmt.Printf("  Saved plan for subtask %s\n", short(cid))
+							}
+						}
+						return nil
+					}
+				}
+			}
+		}
 	}
 
 	generator := planpkg.New(toolCfg, repoDir)
