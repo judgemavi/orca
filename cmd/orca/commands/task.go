@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -64,6 +65,17 @@ func RegisterTask(root *cobra.Command, r *Registry) {
 	planCmd.Flags().String("tool", "", "Tool to use for plan generation")
 	planCmd.Flags().String("model", "", "Model to use for plan generation")
 	taskCmd.AddCommand(planCmd)
+
+	evaluateCmd := &cobra.Command{
+		Use:   "evaluate [task-id]",
+		Short: "Evaluate whether a task should be broken down before planning",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  r.runTaskEvaluate,
+	}
+	evaluateCmd.Flags().String("tool", "", "Tool to use for evaluation")
+	evaluateCmd.Flags().String("model", "", "Model to use for evaluation")
+	evaluateCmd.Flags().Bool("json", false, "Output raw JSON")
+	taskCmd.AddCommand(evaluateCmd)
 
 	taskCmd.AddCommand(&cobra.Command{Use: "show [task-id]", Short: "Show full task details", Args: cobra.MaximumNArgs(1), RunE: r.runTaskShow})
 	taskCmd.AddCommand(&cobra.Command{Use: "reopen [task-id...]", Short: "Move failed tasks back to pending", Args: cobra.ArbitraryArgs, RunE: r.runTaskReopen})
@@ -686,6 +698,104 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nSaved edited plan to task %s\n", short(id))
+	return nil
+}
+
+func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
+	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	if err != nil {
+		return err
+	}
+	store := task.NewStore(db)
+	defer db.Close()
+
+	var id string
+	if len(args) > 0 {
+		id, err = resolveTaskID(store, args[0])
+	} else {
+		id, err = pickTask(store, "Task", allTasks)
+	}
+	if err != nil {
+		return err
+	}
+
+	t, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+
+	toolOverride, _ := cmd.Flags().GetString("tool")
+	modelOverride, _ := cmd.Flags().GetString("model")
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+
+	toolName := toolOverride
+	if toolName == "" {
+		toolName = t.AssignedTool
+	}
+	if toolName == "" {
+		toolName = cfg.Defaults.Tool
+	}
+	if toolName == "" {
+		toolNames := make([]string, 0, len(cfg.Tools))
+		for name := range cfg.Tools {
+			toolNames = append(toolNames, name)
+		}
+		sort.Strings(toolNames)
+		if len(toolNames) == 0 {
+			return fmt.Errorf("no tools configured")
+		}
+		toolName = toolNames[0]
+	}
+
+	toolCfg, ok := cfg.Tools[toolName]
+	if !ok {
+		return fmt.Errorf("tool %q not found in config", toolName)
+	}
+
+	modelName := modelOverride
+	if modelName == "" && t.Model != "" {
+		modelName = t.Model
+	}
+
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	evaluator := evaluate.New(toolCfg, repoDir)
+	fmt.Println("Evaluating task complexity...")
+	done := make(chan struct{})
+	go renderSpinner("Evaluating task complexity", done)
+
+	var result *evaluate.EvaluationResult
+	if modelName != "" {
+		result, err = evaluator.EvaluateWithModel(t.Title, t.Description, modelName)
+	} else {
+		result, err = evaluator.Evaluate(t.Title, t.Description)
+	}
+	close(done)
+	fmt.Print("\r")
+	if err != nil {
+		return fmt.Errorf("evaluate task: %w", err)
+	}
+
+	if jsonOutput {
+		data, err := json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("marshal evaluation result: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	needsBreakdown := "no"
+	if result.NeedsBreakdown {
+		needsBreakdown = "yes"
+	}
+	fmt.Printf("Needs breakdown: %s\n", needsBreakdown)
+	fmt.Printf("Confidence: %.2f\n", result.Confidence)
+	fmt.Printf("Reasoning: %s\n", result.Reasoning)
+	fmt.Printf("Suggested subtasks: %d\n", result.SuggestedSubtaskCount)
 	return nil
 }
 
