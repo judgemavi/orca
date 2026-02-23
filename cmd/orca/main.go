@@ -164,7 +164,7 @@ func main() {
 	commands.RegisterTask(root, reg)
 	commands.RegisterSprint(root, reg)
 	commands.RegisterReview(root, reg)
-	commands.RegisterIntegrate(root, reg)
+	commands.RegisterMerge(root, reg)
 	commands.RegisterServe(root, reg)
 	commands.RegisterMCP(root, reg)
 

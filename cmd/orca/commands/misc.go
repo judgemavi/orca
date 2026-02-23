@@ -375,7 +375,7 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		// Per-phase tool/model config
-		phases := []string{"explore", "plan", "sprint", "review", "integrate"}
+		phases := []string{"explore", "plan", "sprint", "review", "merge"}
 		phaseToolSelections := make(map[string]string, len(phases))
 
 		// Seed from existing config
@@ -563,7 +563,7 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("  orca sprint plan                  Select tasks for a sprint")
 	fmt.Println("  orca sprint start                 Execute the sprint")
 	fmt.Println("  orca sprint review                Review completed work")
-	fmt.Println("  orca integrate                    Merge approved tasks")
+	fmt.Println("  orca merge                        Merge approved tasks")
 	fmt.Println("  orca run                          Do all of the above in one shot")
 	fmt.Println("  orca status                       Show project overview")
 	fmt.Println("  orca serve                        Open web UI")

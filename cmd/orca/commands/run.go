@@ -10,8 +10,8 @@ import (
 )
 
 func RegisterRun(root *cobra.Command, r *Registry) {
-	runCmd := &cobra.Command{Use: "run", Short: "Plan, start, review, and integrate in one shot", RunE: r.runRun}
-	runCmd.Flags().Bool("no-integrate", false, "Skip auto-integration after success")
+	runCmd := &cobra.Command{Use: "run", Short: "Plan, start, review, and merge in one shot", RunE: r.runRun}
+	runCmd.Flags().Bool("no-merge", false, "Skip auto-merge after success")
 	root.AddCommand(runCmd)
 }
 
@@ -22,7 +22,7 @@ func (r *Registry) runRun(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	noIntegrate, _ := cmd.Flags().GetBool("no-integrate")
+	noMerge, _ := cmd.Flags().GetBool("no-merge")
 
 	active, err := planner.GetActive()
 	if err != nil {
@@ -60,7 +60,7 @@ func (r *Registry) runRun(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("\n%d succeeded, %d failed\n", succeeded, failed)
 
-	if failed > 0 || noIntegrate {
+	if failed > 0 || noMerge {
 		return nil
 	}
 
@@ -76,8 +76,8 @@ func (r *Registry) runRun(cmd *cobra.Command, args []string) error {
 
 	merged, failedIDs, err := ig.MergeBatch(taskIDs)
 	if err != nil {
-		return fmt.Errorf("integrate: %w", err)
+		return fmt.Errorf("merge: %w", err)
 	}
-	fmt.Printf("\nIntegrated: %d merged, %d failed\n", len(merged), len(failedIDs))
+	fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failedIDs))
 	return nil
 }
