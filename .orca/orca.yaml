@@ -94,21 +94,21 @@ workers:
 # Supervisor agent config — tool, model, cost budget, per-phase overrides
 orchestrator:
   cost_budget: 0
-  supervisor_tool: claude
-  supervisor_model: claude-opus-4-6
+  supervisor_tool: codex
+  supervisor_model: gpt-5.3-codex
   phases:
     explore:
-      tool: claude
-      model: claude-sonnet-4-6
+      tool: codex
+      model: gpt-5.3-codex
     merge:
-      tool: claude
-      model: claude-sonnet-4-6
+      tool: codex
+      model: gpt-5.3-codex
     plan:
-      tool: claude
+      tool: codex
       model: ""
     review:
-      tool: claude
-      model: claude-sonnet-4-6
+      tool: codex
+      model: gpt-5.3-codex
     sprint:
       tool: codex
       model: ""
