@@ -16,6 +16,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/worker"
+	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/jasjeetmavi/orca/prompts"
 )
 
@@ -59,7 +60,7 @@ func (i *Integrator) Merge(taskID string) error {
 }
 
 func (i *Integrator) mergeUnlocked(taskID string) error {
-	branch := "orca/task-" + taskID
+	branch := i.resolveTaskBranch(taskID)
 
 	if err := i.git("checkout", i.integrationBranch); err != nil {
 		return fmt.Errorf("checkout %s: %w", i.integrationBranch, err)
@@ -70,7 +71,7 @@ func (i *Integrator) mergeUnlocked(taskID string) error {
 		_ = i.git("merge", "--abort")
 
 		// Attempt rebase inside the worktree (where the branch is already checked out).
-		wtPath := filepath.Join(i.worktreeDir, "task-"+taskID)
+		wtPath := i.resolveWorktreePath(taskID)
 		_, wtStatErr := os.Stat(wtPath)
 		if i.worktreeDir != "" && wtStatErr == nil {
 			rebaseCmd := exec.Command("git", "rebase", i.integrationBranch)
@@ -131,8 +132,8 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 		return fmt.Errorf("merge conflict for task-%s and no rerun config set", taskID)
 	}
 
-	wtPath := filepath.Join(i.worktreeDir, "task-"+taskID)
-	branch := "orca/task-" + taskID
+	wtPath := i.resolveWorktreePath(taskID)
+	branch := i.resolveTaskBranch(taskID)
 
 	// Ensure we're on integration branch in the main repo.
 	_ = i.git("checkout", i.integrationBranch)
@@ -207,6 +208,20 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 	}
 
 	return nil
+}
+
+func (i *Integrator) resolveTaskBranch(taskID string) string {
+	if i.worktreeDir != "" {
+		return worktree.ResolveTaskBranch(i.worktreeDir, taskID)
+	}
+	return "orca/task-" + taskID
+}
+
+func (i *Integrator) resolveWorktreePath(taskID string) string {
+	if i.worktreeDir != "" {
+		return worktree.ResolveTaskDir(i.worktreeDir, taskID)
+	}
+	return ""
 }
 
 func (i *Integrator) withIntegrationLock(fn func() error) error {
@@ -292,7 +307,7 @@ func (i *Integrator) MergeAndValidate(taskID string) error {
 // diffLineCount returns the number of lines in a task's diff against the integration branch.
 // Returns 0 on error (treat errored tasks as smallest — try them first to fail fast).
 func (i *Integrator) diffLineCount(taskID string) int {
-	branch := "orca/task-" + taskID
+	branch := i.resolveTaskBranch(taskID)
 	cmd := exec.Command("git", "diff", "--stat", i.integrationBranch+".."+branch)
 	cmd.Dir = i.repoDir
 	out, err := cmd.Output()

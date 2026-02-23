@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 // ConflictDetector polls active worktrees and reports overlapping file edits.
@@ -105,7 +106,7 @@ func (d *ConflictDetector) check(taskIDs []string) {
 	filesToTasks := make(map[string][]string)
 
 	for _, taskID := range taskIDs {
-		worktreePath := filepath.Join(d.worktreeDir, "task-"+taskID)
+		worktreePath := worktree.ResolveTaskDir(d.worktreeDir, taskID)
 		if _, err := os.Stat(worktreePath); err != nil {
 			if os.IsNotExist(err) {
 				continue

@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
@@ -16,6 +15,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 // ========== Integrate ==========
@@ -123,7 +123,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 			}
 			if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
 				failData["conflict"] = true
-				failData["worktree_path"] = filepath.Join(s.cfg.Project.WorktreeDir, "task-"+taskID)
+				failData["worktree_path"] = worktree.ResolveTaskDir(s.cfg.Project.WorktreeDir, taskID)
 			}
 			s.hub.Broadcast(Event{Type: "merge.failed", Data: failData})
 			return

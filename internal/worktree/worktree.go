@@ -42,15 +42,90 @@ func NewManager(repoDir, worktreeDir string) *Manager {
 	}
 }
 
+// Slugify converts a title string into a branch/directory-safe slug.
+func Slugify(title string) string {
+	s := strings.ToLower(strings.TrimSpace(title))
+	var b strings.Builder
+	prevDash := true
+	for _, r := range s {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	out := strings.TrimRight(b.String(), "-")
+	if len(out) > 50 {
+		if idx := strings.LastIndex(out[:50], "-"); idx > 10 {
+			out = out[:idx]
+		} else {
+			out = out[:50]
+		}
+	}
+	return out
+}
+
+// FormatDirName returns the worktree directory name for a task.
+func FormatDirName(taskID, title string) string {
+	slug := Slugify(title)
+	if slug == "" {
+		return "task-" + taskID
+	}
+	return "task-" + taskID + "--" + slug
+}
+
+// FormatBranchName returns the git branch name for a task.
+func FormatBranchName(taskID, title string) string {
+	return "orca/" + FormatDirName(taskID, title)
+}
+
+// ResolveTaskDir finds the actual worktree directory path for a taskID,
+// handling both old (task-{id}) and new (task-{id}--{slug}) formats.
+func ResolveTaskDir(worktreeDir, taskID string) string {
+	exact := filepath.Join(worktreeDir, "task-"+taskID)
+	if _, err := os.Stat(exact); err == nil {
+		return exact
+	}
+	matches, _ := filepath.Glob(filepath.Join(worktreeDir, "task-"+taskID+"--*"))
+	if len(matches) == 1 {
+		return matches[0]
+	}
+	return exact
+}
+
+// ResolveTaskBranch returns the git branch name for a taskID by
+// deriving it from the worktree directory name.
+func ResolveTaskBranch(worktreeDir, taskID string) string {
+	dir := ResolveTaskDir(worktreeDir, taskID)
+	return "orca/" + filepath.Base(dir)
+}
+
+// ExtractTaskID extracts the task ID from a worktree dir name or branch name.
+// Handles "task-{id}", "task-{id}--{slug}", "orca/task-{id}", "orca/task-{id}--{slug}".
+func ExtractTaskID(name string) string {
+	name = strings.TrimPrefix(name, "orca/")
+	name = strings.TrimPrefix(name, "task-")
+	if idx := strings.Index(name, "--"); idx > 0 {
+		return name[:idx]
+	}
+	return name
+}
+
 // Create adds a new git worktree for the given task, branched from baseBranch.
+// The taskTitle is slugified and appended to the directory and branch names.
 // Returns the worktree path and branch name.
-func (m *Manager) Create(taskID, baseBranch string) (worktreePath string, branchName string, err error) {
+func (m *Manager) Create(taskID, baseBranch, taskTitle string) (worktreePath string, branchName string, err error) {
 	if err := os.MkdirAll(m.worktreeDir, 0o755); err != nil {
 		return "", "", fmt.Errorf("create worktree dir: %w", err)
 	}
 
-	branchName = "orca/task-" + taskID
-	worktreePath = filepath.Join(m.worktreeDir, "task-"+taskID)
+	branchName = FormatBranchName(taskID, taskTitle)
+	worktreePath = filepath.Join(m.worktreeDir, FormatDirName(taskID, taskTitle))
 
 	if _, err := os.Stat(worktreePath); err == nil {
 		return "", "", fmt.Errorf("worktree already exists: %s", worktreePath)
@@ -66,8 +141,8 @@ func (m *Manager) Create(taskID, baseBranch string) (worktreePath string, branch
 
 // Remove deletes a worktree and its associated branch for the given task.
 func (m *Manager) Remove(taskID string) error {
-	worktreePath := filepath.Join(m.worktreeDir, "task-"+taskID)
-	branchName := "orca/task-" + taskID
+	worktreePath := ResolveTaskDir(m.worktreeDir, taskID)
+	branchName := "orca/" + filepath.Base(worktreePath)
 
 	if err := m.gitCmd("worktree", "remove", worktreePath); err != nil {
 		return fmt.Errorf("git worktree remove: %w", err)
@@ -111,7 +186,7 @@ func (m *Manager) ListWithAge() ([]WorktreeAge, error) {
 			continue
 		}
 
-		taskID := strings.TrimPrefix(entry.Name(), "task-")
+		taskID := ExtractTaskID(entry.Name())
 		path := filepath.Join(m.worktreeDir, entry.Name())
 
 		result = append(result, WorktreeAge{
@@ -149,7 +224,7 @@ func (m *Manager) CleanupStale(maxAge time.Duration) (removed []string, errs []e
 			continue
 		}
 
-		taskID := strings.TrimPrefix(entry.Name(), "task-")
+		taskID := ExtractTaskID(entry.Name())
 		if err := m.Remove(taskID); err != nil {
 			errs = append(errs, fmt.Errorf("remove %s: %w", taskID, err))
 			continue
@@ -182,7 +257,7 @@ func (m *Manager) DiskUsage() (int64, error) {
 
 // Diff returns the combined staged + unstaged diff for a task's worktree.
 func (m *Manager) Diff(taskID string) (string, error) {
-	worktreePath := filepath.Join(m.worktreeDir, "task-"+taskID)
+	worktreePath := ResolveTaskDir(m.worktreeDir, taskID)
 
 	unstaged, err := m.gitOutput("-C", worktreePath, "diff", "HEAD")
 	if err != nil {
@@ -205,7 +280,7 @@ func (m *Manager) Diff(taskID string) (string, error) {
 
 // DiffStat returns the list of changed file paths in a task's worktree.
 func (m *Manager) DiffStat(taskID string) ([]string, error) {
-	worktreePath := filepath.Join(m.worktreeDir, "task-"+taskID)
+	worktreePath := ResolveTaskDir(m.worktreeDir, taskID)
 
 	out, err := m.gitOutput("-C", worktreePath, "diff", "HEAD", "--name-only")
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 // ========== Tasks ==========
@@ -782,7 +783,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		taskID := strings.TrimPrefix(wt.Branch, "orca/task-")
+		taskID := worktree.ExtractTaskID(wt.Branch)
 		tk, err := store.Get(taskID)
 		if err != nil {
 			stale = append(stale, staleEntry{taskID: taskID, branch: wt.Branch})

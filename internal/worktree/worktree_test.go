@@ -15,15 +15,15 @@ func TestCleanupStaleRemovesOnlyOldWorktrees(t *testing.T) {
 	oldID2 := "old2"
 	newID := "new1"
 
-	oldPath1, _, err := m.Create(oldID1, "main")
+	oldPath1, _, err := m.Create(oldID1, "main", "")
 	if err != nil {
 		t.Fatalf("Create(%s) error = %v", oldID1, err)
 	}
-	oldPath2, _, err := m.Create(oldID2, "main")
+	oldPath2, _, err := m.Create(oldID2, "main", "")
 	if err != nil {
 		t.Fatalf("Create(%s) error = %v", oldID2, err)
 	}
-	newPath, _, err := m.Create(newID, "main")
+	newPath, _, err := m.Create(newID, "main", "")
 	if err != nil {
 		t.Fatalf("Create(%s) error = %v", newID, err)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -719,7 +720,7 @@ func (r *Registry) runCleanup(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		taskID := strings.TrimPrefix(wt.Branch, "orca/task-")
+		taskID := worktree.ExtractTaskID(wt.Branch)
 		t, err := store.Get(taskID)
 		if err != nil {
 			stale = append(stale, staleEntry{taskID: taskID, branch: wt.Branch, reason: "orphan"})

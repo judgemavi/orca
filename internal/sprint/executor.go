@@ -197,7 +197,7 @@ func (e *Executor) prepareSprintTasks(s *Sprint, contextPrefix string) ([]taskIn
 		}
 		model := toolCfg.Model
 
-		wtPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch)
+		wtPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch, t.Title)
 		if err != nil {
 			return nil, createdTaskIDs, fmt.Errorf("create worktree for task %s: %w", taskID, err)
 		}
@@ -843,12 +843,12 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 	}
 	model := toolCfg.Model
 
-	wtPath := filepath.Join(e.config.Project.WorktreeDir, "task-"+taskID)
+	wtPath := worktree.ResolveTaskDir(e.config.Project.WorktreeDir, taskID)
 	if _, err := os.Stat(wtPath); err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("stat worktree for task %s: %w", taskID, err)
 		}
-		createdPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch)
+		createdPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch, t.Title)
 		if err != nil {
 			return fmt.Errorf("create worktree for task %s: %w", taskID, err)
 		}

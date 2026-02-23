@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 // StuckDetector polls task worktrees to detect no-progress loops and edit-revert cycles.
@@ -92,7 +93,7 @@ func (d *StuckDetector) Stop() {
 
 func (d *StuckDetector) poll(taskIDs []string) {
 	for _, taskID := range taskIDs {
-		worktreePath := filepath.Join(d.worktreeDir, "task-"+taskID)
+		worktreePath := worktree.ResolveTaskDir(d.worktreeDir, taskID)
 
 		if _, err := os.Stat(worktreePath); err != nil {
 			if os.IsNotExist(err) {
