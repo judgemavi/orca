@@ -77,9 +77,6 @@ function DialogChrome({
 
 export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
   const [tabs, setTabs] = useState<ConsoleTaskTab[]>([])
-  const [liveSessions, setLiveSessions] = useState<Map<string, string>>(
-    new Map(),
-  )
   const [showTimestamps, setShowTimestamps] = useState(false)
   const hydratingRef = useRef<Set<string>>(new Set())
 
@@ -156,31 +153,6 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
   // WS events
   useEffect(() => {
     if (!lastWSEvent) return
-
-    if (lastWSEvent.type === 'session.created') {
-      const sessionId = String(lastWSEvent.data.id ?? '')
-      const taskId = String(lastWSEvent.data.task_id ?? '')
-      if (taskId && sessionId) {
-        setLiveSessions((prev) => new Map(prev).set(taskId, sessionId))
-      }
-      return
-    }
-
-    if (lastWSEvent.type === 'session.exited') {
-      const sessionId = String(lastWSEvent.data.id ?? '')
-      if (!sessionId) return
-      setLiveSessions((prev) => {
-        const next = new Map(prev)
-        for (const [taskId, sid] of next) {
-          if (sid === sessionId) {
-            next.delete(taskId)
-            break
-          }
-        }
-        return next
-      })
-      return
-    }
 
     if (lastWSEvent.type === 'sprint.started') {
       Promise.all([api.getActiveSprint(), api.listTasks()])
@@ -275,12 +247,6 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
   const closeTab = useCallback((taskId: string) => {
     hydratingRef.current.delete(taskId)
     setTabs((prev) => prev.filter((t) => t.taskId !== taskId))
-    setLiveSessions((prev) => {
-      if (!prev.has(taskId)) return prev
-      const next = new Map(prev)
-      next.delete(taskId)
-      return next
-    })
   }, [])
 
   const hydrateTab = useCallback(
@@ -312,7 +278,6 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
     <div className="fixed bottom-0 left-0 right-0 z-18 flex h-10.5 items-center gap-1 border-t border-slate-700 bg-slate-900 px-2.5">
       {/* Worker task tabs — each with its own independent Dialog instance */}
       {tabs.map((tab) => {
-        const sessionId = liveSessions.get(tab.taskId)
         return (
           <Dialog key={tab.taskId} modal>
             <DialogTrigger
@@ -374,23 +339,19 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
                   )}
                 </DialogChrome>
                 <div className="min-h-0 flex-1">
-                  {sessionId ? (
-                    <TerminalPane sessionId={sessionId} className="h-full" />
-                  ) : (
-                    <ConsoleTab
-                      taskId={tab.taskId}
-                      lines={tab.lines}
-                      isActive
-                      status={tab.status}
-                      showTimestamps={showTimestamps}
-                      onClear={() =>
-                        updateTab(tab.taskId, (prev) => ({
-                          ...prev,
-                          lines: [],
-                        }))
-                      }
-                    />
-                  )}
+                  <ConsoleTab
+                    taskId={tab.taskId}
+                    lines={tab.lines}
+                    isActive
+                    status={tab.status}
+                    showTimestamps={showTimestamps}
+                    onClear={() =>
+                      updateTab(tab.taskId, (prev) => ({
+                        ...prev,
+                        lines: [],
+                      }))
+                    }
+                  />
                 </div>
               </div>
             </DialogContent>

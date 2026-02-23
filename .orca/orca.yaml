@@ -83,7 +83,7 @@ tools:
       mode: none
 # Default tool and model used when not overridden per-phase
 defaults:
-  tool: claude
+  tool: codex
   model: ""
 # Commands to run after integration (e.g. test suites)
 validation:

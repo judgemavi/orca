@@ -145,7 +145,7 @@ func (s *Server) handleSprintAssign(w http.ResponseWriter, r *http.Request) {
 		sprintID = active.ID
 	}
 
-	if err := s.planner.AddTaskToSprint(sprintID, taskID); err != nil {
+	if err := s.planner.AddTaskToSprintWithLimit(sprintID, taskID, s.cfg.Workers.MaxParallel); err != nil {
 		jsonError(w, err, 400)
 		return
 	}

@@ -1045,7 +1045,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 				errors = append(errors, fmt.Sprintf("resolve %q: %v", rawID, err))
 				continue
 			}
-			if err := s.planner.AddTaskToSprint(active.ID, taskID); err != nil {
+			if err := s.planner.AddTaskToSprintWithLimit(active.ID, taskID, s.cfg.Workers.MaxParallel); err != nil {
 				errors = append(errors, fmt.Sprintf("assign %s: %v", taskID, err))
 				continue
 			}

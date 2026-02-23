@@ -221,7 +221,7 @@ func (r *Registry) runSprintStatus(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runSprintAssign(cmd *cobra.Command, args []string) error {
-	db, _, planner, _, err := r.loadRuntimeOrErr()
+	db, cfg, planner, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -257,7 +257,7 @@ func (r *Registry) runSprintAssign(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			continue
 		}
-		if err := planner.AddTaskToSprint(active.ID, id); err != nil {
+		if err := planner.AddTaskToSprintWithLimit(active.ID, id, cfg.Workers.MaxParallel); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			continue
 		}

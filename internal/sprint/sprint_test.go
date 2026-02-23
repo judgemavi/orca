@@ -715,6 +715,37 @@ func TestRecoverSprint(t *testing.T) {
 	}
 }
 
+func TestAddTaskToSprintWithLimit(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	planner := NewPlanner(db)
+
+	first, err := store.Create("Task 1", "", "", "")
+	if err != nil {
+		t.Fatalf("create first task: %v", err)
+	}
+	second, err := store.Create("Task 2", "", "", "")
+	if err != nil {
+		t.Fatalf("create second task: %v", err)
+	}
+
+	s, err := planner.Plan(1)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if len(s.TaskIDs) != 1 || s.TaskIDs[0] != first.ID {
+		t.Fatalf("planned tasks = %v, want [%s]", s.TaskIDs, first.ID)
+	}
+
+	err = planner.AddTaskToSprintWithLimit(s.ID, second.ID, 1)
+	if err == nil {
+		t.Fatal("expected capacity error when adding second task")
+	}
+	if !strings.Contains(err.Error(), "at capacity") {
+		t.Fatalf("error = %q, want capacity message", err)
+	}
+}
+
 func initSprintRecoveryRepo(t *testing.T, dir string) {
 	t.Helper()
 	runSprintGit(t, dir, "init")

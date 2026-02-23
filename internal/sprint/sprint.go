@@ -197,12 +197,21 @@ func (p *Planner) CreateEmpty() (*Sprint, error) {
 
 // AddTaskToSprint moves a task into an existing planning sprint.
 func (p *Planner) AddTaskToSprint(sprintID, taskID string) error {
+	return p.AddTaskToSprintWithLimit(sprintID, taskID, 0)
+}
+
+// AddTaskToSprintWithLimit moves a task into an existing planning sprint while
+// enforcing a max active task count when maxTasks > 0.
+func (p *Planner) AddTaskToSprintWithLimit(sprintID, taskID string, maxTasks int) error {
 	sp, err := p.Get(sprintID)
 	if err != nil {
 		return fmt.Errorf("get sprint: %w", err)
 	}
 	if sp.Status != "planning" {
 		return fmt.Errorf("sprint %s is %s, must be planning", sprintID, sp.Status)
+	}
+	if maxTasks > 0 && len(sp.TaskIDs) >= maxTasks {
+		return fmt.Errorf("sprint %s is at capacity (%d tasks, workers.max_parallel=%d)", sprintID, len(sp.TaskIDs), maxTasks)
 	}
 
 	tk, err := p.tasks.Get(taskID)

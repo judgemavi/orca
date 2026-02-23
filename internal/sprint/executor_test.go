@@ -48,6 +48,9 @@ func setupExecutor(t *testing.T, toolCfg config.ToolConfig) (*Executor, *Planner
 			IntegrationBranch: "orca/integration",
 			WorktreeDir:       filepath.Join(t.TempDir(), "worktrees"),
 		},
+		Workers: config.WorkersConfig{
+			MaxParallel: 3,
+		},
 		Tools: map[string]config.ToolConfig{
 			"claude": toolCfg,
 		},
@@ -594,5 +597,35 @@ func TestRunSingleUsesResumeArgsWhenSessionIDPresent(t *testing.T) {
 	}
 	if updated.SessionID == "" {
 		t.Fatalf("session_id should be populated after run single")
+	}
+}
+
+func TestExecutorRunRejectsSprintOverMaxParallel(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	execu, planner, store, _ := setupExecutor(t, config.ToolConfig{
+		Binary:       "echo",
+		HeadlessArgs: []string{"{{prompt}}"},
+		Timeout:      "30s",
+		Mode:         "headless",
+	})
+	execu.config.Workers.MaxParallel = 1
+
+	if _, err := store.Create("Task 1", "", "", "claude"); err != nil {
+		t.Fatalf("create task 1: %v", err)
+	}
+	if _, err := store.Create("Task 2", "", "", "claude"); err != nil {
+		t.Fatalf("create task 2: %v", err)
+	}
+
+	s, err := planner.Plan(2)
+	if err != nil {
+		t.Fatalf("plan sprint: %v", err)
+	}
+
+	if _, err := execu.Run(s); err == nil {
+		t.Fatal("expected max_parallel error")
 	}
 }

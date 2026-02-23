@@ -144,6 +144,14 @@ func (e *Executor) budgetAwareEnabled() bool {
 // Run executes all tasks in a sprint: transitions to running, creates worktrees,
 // runs workers in parallel, collects results, updates task statuses, stores artifacts.
 func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
+	maxParallel := e.config.Workers.MaxParallel
+	if maxParallel <= 0 {
+		maxParallel = 1
+	}
+	if len(s.TaskIDs) > maxParallel {
+		return nil, fmt.Errorf("sprint %s has %d tasks, exceeds workers.max_parallel=%d", s.ID, len(s.TaskIDs), maxParallel)
+	}
+
 	if err := e.worktrees.EnsureIntegrationBranch(e.config.Project.IntegrationBranch); err != nil {
 		return nil, fmt.Errorf("ensure integration branch: %w", err)
 	}
@@ -324,6 +332,11 @@ func (e *Executor) collectResults(prepared []taskInfo, outputCh chan worker.Outp
 	_ = baselineSnapshot
 
 	results := make([]TaskResult, len(prepared))
+	maxParallel := e.config.Workers.MaxParallel
+	if maxParallel <= 0 {
+		maxParallel = 1
+	}
+	sem := make(chan struct{}, maxParallel)
 	runCtx := e.runCtx
 	if runCtx == nil {
 		runCtx = context.Background()
@@ -364,6 +377,21 @@ func (e *Executor) collectResults(prepared []taskInfo, outputCh chan worker.Outp
 		wg.Add(1)
 		go func(idx int, info taskInfo) {
 			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-runCtx.Done():
+				results[idx] = TaskResult{
+					TaskID:       info.taskID,
+					ToolName:     info.toolName,
+					Status:       "failed",
+					ExitCode:     -1,
+					Stderr:       "orca: process cancelled",
+					WorktreePath: info.worktreePath,
+				}
+				e.emitDone(info.taskID, -1)
+				return
+			}
+			defer func() { <-sem }()
 			defer func() {
 				e.mu.Lock()
 				delete(e.running, info.taskID)
