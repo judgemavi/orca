@@ -174,40 +174,11 @@ func (s *Server) resolveToolConfigForTask(taskID string) (config.ToolConfig, err
 		return config.ToolConfig{}, err
 	}
 
-	name := t.AssignedTool
-	if name != "" {
-		if tc, ok := s.cfg.Tools[name]; ok {
-			if model := validateMergeTaskModel(name, t.Model, tc); model != "" {
-				tc.Model = model
-			}
-			return tc, nil
-		}
-		slog.Warn("task assigned_tool not found in config, falling back to merge phase default", "assigned_tool", name)
-	}
-	resolvedName, toolCfg, err := s.cfg.ResolvePhaseToolConfig("merge")
+	_, toolCfg, err := s.cfg.ResolveToolForPhase(t, "merge", "")
 	if err != nil {
 		return config.ToolConfig{}, err
 	}
-	if model := validateMergeTaskModel(resolvedName, t.Model, toolCfg); model != "" {
-		toolCfg.Model = model
-	}
 	return toolCfg, nil
-}
-
-func validateMergeTaskModel(toolName, model string, toolCfg config.ToolConfig) string {
-	if model == "" {
-		return ""
-	}
-	for _, m := range toolCfg.Models {
-		if m == model {
-			return model
-		}
-	}
-	if toolName == "" {
-		toolName = toolCfg.Binary
-	}
-	slog.Warn("task model not in tool models list, using default", "model", model, "tool", toolName)
-	return ""
 }
 
 func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {

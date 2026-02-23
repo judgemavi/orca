@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasjeetmavi/orca/internal/task"
 	"gopkg.in/yaml.v3"
 )
 
@@ -848,5 +849,87 @@ func TestResolvePhaseToolConfig_NoToolsConfigured(t *testing.T) {
 	cfg := Config{}
 	if _, _, err := cfg.ResolvePhaseToolConfig("explore"); err == nil {
 		t.Fatal("expected error for no tools configured")
+	}
+}
+
+func TestResolveToolForPhase_Priority(t *testing.T) {
+	cfg := Config{
+		Tools: map[string]ToolConfig{
+			"codex":  {Binary: "codex", Model: "codex-default", Models: []string{"codex-default", "codex-allowed"}},
+			"claude": {Binary: "claude", Model: "claude-default", Models: []string{"claude-default", "claude-allowed"}},
+		},
+		Defaults: DefaultsConfig{Tool: "claude", Model: "claude-default"},
+		Orchestrator: OrchestratorConfig{
+			Phases: map[string]PhaseConfig{
+				"plan": {Tool: "claude", Model: "claude-default"},
+			},
+		},
+	}
+	tk := &task.Task{
+		AssignedTool: "claude",
+		Model:        "claude-allowed",
+		PhaseConfig: &task.PhaseConfigMap{
+			Phases: map[string]task.PhaseOverride{
+				"plan": {Tool: "codex", Model: "codex-allowed"},
+			},
+		},
+	}
+
+	name, tc, err := cfg.ResolveToolForPhase(tk, "plan", "")
+	if err != nil {
+		t.Fatalf("ResolveToolForPhase: %v", err)
+	}
+	if name != "codex" {
+		t.Fatalf("tool=%q, want codex", name)
+	}
+	if tc.Model != "codex-allowed" {
+		t.Fatalf("model=%q, want codex-allowed", tc.Model)
+	}
+}
+
+func TestResolveToolForPhase_Override(t *testing.T) {
+	cfg := Config{
+		Tools: map[string]ToolConfig{
+			"codex":  {Binary: "codex", Model: "codex-default", Models: []string{"codex-default", "codex-allowed"}},
+			"claude": {Binary: "claude", Model: "claude-default", Models: []string{"claude-default", "claude-allowed"}},
+		},
+		Defaults: DefaultsConfig{Tool: "claude", Model: "claude-default"},
+		Orchestrator: OrchestratorConfig{
+			Phases: map[string]PhaseConfig{
+				"plan": {Tool: "claude", Model: "claude-default"},
+			},
+		},
+	}
+	tk := &task.Task{
+		Model: "claude-allowed",
+		PhaseConfig: &task.PhaseConfigMap{
+			Phases: map[string]task.PhaseOverride{
+				"plan": {Tool: "codex", Model: "codex-allowed"},
+			},
+		},
+	}
+
+	name, tc, err := cfg.ResolveToolForPhase(tk, "plan", "claude")
+	if err != nil {
+		t.Fatalf("ResolveToolForPhase: %v", err)
+	}
+	if name != "claude" {
+		t.Fatalf("tool=%q, want claude", name)
+	}
+	if tc.Model != "claude-allowed" {
+		t.Fatalf("model=%q, want claude-allowed", tc.Model)
+	}
+}
+
+func TestValidateModel(t *testing.T) {
+	tc := ToolConfig{
+		Binary: "codex",
+		Models: []string{"m1", "m2"},
+	}
+	if got := ValidateModel("codex", "m2", tc); got != "m2" {
+		t.Fatalf("ValidateModel valid=%q, want m2", got)
+	}
+	if got := ValidateModel("codex", "missing", tc); got != "" {
+		t.Fatalf("ValidateModel invalid=%q, want empty", got)
 	}
 }

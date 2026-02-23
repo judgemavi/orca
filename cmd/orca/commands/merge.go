@@ -86,16 +86,9 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return config.ToolConfig{}, err
 		}
-		toolName := t.AssignedTool
-		if toolName == "" {
-			for _, tc := range cfg.Tools {
-				return tc, nil
-			}
-			return config.ToolConfig{}, fmt.Errorf("no tools configured")
-		}
-		tc, ok := cfg.Tools[toolName]
-		if !ok {
-			return config.ToolConfig{}, fmt.Errorf("tool %q not found", toolName)
+		_, tc, err := cfg.ResolveToolForPhase(t, "merge", "")
+		if err != nil {
+			return config.ToolConfig{}, err
 		}
 		return tc, nil
 	})

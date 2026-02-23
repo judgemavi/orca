@@ -476,61 +476,19 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	var phaseOverride *task.PhaseOverride
-	if tk.PhaseConfig != nil && !tk.PhaseConfig.UseDefaults {
-		if p, ok := tk.PhaseConfig.Phases["plan"]; ok {
-			phaseOverride = &p
+	toolName, toolCfg, err := s.cfg.ResolveToolForPhase(tk, "plan", req.Tool)
+	if err != nil {
+		if strings.TrimSpace(req.Tool) != "" {
+			jsonError(w, err, 400)
+		} else {
+			jsonError(w, err, 500)
 		}
+		return
 	}
 
-	toolName := strings.TrimSpace(req.Tool)
-
-	var toolCfg config.ToolConfig
-	if toolName != "" {
-		tc, ok := s.cfg.Tools[toolName]
-		if !ok {
-			jsonError(w, fmt.Sprintf("tool %q not found", toolName), 400)
-			return
-		}
-		toolCfg = tc
-	} else {
-		if phaseOverride != nil && phaseOverride.Tool != "" {
-			if tc, ok := s.cfg.Tools[phaseOverride.Tool]; ok {
-				toolName = phaseOverride.Tool
-				toolCfg = tc
-			} else {
-				slog.Warn("task phase_config tool not found in config, falling back", "tool", phaseOverride.Tool, "phase", "plan")
-			}
-		}
-		if toolName == "" && tk.AssignedTool != "" {
-			if tc, ok := s.cfg.Tools[tk.AssignedTool]; ok {
-				toolName = tk.AssignedTool
-				toolCfg = tc
-			} else {
-				slog.Warn("task assigned_tool not found in config, falling back to plan phase default", "assigned_tool", tk.AssignedTool)
-			}
-		}
-		if toolName == "" {
-			var err error
-			toolName, toolCfg, err = s.cfg.ResolvePhaseToolConfig("plan")
-			if err != nil {
-				jsonError(w, err, 500)
-				return
-			}
-		}
-	}
-
-	modelOverride := strings.TrimSpace(req.Model)
-	if modelOverride == "" && phaseOverride != nil {
-		modelOverride = validateTaskModelOverride(toolName, phaseOverride.Model, toolCfg)
-	}
+	modelOverride := config.ValidateModel(toolName, req.Model, toolCfg)
 	if modelOverride == "" {
-		modelOverride = validateTaskModelOverride(toolName, tk.Model, toolCfg)
-	}
-	if modelOverride == "" {
-		if _, phaseToolCfg, err := s.cfg.ResolvePhaseToolConfig("plan"); err == nil {
-			modelOverride = validateTaskModelOverride(toolName, phaseToolCfg.Model, toolCfg)
-		}
+		modelOverride = toolCfg.Model
 	}
 
 	s.hub.Broadcast(Event{
@@ -691,19 +649,6 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id s
 		"task_id":    resolved,
 		"evaluation": result,
 	})
-}
-
-func validateTaskModelOverride(toolName, model string, toolCfg config.ToolConfig) string {
-	if model == "" {
-		return ""
-	}
-	for _, m := range toolCfg.Models {
-		if m == model {
-			return model
-		}
-	}
-	slog.Warn("task model not in tool models list, using default", "model", model, "tool", toolName)
-	return ""
 }
 
 func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request, id string) {
