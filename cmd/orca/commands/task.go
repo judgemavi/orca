@@ -191,7 +191,7 @@ func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		id, err = resolveTaskID(store, args[0])
 	} else {
-		id, err = pickTask(store, "Task", allTasks)
+		id, err = pickTask(store, "Task", statusFilter())
 	}
 	if err != nil {
 		return err
@@ -304,7 +304,7 @@ func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		id, err = resolveTaskID(store, args[0])
 	} else {
-		id, err = pickTask(store, "Task", allTasks)
+		id, err = pickTask(store, "Task", statusFilter())
 	}
 	if err != nil {
 		return err
@@ -366,7 +366,7 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		id, err = resolveTaskID(store, args[0])
 	} else {
-		id, err = pickTask(store, "Approved task", approvedTasks)
+		id, err = pickTask(store, "Approved task", statusFilter("approved"))
 	}
 	if err != nil {
 		return err
@@ -461,7 +461,7 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		id, err = resolveTaskID(store, args[0])
 	} else {
-		id, err = pickTask(store, "Task", allTasks)
+		id, err = pickTask(store, "Task", statusFilter())
 	}
 	if err != nil {
 		return err
@@ -578,7 +578,7 @@ func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		id, err = resolveTaskID(store, args[0])
 	} else {
-		id, err = pickTask(store, "Task", allTasks)
+		id, err = pickTask(store, "Task", statusFilter())
 	}
 	if err != nil {
 		return err
@@ -661,7 +661,7 @@ func (r *Registry) runTaskShow(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		id, err = resolveTaskID(store, args[0])
 	} else {
-		id, err = pickTask(store, "Task", allTasks)
+		id, err = pickTask(store, "Task", statusFilter())
 	}
 	if err != nil {
 		return err
@@ -714,7 +714,7 @@ func (r *Registry) runTaskReopen(cmd *cobra.Command, args []string) error {
 
 	taskIDs := args
 	if len(taskIDs) == 0 {
-		taskIDs, err = pickTasks(store, "Failed tasks", failedTasks)
+		taskIDs, err = pickTasks(store, "Failed tasks", statusFilter("failed"))
 		if err != nil {
 			return err
 		}

@@ -31,7 +31,7 @@ func (r *Registry) runReviewApprove(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("resolve %q: %w", args[0], err)
 		}
 	} else {
-		taskID, err = pickTask(store, "Approve task", reviewTasks)
+		taskID, err = pickTask(store, "Approve task", statusFilter("review"))
 		if err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ func (r *Registry) runReviewRequestChanges(cmd *cobra.Command, args []string) er
 	)
 	switch len(args) {
 	case 0:
-		taskID, err = pickTask(store, "Request changes", reviewTasks)
+		taskID, err = pickTask(store, "Request changes", statusFilter("review"))
 		if err != nil {
 			return err
 		}

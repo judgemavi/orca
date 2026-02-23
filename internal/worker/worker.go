@@ -19,7 +19,6 @@ import (
 // Worker executes tasks via either headless or interactive adapter modes.
 type Worker interface {
 	Execute(ctx context.Context, taskID, prompt, worktreePath string) (*Result, error)
-	Cancel()
 	SetCmdCallback(func(*exec.Cmd))
 	SetModel(string)
 	SetTaskTitle(string)
@@ -233,9 +232,6 @@ func (a *Adapter) SetTaskTitle(title string) { a.TaskTitle = title }
 
 // SetOutputChan sets the live output stream channel.
 func (a *Adapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }
-
-// Cancel is reserved for future use (e.g. interactive session teardown).
-func (a *Adapter) Cancel() {}
 
 func filteredEnv() []string {
 	env := make([]string, 0, len(os.Environ()))
