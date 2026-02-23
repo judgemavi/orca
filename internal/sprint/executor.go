@@ -502,26 +502,13 @@ func (e *Executor) recordCosts(sprintID string, prepared []taskInfo, results []T
 }
 
 func (e *Executor) finalizeSprint(sprintID string, results []TaskResult) error {
-	failed := false
 	for _, r := range results {
 		if err := e.planner.CompleteTask(sprintID, r.TaskID, r.Status); err != nil {
 			log.Printf("complete task %s: %v", r.TaskID, err)
 		}
-		if r.Status == "failed" {
-			failed = true
-		}
 	}
 
-	if failed {
-		if err := e.planner.Fail(sprintID); err != nil {
-			return fmt.Errorf("fail sprint: %w", err)
-		}
-		return nil
-	}
-	if err := e.planner.Complete(sprintID); err != nil {
-		return fmt.Errorf("complete sprint: %w", err)
-	}
-	return nil
+	return e.planner.CompleteSprintIfDone(sprintID)
 }
 
 func (e *Executor) executeTaskLegacy(ctx context.Context, info taskInfo, outputCh chan<- worker.OutputLine) TaskResult {
