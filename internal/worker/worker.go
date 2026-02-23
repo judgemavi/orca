@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -50,9 +50,9 @@ type OutputLine struct {
 type Adapter struct {
 	Binary    string
 	TaskTitle string
-	Args    []string
-	Timeout time.Duration
-	Model   string
+	Args      []string
+	Timeout   time.Duration
+	Model     string
 	// CmdCallback, if set, is called with the exec.Cmd right before it's started.
 	// Use this to register the process for external tracking/cancellation.
 	CmdCallback func(*exec.Cmd)
@@ -238,7 +238,7 @@ func streamPipe(taskID, stream string, r io.Reader, outBuf *bytes.Buffer, output
 			return
 		}
 		if err != nil {
-			log.Printf("stream read (%s %s): %v", taskID, stream, err)
+			slog.Warn("worker stream read failed", "task_id", taskID, "stream", stream, "err", err)
 			return
 		}
 	}

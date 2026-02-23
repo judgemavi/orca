@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -123,7 +123,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 			if rec := recover(); rec != nil {
 				errMsg := fmt.Sprintf("decompose panic: %v", rec)
 				if opErr := s.ops.Fail(operationID, errMsg); opErr != nil {
-					log.Printf("mark decompose operation failed %s: %v", operationID, opErr)
+					slog.Error("mark decompose operation failed", "operation_id", operationID, "err", opErr)
 				}
 				s.hub.Broadcast(Event{Type: "decompose.failed", Data: map[string]string{
 					"operation_id": operationID,
@@ -136,7 +136,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		tasks, err := d.Run(goal)
 		if err != nil {
 			if opErr := s.ops.Fail(operationID, err.Error()); opErr != nil {
-				log.Printf("mark decompose operation failed %s: %v", operationID, opErr)
+				slog.Error("mark decompose operation failed", "operation_id", operationID, "err", opErr)
 			}
 			s.hub.Broadcast(Event{Type: "decompose.failed", Data: map[string]string{
 				"operation_id": operationID,
@@ -151,7 +151,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 			Proposed:  tasks,
 		})
 		if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-			log.Printf("complete decompose operation %s: %v", operationID, err)
+			slog.Debug("complete decompose operation failed", "operation_id", operationID, "err", err)
 		}
 		s.hub.Broadcast(Event{Type: "decompose.completed", Data: map[string]interface{}{
 			"operation_id": operationID,

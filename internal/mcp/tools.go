@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -1273,7 +1273,7 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 		}
 		if t.SprintID != "" {
 			if err := s.planner.CompleteSprintIfDone(t.SprintID); err != nil {
-				log.Printf("check sprint completion after approve %s: %v", t.SprintID, err)
+				slog.Warn("check sprint completion after approve failed", "sprint_id", t.SprintID, "err", err)
 			}
 		}
 		return map[string]interface{}{"task_id": taskID, "status": "completed"}, nil
@@ -1644,7 +1644,7 @@ func resolveTaskPhaseToolConfig(t *task.Task, phase string, cfg *config.Config) 
 			toolName = phaseCfg.Tool
 			toolCfg = tc
 		} else {
-			log.Printf("task phase_config tool %q for phase %q not found in config, falling back", phaseCfg.Tool, phase)
+			slog.Warn("task phase_config tool not found in config, falling back", "tool", phaseCfg.Tool, "phase", phase)
 		}
 	}
 	if toolName == "" && t != nil && t.AssignedTool != "" {
@@ -1652,7 +1652,7 @@ func resolveTaskPhaseToolConfig(t *task.Task, phase string, cfg *config.Config) 
 			toolName = t.AssignedTool
 			toolCfg = tc
 		} else {
-			log.Printf("task assigned_tool %q not found in config, falling back to %s phase default", t.AssignedTool, phase)
+			slog.Warn("task assigned_tool not found in config, falling back to phase default", "assigned_tool", t.AssignedTool, "phase", phase)
 		}
 	}
 	if toolName == "" {
@@ -1693,6 +1693,6 @@ func validateTaskModel(toolName, model string, toolCfg config.ToolConfig) string
 			return model
 		}
 	}
-	log.Printf("task model %q not in %s models list, using default", model, toolName)
+	slog.Warn("task model not in tool models list, using default", "model", model, "tool", toolName)
 	return ""
 }

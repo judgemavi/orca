@@ -3,7 +3,7 @@ package cost
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -68,7 +68,7 @@ func parseRegexCost(stdout, pattern string) (inputTokens, outputTokens int64, co
 	if len(matches) >= 2 {
 		n, ok := parseInt64Capture(matches[1])
 		if !ok {
-			log.Printf("cost: regex input_tokens capture is non-numeric: %q", matches[1])
+			slog.Warn("cost regex input_tokens capture non-numeric", "capture", matches[1])
 			return 0, 0, 0, nil
 		}
 		if n > 0 {
@@ -78,7 +78,7 @@ func parseRegexCost(stdout, pattern string) (inputTokens, outputTokens int64, co
 	if len(matches) >= 3 {
 		n, ok := parseInt64Capture(matches[2])
 		if !ok {
-			log.Printf("cost: regex output_tokens capture is non-numeric: %q", matches[2])
+			slog.Warn("cost regex output_tokens capture non-numeric", "capture", matches[2])
 			return 0, 0, 0, nil
 		}
 		if n > 0 {
@@ -88,7 +88,7 @@ func parseRegexCost(stdout, pattern string) (inputTokens, outputTokens int64, co
 	if len(matches) >= 4 {
 		n, ok := parseFloatCapture(matches[3])
 		if !ok {
-			log.Printf("cost: regex cost capture is non-numeric: %q", matches[3])
+			slog.Warn("cost regex cost capture non-numeric", "capture", matches[3])
 			return 0, 0, 0, nil
 		}
 		if n > 0 {

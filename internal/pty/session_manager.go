@@ -2,7 +2,7 @@ package pty
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -149,7 +149,7 @@ func (m *SessionManager) handleRuntimeEvent(eventType string, session *Session) 
 	}
 	if m.db != nil && eventType == "session.exited" {
 		if err := m.db.MarkSessionExited(session.ID, session.ExitCode); err != nil {
-			log.Printf("persist session exit %s: %v", session.ID, err)
+			slog.Debug("persist session exit failed", "session_id", session.ID, "err", err)
 		}
 	}
 

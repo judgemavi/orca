@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,7 +108,7 @@ func (m *Manager) Create(opts CreateOpts) (*Session, error) {
 	if err != nil {
 		// macOS may block Setpgid for certain binaries (e.g. nvm-installed node).
 		// Retry without process group creation — Kill will target the process directly.
-		log.Printf("pty: Setpgid failed for %q, retrying without process group: %v", opts.Command, err)
+		slog.Debug("pty Setpgid failed, retrying without process group", "command", opts.Command, "err", err)
 		cmd = exec.Command(command, args...)
 		if opts.Dir != "" {
 			cmd.Dir = opts.Dir
@@ -177,7 +177,7 @@ func (m *Manager) Kill(id string) error {
 
 	if err := signalProcessGroup(s, syscall.SIGTERM); err != nil {
 		if errors.Is(err, syscall.EPERM) {
-			log.Printf("pty: permission denied sending SIGTERM to session %s (pid %d): %v", id, processID(s), err)
+			slog.Warn("pty permission denied sending SIGTERM", "session_id", id, "pid", processID(s), "err", err)
 		} else {
 			return fmt.Errorf("sigterm %q: %w", id, err)
 		}
@@ -189,9 +189,9 @@ func (m *Manager) Kill(id string) error {
 
 	if err := signalProcessGroup(s, syscall.SIGKILL); err != nil {
 		if errors.Is(err, syscall.EPERM) {
-			log.Printf("pty: permission denied sending SIGKILL to session %s (pid %d): %v", id, processID(s), err)
+			slog.Warn("pty permission denied sending SIGKILL", "session_id", id, "pid", processID(s), "err", err)
 		} else {
-			log.Printf("pty: failed sending SIGKILL to session %s (pid %d): %v", id, processID(s), err)
+			slog.Warn("pty failed sending SIGKILL", "session_id", id, "pid", processID(s), "err", err)
 		}
 	}
 

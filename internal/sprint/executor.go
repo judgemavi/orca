@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -237,7 +237,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 	stuckCheckInterval := 30 * time.Second
 	if raw := strings.TrimSpace(e.config.Monitor.StuckCheckInterval); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err != nil {
-			log.Printf("monitor: invalid stuck_check_interval %q, using 30s: %v", raw, err)
+			slog.Warn("monitor invalid stuck_check_interval, using default", "raw", raw, "default", "30s", "err", err)
 		} else {
 			stuckCheckInterval = parsed
 		}
@@ -251,7 +251,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 	conflictInterval := 15 * time.Second
 	if raw := strings.TrimSpace(e.config.Monitor.ConflictInterval); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err != nil {
-			log.Printf("monitor: invalid conflict_check_interval %q, using 15s: %v", raw, err)
+			slog.Warn("monitor invalid conflict_check_interval, using default", "raw", raw, "default", "15s", "err", err)
 		} else {
 			conflictInterval = parsed
 		}
@@ -262,7 +262,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 		stuckCheckInterval,
 		maxStuckCycles,
 		func(taskID, reason string) {
-			log.Printf("monitor: task %s stuck: %s", taskID, reason)
+			slog.Warn("monitor task stuck", "task_id", taskID, "reason", reason)
 			e.emitMonitorAlert("stuck", taskID, reason)
 			e.killTask(taskID)
 		},
@@ -285,7 +285,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 					`SELECT SUM(estimated_cost) FROM costs WHERE sprint_id = ? AND task_id = ?`,
 					e.sprintID, taskID,
 				).Scan(&total); err != nil {
-					log.Printf("monitor: query cost for task %s: %v", taskID, err)
+					slog.Warn("monitor query task cost failed", "task_id", taskID, "sprint_id", e.sprintID, "err", err)
 					return 0
 				}
 				if !total.Valid {
@@ -295,7 +295,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 			},
 			func(taskID string, spent, limit float64) {
 				msg := fmt.Sprintf("budget exceeded ($%.2f/$%.2f)", spent, limit)
-				log.Printf("monitor: task %s %s", taskID, msg)
+				slog.Warn("monitor budget alert", "task_id", taskID, "spent", spent, "limit", limit, "message", msg)
 				e.emitMonitorAlert("budget", taskID, msg)
 				e.killTask(taskID)
 			},
@@ -308,7 +308,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 		conflictInterval,
 		func(taskIDs, files []string) {
 			msg := fmt.Sprintf("conflict detected between %v on files %v", taskIDs, files)
-			log.Printf("monitor: %s", msg)
+			slog.Warn("monitor conflict detected", "task_ids", taskIDs, "files", files, "message", msg)
 			for _, taskID := range taskIDs {
 				e.emitMonitorAlert("conflict", taskID, msg)
 			}
@@ -370,7 +370,7 @@ func (e *Executor) collectResults(prepared []taskInfo, outputCh chan worker.Outp
 				e.mu.Unlock()
 
 				if r := recover(); r != nil {
-					log.Printf("worker panic for task %s: %v", info.taskID, r)
+					slog.Error("worker panic", "task_id", info.taskID, "panic", r)
 					results[idx] = TaskResult{
 						TaskID:       info.taskID,
 						ToolName:     info.toolName,
@@ -407,7 +407,7 @@ func (e *Executor) takeBaselineSnapshot() *quality.Snapshot {
 
 	baselineSnapshot, err := quality.TakeSnapshot(e.repoDir, e.config.Validation.Commands)
 	if err != nil {
-		log.Printf("quality: baseline snapshot failed: %v", err)
+		slog.Warn("quality baseline snapshot failed", "err", err)
 		return nil
 	}
 	return baselineSnapshot
@@ -433,20 +433,20 @@ func (e *Executor) buildQualityJSON(r TaskResult) sql.NullString {
 		qualityPayload.Scope = scope
 		hasQualityData = true
 		if scope.Excessive {
-			log.Printf("quality: task %s scope creep: %v", r.TaskID, scope.Flags)
+			slog.Warn("quality scope creep", "task_id", r.TaskID, "flags", scope.Flags)
 		}
 	}
 
 	if e.config.Quality.TestDelta && e.runBaselineSnapshot != nil && r.WorktreePath != "" {
 		afterSnapshot, err := quality.TakeSnapshot(r.WorktreePath, e.config.Validation.Commands)
 		if err != nil {
-			log.Printf("quality: task %s post snapshot failed: %v", r.TaskID, err)
+			slog.Warn("quality post snapshot failed", "task_id", r.TaskID, "err", err)
 		} else if afterSnapshot != nil {
 			delta := quality.ComputeDelta(e.runBaselineSnapshot, afterSnapshot)
 			qualityPayload.TestDelta = delta
 			hasQualityData = true
 			if len(delta.NewFailures) > 0 {
-				log.Printf("quality: task %s broke tests: %v", r.TaskID, delta.NewFailures)
+				slog.Warn("quality new test failures", "task_id", r.TaskID, "new_failures", delta.NewFailures)
 			}
 		}
 	}
@@ -457,7 +457,7 @@ func (e *Executor) buildQualityJSON(r TaskResult) sql.NullString {
 
 	buf, err := json.Marshal(qualityPayload)
 	if err != nil {
-		log.Printf("quality: task %s marshal failed: %v", r.TaskID, err)
+		slog.Warn("quality marshal failed", "task_id", r.TaskID, "err", err)
 		return sql.NullString{}
 	}
 	return sql.NullString{String: string(buf), Valid: true}
@@ -473,7 +473,7 @@ func (e *Executor) storeArtifacts(sprintID string, results []TaskResult) {
 			r.Diff, r.Stdout, r.Stderr, r.ExitCode, r.Duration.Milliseconds(), qualityJSON,
 		)
 		if err != nil {
-			log.Printf("store artifact for task %s: %v", r.TaskID, err)
+			slog.Warn("store artifact failed", "task_id", r.TaskID, "err", err)
 		}
 	}
 }
@@ -491,11 +491,11 @@ func (e *Executor) recordCosts(sprintID string, prepared []taskInfo, results []T
 	for _, r := range results {
 		in, out, c, err := cost.ParseCost(costCfgByTaskID[r.TaskID], r.Stdout)
 		if err != nil {
-			log.Printf("parse cost for task %s: %v", r.TaskID, err)
+			slog.Warn("parse cost failed", "task_id", r.TaskID, "err", err)
 		}
 		if in > 0 || out > 0 || c > 0 {
 			if err := e.costTracker.Record(sprintID, r.TaskID, r.ToolName, in, out, c); err != nil {
-				log.Printf("record cost for task %s: %v", r.TaskID, err)
+				slog.Warn("record cost failed", "task_id", r.TaskID, "sprint_id", sprintID, "err", err)
 			}
 		}
 	}
@@ -505,7 +505,7 @@ func (e *Executor) finalizeSprint(sprintID string, results []TaskResult) error {
 	failed := false
 	for _, r := range results {
 		if err := e.planner.CompleteTask(sprintID, r.TaskID, r.Status); err != nil {
-			log.Printf("complete task %s: %v", r.TaskID, err)
+			slog.Warn("complete task failed", "task_id", r.TaskID, "sprint_id", sprintID, "err", err)
 		}
 		if r.Status == "failed" {
 			failed = true
@@ -633,7 +633,7 @@ func (e *Executor) executeTaskPTY(ctx context.Context, info taskInfo, outputCh c
 		case <-runCtx.Done():
 		}
 		if err := e.sessionMgr.Kill(sess.ID); err != nil {
-			log.Printf("kill PTY session %s for task %s: %v", sess.ID, info.taskID, err)
+			slog.Warn("kill PTY session failed", "session_id", sess.ID, "task_id", info.taskID, "err", err)
 		}
 	}()
 
@@ -644,7 +644,7 @@ func (e *Executor) executeTaskPTY(ctx context.Context, info taskInfo, outputCh c
 	result.Stdout = stdout
 
 	if streamErr != nil && !errorsIsEOF(streamErr) {
-		log.Printf("stream PTY (%s): %v", info.taskID, streamErr)
+		slog.Warn("stream PTY failed", "task_id", info.taskID, "err", streamErr)
 	}
 
 	if runCtx.Err() == context.DeadlineExceeded {
@@ -689,7 +689,7 @@ func (e *Executor) storeSessionID(taskID, sessionID string) {
 		return
 	}
 	if err := task.NewStore(e.planner.DB()).SetSessionID(taskID, sessionID); err != nil {
-		log.Printf("set session_id for task %s: %v", taskID, err)
+		slog.Warn("set session_id failed", "task_id", taskID, "session_id", sessionID, "err", err)
 	}
 }
 
@@ -907,7 +907,7 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 	}()
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("worker panic for task %s: %v", taskID, r)
+			slog.Error("worker panic", "task_id", taskID, "panic", r)
 			_ = taskStore.Update(taskID, map[string]interface{}{"status": "failed"})
 			if e.broadcastHook != nil {
 				e.broadcastHook(taskID, "failed")
@@ -949,7 +949,7 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 	e.emitDone(taskID, result.ExitCode)
 
 	if err := taskStore.Update(taskID, map[string]interface{}{"status": result.Status}); err != nil {
-		log.Printf("update task status %s: %v", taskID, err)
+		slog.Warn("update task status failed", "task_id", taskID, "status", result.Status, "err", err)
 	}
 	if e.broadcastHook != nil {
 		e.broadcastHook(taskID, result.Status)
@@ -963,12 +963,12 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 			result.Diff, result.Stdout, result.Stderr, result.ExitCode, result.Duration.Milliseconds(), nil,
 		)
 		if err != nil {
-			log.Printf("store artifact for task %s: %v", taskID, err)
+			slog.Warn("store artifact failed", "task_id", taskID, "err", err)
 		}
 	}
 	if reviewID != "" && result.ExitCode == 0 {
 		if err := taskStore.AddressReview(reviewID); err != nil {
-			log.Printf("address review %s for task %s: %v", reviewID, taskID, err)
+			slog.Warn("address review failed", "review_id", reviewID, "task_id", taskID, "err", err)
 		}
 	}
 
@@ -1000,15 +1000,15 @@ func (e *Executor) Cancel() error {
 	for taskID, cmd := range cmds {
 		if e.sessionMgr != nil {
 			if sessionID, ok := sessionIDs[taskID]; ok && sessionID != "" {
-				log.Printf("closing PTY session for task %s (%s)", taskID, sessionID)
+				slog.Info("closing PTY session", "task_id", taskID, "session_id", sessionID)
 				if err := e.sessionMgr.Kill(sessionID); err != nil {
-					log.Printf("close PTY session %s for task %s: %v", sessionID, taskID, err)
+					slog.Warn("close PTY session failed", "session_id", sessionID, "task_id", taskID, "err", err)
 				}
 				continue
 			}
 		}
 		if cmd.Process != nil {
-			log.Printf("sending SIGINT to task %s (pid %d)", taskID, cmd.Process.Pid)
+			slog.Info("sending SIGINT to task", "task_id", taskID, "pid", cmd.Process.Pid)
 			_ = cmd.Process.Signal(syscall.SIGINT)
 		}
 	}
@@ -1022,7 +1022,7 @@ func (e *Executor) Cancel() error {
 			continue
 		}
 		if cmd.Process != nil {
-			log.Printf("force killing task %s (pid %d)", taskID, cmd.Process.Pid)
+			slog.Warn("force killing task", "task_id", taskID, "pid", cmd.Process.Pid)
 			_ = cmd.Process.Kill()
 		}
 	}
@@ -1038,7 +1038,7 @@ func (e *Executor) killTask(taskID string) {
 	e.mu.Unlock()
 	if e.sessionMgr != nil && sessionID != "" {
 		if err := e.sessionMgr.Kill(sessionID); err != nil {
-			log.Printf("kill PTY session %s for task %s: %v", sessionID, taskID, err)
+			slog.Warn("kill PTY session failed", "session_id", sessionID, "task_id", taskID, "err", err)
 		}
 		return
 	}
@@ -1051,14 +1051,14 @@ func (e *Executor) killTask(taskID string) {
 func (e *Executor) rollbackPreparation(s *Sprint, createdTaskIDs []string) {
 	for _, taskID := range createdTaskIDs {
 		if err := e.worktrees.Remove(taskID); err != nil {
-			log.Printf("rollback: remove worktree for task %s: %v", taskID, err)
+			slog.Warn("rollback remove worktree failed", "task_id", taskID, "err", err)
 		}
 	}
 	if err := e.planner.ResetSprintTasks(s.ID); err != nil {
-		log.Printf("rollback: reset sprint tasks: %v", err)
+		slog.Warn("rollback reset sprint tasks failed", "sprint_id", s.ID, "err", err)
 	}
 	if err := e.planner.Fail(s.ID); err != nil {
-		log.Printf("rollback: fail sprint: %v", err)
+		slog.Warn("rollback fail sprint failed", "sprint_id", s.ID, "err", err)
 	}
 }
 
@@ -1068,7 +1068,7 @@ func (e *Executor) Cleanup(s *Sprint) error {
 	var firstErr error
 	for _, taskID := range s.TaskIDs {
 		if err := e.worktrees.Remove(taskID); err != nil {
-			log.Printf("remove worktree for task %s: %v", taskID, err)
+			slog.Warn("remove worktree failed", "task_id", taskID, "err", err)
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -1096,7 +1096,7 @@ func (e *Executor) resolveTaskToolConfig(t *task.Task, phase string) (string, co
 			toolName = phaseCfg.Tool
 			toolCfg = tc
 		} else {
-			log.Printf("task phase_config tool %q for phase %q not found in config, falling back", phaseCfg.Tool, phase)
+			slog.Warn(fmt.Sprintf("task phase_config tool %q for phase %q not found in config, falling back", phaseCfg.Tool, phase))
 		}
 	}
 	if toolName == "" && t != nil && t.AssignedTool != "" {
@@ -1104,7 +1104,7 @@ func (e *Executor) resolveTaskToolConfig(t *task.Task, phase string) (string, co
 			toolName = t.AssignedTool
 			toolCfg = tc
 		} else {
-			log.Printf("task assigned_tool %q not found in config, falling back to %s phase default", t.AssignedTool, phase)
+			slog.Warn(fmt.Sprintf("task assigned_tool %q not found in config, falling back to %s phase default", t.AssignedTool, phase))
 		}
 	}
 	if toolName == "" {
@@ -1145,6 +1145,6 @@ func (e *Executor) validateModel(toolName, model string, toolCfg config.ToolConf
 			return model
 		}
 	}
-	log.Printf("task model %q not in %s models list, using default", model, toolName)
+	slog.Warn(fmt.Sprintf("task model %q not in %s models list, using default", model, toolName))
 	return ""
 }
