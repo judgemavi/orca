@@ -31,11 +31,19 @@ func short(id string) string {
 	return id
 }
 
-func allTasks(_ *task.Task) bool      { return true }
-func failedTasks(t *task.Task) bool   { return t.Status == "failed" }
-func approvedTasks(t *task.Task) bool { return t.Status == "approved" }
-func reviewTasks(t *task.Task) bool   { return t.Status == "review" }
-func pendingTasks(t *task.Task) bool  { return t.Status == "pending" }
+func statusFilter(statuses ...string) func(*task.Task) bool {
+	if len(statuses) == 0 {
+		return func(_ *task.Task) bool { return true }
+	}
+	allowed := make(map[string]struct{}, len(statuses))
+	for _, status := range statuses {
+		allowed[status] = struct{}{}
+	}
+	return func(t *task.Task) bool {
+		_, ok := allowed[t.Status]
+		return ok
+	}
+}
 
 func pickTask(store *task.Store, title string, filter func(*task.Task) bool) (string, error) {
 	tasks, err := store.List()

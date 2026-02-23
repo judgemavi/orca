@@ -237,7 +237,7 @@ func (r *Registry) runSprintAssign(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("sprint is running, cannot assign tasks")
 	}
 	if len(args) == 0 {
-		ids, err := pickTasks(store, "Assign to sprint", pendingTasks)
+		ids, err := pickTasks(store, "Assign to sprint", statusFilter("pending"))
 		if err != nil {
 			return err
 		}
