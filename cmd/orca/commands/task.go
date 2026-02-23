@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/sprint"
