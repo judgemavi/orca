@@ -31,7 +31,7 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		}
 		stale, err := explore.IsStale(repoDir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "staleness check failed: %v\n", err)
+			errorf("staleness check failed: %v", err)
 			os.Exit(1)
 		}
 		age := explore.ContextAge(repoDir)

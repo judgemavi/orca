@@ -337,14 +337,14 @@ func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 	// Best-effort worktree cleanup.
 	if _, statErr := os.Stat(filepath.Join(cfg.Project.WorktreeDir, "task-"+id)); statErr == nil {
 		if rmErr := executor.Worktrees().Remove(id); rmErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: cleanup worktree for %s: %v\n", short(id), rmErr)
+			warnf("cleanup worktree for %s: %v", short(id), rmErr)
 		}
 	}
 	fmt.Printf("Deleted task %s: %s\n", short(t.ID), t.Title)
 	// End sprint if all its tasks have been deleted.
 	if sprintID != "" {
 		if ended, err := sprint.TryComplete(db, sprintID); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: check sprint after delete: %v\n", err)
+			warnf("check sprint after delete: %v", err)
 		} else if ended {
 			fmt.Printf("Sprint %s completed (no tasks remaining)\n", short(sprintID))
 		}
@@ -428,7 +428,7 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("set merged status: %w", err)
 		}
 		if err := executor.Worktrees().Remove(id); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: cleanup worktree after merge %s: %v\n", short(id), err)
+			warnf("cleanup worktree after merge %s: %v", short(id), err)
 		}
 
 		fmt.Printf("Merged task %s\n", short(id))
@@ -440,7 +440,7 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 	// Complete sprint if all tasks are now merged (or none remain).
 	if tk.SprintID != "" {
 		if done, err := sprint.TryComplete(db, tk.SprintID); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: check sprint completion: %v\n", err)
+			warnf("check sprint completion: %v", err)
 		} else if done {
 			fmt.Printf("Sprint %s completed\n", short(tk.SprintID))
 		}
@@ -725,22 +725,22 @@ func (r *Registry) runTaskReopen(cmd *cobra.Command, args []string) error {
 	for _, arg := range taskIDs {
 		id, err := resolveTaskID(store, arg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			errorf("%v", err)
 			continue
 		}
 
 		t, err := store.Get(id)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: get task %s: %v\n", short(id), err)
+			errorf("get task %s: %v", short(id), err)
 			continue
 		}
 		if t.Status != "failed" {
-			fmt.Fprintf(os.Stderr, "Error: task %s is %q, not %q\n", short(id), t.Status, "failed")
+			errorf("task %s is %q, not %q", short(id), t.Status, "failed")
 			continue
 		}
 
 		if err := store.Update(id, map[string]interface{}{"status": "pending", "sprint_id": nil}); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reopen task %s: %v\n", short(id), err)
+			errorf("reopen task %s: %v", short(id), err)
 			continue
 		}
 		reopened++
