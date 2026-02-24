@@ -36,7 +36,7 @@ func (s *Server) HandleExploreStatusTool(_ json.RawMessage) (interface{}, error)
 	exists := explore.LoadContext(s.repoDir) != ""
 	stale, err := explore.IsStale(s.repoDir)
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}, nil
+		return nil, fmt.Errorf("explore status: %w", err)
 	}
 	ageMinutes := int(explore.ContextAge(s.repoDir) / time.Minute)
 	if ageMinutes < 0 {
@@ -50,15 +50,15 @@ func (s *Server) HandleExploreStatusTool(_ json.RawMessage) (interface{}, error)
 }
 
 func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		DryRun      bool `json:"dry_run"`
 		MaxAgeHours int  `json:"max_age_hours"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return map[string]interface{}{"error": fmt.Sprintf("worktree_cleanup args: %v", err)}, nil
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("worktree_cleanup: %w", err)
 	}
 	if s.cfg == nil {
-		return map[string]interface{}{"error": "worktree cleanup not configured"}, nil
+		return nil, fmt.Errorf("worktree cleanup not configured")
 	}
 
 	maxAgeHours := args.MaxAgeHours
@@ -71,10 +71,7 @@ func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}
 	if args.DryRun {
 		list, err := wm.ListWithAge()
 		if err != nil {
-			return map[string]interface{}{
-				"removed": []string{},
-				"errors":  []string{err.Error()},
-			}, nil
+			return nil, fmt.Errorf("list worktrees: %w", err)
 		}
 		removed := make([]string, 0, len(list))
 		for _, wt := range list {
@@ -101,18 +98,18 @@ func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}
 
 func (s *Server) HandleWorktreeStatusTool(_ json.RawMessage) (interface{}, error) {
 	if s.cfg == nil {
-		return map[string]interface{}{"error": "worktree status not configured"}, nil
+		return nil, fmt.Errorf("worktree status not configured")
 	}
 	wm := worktree.NewManager(s.repoDir, s.cfg.Project.WorktreeDir)
 
 	listWithAge, err := wm.ListWithAge()
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}, nil
+		return nil, fmt.Errorf("list worktrees: %w", err)
 	}
 
 	all, err := wm.List()
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}, nil
+		return nil, fmt.Errorf("list all worktrees: %w", err)
 	}
 	branchesByPath := make(map[string]string, len(all))
 	for _, wt := range all {
@@ -121,7 +118,7 @@ func (s *Server) HandleWorktreeStatusTool(_ json.RawMessage) (interface{}, error
 
 	totalDiskBytes, err := wm.DiskUsage()
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}, nil
+		return nil, fmt.Errorf("disk usage: %w", err)
 	}
 
 	worktrees := make([]map[string]interface{}, 0, len(listWithAge))
@@ -139,14 +136,14 @@ func (s *Server) HandleWorktreeStatusTool(_ json.RawMessage) (interface{}, error
 }
 
 func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		SprintID string `json:"sprint_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return map[string]interface{}{"error": fmt.Sprintf("budget_status args: %v", err)}, nil
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("budget_status: %w", err)
 	}
 	if s.planner == nil || s.planner.DB() == nil {
-		return map[string]interface{}{"error": "cost tracking not configured"}, nil
+		return nil, fmt.Errorf("cost tracking not configured")
 	}
 
 	tracker := cost.NewTracker(s.planner.DB())
@@ -154,11 +151,11 @@ func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, e
 	if strings.TrimSpace(args.SprintID) != "" {
 		total, err := tracker.SprintTotal(args.SprintID)
 		if err != nil {
-			return map[string]interface{}{"error": err.Error()}, nil
+			return nil, fmt.Errorf("sprint total: %w", err)
 		}
 		tools, err := tracker.SprintSummary(args.SprintID)
 		if err != nil {
-			return map[string]interface{}{"error": err.Error()}, nil
+			return nil, fmt.Errorf("sprint summary: %w", err)
 		}
 		return map[string]interface{}{
 			"sprint_id":  args.SprintID,
@@ -171,15 +168,15 @@ func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, e
 
 	total, err := tracker.ProjectTotal()
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}, nil
+		return nil, fmt.Errorf("project total: %w", err)
 	}
 	remaining, err := tracker.BudgetRemaining(budget)
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}, nil
+		return nil, fmt.Errorf("budget remaining: %w", err)
 	}
 	tools, err := tracker.ProjectSummary()
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}, nil
+		return nil, fmt.Errorf("project summary: %w", err)
 	}
 	return map[string]interface{}{
 		"total_cost": total,
@@ -190,22 +187,22 @@ func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, e
 }
 
 func (s *Server) HandleQualityResultsTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return map[string]interface{}{"error": fmt.Sprintf("quality_results args: %v", err)}, nil
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("quality_results: %w", err)
 	}
 	taskID := strings.TrimSpace(args.TaskID)
 	if taskID == "" {
-		return map[string]interface{}{"error": "task_id is required"}, nil
+		return nil, fmt.Errorf("task_id is required")
 	}
 	if s.planner == nil || s.planner.DB() == nil {
-		return map[string]interface{}{"error": "database not configured"}, nil
+		return nil, fmt.Errorf("database not configured")
 	}
 
 	var qualityJSON sql.NullString
-	err := s.planner.DB().QueryRow(
+	err = s.planner.DB().QueryRow(
 		`SELECT quality_json FROM artifacts WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`,
 		taskID,
 	).Scan(&qualityJSON)
@@ -213,19 +210,19 @@ func (s *Server) HandleQualityResultsTool(argsRaw json.RawMessage) (interface{},
 		return map[string]interface{}{"task_id": taskID, "quality": nil}, nil
 	}
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}, nil
+		return nil, fmt.Errorf("query quality: %w", err)
 	}
 
 	if !qualityJSON.Valid || strings.TrimSpace(qualityJSON.String) == "" {
 		return map[string]interface{}{"task_id": taskID, "quality": nil}, nil
 	}
 	if !json.Valid([]byte(qualityJSON.String)) {
-		return map[string]interface{}{"error": "invalid quality_json payload"}, nil
+		return nil, fmt.Errorf("invalid quality_json payload")
 	}
 
 	var quality interface{}
 	if err := json.Unmarshal([]byte(qualityJSON.String), &quality); err != nil {
-		return map[string]interface{}{"error": fmt.Sprintf("parse quality_json: %v", err)}, nil
+		return nil, fmt.Errorf("parse quality_json: %w", err)
 	}
 	return map[string]interface{}{
 		"task_id": taskID,
@@ -234,15 +231,15 @@ func (s *Server) HandleQualityResultsTool(argsRaw json.RawMessage) (interface{},
 }
 
 func (s *Server) HandleLogEventTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		Level    string         `json:"level"`
 		Message  string         `json:"message"`
 		TaskID   string         `json:"task_id"`
 		SprintID string         `json:"sprint_id"`
 		Attrs    map[string]any `json:"attrs"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("log_event args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("log_event: %w", err)
 	}
 
 	level, err := parseSlogLevel(args.Level)
@@ -277,16 +274,16 @@ func (s *Server) HandleLogEventTool(argsRaw json.RawMessage) (interface{}, error
 }
 
 func (s *Server) HandleLogQueryTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		Level    string `json:"level"`
 		TaskID   string `json:"task_id"`
 		SprintID string `json:"sprint_id"`
 		Since    string `json:"since"`
 		Limit    int    `json:"limit"`
 		Pattern  string `json:"pattern"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("log_query args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("log_query: %w", err)
 	}
 	if strings.TrimSpace(args.Level) != "" {
 		if _, err := parseSlogLevel(args.Level); err != nil {
