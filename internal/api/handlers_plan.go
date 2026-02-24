@@ -64,13 +64,13 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	type planReq struct {
 		Goal      string `json:"goal"`
 		Tool      string `json:"tool"`
 		SessionID string `json:"session_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[planReq](w, r, false)
+	if !ok {
 		return
 	}
 	if req.Goal == "" {
@@ -117,22 +117,10 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
-	go func(goal string, tool config.ToolConfig, operationID string) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("decompose panic: %v", rec)
-				if opErr := s.ops.Fail(operationID, errMsg); opErr != nil {
-					slog.Error("mark decompose operation failed", "operation_id", operationID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "decompose.failed", Data: map[string]string{
-					"operation_id": operationID,
-					"error":        errMsg,
-				}})
-			}
-		}()
-
-		d := decompose.New(tool, s.repoDir)
-		tasks, err := d.Run(goal)
+	s.runAsync(opID, "decompose", map[string]interface{}{"operation_id": opID}, func() {
+		operationID := opID
+		d := decompose.New(toolCfg, s.repoDir)
+		tasks, err := d.Run(req.Goal)
 		if err != nil {
 			if opErr := s.ops.Fail(operationID, err.Error()); opErr != nil {
 				slog.Error("mark decompose operation failed", "operation_id", operationID, "err", opErr)
@@ -145,7 +133,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		}
 
 		resultBytes, _ := json.Marshal(decomposeOperationResult{
-			Goal:      goal,
+			Goal:      req.Goal,
 			SessionID: sessionID,
 			Proposed:  tasks,
 		})
@@ -156,7 +144,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 			"operation_id": operationID,
 			"proposed":     tasks,
 		}})
-	}(req.Goal, toolCfg, opID)
+	})
 }
 
 func (s *Server) handlePlanAccept(w http.ResponseWriter, r *http.Request) {
@@ -165,13 +153,13 @@ func (s *Server) handlePlanAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	type acceptReq struct {
 		OperationID string                   `json:"operation_id"`
 		SessionID   string                   `json:"session_id"`
 		Tasks       []decompose.ProposedTask `json:"tasks"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[acceptReq](w, r, false)
+	if !ok {
 		return
 	}
 
@@ -258,12 +246,12 @@ func (s *Server) handlePlanReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	type rejectReq struct {
 		OperationID string `json:"operation_id"`
 		SessionID   string `json:"session_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[rejectReq](w, r, false)
+	if !ok {
 		return
 	}
 

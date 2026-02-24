@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -47,11 +46,11 @@ func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	var req struct {
+	type planReq struct {
 		Plan string `json:"plan"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[planReq](w, r, false)
+	if !ok {
 		return
 	}
 
@@ -76,12 +75,12 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	var req struct {
+	type genReq struct {
 		Tool  string `json:"tool"`
 		Model string `json:"model"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[genReq](w, r, true)
+	if !ok {
 		return
 	}
 
@@ -136,30 +135,15 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	go func(taskID, title, description, model string, cfg config.ToolConfig) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("plan_generate panic: %v", rec)
-				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					slog.Error("mark plan operation failed", "operation_id", opID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{
-					Type: "plan.failed",
-					Data: map[string]string{
-						"task_id": taskID,
-						"error":   errMsg,
-					},
-				})
-			}
-		}()
-
-		generator := plan.New(cfg, s.repoDir)
+	s.runAsync(opID, "plan", map[string]interface{}{"task_id": resolved}, func() {
+		taskID := resolved
+		generator := plan.New(toolCfg, s.repoDir)
 		var content string
 		var genErr error
-		if model != "" {
-			content, genErr = generator.GenerateWithModel(title, description, model)
+		if modelOverride != "" {
+			content, genErr = generator.GenerateWithModel(tk.Title, tk.Description, modelOverride)
 		} else {
-			content, genErr = generator.Generate(title, description)
+			content, genErr = generator.Generate(tk.Title, tk.Description)
 		}
 		if genErr != nil {
 			if err := s.ops.Fail(opID, genErr.Error()); err != nil {
@@ -204,7 +188,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 				"plan":    content,
 			},
 		})
-	}(resolved, tk.Title, tk.Description, modelOverride, toolCfg)
+	})
 
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]string{"status": "generating"},
@@ -213,12 +197,12 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 
 // POST /api/v1/tasks/{id}/evaluate
 func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id string) {
-	var req struct {
+	type evalReq struct {
 		Tool  string `json:"tool"`
 		Model string `json:"model"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[evalReq](w, r, true)
+	if !ok {
 		return
 	}
 

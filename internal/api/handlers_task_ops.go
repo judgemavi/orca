@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -27,11 +26,11 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 
-	var req struct {
+	type depReq struct {
 		DependsOn string `json:"depends_on"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[depReq](w, r, false)
+	if !ok {
 		return
 	}
 
@@ -54,11 +53,11 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	type cleanupReq struct {
 		DryRun bool `json:"dry_run"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[cleanupReq](w, r, true)
+	if !ok {
 		return
 	}
 
@@ -121,20 +120,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func(opID string, stale []staleEntry) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("cleanup panic: %v", rec)
-				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					slog.Error("mark cleanup operation failed", "operation_id", opID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "cleanup.failed", Data: map[string]interface{}{
-					"operation_id": opID,
-					"error":        errMsg,
-				}})
-			}
-		}()
-
+	s.runAsync(opID, "cleanup", map[string]interface{}{"operation_id": opID}, func() {
 		s.hub.Broadcast(Event{Type: "cleanup.started", Data: map[string]interface{}{
 			"operation_id": opID,
 		}})
@@ -175,7 +161,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 			"operation_id": opID,
 			"removed":      len(removedBranches),
 		}})
-	}(opID, stale)
+	})
 
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{"operation_id": opID})
 }

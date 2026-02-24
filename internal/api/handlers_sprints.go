@@ -103,12 +103,12 @@ func (s *Server) handleSprintAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	type assignReq struct {
 		TaskID   string `json:"task_id"`
 		SprintID string `json:"sprint_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[assignReq](w, r, false)
+	if !ok {
 		return
 	}
 	if req.TaskID == "" {
@@ -165,11 +165,11 @@ func (s *Server) handleSprintUnassign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	type unassignReq struct {
 		TaskID string `json:"task_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[unassignReq](w, r, false)
+	if !ok {
 		return
 	}
 	if req.TaskID == "" {
@@ -234,18 +234,7 @@ func (s *Server) handleStartSprint(w http.ResponseWriter, r *http.Request, id st
 
 	jsonResponse(w, 202, map[string]interface{}{"data": map[string]string{"sprint_id": id}})
 
-	go func() {
-		defer func() {
-			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("sprint panic: %v", rec)
-				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					slog.Error("mark sprint operation failed", "operation_id", opID, "err", opErr)
-				}
-				slog.Error("sprint panicked", "sprint_id", id, "panic", rec)
-				s.hub.Broadcast(Event{Type: "sprint.failed", Data: map[string]interface{}{"sprint_id": id, "error": errMsg}})
-			}
-		}()
-
+	s.runAsync(opID, "sprint", map[string]interface{}{"sprint_id": id}, func() {
 		s.hub.Broadcast(Event{Type: "sprint.started", Data: map[string]string{"sprint_id": id}})
 
 		results, err := s.executor.Run(sp)
@@ -270,7 +259,7 @@ func (s *Server) handleStartSprint(w http.ResponseWriter, r *http.Request, id st
 			"sprint_id": id,
 			"results":   results,
 		}})
-	}()
+	})
 }
 
 func (s *Server) handleCancelSprint(w http.ResponseWriter, r *http.Request, id string) {
