@@ -7,22 +7,18 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
-	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 // ========== Task Operations ==========
 
 func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
 
@@ -34,22 +30,20 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 
-	depResolved, err := store.ResolveID(req.DependsOn)
-	if err != nil {
-		jsonError(w, err, 404)
+	depResolved, ok := resolveTaskID(w, store, req.DependsOn)
+	if !ok {
 		return
 	}
 
 	if err := store.AddDependency(resolved, depResolved); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	jsonOK(w, map[string]string{"task_id": resolved, "depends_on": depResolved})
 }
 
 func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -65,7 +59,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 	wm := s.executor.Worktrees()
 	worktreeList, err := wm.List()
 	if err != nil {
-		jsonError(w, fmt.Errorf("list worktrees: %w", err), 500)
+		jsonError(w, fmt.Errorf("list worktrees: %w", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -109,59 +103,58 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opID := uuid.New().String()
-	if err := s.ops.Create(ops.Operation{
-		ID:       opID,
-		Type:     "cleanup",
-		TargetID: "global",
-		Status:   "running",
-	}); err != nil {
-		jsonError(w, err, 500)
+	opID := ""
+	opID = s.startAsyncOp(
+		w,
+		"cleanup",
+		"global",
+		"cleanup",
+		map[string]interface{}{"operation_id": ""},
+		map[string]string{"operation_id": ""},
+		func() {
+			s.hub.Broadcast(Event{Type: "cleanup.started", Data: map[string]interface{}{
+				"operation_id": opID,
+			}})
+
+			removedBranches := make([]string, 0, len(stale))
+			for _, st := range stale {
+				if err := wm.Remove(st.taskID); err != nil {
+					slog.Warn("cleanup worktree failed", "branch", st.branch, "task_id", st.taskID, "err", err)
+					continue
+				}
+				removedBranches = append(removedBranches, st.branch)
+				s.hub.Broadcast(Event{Type: "cleanup.progress", Data: map[string]interface{}{
+					"operation_id": opID,
+					"removed":      st.branch,
+				}})
+			}
+
+			resultBytes, err := json.Marshal(map[string]interface{}{
+				"removed":   len(removedBranches),
+				"worktrees": removedBranches,
+			})
+			if err != nil {
+				errMsg := fmt.Sprintf("marshal cleanup result: %v", err)
+				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
+					slog.Error("mark cleanup operation failed", "operation_id", opID, "err", opErr)
+				}
+				s.hub.Broadcast(Event{Type: "cleanup.failed", Data: map[string]interface{}{
+					"operation_id": opID,
+					"error":        errMsg,
+				}})
+				return
+			}
+			if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
+				slog.Debug("complete cleanup operation failed", "operation_id", opID, "err", err)
+			}
+
+			s.hub.Broadcast(Event{Type: "cleanup.completed", Data: map[string]interface{}{
+				"operation_id": opID,
+				"removed":      len(removedBranches),
+			}})
+		},
+	)
+	if opID == "" {
 		return
 	}
-
-	s.runAsync(opID, "cleanup", map[string]interface{}{"operation_id": opID}, func() {
-		s.hub.Broadcast(Event{Type: "cleanup.started", Data: map[string]interface{}{
-			"operation_id": opID,
-		}})
-
-		removedBranches := make([]string, 0, len(stale))
-		for _, st := range stale {
-			if err := wm.Remove(st.taskID); err != nil {
-				slog.Warn("cleanup worktree failed", "branch", st.branch, "task_id", st.taskID, "err", err)
-				continue
-			}
-			removedBranches = append(removedBranches, st.branch)
-			s.hub.Broadcast(Event{Type: "cleanup.progress", Data: map[string]interface{}{
-				"operation_id": opID,
-				"removed":      st.branch,
-			}})
-		}
-
-		resultBytes, err := json.Marshal(map[string]interface{}{
-			"removed":   len(removedBranches),
-			"worktrees": removedBranches,
-		})
-		if err != nil {
-			errMsg := fmt.Sprintf("marshal cleanup result: %v", err)
-			if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-				slog.Error("mark cleanup operation failed", "operation_id", opID, "err", opErr)
-			}
-			s.hub.Broadcast(Event{Type: "cleanup.failed", Data: map[string]interface{}{
-				"operation_id": opID,
-				"error":        errMsg,
-			}})
-			return
-		}
-		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			slog.Debug("complete cleanup operation failed", "operation_id", opID, "err", err)
-		}
-
-		s.hub.Broadcast(Event{Type: "cleanup.completed", Data: map[string]interface{}{
-			"operation_id": opID,
-			"removed":      len(removedBranches),
-		}})
-	})
-
-	jsonResponse(w, http.StatusAccepted, map[string]interface{}{"operation_id": opID})
 }

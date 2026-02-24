@@ -13,35 +13,31 @@ import (
 // POST /api/v1/tasks/{id}/approve
 func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id string) {
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 
 	tk, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 	if tk.Status != "review" {
-		jsonError(w, "task must be in review status to approve", 400)
+		jsonError(w, "task must be in review status to approve", http.StatusBadRequest)
 		return
 	}
 
 	if err := store.Update(resolved, map[string]interface{}{"status": "approved"}); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if tk.SprintID != "" {
-		if _, err := s.planner.CompleteSprintIfDone(tk.SprintID); err != nil {
-			slog.Warn("check sprint completion after approve failed", "sprint_id", tk.SprintID, "err", err)
-		}
-	}
+	s.completeSprintIfNeeded(tk.SprintID)
 
 	updated, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -52,19 +48,19 @@ func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id st
 // POST /api/v1/tasks/{id}/request-changes
 func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id string) {
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 
 	tk, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 	if tk.Status != "review" {
-		jsonError(w, "task must be in review status to request changes", 400)
+		jsonError(w, "task must be in review status to request changes", http.StatusBadRequest)
 		return
 	}
 
@@ -77,22 +73,22 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 	}
 	feedback := strings.TrimSpace(req.Feedback)
 	if feedback == "" {
-		jsonError(w, "feedback required", 400)
+		jsonError(w, "feedback required", http.StatusBadRequest)
 		return
 	}
 
 	if _, err := store.AddReview(resolved, feedback); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	if err := store.Update(resolved, map[string]interface{}{"status": "running"}); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
 	updated, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
@@ -111,50 +107,49 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 
 func (s *Server) handleListTaskReviews(w http.ResponseWriter, r *http.Request, id string) {
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 	reviews, err := store.ListReviews(resolved)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	jsonOK(w, map[string]interface{}{"reviews": reviews})
 }
 
 func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 
 	tk, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 	if tk.Status != "failed" {
-		jsonError(w, fmt.Sprintf("task %s is %q, not %q", resolved[:8], tk.Status, "failed"), 400)
+		jsonError(w, fmt.Sprintf("task %s is %q, not %q", resolved[:8], tk.Status, "failed"), http.StatusBadRequest)
 		return
 	}
 
 	if err := store.Update(resolved, map[string]interface{}{"status": "pending", "sprint_id": nil}); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
 	updated, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 

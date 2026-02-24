@@ -6,9 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/jasjeetmavi/orca/internal/ops"
 )
 
 // ========== Sprints ==========
@@ -22,7 +19,7 @@ func (s *Server) handleListSprints(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.db.Query(query)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -33,7 +30,7 @@ func (s *Server) handleListSprints(w http.ResponseWriter, r *http.Request) {
 		var createdAt time.Time
 		var completedAt *time.Time
 		if err := rows.Scan(&id, &status, &createdAt, &completedAt); err != nil {
-			jsonError(w, err, 500)
+			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 		sp := map[string]interface{}{
@@ -52,7 +49,7 @@ func (s *Server) handleListSprints(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetActiveSprint(w http.ResponseWriter, r *http.Request) {
 	active, err := s.planner.GetActive()
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	if active == nil {
@@ -65,31 +62,30 @@ func (s *Server) handleGetActiveSprint(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetSprint(w http.ResponseWriter, r *http.Request, id string) {
 	sp, err := s.planner.Get(id)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 	jsonOK(w, sp)
 }
 
 func (s *Server) handlePlanSprint(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	active, err := s.planner.GetActive()
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	if active != nil {
-		jsonError(w, fmt.Sprintf("sprint %s already active", active.ID[:8]), 409)
+		jsonError(w, fmt.Sprintf("sprint %s already active", active.ID[:8]), http.StatusConflict)
 		return
 	}
 
 	sp, err := s.planner.Plan(s.cfg.Workers.MaxParallel)
 	if err != nil {
-		jsonError(w, err, 400)
+		jsonError(w, err, http.StatusBadRequest)
 		return
 	}
 
@@ -98,8 +94,7 @@ func (s *Server) handlePlanSprint(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSprintAssign(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -112,46 +107,46 @@ func (s *Server) handleSprintAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.TaskID == "" {
-		jsonError(w, "task_id required", 400)
+		jsonError(w, "task_id required", http.StatusBadRequest)
 		return
 	}
 
 	store := s.taskStore
-	taskID, err := store.ResolveID(req.TaskID)
-	if err != nil {
-		jsonError(w, err, 404)
+	taskID, ok := resolveTaskID(w, store, req.TaskID)
+	if !ok {
 		return
 	}
+	var err error
 
 	sprintID := req.SprintID
 	if sprintID == "" {
 		active, err := s.planner.GetActive()
 		if err != nil {
-			jsonError(w, err, 500)
+			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 		if active == nil {
 			active, err = s.planner.CreateEmpty()
 			if err != nil {
-				jsonError(w, err, 500)
+				jsonError(w, err, http.StatusInternalServerError)
 				return
 			}
 		}
 		if active.Status != "planning" {
-			jsonError(w, "sprint is running, cannot add tasks", 400)
+			jsonError(w, "sprint is running, cannot add tasks", http.StatusBadRequest)
 			return
 		}
 		sprintID = active.ID
 	}
 
 	if err := s.planner.AddTaskToSprintWithLimit(sprintID, taskID, s.cfg.Workers.MaxParallel); err != nil {
-		jsonError(w, err, 400)
+		jsonError(w, err, http.StatusBadRequest)
 		return
 	}
 
 	sp, err := s.planner.Get(sprintID)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -160,8 +155,7 @@ func (s *Server) handleSprintAssign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSprintUnassign(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -173,35 +167,35 @@ func (s *Server) handleSprintUnassign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.TaskID == "" {
-		jsonError(w, "task_id required", 400)
+		jsonError(w, "task_id required", http.StatusBadRequest)
 		return
 	}
 
 	store := s.taskStore
-	taskID, err := store.ResolveID(req.TaskID)
-	if err != nil {
-		jsonError(w, err, 404)
+	taskID, ok := resolveTaskID(w, store, req.TaskID)
+	if !ok {
 		return
 	}
+	var err error
 
 	tk, err := store.Get(taskID)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 	if tk.SprintID == "" {
-		jsonError(w, "task is not assigned to a sprint", 400)
+		jsonError(w, "task is not assigned to a sprint", http.StatusBadRequest)
 		return
 	}
 
 	if err := s.planner.RemoveTaskFromSprint(tk.SprintID, taskID); err != nil {
-		jsonError(w, err, 400)
+		jsonError(w, err, http.StatusBadRequest)
 		return
 	}
 
 	sp, err := s.planner.Get(tk.SprintID)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -210,66 +204,63 @@ func (s *Server) handleSprintUnassign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStartSprint(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	sp, err := s.planner.Get(id)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
-	opID := uuid.New().String()
-	if err := s.ops.Create(ops.Operation{
-		ID:       opID,
-		Type:     "sprint_start",
-		TargetID: id,
-		Status:   "running",
-	}); err != nil {
-		jsonError(w, err, 500)
-		return
-	}
+	opID := ""
+	opID = s.startAsyncOp(
+		w,
+		"sprint_start",
+		id,
+		"sprint",
+		map[string]interface{}{"sprint_id": id},
+		map[string]string{"sprint_id": id},
+		func() {
+			s.hub.Broadcast(Event{Type: "sprint.started", Data: map[string]string{"sprint_id": id}})
 
-	jsonResponse(w, 202, map[string]interface{}{"data": map[string]string{"sprint_id": id}})
-
-	s.runAsync(opID, "sprint", map[string]interface{}{"sprint_id": id}, func() {
-		s.hub.Broadcast(Event{Type: "sprint.started", Data: map[string]string{"sprint_id": id}})
-
-		results, err := s.executor.Run(sp)
-		if err != nil {
-			if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
-				slog.Error("mark sprint operation failed", "operation_id", opID, "err", opErr)
+			results, err := s.executor.Run(sp)
+			if err != nil {
+				if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
+					slog.Error("mark sprint operation failed", "operation_id", opID, "err", opErr)
+				}
+				slog.Error("sprint failed", "sprint_id", id, "err", err)
+				s.hub.Broadcast(Event{Type: "sprint.failed", Data: map[string]interface{}{"sprint_id": id, "error": err.Error()}})
+				return
 			}
-			slog.Error("sprint failed", "sprint_id", id, "err", err)
-			s.hub.Broadcast(Event{Type: "sprint.failed", Data: map[string]interface{}{"sprint_id": id, "error": err.Error()}})
-			return
-		}
 
-		resultBytes, _ := json.Marshal(map[string]interface{}{
-			"sprint_id": id,
-			"results":   results,
-		})
-		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			slog.Debug("complete sprint operation failed", "operation_id", opID, "err", err)
-		}
+			resultBytes, _ := json.Marshal(map[string]interface{}{
+				"sprint_id": id,
+				"results":   results,
+			})
+			if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
+				slog.Debug("complete sprint operation failed", "operation_id", opID, "err", err)
+			}
 
-		s.hub.Broadcast(Event{Type: "sprint.completed", Data: map[string]interface{}{
-			"sprint_id": id,
-			"results":   results,
-		}})
-	})
+			s.hub.Broadcast(Event{Type: "sprint.completed", Data: map[string]interface{}{
+				"sprint_id": id,
+				"results":   results,
+			}})
+		},
+	)
+	if opID == "" {
+		return
+	}
 }
 
 func (s *Server) handleCancelSprint(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	if err := s.executor.Cancel(); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -285,20 +276,19 @@ func (s *Server) handleCancelSprint(w http.ResponseWriter, r *http.Request, id s
 }
 
 func (s *Server) handleResetSprint(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	sp, err := s.planner.Get(id)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
 	s.executor.Cleanup(sp)
 	if err := s.planner.ResetSprintTasks(id); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	s.planner.Fail(id)

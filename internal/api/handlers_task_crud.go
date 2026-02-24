@@ -35,7 +35,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		tasks, err = store.List()
 	}
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	jsonOK(w, map[string]interface{}{"tasks": tasks})
@@ -43,14 +43,14 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request, id string) {
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 	t, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 	jsonOK(w, t)
@@ -62,7 +62,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Title == "" {
-		jsonError(w, "title required", 400)
+		jsonError(w, "title required", http.StatusBadRequest)
 		return
 	}
 	toolName := strings.TrimSpace(req.Tool)
@@ -73,29 +73,29 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	store := s.taskStore
 	t, err := store.Create(req.Title, req.Description, req.ParentID, toolName)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	if req.Model != "" {
 		if err := store.Update(t.ID, map[string]interface{}{"model": req.Model}); err != nil {
-			jsonError(w, err, 500)
+			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 	}
 	if req.PhaseConfig != nil {
 		data, err := json.Marshal(req.PhaseConfig)
 		if err != nil {
-			jsonError(w, err, 500)
+			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 		if err := store.Update(t.ID, map[string]interface{}{"phase_config": string(data)}); err != nil {
-			jsonError(w, err, 500)
+			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 	}
 	t, err = store.Get(t.ID)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -105,11 +105,11 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id string) {
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 
 	body, ok := decodeJSON[map[string]interface{}](w, r, false)
 	if !ok {
@@ -129,45 +129,45 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 		}
 	}
 	if len(fields) == 0 {
-		jsonError(w, "no fields to update", 400)
+		jsonError(w, "no fields to update", http.StatusBadRequest)
 		return
 	}
 
 	currentTask, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
 	if rawStatus, ok := fields["status"]; ok {
 		newStatus, ok := rawStatus.(string)
 		if !ok {
-			jsonError(w, "status must be a string", 400)
+			jsonError(w, "status must be a string", http.StatusBadRequest)
 			return
 		}
 		switch newStatus {
 		case "pending":
 			if currentTask.Status != "failed" {
-				jsonError(w, "can only move failed tasks to pending", 400)
+				jsonError(w, "can only move failed tasks to pending", http.StatusBadRequest)
 				return
 			}
 		case "in_sprint":
-			jsonError(w, "use /api/v1/sprints/assign to add tasks to sprint", 400)
+			jsonError(w, "use /api/v1/sprints/assign to add tasks to sprint", http.StatusBadRequest)
 			return
 		case "approved", "running", "merged", "review":
-			jsonError(w, "cannot manually set status to "+newStatus, 400)
+			jsonError(w, "cannot manually set status to "+newStatus, http.StatusBadRequest)
 			return
 		}
 	}
 
 	if err := store.Update(resolved, fields); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
 	t, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	s.hub.Broadcast(Event{Type: "task.updated", Data: t})
@@ -176,20 +176,20 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id string) {
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 	tk, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
 	sprintID := tk.SprintID
 	if err := store.Delete(resolved); err != nil {
-		jsonError(w, err, 400)
+		jsonError(w, err, http.StatusBadRequest)
 		return
 	}
 	// Best-effort worktree cleanup.
@@ -197,11 +197,7 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id str
 		slog.Warn("cleanup worktree after delete", "task_id", resolved[:8], "err", err)
 	}
 	// End sprint if all its tasks have been deleted.
-	if sprintID != "" {
-		if _, err := s.planner.CompleteSprintIfDone(sprintID); err != nil {
-			slog.Warn("check sprint after delete", "sprint_id", sprintID[:8], "err", err)
-		}
-	}
+	s.completeSprintIfNeeded(sprintID)
 
 	s.hub.Broadcast(Event{Type: "task.deleted", Data: map[string]string{"id": resolved}})
 	jsonOK(w, map[string]string{"deleted": resolved})
@@ -211,7 +207,7 @@ func (s *Server) handleGetReady(w http.ResponseWriter, r *http.Request) {
 	store := s.taskStore
 	tasks, err := store.GetReady()
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	jsonOK(w, map[string]interface{}{"tasks": tasks})
@@ -228,7 +224,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if requestedTool != "" {
 		toolCfg, ok := s.cfg.Tools[requestedTool]
 		if !ok {
-			jsonError(w, fmt.Sprintf("tool %q not found", requestedTool), 400)
+			jsonError(w, fmt.Sprintf("tool %q not found", requestedTool), http.StatusBadRequest)
 			return
 		}
 		resp := map[string][]model.Model{

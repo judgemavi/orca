@@ -25,8 +25,7 @@ func (s *Server) AddMonitorAlert(alert MonitorAlert) {
 }
 
 func (s *Server) handleMonitorAlerts(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 

@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
-	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/decompose"
 	"github.com/jasjeetmavi/orca/internal/ops"
 )
@@ -58,9 +56,58 @@ func (s *Server) findPendingDecomposeOperation(sessionID string) (*ops.Operation
 	return nil, decomposeOperationResult{}, sql.ErrNoRows
 }
 
+func (s *Server) resolveDecomposeOp(w http.ResponseWriter, opID, sessionID string) (*ops.Operation, decomposeOperationResult, bool) {
+	trimmedOpID := strings.TrimSpace(opID)
+	trimmedSessionID := strings.TrimSpace(sessionID)
+	if trimmedSessionID == "" {
+		trimmedSessionID = "default"
+	}
+
+	if trimmedOpID == "" {
+		op, result, err := s.findPendingDecomposeOperation(trimmedSessionID)
+		if err == sql.ErrNoRows {
+			jsonError(w, "no pending plan for session", http.StatusNotFound)
+			return nil, decomposeOperationResult{}, false
+		}
+		if err != nil {
+			jsonError(w, err, http.StatusInternalServerError)
+			return nil, decomposeOperationResult{}, false
+		}
+		return op, result, true
+	}
+
+	op, err := s.ops.Get(trimmedOpID)
+	if err != nil {
+		jsonError(w, "decompose operation not found", http.StatusNotFound)
+		return nil, decomposeOperationResult{}, false
+	}
+	if op.Type != "decompose" {
+		jsonError(w, "operation is not decompose", http.StatusBadRequest)
+		return nil, decomposeOperationResult{}, false
+	}
+	if op.Status == "running" {
+		jsonError(w, "decompose still running", http.StatusConflict)
+		return nil, decomposeOperationResult{}, false
+	}
+	if op.Status == "failed" {
+		jsonError(w, "decompose operation failed", http.StatusBadRequest)
+		return nil, decomposeOperationResult{}, false
+	}
+
+	result, err := parseDecomposeOperationResult(op.Result)
+	if err != nil {
+		jsonError(w, "invalid decompose operation result", http.StatusInternalServerError)
+		return nil, decomposeOperationResult{}, false
+	}
+	if result.Accepted || result.Rejected || len(result.Proposed) == 0 {
+		jsonError(w, "no pending proposals for operation", http.StatusBadRequest)
+		return nil, decomposeOperationResult{}, false
+	}
+	return op, result, true
+}
+
 func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -74,7 +121,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Goal == "" {
-		jsonError(w, "goal required", 400)
+		jsonError(w, "goal required", http.StatusBadRequest)
 		return
 	}
 	sessionID := req.SessionID
@@ -82,74 +129,64 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		sessionID = "default"
 	}
 
-	var toolCfg config.ToolConfig
-	if req.Tool != "" {
-		tc, ok := s.cfg.Tools[req.Tool]
-		if !ok {
-			jsonError(w, fmt.Sprintf("tool %q not found", req.Tool), 400)
-			return
+	_, toolCfg, err := s.cfg.ResolveToolForPhase(nil, "plan", req.Tool)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if req.Tool != "" {
+			status = http.StatusBadRequest
 		}
-		toolCfg = tc
-	} else {
-		_, tc, err := s.cfg.ResolvePhaseToolConfig("plan")
-		if err != nil {
-			jsonError(w, err, 500)
-			return
-		}
-		toolCfg = tc
-	}
-
-	opID := uuid.New().String()
-	if err := s.ops.Create(ops.Operation{
-		ID:       opID,
-		Type:     "decompose",
-		TargetID: sessionID,
-		Status:   "running",
-	}); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, status)
 		return
 	}
-	s.hub.Broadcast(Event{Type: "decompose.started", Data: map[string]string{"operation_id": opID}})
-	jsonResponse(w, 202, map[string]interface{}{
-		"data": map[string]string{
+
+	opID := ""
+	opID = s.startAsyncOp(
+		w,
+		"decompose",
+		sessionID,
+		"decompose",
+		map[string]interface{}{"operation_id": ""},
+		map[string]string{
 			"status":       "decomposing",
-			"operation_id": opID,
+			"operation_id": "",
 		},
-	})
-
-	s.runAsync(opID, "decompose", map[string]interface{}{"operation_id": opID}, func() {
-		operationID := opID
-		d := decompose.New(toolCfg, s.repoDir)
-		tasks, err := d.Run(req.Goal)
-		if err != nil {
-			if opErr := s.ops.Fail(operationID, err.Error()); opErr != nil {
-				slog.Error("mark decompose operation failed", "operation_id", operationID, "err", opErr)
+		func() {
+			operationID := opID
+			s.hub.Broadcast(Event{Type: "decompose.started", Data: map[string]string{"operation_id": operationID}})
+			d := decompose.New(toolCfg, s.repoDir)
+			tasks, err := d.Run(req.Goal)
+			if err != nil {
+				if opErr := s.ops.Fail(operationID, err.Error()); opErr != nil {
+					slog.Error("mark decompose operation failed", "operation_id", operationID, "err", opErr)
+				}
+				s.hub.Broadcast(Event{Type: "decompose.failed", Data: map[string]string{
+					"operation_id": operationID,
+					"error":        err.Error(),
+				}})
+				return
 			}
-			s.hub.Broadcast(Event{Type: "decompose.failed", Data: map[string]string{
-				"operation_id": operationID,
-				"error":        err.Error(),
-			}})
-			return
-		}
 
-		resultBytes, _ := json.Marshal(decomposeOperationResult{
-			Goal:      req.Goal,
-			SessionID: sessionID,
-			Proposed:  tasks,
-		})
-		if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-			slog.Debug("complete decompose operation failed", "operation_id", operationID, "err", err)
-		}
-		s.hub.Broadcast(Event{Type: "decompose.completed", Data: map[string]interface{}{
-			"operation_id": operationID,
-			"proposed":     tasks,
-		}})
-	})
+			resultBytes, _ := json.Marshal(decomposeOperationResult{
+				Goal:      req.Goal,
+				SessionID: sessionID,
+				Proposed:  tasks,
+			})
+			if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
+				slog.Debug("complete decompose operation failed", "operation_id", operationID, "err", err)
+			}
+			s.hub.Broadcast(Event{Type: "decompose.completed", Data: map[string]interface{}{
+				"operation_id": operationID,
+				"proposed":     tasks,
+			}})
+		},
+	)
+	if opID == "" {
+		return
+	}
 }
 
 func (s *Server) handlePlanAccept(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -163,54 +200,8 @@ func (s *Server) handlePlanAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opID := strings.TrimSpace(req.OperationID)
-	var (
-		op     *ops.Operation
-		result decomposeOperationResult
-		err    error
-	)
-	if opID == "" {
-		sessionID := strings.TrimSpace(req.SessionID)
-		if sessionID == "" {
-			sessionID = "default"
-		}
-		op, result, err = s.findPendingDecomposeOperation(sessionID)
-		if err == sql.ErrNoRows {
-			jsonError(w, "no pending plan for session", 404)
-			return
-		}
-		if err != nil {
-			jsonError(w, err, 500)
-			return
-		}
-		opID = op.ID
-	} else {
-		op, err = s.ops.Get(opID)
-		if err != nil {
-			jsonError(w, "decompose operation not found", 404)
-			return
-		}
-		if op.Type != "decompose" {
-			jsonError(w, "operation is not decompose", 400)
-			return
-		}
-		if op.Status == "running" {
-			jsonError(w, "decompose still running", 409)
-			return
-		}
-		if op.Status == "failed" {
-			jsonError(w, "decompose operation failed", 400)
-			return
-		}
-		result, err = parseDecomposeOperationResult(op.Result)
-		if err != nil {
-			jsonError(w, "invalid decompose operation result", 500)
-			return
-		}
-	}
-
-	if result.Accepted || result.Rejected || len(result.Proposed) == 0 {
-		jsonError(w, "no pending proposals for operation", 400)
+	op, result, ok := s.resolveDecomposeOp(w, req.OperationID, req.SessionID)
+	if !ok {
 		return
 	}
 
@@ -221,28 +212,27 @@ func (s *Server) handlePlanAccept(w http.ResponseWriter, r *http.Request) {
 
 	createdIDs, err := s.createTasksFromProposed(tasks)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	result.Accepted = true
 	result.CreatedTaskIDs = createdIDs
 	result.Proposed = nil
 	resultBytes, _ := json.Marshal(result)
-	if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-		jsonError(w, err, 500)
+	if err := s.ops.Complete(op.ID, string(resultBytes)); err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
 	jsonOK(w, map[string]interface{}{
 		"created":      len(createdIDs),
 		"task_ids":     createdIDs,
-		"operation_id": opID,
+		"operation_id": op.ID,
 	})
 }
 
 func (s *Server) handlePlanReject(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -256,61 +246,44 @@ func (s *Server) handlePlanReject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opID := strings.TrimSpace(req.OperationID)
-	var (
-		op     *ops.Operation
-		result decomposeOperationResult
-		err    error
-	)
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" {
+		sessionID = "default"
+	}
+
 	if opID == "" {
-		sessionID := strings.TrimSpace(req.SessionID)
-		if sessionID == "" {
-			sessionID = "default"
-		}
-		op, result, err = s.findPendingDecomposeOperation(sessionID)
+		op, _, err := s.findPendingDecomposeOperation(sessionID)
 		if err == sql.ErrNoRows {
 			jsonOK(w, map[string]interface{}{"rejected": false})
 			return
 		}
 		if err != nil {
-			jsonError(w, err, 500)
+			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 		opID = op.ID
-	} else {
-		op, err = s.ops.Get(opID)
-		if err != nil {
-			jsonError(w, "decompose operation not found", 404)
-			return
-		}
-		if op.Type != "decompose" {
-			jsonError(w, "operation is not decompose", 400)
-			return
-		}
-		if op.Status == "running" {
-			jsonError(w, "decompose still running", 409)
-			return
-		}
-		if op.Status == "failed" {
-			jsonOK(w, map[string]interface{}{"rejected": false, "operation_id": opID})
-			return
-		}
-		result, err = parseDecomposeOperationResult(op.Result)
-		if err != nil {
-			jsonError(w, "invalid decompose operation result", 500)
-			return
-		}
+	}
+
+	if op, err := s.ops.Get(opID); err == nil && op.Type == "decompose" && op.Status == "failed" {
+		jsonOK(w, map[string]interface{}{"rejected": false, "operation_id": opID})
+		return
+	}
+
+	op, result, ok := s.resolveDecomposeOp(w, opID, sessionID)
+	if !ok {
+		return
 	}
 
 	result.Rejected = true
 	result.Proposed = nil
 	result.CreatedTaskIDs = nil
 	resultBytes, _ := json.Marshal(result)
-	if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-		jsonError(w, err, 500)
+	if err := s.ops.Complete(op.ID, string(resultBytes)); err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
-	jsonOK(w, map[string]interface{}{"rejected": true, "operation_id": opID})
+	jsonOK(w, map[string]interface{}{"rejected": true, "operation_id": op.ID})
 }
 
 func (s *Server) createTasksFromProposed(tasks []decompose.ProposedTask) ([]string, error) {

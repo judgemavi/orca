@@ -9,31 +9,28 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
-	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/plan"
 )
 
 // ========== Task Plans ==========
 
 func (s *Server) handleGetTaskPlan(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 
 	content, err := store.GetPlan(resolved)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -41,8 +38,7 @@ func (s *Server) handleGetTaskPlan(w http.ResponseWriter, r *http.Request, id st
 }
 
 func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPut) {
 		return
 	}
 
@@ -55,14 +51,13 @@ func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request, id st
 	}
 
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
 
 	if err := store.SetPlan(resolved, req.Plan); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -70,8 +65,7 @@ func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request, id st
 }
 
 func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -85,31 +79,31 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 	}
 
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 	if _, err := s.ops.GetByTarget(resolved, "plan_generate"); err == nil {
 		jsonError(w, "plan generation already in progress", http.StatusConflict)
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
 	tk, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
 	toolName, toolCfg, err := s.cfg.ResolveToolForPhase(tk, "plan", req.Tool)
 	if err != nil {
 		if strings.TrimSpace(req.Tool) != "" {
-			jsonError(w, err, 400)
+			jsonError(w, err, http.StatusBadRequest)
 		} else {
-			jsonError(w, err, 500)
+			jsonError(w, err, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -124,75 +118,72 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 		Data: map[string]string{"task_id": resolved},
 	})
 
-	opID := uuid.New().String()
-	if err := s.ops.Create(ops.Operation{
-		ID:       opID,
-		Type:     "plan_generate",
-		TargetID: resolved,
-		Status:   "running",
-	}); err != nil {
-		jsonError(w, err, 500)
-		return
-	}
-
-	s.runAsync(opID, "plan", map[string]interface{}{"task_id": resolved}, func() {
-		taskID := resolved
-		generator := plan.New(toolCfg, s.repoDir)
-		var content string
-		var genErr error
-		if modelOverride != "" {
-			content, genErr = generator.GenerateWithModel(tk.Title, tk.Description, modelOverride)
-		} else {
-			content, genErr = generator.Generate(tk.Title, tk.Description)
-		}
-		if genErr != nil {
-			if err := s.ops.Fail(opID, genErr.Error()); err != nil {
-				slog.Error("mark plan operation failed", "operation_id", opID, "err", err)
+	opID := ""
+	opID = s.startAsyncOp(
+		w,
+		"plan_generate",
+		resolved,
+		"plan",
+		map[string]interface{}{"task_id": resolved},
+		map[string]string{"status": "generating"},
+		func() {
+			taskID := resolved
+			generator := plan.New(toolCfg, s.repoDir)
+			var content string
+			var genErr error
+			if modelOverride != "" {
+				content, genErr = generator.GenerateWithModel(tk.Title, tk.Description, modelOverride)
+			} else {
+				content, genErr = generator.Generate(tk.Title, tk.Description)
 			}
-			s.hub.Broadcast(Event{
-				Type: "plan.failed",
-				Data: map[string]string{
-					"task_id": taskID,
-					"error":   genErr.Error(),
-				},
-			})
-			return
-		}
-
-		if err := s.taskStore.SetPlan(taskID, content); err != nil {
-			if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
-				slog.Error("mark plan operation failed", "operation_id", opID, "err", opErr)
+			if genErr != nil {
+				if err := s.ops.Fail(opID, genErr.Error()); err != nil {
+					slog.Error("mark plan operation failed", "operation_id", opID, "err", err)
+				}
+				s.hub.Broadcast(Event{
+					Type: "plan.failed",
+					Data: map[string]string{
+						"task_id": taskID,
+						"error":   genErr.Error(),
+					},
+				})
+				return
 			}
-			s.hub.Broadcast(Event{
-				Type: "plan.failed",
-				Data: map[string]string{
-					"task_id": taskID,
-					"error":   err.Error(),
-				},
-			})
-			return
-		}
 
-		resultBytes, _ := json.Marshal(map[string]string{
-			"task_id": taskID,
-			"plan":    content,
-		})
-		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			slog.Debug("complete plan operation failed", "operation_id", opID, "err", err)
-		}
+			if err := s.taskStore.SetPlan(taskID, content); err != nil {
+				if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
+					slog.Error("mark plan operation failed", "operation_id", opID, "err", opErr)
+				}
+				s.hub.Broadcast(Event{
+					Type: "plan.failed",
+					Data: map[string]string{
+						"task_id": taskID,
+						"error":   err.Error(),
+					},
+				})
+				return
+			}
 
-		s.hub.Broadcast(Event{
-			Type: "plan.completed",
-			Data: map[string]string{
+			resultBytes, _ := json.Marshal(map[string]string{
 				"task_id": taskID,
 				"plan":    content,
-			},
-		})
-	})
+			})
+			if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
+				slog.Debug("complete plan operation failed", "operation_id", opID, "err", err)
+			}
 
-	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
-		"data": map[string]string{"status": "generating"},
-	})
+			s.hub.Broadcast(Event{
+				Type: "plan.completed",
+				Data: map[string]string{
+					"task_id": taskID,
+					"plan":    content,
+				},
+			})
+		},
+	)
+	if opID == "" {
+		return
+	}
 }
 
 // POST /api/v1/tasks/{id}/evaluate
@@ -207,15 +198,15 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id s
 	}
 
 	store := s.taskStore
-	resolved, err := store.ResolveID(id)
-	if err != nil {
-		jsonError(w, err, 404)
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
 		return
 	}
+	var err error
 
 	tk, err := store.Get(resolved)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
@@ -233,13 +224,13 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id s
 		}
 	}
 	if toolName == "" {
-		jsonError(w, "no tools configured", 500)
+		jsonError(w, "no tools configured", http.StatusInternalServerError)
 		return
 	}
 
 	toolCfg, ok := s.cfg.Tools[toolName]
 	if !ok {
-		jsonError(w, fmt.Sprintf("tool %q not found in config", toolName), 500)
+		jsonError(w, fmt.Sprintf("tool %q not found in config", toolName), http.StatusInternalServerError)
 		return
 	}
 
@@ -253,7 +244,7 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id s
 		result, err = evaluator.Evaluate(tk.Title, tk.Description)
 	}
 	if err != nil {
-		jsonError(w, fmt.Sprintf("evaluate plan: %v", err), 500)
+		jsonError(w, fmt.Sprintf("evaluate plan: %v", err), http.StatusInternalServerError)
 		return
 	}
 

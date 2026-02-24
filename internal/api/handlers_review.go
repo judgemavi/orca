@@ -9,9 +9,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
-	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/review"
 )
 
@@ -20,7 +17,7 @@ import (
 func (s *Server) handleGetReview(w http.ResponseWriter, r *http.Request, sprintID string) {
 	sp, err := s.planner.Get(sprintID)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
@@ -88,27 +85,27 @@ func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprint
 	}
 
 	if !req.Auto {
-		jsonError(w, "set auto=true for automated review", 400)
+		jsonError(w, "set auto=true for automated review", http.StatusBadRequest)
 		return
 	}
 
 	sp, err := s.planner.Get(sprintID)
 	if err != nil {
-		jsonError(w, err, 404)
+		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 	if _, err := s.ops.GetByTarget(sprintID, "review"); err == nil {
 		jsonError(w, "review already in progress for sprint", http.StatusConflict)
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
-	var reviewToolCfg config.ToolConfig
-	for _, tc := range s.cfg.Tools {
-		reviewToolCfg = tc
-		break
+	_, reviewToolCfg, err := s.cfg.ResolvePhaseToolConfig("review")
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
 	}
 
 	var inputs []review.ReviewInput
@@ -132,66 +129,65 @@ func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprint
 		})
 	}
 
-	opID := uuid.New().String()
-	if err := s.ops.Create(ops.Operation{
-		ID:       opID,
-		Type:     "review",
-		TargetID: sprintID,
-		Status:   "running",
-	}); err != nil {
-		jsonError(w, err, 500)
+	opID := ""
+	opID = s.startAsyncOp(
+		w,
+		"review",
+		sprintID,
+		"review",
+		map[string]interface{}{"operation_id": ""},
+		map[string]string{"operation_id": ""},
+		func() {
+			s.hub.Broadcast(Event{Type: "review.started", Data: map[string]interface{}{
+				"operation_id": opID,
+				"sprint_id":    sprintID,
+			}})
+
+			reviewer := review.New(reviewToolCfg, s.repoDir)
+			results := make([]review.ReviewResult, 0, len(inputs))
+			for _, in := range inputs {
+				res, err := reviewer.Review(in.TaskID, in.Title, in.Description, in.Diff)
+				if err != nil {
+					results = append(results, review.ReviewResult{
+						TaskID:   in.TaskID,
+						Approved: false,
+						Feedback: fmt.Sprintf("review error: %v", err),
+						Tool:     reviewToolCfg.Binary,
+					})
+				} else {
+					results = append(results, *res)
+				}
+				s.hub.Broadcast(Event{Type: "review.progress", Data: map[string]interface{}{
+					"operation_id": opID,
+					"task_id":      in.TaskID,
+					"status":       "reviewed",
+				}})
+			}
+
+			resultBytes, err := json.Marshal(map[string]interface{}{"results": results})
+			if err != nil {
+				errMsg := fmt.Sprintf("marshal review results: %v", err)
+				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
+					slog.Error("mark review operation failed", "operation_id", opID, "err", opErr)
+				}
+				s.hub.Broadcast(Event{Type: "review.failed", Data: map[string]interface{}{
+					"operation_id": opID,
+					"error":        errMsg,
+				}})
+				return
+			}
+			if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
+				slog.Debug("complete review operation failed", "operation_id", opID, "err", err)
+			}
+
+			s.hub.Broadcast(Event{Type: "review.completed", Data: map[string]interface{}{
+				"operation_id": opID,
+				"sprint_id":    sprintID,
+				"results":      results,
+			}})
+		},
+	)
+	if opID == "" {
 		return
 	}
-
-	s.runAsync(opID, "review", map[string]interface{}{"operation_id": opID}, func() {
-		s.hub.Broadcast(Event{Type: "review.started", Data: map[string]interface{}{
-			"operation_id": opID,
-			"sprint_id":    sprintID,
-		}})
-
-		reviewer := review.New(reviewToolCfg, s.repoDir)
-		results := make([]review.ReviewResult, 0, len(inputs))
-		for _, in := range inputs {
-			res, err := reviewer.Review(in.TaskID, in.Title, in.Description, in.Diff)
-			if err != nil {
-				results = append(results, review.ReviewResult{
-					TaskID:   in.TaskID,
-					Approved: false,
-					Feedback: fmt.Sprintf("review error: %v", err),
-					Tool:     reviewToolCfg.Binary,
-				})
-			} else {
-				results = append(results, *res)
-			}
-			s.hub.Broadcast(Event{Type: "review.progress", Data: map[string]interface{}{
-				"operation_id": opID,
-				"task_id":      in.TaskID,
-				"status":       "reviewed",
-			}})
-		}
-
-		resultBytes, err := json.Marshal(map[string]interface{}{"results": results})
-		if err != nil {
-			errMsg := fmt.Sprintf("marshal review results: %v", err)
-			if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-				slog.Error("mark review operation failed", "operation_id", opID, "err", opErr)
-			}
-			s.hub.Broadcast(Event{Type: "review.failed", Data: map[string]interface{}{
-				"operation_id": opID,
-				"error":        errMsg,
-			}})
-			return
-		}
-		if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-			slog.Debug("complete review operation failed", "operation_id", opID, "err", err)
-		}
-
-		s.hub.Broadcast(Event{Type: "review.completed", Data: map[string]interface{}{
-			"operation_id": opID,
-			"sprint_id":    sprintID,
-			"results":      results,
-		}})
-	})
-
-	jsonResponse(w, http.StatusAccepted, map[string]interface{}{"operation_id": opID})
 }

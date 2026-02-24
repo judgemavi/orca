@@ -9,8 +9,7 @@ import (
 )
 
 func (s *Server) handleListOperations(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -46,7 +45,7 @@ func (s *Server) handleListOperations(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -66,7 +65,7 @@ func (s *Server) handleListOperations(w http.ResponseWriter, r *http.Request) {
 			&op.CreatedAt,
 			&op.UpdatedAt,
 		); err != nil {
-			jsonError(w, err, 500)
+			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 		if result.Valid {
@@ -78,7 +77,7 @@ func (s *Server) handleListOperations(w http.ResponseWriter, r *http.Request) {
 		operations = append(operations, op)
 	}
 	if err := rows.Err(); err != nil {
-		jsonError(w, err, 500)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
