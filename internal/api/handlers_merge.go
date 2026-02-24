@@ -175,10 +175,9 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	req, _ := decodeJSON[struct {
 		SprintID string `json:"sprint_id"`
-	}
-	json.NewDecoder(r.Body).Decode(&req)
+	}](w, r, true)
 
 	sprintID := req.SprintID
 	if sprintID == "" {
