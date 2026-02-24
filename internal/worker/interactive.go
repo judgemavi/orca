@@ -5,10 +5,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/creack/pty"
@@ -26,9 +24,6 @@ type InteractiveAdapter struct {
 	CmdCallback func(*exec.Cmd)
 	PromptMode  string
 	OutputChan  chan<- OutputLine
-
-	mu   sync.Mutex
-	ptmx *os.File
 }
 
 // NewInteractiveAdapter creates an InteractiveAdapter from a ToolConfig.
@@ -78,15 +73,6 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 		return nil, fmt.Errorf("exec %s: %w", a.Binary, err)
 	}
 	defer ptmx.Close()
-
-	a.mu.Lock()
-	a.ptmx = ptmx
-	a.mu.Unlock()
-	defer func() {
-		a.mu.Lock()
-		a.ptmx = nil
-		a.mu.Unlock()
-	}()
 
 	var output bytes.Buffer
 	copyDone := make(chan struct{})
@@ -166,15 +152,6 @@ func (a *InteractiveAdapter) Execute(ctx context.Context, taskID, prompt, worktr
 	}
 
 	return result, nil
-}
-
-// Cancel closes the PTY master to terminate the interactive session.
-func (a *InteractiveAdapter) Cancel() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.ptmx != nil {
-		_ = a.ptmx.Close()
-	}
 }
 
 // SetCmdCallback sets the pre-start callback.
