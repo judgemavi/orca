@@ -14,8 +14,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/monitor"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/quality"
@@ -26,34 +27,52 @@ import (
 	"github.com/jasjeetmavi/orca/prompts"
 )
 
+var runnableTaskStatuses = map[string]bool{
+	"pending": true,
+	"planned": true,
+}
+
 // TaskResult holds the outcome of a single task execution.
 type TaskResult struct {
 	TaskID       string        `json:"task_id"`
 	ToolName     string        `json:"tool_name"`
+	Model        string        `json:"model,omitempty"`
 	Status       string        `json:"status"` // "review" or "failed"
 	ExitCode     int           `json:"exit_code"`
 	Diff         string        `json:"diff,omitempty"`
 	FilesChanged []string      `json:"files_changed,omitempty"`
 	Stdout       string        `json:"stdout,omitempty"`
 	Stderr       string        `json:"stderr,omitempty"`
+	InputTokens  int64         `json:"input_tokens,omitempty"`
+	OutputTokens int64         `json:"output_tokens,omitempty"`
+	TotalCost    float64       `json:"total_cost,omitempty"`
 	Duration     time.Duration `json:"duration"`
 	WorktreePath string        `json:"worktree_path,omitempty"`
 }
 
+type RunOpts struct {
+	ToolOverride  string
+	ModelOverride string
+}
+
 type taskInfo struct {
-	taskID       string
-	taskTitle    string
-	toolName     string
-	toolCfg      config.ToolConfig
-	worktreePath string
-	prompt       string
-	model        string
-	args         []string
+	taskID          string
+	taskTitle       string
+	toolName        string
+	driver          driver.Driver
+	timeout         time.Duration
+	logWriter       *interaction.Writer
+	worktreePath    string
+	prompt          string
+	model           string
+	args            []string
+	resumeSessionID string
+	resumeFeedback  string
 }
 
 // ExecutorOptions configures optional executor dependencies and callbacks.
 type ExecutorOptions struct {
-	CostTracker   *cost.Tracker
+	Interactions  *interaction.Store
 	OutputHook    func(worker.OutputLine)
 	DoneHook      func(taskID string, exitCode int)
 	BroadcastHook func(taskID, status string)
@@ -69,8 +88,8 @@ type Executor struct {
 	repoDir    string
 	sessionMgr *pty.SessionManager
 
-	// Cost tracking (optional — nil means no tracking).
-	costTracker *cost.Tracker
+	// Interaction tracking (optional — nil means no tracking).
+	interactions *interaction.Store
 	// Runtime monitors.
 	monitors []monitor.Monitor
 
@@ -109,7 +128,7 @@ func NewExecutor(db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg 
 		sessionMgr:    mgr,
 		running:       make(map[string]*exec.Cmd),
 		sessions:      make(map[string]string),
-		costTracker:   opts.CostTracker,
+		interactions:  opts.Interactions,
 		outputHook:    opts.OutputHook,
 		doneHook:      opts.DoneHook,
 		broadcastHook: opts.BroadcastHook,
@@ -138,7 +157,7 @@ func (e *Executor) budgetAwareEnabled() bool {
 
 // RunBatch executes all tasks in a batch: transitions to running, creates worktrees,
 // runs workers in parallel, collects results, updates task statuses, stores artifacts.
-func (e *Executor) RunBatch(taskIDs []string) ([]TaskResult, error) {
+func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error) {
 	maxParallel := e.config.Workers.MaxParallel
 	if maxParallel <= 0 {
 		maxParallel = 1
@@ -152,6 +171,14 @@ func (e *Executor) RunBatch(taskIDs []string) ([]TaskResult, error) {
 	}
 
 	for _, id := range taskIDs {
+		t, err := e.taskStore.Get(id)
+		if err != nil {
+			return nil, fmt.Errorf("get task %s: %w", id, err)
+		}
+		if !runnableTaskStatuses[t.Status] {
+			return nil, fmt.Errorf("task %s must be pending or planned to run (current: %s)", id, t.Status)
+		}
+
 		if err := e.taskStore.Update(id, map[string]interface{}{"status": "running"}); err != nil {
 			return nil, fmt.Errorf("set task %s running: %w", id, err)
 		}
@@ -175,7 +202,7 @@ func (e *Executor) RunBatch(taskIDs []string) ([]TaskResult, error) {
 		contextPrefix = "## Codebase Context\n\n" + cctx + "\n\n---\n\n"
 	}
 
-	prepared, _, err := e.prepareTasks(taskIDs, contextPrefix)
+	prepared, _, err := e.prepareTasks(taskIDs, contextPrefix, opts)
 	if err != nil {
 		e.rollbackPreparation(taskIDs)
 		return nil, err
@@ -189,15 +216,14 @@ func (e *Executor) RunBatch(taskIDs []string) ([]TaskResult, error) {
 	defer func() { e.runBaselineSnapshot = nil }()
 
 	results := e.collectResult(prepared, baselineSnapshot)
-	e.storeArtifacts(runID, results)
-	e.recordCost(runID, prepared, results)
+	e.finishRunInteractions(runID, prepared, results)
 	if err := e.finalizeRun(results); err != nil {
 		return results, err
 	}
 	return results, nil
 }
 
-func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string) ([]taskInfo, []string, error) {
+func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts RunOpts) ([]taskInfo, []string, error) {
 	prepared := make([]taskInfo, 0, len(taskIDs))
 	createdTaskIDs := make([]string, 0, len(taskIDs))
 
@@ -207,14 +233,20 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string) ([]taskI
 			return nil, createdTaskIDs, fmt.Errorf("get task %s: %w", taskID, err)
 		}
 
-		toolName, toolCfg, err := e.resolveTaskToolConfig("run")
+		toolName, d, err := e.resolveTaskToolConfig("run", opts.ToolOverride)
 		if err != nil {
+			e.closePreparedWriters(prepared)
 			return nil, createdTaskIDs, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 		}
-		model := toolCfg.Model
+		model := e.config.ResolveModelForPhase("run", opts.ModelOverride, d)
+		timeout := 10 * time.Minute
+		if parsed, parseErr := time.ParseDuration("600s"); parseErr == nil {
+			timeout = parsed
+		}
 
 		wtPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch, t.Title)
 		if err != nil {
+			e.closePreparedWriters(prepared)
 			return nil, createdTaskIDs, fmt.Errorf("create worktree for task %s: %w", taskID, err)
 		}
 		createdTaskIDs = append(createdTaskIDs, taskID)
@@ -231,11 +263,24 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string) ([]taskI
 		}
 		prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
 
+		var writer *interaction.Writer
+		if e.interactions != nil {
+			taskRef := taskID
+			w, beginErr := e.interactions.Begin(&taskRef, "run", toolName)
+			if beginErr != nil {
+				slog.Warn("begin interaction failed", "task_id", taskID, "err", beginErr)
+			} else {
+				writer = w
+			}
+		}
+
 		prepared = append(prepared, taskInfo{
 			taskID:       taskID,
 			taskTitle:    t.Title,
 			toolName:     toolName,
-			toolCfg:      toolCfg,
+			driver:       d,
+			timeout:      timeout,
+			logWriter:    writer,
 			worktreePath: wtPath,
 			prompt:       prompt,
 			model:        model,
@@ -278,6 +323,11 @@ func (e *Executor) emitMonitorAlert(alertType, taskID, message string) {
 // RunSingle re-runs a single task with review feedback, reusing the existing
 // worktree and resuming the tool session when supported.
 func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
+	return e.RunSingleWithOpts(ctx, taskID, RunOpts{})
+}
+
+// RunSingleWithOpts re-runs a single task with optional tool/model overrides.
+func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts RunOpts) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -288,11 +338,12 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 		return fmt.Errorf("get task %s: %w", taskID, err)
 	}
 
-	toolName, toolCfg, err := e.resolveTaskToolConfig("run")
+	toolName, d, err := e.resolveTaskToolConfig("run", opts.ToolOverride)
 	if err != nil {
 		return fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 	}
-	model := toolCfg.Model
+	model := e.config.ResolveModelForPhase("run", opts.ModelOverride, d)
+	timeout, _ := time.ParseDuration("600s")
 
 	wtPath := worktree.ResolveTaskDir(e.config.Project.WorktreeDir, taskID)
 	if _, err := os.Stat(wtPath); err != nil {
@@ -329,8 +380,8 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 	}
 
 	var args []string
-	if t.SessionID != "" && len(toolCfg.ResumeArgs) > 0 {
-		args = buildResumeArgs(toolCfg, t.SessionID, feedback, model)
+	if t.SessionID != "" {
+		args = d.ResumeArgs(t.SessionID, feedback, model)
 	} else {
 		prompt = strings.TrimSpace(prompt) + "\n\nReviewer feedback: " + feedback
 	}
@@ -365,17 +416,30 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 
 	outputCh := make(chan worker.OutputLine, 256)
 	outputDone := make(chan struct{})
-	go e.captureOutput(outputCh, outputDone)
+	var writer *interaction.Writer
+	if e.interactions != nil {
+		taskRef := taskID
+		w, beginErr := e.interactions.Begin(&taskRef, "run", toolName)
+		if beginErr != nil {
+			slog.Warn("begin interaction failed", "task_id", taskID, "run_id", runID, "err", beginErr)
+		} else {
+			writer = w
+		}
+	}
+	go e.captureOutput(outputCh, outputDone, map[string]*interaction.Writer{taskID: writer})
 
 	info := taskInfo{
-		taskID:       taskID,
-		taskTitle:    t.Title,
-		toolName:     toolName,
-		toolCfg:      toolCfg,
-		worktreePath: wtPath,
-		prompt:       prompt,
-		model:        model,
-		args:         args,
+		taskID:          taskID,
+		taskTitle:       t.Title,
+		toolName:        toolName,
+		driver:          d,
+		timeout:         timeout,
+		worktreePath:    wtPath,
+		prompt:          prompt,
+		model:           model,
+		args:            args,
+		resumeSessionID: t.SessionID,
+		resumeFeedback:  feedback,
 	}
 
 	result := e.runTask(ctx, info, outputCh)
@@ -390,14 +454,28 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 		e.broadcastHook(taskID, result.Status)
 	}
 
-	_, err = e.db.Exec(
-		`INSERT INTO artifacts (id, task_id, run_id, diff, stdout, stderr, exit_code, duration_ms, quality_json)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), taskID, runID,
-		result.Diff, result.Stdout, result.Stderr, result.ExitCode, result.Duration.Milliseconds(), nil,
-	)
-	if err != nil {
-		slog.Warn("store artifact failed", "task_id", taskID, "run_id", runID, "err", err)
+	if e.interactions != nil && writer != nil {
+		status := "completed"
+		if result.Status == "failed" {
+			status = "failed"
+		}
+		opts := []interaction.FinishOption{
+			interaction.WithRunID(runID),
+			interaction.WithModel(model),
+			interaction.WithDiff(result.Diff),
+			interaction.WithExitCode(result.ExitCode),
+			interaction.WithDuration(result.Duration),
+			interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost),
+		}
+		if result.Stderr != "" && status == "failed" {
+			opts = append(opts, interaction.WithError(result.Stderr))
+		}
+		if finishErr := e.interactions.Finish(writer.ID(), status, opts...); finishErr != nil {
+			slog.Warn("finish interaction failed", "task_id", taskID, "run_id", runID, "err", finishErr)
+		}
+		if closeErr := writer.Close(); closeErr != nil {
+			slog.Warn("close interaction failed", "task_id", taskID, "run_id", runID, "err", closeErr)
+		}
 	}
 	if reviewID != "" && result.ExitCode == 0 {
 		if err := e.taskStore.AddressReview(reviewID); err != nil {
@@ -467,8 +545,16 @@ func (e *Executor) rollbackPreparation(taskIDs []string) {
 		if err := e.worktrees.Remove(taskID); err != nil {
 			slog.Warn("rollback remove worktree failed", "task_id", taskID, "err", err)
 		}
-		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "pending"}); err != nil {
+		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "planned"}); err != nil {
 			slog.Warn("rollback reset task failed", "task_id", taskID, "err", err)
+		}
+	}
+}
+
+func (e *Executor) closePreparedWriters(prepared []taskInfo) {
+	for _, info := range prepared {
+		if info.logWriter != nil {
+			_ = info.logWriter.Close()
 		}
 	}
 }
@@ -488,6 +574,6 @@ func (e *Executor) CleanupTasks(taskIDs []string) error {
 	return firstErr
 }
 
-func (e *Executor) resolveTaskToolConfig(phase string) (string, config.ToolConfig, error) {
-	return e.config.ResolveToolForPhase(phase, "")
+func (e *Executor) resolveTaskToolConfig(phase string, override string) (string, driver.Driver, error) {
+	return e.config.ResolveToolForPhase(phase, override)
 }

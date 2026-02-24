@@ -11,7 +11,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/executor"
-	"github.com/jasjeetmavi/orca/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/orchestrator"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/state"
@@ -20,16 +20,16 @@ import (
 
 // Server is the Orca HTTP/WS API server.
 type Server struct {
-	db         *state.DB
-	cfg        *config.Config
-	executor   *executor.Executor
-	taskStore  *task.Store
-	ops        *ops.Store
-	repoDir    string
-	hub        *Hub
-	sessionMgr *pty.SessionManager
-	ctx        context.Context
-	cancel     context.CancelFunc
+	db           *state.DB
+	cfg          *config.Config
+	executor     *executor.Executor
+	taskStore    *task.Store
+	interactions *interaction.Store
+	repoDir      string
+	hub          *Hub
+	sessionMgr   *pty.SessionManager
+	ctx          context.Context
+	cancel       context.CancelFunc
 
 	monitorAlerts []MonitorAlert
 	monitorMu     sync.Mutex
@@ -53,20 +53,20 @@ func NewServerWithHub(db *state.DB, cfg *config.Config, exec *executor.Executor,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	taskStore := task.NewStore(db)
-	opsStore := ops.NewStore(db)
+	interactionStore := interaction.NewStore(db, ".orca/interactions")
 
 	srv := &Server{
-		db:         db,
-		cfg:        cfg,
-		executor:   exec,
-		taskStore:  taskStore,
-		ops:        opsStore,
-		repoDir:    repoDir,
-		hub:        hub,
-		frontendFS: frontendFS,
-		sessionMgr: sessionMgr,
-		ctx:        ctx,
-		cancel:     cancel,
+		db:           db,
+		cfg:          cfg,
+		executor:     exec,
+		taskStore:    taskStore,
+		interactions: interactionStore,
+		repoDir:      repoDir,
+		hub:          hub,
+		frontendFS:   frontendFS,
+		sessionMgr:   sessionMgr,
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 
 	srv.setupWatchers(ctx, taskStore)
@@ -115,20 +115,20 @@ func (s *Server) BootstrapOrchestrator() {
 		return
 	}
 
-	toolName, supervisorTool, err := orchestrator.ResolveSupervisorTool(s.cfg)
+	toolName, supervisorTool, model, err := orchestrator.ResolveSupervisorTool(s.cfg)
 	if err != nil {
 		slog.Error("resolve supervisor tool failed", "err", err)
 		return
 	}
-	if strings.TrimSpace(supervisorTool.Binary) == "" {
+	if supervisorTool == nil || strings.TrimSpace(supervisorTool.Binary()) == "" {
 		slog.Error("resolve supervisor tool binary empty", "tool", toolName)
 		return
 	}
 
-	args := orchestrator.BuildLaunchArgs(supervisorTool, mcpConfigPath)
+	args := orchestrator.BuildLaunchArgs(supervisorTool, model, mcpConfigPath)
 	sess, err := s.sessionMgr.Create(pty.CreateOpts{
 		Type:    pty.SessionOrchestrator,
-		Command: supervisorTool.Binary,
+		Command: supervisorTool.Binary(),
 		Args:    args,
 		Dir:     s.repoDir,
 		Tool:    "orchestrator",

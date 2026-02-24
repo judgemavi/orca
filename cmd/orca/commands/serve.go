@@ -9,8 +9,8 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/api"
 	"github.com/jasjeetmavi/orca/internal/banner"
-	"github.com/jasjeetmavi/orca/internal/cost"
 	"github.com/jasjeetmavi/orca/internal/executor"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
@@ -59,7 +59,7 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 	go hub.Run()
 
 	opts := api.NewExecutorOptions(db, hub)
-	opts.CostTracker = cost.NewTracker(db)
+	opts.Interactions = interaction.NewStore(db, ".orca/interactions")
 	store := task.NewStore(db)
 	wm := worktree.NewManager(repoDir, cfg.Project.WorktreeDir)
 	exec := executor.NewExecutor(db, store, wm, cfg, repoDir, opts, sessionMgr)

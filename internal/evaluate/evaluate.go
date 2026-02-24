@@ -5,15 +5,16 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/llm"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
 
-// EvaluationResult captures evaluator output for task decomposition decisions.
 type EvaluationResult struct {
 	NeedsBreakdown        bool    `json:"needs_breakdown"`
 	Confidence            float64 `json:"confidence"`
@@ -21,47 +22,103 @@ type EvaluationResult struct {
 	SuggestedSubtaskCount int     `json:"suggested_subtask_count"`
 }
 
-// Evaluator determines whether tasks should be decomposed into subtasks.
 type Evaluator struct {
-	toolCfg config.ToolConfig
-	repoDir string
+	toolName     string
+	driver       driver.Driver
+	model        string
+	timeout      time.Duration
+	repoDir      string
+	interactions *interaction.Store
 }
 
-// New creates a task Evaluator.
-func New(toolCfg config.ToolConfig, repoDir string) *Evaluator {
-	return &Evaluator{toolCfg: toolCfg, repoDir: repoDir}
+func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Evaluator {
+	var store *interaction.Store
+	if len(interactions) > 0 {
+		store = interactions[0]
+	}
+	return &Evaluator{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
-// Evaluate decides whether a task needs decomposition.
-func (e *Evaluator) Evaluate(title, description string) (*EvaluationResult, error) {
-	return e.evaluate(title, description, "")
+func (e *Evaluator) Evaluate(taskID, title, description string) (*EvaluationResult, error) {
+	return e.evaluate(taskID, title, description, "")
 }
 
-// EvaluateWithModel decides whether a task needs decomposition using a model override.
-func (e *Evaluator) EvaluateWithModel(title, description, model string) (*EvaluationResult, error) {
-	return e.evaluate(title, description, model)
+func (e *Evaluator) EvaluateWithModel(taskID, title, description, model string) (*EvaluationResult, error) {
+	return e.evaluate(taskID, title, description, model)
 }
 
-func (e *Evaluator) evaluate(title, description, model string) (*EvaluationResult, error) {
+func (e *Evaluator) evaluate(taskID, title, description, model string) (*EvaluationResult, error) {
 	prompt := buildEvaluatePrompt(explore.LoadContext(e.repoDir), title, description)
+	selectedModel := e.model
+	if model != "" {
+		selectedModel = model
+	}
 
-	toolCfg := applyModelOverride(e.toolCfg, model)
+	adapter := worker.NewAdapter(e.driver, selectedModel, e.timeout)
 
-	adapter, err := worker.NewAdapter(toolCfg)
-	if err != nil {
-		return nil, fmt.Errorf("create adapter: %w", err)
+	var writer *interaction.Writer
+	if e.interactions != nil {
+		taskRef := taskID
+		w, beginErr := e.interactions.Begin(&taskRef, "evaluate", e.toolName)
+		if beginErr == nil {
+			writer = w
+		}
+	}
+	var (
+		outputCh   chan worker.OutputLine
+		outputDone chan struct{}
+	)
+	if writer != nil {
+		outputCh = make(chan worker.OutputLine, 256)
+		outputDone = make(chan struct{})
+		adapter.SetOutputChan(outputCh)
+		go func() {
+			defer close(outputDone)
+			for line := range outputCh {
+				if line.Stream == "raw" {
+					_ = writer.WriteString(line.Line + "\n")
+				}
+			}
+		}()
 	}
 
 	result, err := adapter.Execute(context.Background(), "evaluate", prompt, e.repoDir)
+	if outputCh != nil {
+		close(outputCh)
+		<-outputDone
+	}
+	stdout := ""
+	exitCode := -1
+	stderr := ""
+	if result != nil {
+		stdout = result.Stdout
+		exitCode = result.ExitCode
+		stderr = result.Stderr
+	}
+	if writer != nil {
+		status := "completed"
+		opts := []interaction.FinishOption{}
+		if result != nil {
+			opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
+		}
+		if err != nil {
+			status = "failed"
+			opts = append(opts, interaction.WithError(err.Error()))
+		} else if exitCode != 0 {
+			status = "failed"
+			opts = append(opts, interaction.WithError(fmt.Sprintf("evaluator exited %d: %s", exitCode, stderr)))
+		}
+		_ = e.interactions.Finish(writer.ID(), status, opts...)
+		_ = writer.Close()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("execute evaluator: %w", err)
 	}
-	if result.ExitCode != 0 {
-		return nil, fmt.Errorf("evaluator exited %d: %s", result.ExitCode, result.Stderr)
+	if exitCode != 0 {
+		return nil, fmt.Errorf("evaluator exited %d: %s", exitCode, stderr)
 	}
 
-	output := worker.ExtractOutput(toolCfg.Output, result.Stdout, e.repoDir)
-
+	output := stdout
 	var evaluationResult EvaluationResult
 	if err := llm.ExtractJSON(output, &evaluationResult); err != nil {
 		return &EvaluationResult{NeedsBreakdown: false}, nil
@@ -76,11 +133,4 @@ func buildEvaluatePrompt(codebaseContext, title, description string) string {
 		contextSection = "## Codebase Context\n\n" + codebaseContext + "\n\n"
 	}
 	return fmt.Sprintf(prompts.Evaluate, contextSection, title, description)
-}
-
-func applyModelOverride(toolCfg config.ToolConfig, model string) config.ToolConfig {
-	if model != "" {
-		toolCfg.Model = model
-	}
-	return toolCfg
 }

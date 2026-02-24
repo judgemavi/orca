@@ -9,6 +9,8 @@ import type {
   MonitorAlert,
   WorktreeStatus,
   Artifact,
+  Interaction,
+  InteractionWithContent,
 } from './types'
 
 const BASE = '/api/v1'
@@ -94,25 +96,70 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({}),
     }),
-  runTasks: (taskIds?: string[]) =>
+  runTasks: (taskIds?: string[], tool?: string, model?: string) =>
     request<{ operation_id: string; task_ids: string[] }>('/tasks/run', {
       method: 'POST',
-      body: JSON.stringify(taskIds ? { task_ids: taskIds } : {}),
+      body: JSON.stringify({
+        ...(taskIds ? { task_ids: taskIds } : {}),
+        ...(tool ? { tool } : {}),
+        ...(model ? { model } : {}),
+      }),
     }),
-  mergeTask: (taskId: string, mode?: string) =>
+  mergeTask: (taskId: string, mode?: string, tool?: string, model?: string) =>
     request<{ operation_id: string }>(`/tasks/${taskId}/merge`, {
       method: 'POST',
-      body: mode ? JSON.stringify({ mode }) : undefined,
+      body:
+        mode || tool || model
+          ? JSON.stringify({
+              ...(mode ? { mode } : {}),
+              ...(tool ? { tool } : {}),
+              ...(model ? { model } : {}),
+            })
+          : undefined,
     }),
   getTaskReviews: (id: string) =>
     request<{ reviews: TaskReview[] }>(`/tasks/${id}/reviews`),
   getTaskArtifacts: (id: string) =>
     request<{ artifacts: Artifact[] }>(`/tasks/${id}/artifacts`),
+  listInteractions: (taskId: string) =>
+    request<{ interactions: Interaction[] }>(`/tasks/${taskId}/interactions`),
+  getInteraction: (taskId: string, logId: string) =>
+    request<InteractionWithContent>(
+      `/tasks/${taskId}/interactions/${encodeURIComponent(logId)}`,
+    ),
   approveTask: (id: string) => post<Task>(`/tasks/${id}/approve`, {}),
-  requestChanges: (id: string, feedback: string) =>
+  approvePlan: (id: string) => post<Task>(`/tasks/${id}/approve-plan`, {}),
+  requestChanges: (
+    id: string,
+    feedback: string,
+    interactionId?: string,
+    tool?: string,
+    model?: string,
+  ) =>
     post<{ status: string; task_id: string }>(
       `/tasks/${id}/request-changes`,
-      { feedback },
+      {
+        feedback,
+        ...(interactionId ? { interaction_id: interactionId } : {}),
+        ...(tool ? { tool } : {}),
+        ...(model ? { model } : {}),
+      },
+    ),
+  requestPlanChanges: (
+    id: string,
+    feedback: string,
+    interactionId?: string,
+    tool?: string,
+    model?: string,
+  ) =>
+    post<{ status: string }>(
+      `/tasks/${id}/request-plan-changes`,
+      {
+        feedback,
+        ...(interactionId ? { interaction_id: interactionId } : {}),
+        ...(tool ? { tool } : {}),
+        ...(model ? { model } : {}),
+      },
     ),
 
   explore: () => request('/explore', { method: 'POST' }),

@@ -1,12 +1,10 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
-	"path/filepath"
 
-	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 func newConfigCmd(r *Registry, opts MiscOptions) *cobra.Command {
@@ -18,24 +16,20 @@ func newConfigCmd(r *Registry, opts MiscOptions) *cobra.Command {
 		},
 	}
 	configShowCmd := &cobra.Command{Use: "show", Short: "Print current configuration", RunE: r.runConfigShow}
-	if opts.MarkSkipRuntimeInit != nil {
-		opts.MarkSkipRuntimeInit(configShowCmd)
-	}
 	configCmd.AddCommand(configShowCmd)
 	return configCmd
 }
 
 func (r *Registry) runConfigShow(cmd *cobra.Command, args []string) error {
-	cfgPath := filepath.Join(".orca", "orca.yaml")
-	cfg, err := config.Load(cfgPath)
+	_, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(cfg)
+	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	fmt.Print(string(data))
+	fmt.Printf("%s\n", string(data))
 	return nil
 }

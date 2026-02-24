@@ -159,6 +159,11 @@ func TestGetReady(t *testing.T) {
 	if err := store.AddDependency(c.ID, a.ID); err != nil {
 		t.Fatalf("add dep: %v", err)
 	}
+	for _, id := range []string{a.ID, b.ID, c.ID} {
+		if err := store.Update(id, map[string]interface{}{"status": "planned"}); err != nil {
+			t.Fatalf("set %s planned: %v", id, err)
+		}
+	}
 
 	ready, err := store.GetReady()
 	if err != nil {
@@ -172,7 +177,7 @@ func TestGetReady(t *testing.T) {
 		t.Errorf("C should not be ready (blocked by A)")
 	}
 
-	// Merge A → C should become ready
+	// Merge A -> C should become ready
 	if err := store.Update(a.ID, map[string]interface{}{"status": "merged"}); err != nil {
 		t.Fatalf("merge A: %v", err)
 	}
@@ -463,11 +468,11 @@ func TestTaskReviewsLifecycle(t *testing.T) {
 		t.Fatalf("pending review error = %v, want sql.ErrNoRows", err)
 	}
 
-	firstReviewID, err := store.AddReview(tk.ID, "first feedback")
+	firstReviewID, err := store.AddReview(tk.ID, "first feedback", "")
 	if err != nil {
 		t.Fatalf("add first review: %v", err)
 	}
-	secondReviewID, err := store.AddReview(tk.ID, "second feedback")
+	secondReviewID, err := store.AddReview(tk.ID, "second feedback", "")
 	if err != nil {
 		t.Fatalf("add second review: %v", err)
 	}

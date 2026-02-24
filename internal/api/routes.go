@@ -136,6 +136,16 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.handleApproveTask(w, r, taskID)
+		case "approve-plan":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleApprovePlan(w, r, taskID)
 		case "request-changes":
 			if len(parts) != 2 {
 				http.NotFound(w, r)
@@ -146,6 +156,16 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.handleRequestChanges(w, r, taskID)
+		case "request-plan-changes":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleRequestPlanChanges(w, r, taskID)
 		case "reviews":
 			if len(parts) != 2 {
 				http.NotFound(w, r)
@@ -156,16 +176,20 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.handleListTaskReviews(w, r, taskID)
-		case "artifacts":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
+		case "interactions":
+			if len(parts) == 2 {
+				s.handleListInteractions(w, r, taskID)
 				return
 			}
-			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			if len(parts) == 3 {
+				s.handleGetInteraction(w, r, taskID, parts[2])
 				return
 			}
-			s.handleListTaskArtifacts(w, r, taskID)
+			if len(parts) == 4 && parts[3] == "stream" {
+				s.handleStreamInteraction(w, r, taskID, parts[2])
+				return
+			}
+			http.NotFound(w, r)
 		case "plan":
 			if len(parts) == 2 {
 				switch r.Method {

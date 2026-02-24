@@ -1,4 +1,4 @@
-// Package state manages SQLite persistence for tasks, artifacts, and exploration context.
+// Package state manages SQLite persistence for tasks and interaction context.
 package state
 
 import (
@@ -111,6 +111,16 @@ var migrations = []migration{
 		sql:       schemaV1,
 		isApplied: schemaV1Applied,
 	},
+	{
+		version:   2,
+		sql:       schemaV2,
+		isApplied: schemaV2Applied,
+	},
+	{
+		version:   3,
+		sql:       schemaV3,
+		isApplied: schemaV3Applied,
+	},
 }
 
 // DBVersion returns the current persisted db_version sentinel value.
@@ -129,9 +139,7 @@ func schemaV1Applied(tx *sql.Tx) (bool, error) {
 		"tasks",
 		"task_deps",
 		"task_reviews",
-		"artifacts",
-		"costs",
-		"operations",
+		"task_interactions",
 		"sessions",
 	}
 	for _, table := range tables {
@@ -144,6 +152,14 @@ func schemaV1Applied(tx *sql.Tx) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func schemaV2Applied(tx *sql.Tx) (bool, error) {
+	return hasColumn(tx, "task_reviews", "interaction_id")
+}
+
+func schemaV3Applied(tx *sql.Tx) (bool, error) {
+	return hasTable(tx, "config")
 }
 
 func hasTable(tx *sql.Tx, table string) (bool, error) {
@@ -217,40 +233,33 @@ CREATE TABLE IF NOT EXISTS task_reviews (
 	addressed_at DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS artifacts (
-	id           TEXT PRIMARY KEY,
-	task_id      TEXT NOT NULL REFERENCES tasks(id),
-	run_id       TEXT,
-	diff         TEXT,
-	stdout       TEXT,
-	stderr       TEXT,
-	exit_code    INTEGER,
-	duration_ms  INTEGER,
-	quality_json TEXT,
-	created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS costs (
+CREATE TABLE IF NOT EXISTS task_interactions (
 	id             TEXT PRIMARY KEY,
-	run_id         TEXT,
 	task_id        TEXT REFERENCES tasks(id),
+	phase          TEXT NOT NULL,
+	attempt        INTEGER NOT NULL DEFAULT 1,
+	run_id         TEXT,
 	tool           TEXT NOT NULL,
+	model          TEXT,
+	log_path       TEXT NOT NULL,
+	status         TEXT NOT NULL DEFAULT 'running',
+	error          TEXT,
+	diff           TEXT,
+	exit_code      INTEGER,
+	duration_ms    INTEGER,
+	quality_json   TEXT,
 	input_tokens   INTEGER DEFAULT 0,
 	output_tokens  INTEGER DEFAULT 0,
 	estimated_cost REAL DEFAULT 0.0,
-	created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+	started_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+	finished_at    DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS operations (
-	id         TEXT PRIMARY KEY,
-	type       TEXT NOT NULL,
-	target_id  TEXT NOT NULL,
-	status     TEXT NOT NULL DEFAULT 'running',
-	result     TEXT,
-	error      TEXT,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+CREATE INDEX IF NOT EXISTS idx_interactions_task_phase
+	ON task_interactions(task_id, phase);
+
+CREATE INDEX IF NOT EXISTS idx_interactions_status
+	ON task_interactions(status);
 
 CREATE TABLE IF NOT EXISTS sessions (
 	id          TEXT PRIMARY KEY,
@@ -292,14 +301,14 @@ BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;
 
-CREATE TRIGGER IF NOT EXISTS operations_version_insert
-AFTER INSERT ON operations
+CREATE TRIGGER IF NOT EXISTS interactions_version_insert
+AFTER INSERT ON task_interactions
 BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;
 
-CREATE TRIGGER IF NOT EXISTS operations_version_update
-AFTER UPDATE ON operations
+CREATE TRIGGER IF NOT EXISTS interactions_version_update
+AFTER UPDATE ON task_interactions
 BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;
@@ -315,4 +324,15 @@ AFTER UPDATE ON sessions
 BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;
+`
+
+const schemaV2 = `
+ALTER TABLE task_reviews ADD COLUMN interaction_id TEXT REFERENCES task_interactions(id);
+`
+
+const schemaV3 = `
+CREATE TABLE IF NOT EXISTS config (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
 `

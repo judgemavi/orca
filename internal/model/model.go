@@ -1,8 +1,9 @@
-// Package model provides model listing from tool configuration.
+// Package model provides model listing from tool drivers.
 package model
 
 import (
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 )
 
 // Model describes a model available for a tool.
@@ -12,25 +13,25 @@ type Model struct {
 	Provider string `json:"provider"`
 }
 
-// FromConfig returns the model list for a tool based on its config.
-// The tool name is used as the provider.
-func FromConfig(toolName string, toolCfg config.ToolConfig) []Model {
-	models := make([]Model, 0, len(toolCfg.Models))
-	for _, id := range toolCfg.Models {
-		models = append(models, Model{
-			ID:       id,
-			Name:     id,
-			Provider: toolName,
-		})
+// FromDriver returns the model list for a tool driver.
+func FromDriver(toolName string, d driver.Driver) []Model {
+	ids := d.Models()
+	models := make([]Model, 0, len(ids))
+	for _, id := range ids {
+		models = append(models, Model{ID: id, Name: id, Provider: toolName})
 	}
 	return models
 }
 
-// AllFromConfig returns models for every tool in the config, keyed by tool name.
+// AllFromConfig returns models for every configured tool, keyed by tool name.
 func AllFromConfig(cfg *config.Config) map[string][]Model {
 	result := make(map[string][]Model, len(cfg.Tools))
-	for name, tc := range cfg.Tools {
-		result[name] = FromConfig(name, tc)
+	for _, name := range cfg.Tools {
+		d, ok := driver.Get(name)
+		if !ok {
+			continue
+		}
+		result[name] = FromDriver(name, d)
 	}
 	return result
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 )
 
 func (s *Server) HandleMergeTool(_ json.RawMessage) (interface{}, error) {
@@ -21,7 +22,7 @@ func (s *Server) HandleMergeTool(_ json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("no approved tasks to merge")
 	}
 
-	ig := integrator.New(s.repoDir, s.config.Project.IntegrationBranch, s.config.Validation.Commands)
+	ig := integrator.New(s.repoDir, s.config.Project.IntegrationBranch, s.config.Validation.Commands, interaction.NewStore(s.db, ".orca/interactions"))
 	merged, failed, err := ig.MergeBatch(taskIDs)
 	if err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func (s *Server) HandleTasksMergeTool(argsRaw json.RawMessage) (interface{}, err
 		return nil, fmt.Errorf("task %s is %q, only approved tasks can be merged", taskID, t.Status)
 	}
 
-	ig := integrator.New(s.repoDir, s.config.Project.IntegrationBranch, s.config.Validation.Commands)
+	ig := integrator.New(s.repoDir, s.config.Project.IntegrationBranch, s.config.Validation.Commands, interaction.NewStore(s.db, ".orca/interactions"))
 	if err := ig.MergeAndValidate(taskID); err != nil {
 		return nil, fmt.Errorf("merge task %s: %w", taskID, err)
 	}

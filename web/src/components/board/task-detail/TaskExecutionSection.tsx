@@ -1,117 +1,321 @@
+import { useEffect, useState } from 'react'
 import { DiffViewer } from '../../blocks/DiffViewer'
 import { ActionButton } from '../../common/ActionButton'
-import type { Artifact, Task } from '../../../types'
+import { ToolModelSelector } from '../../common/ToolModelSelector'
+import type { Interaction, Task, TaskReview } from '../../../types'
+import { InteractionEntry } from './InteractionEntry'
+import { InlineReviewActions } from './InlineReviewActions'
 
-function formatDuration(durationMs: number): string {
-  if (!Number.isFinite(durationMs) || durationMs < 0) return '-'
-  if (durationMs < 1000) return `${durationMs} ms`
-  return `${(durationMs / 1000).toFixed(2)} s`
+function formatRelativeTime(iso: string): string {
+  const timestamp = Date.parse(iso)
+  if (!Number.isFinite(timestamp)) return 'just now'
+  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000)
+  const absDeltaSeconds = Math.abs(deltaSeconds)
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  if (absDeltaSeconds < 60) return rtf.format(deltaSeconds, 'second')
+  if (absDeltaSeconds < 3600)
+    return rtf.format(Math.round(deltaSeconds / 60), 'minute')
+  if (absDeltaSeconds < 86400)
+    return rtf.format(Math.round(deltaSeconds / 3600), 'hour')
+  return rtf.format(Math.round(deltaSeconds / 86400), 'day')
+}
+
+function FailedRunActions({
+  tools,
+  rerunTool,
+  rerunModel,
+  rerunModels,
+  rerunModelsFetching,
+  controlClass,
+  rerunning,
+  onRerun,
+  onRerunToolChange,
+  onRerunModelChange,
+}: {
+  tools: string[]
+  rerunTool: string
+  rerunModel: string
+  rerunModels: Array<{ id: string; name: string }>
+  rerunModelsFetching: boolean
+  controlClass: string
+  rerunning: boolean
+  onRerun: () => void
+  onRerunToolChange: (value: string) => void
+  onRerunModelChange: (value: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-2.5 rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 p-3">
+      <div className="text-xs text-[var(--text-primary)]">
+        Execution failed. Re-run this task to generate a new result.
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <ToolModelSelector
+          tools={tools}
+          selectedTool={rerunTool}
+          selectedModel={rerunModel}
+          models={rerunModels}
+          modelsFetching={rerunModelsFetching}
+          onToolChange={onRerunToolChange}
+          onModelChange={onRerunModelChange}
+          controlClass={controlClass}
+          toolPlaceholder="- phase/default tool"
+          modelPlaceholder="- default model"
+          className="contents"
+        />
+        <ActionButton variant="primary" onClick={onRerun} disabled={rerunning}>
+          {rerunning ? 'Re-running…' : 'Re-run'}
+        </ActionButton>
+      </div>
+    </div>
+  )
 }
 
 interface Props {
   task: Task
-  artifacts: Artifact[]
-  logs: string[]
-  logsLoading: boolean
-  artifactsLoading: boolean
+  tools: string[]
+  runTool: string
+  runModel: string
+  runModels: Array<{ id: string; name: string }>
+  runModelsFetching: boolean
+  runPending: boolean
+  runInteractions: Interaction[]
+  interactionsLoading: boolean
+  activeLogId: string | null
+  feedback: string
+  approving: boolean
+  requesting: boolean
+  rerunning: boolean
+  reviewActionError: string | null
+  reviews: TaskReview[]
+  rerunTool: string
+  rerunModel: string
+  rerunModels: Array<{ id: string; name: string }>
+  rerunModelsFetching: boolean
+  controlClass: string
   readOnly?: boolean
-  onRefresh: () => void
+  onToggleLog: (id: string) => void
+  onFeedbackChange: (value: string) => void
+  onApprove: () => void
+  onRequestChanges: (interactionId?: string, tool?: string, model?: string) => void
+  onRun: () => void
+  onRerun: () => void
+  onRunToolChange: (value: string) => void
+  onRunModelChange: (value: string) => void
+  onRerunToolChange: (value: string) => void
+  onRerunModelChange: (value: string) => void
 }
 
 export function TaskExecutionSection({
   task,
-  artifacts,
-  logs,
-  logsLoading,
-  artifactsLoading,
+  tools,
+  runTool,
+  runModel,
+  runModels,
+  runModelsFetching,
+  runPending,
+  runInteractions,
+  interactionsLoading,
+  activeLogId,
+  feedback,
+  approving,
+  requesting,
+  rerunning,
+  reviewActionError,
+  reviews,
+  rerunTool,
+  rerunModel,
+  rerunModels,
+  rerunModelsFetching,
+  controlClass,
   readOnly = false,
-  onRefresh,
+  onToggleLog,
+  onFeedbackChange,
+  onApprove,
+  onRequestChanges,
+  onRun,
+  onRerun,
+  onRunToolChange,
+  onRunModelChange,
+  onRerunToolChange,
+  onRerunModelChange,
 }: Props) {
-  const latestArtifact = artifacts[0] ?? null
-  const shouldShowLogs = task.status === 'running'
-  const refreshDisabled = readOnly || logsLoading || artifactsLoading
+  const [reviewExpanded, setReviewExpanded] = useState(false)
+  const [expandedDiffs, setExpandedDiffs] = useState<Set<string>>(new Set())
+  const hasRunningExecution = runInteractions.some((item) => item.status === 'running')
+  const latestCompletedId =
+    [...runInteractions].reverse().find((item) => item.status === 'completed')?.id ?? null
+  const latestFailedId =
+    [...runInteractions].reverse().find((item) => item.status === 'failed')?.id ?? null
+
+  useEffect(() => {
+    setReviewExpanded(false)
+  }, [runInteractions.length])
+
+  useEffect(() => {
+    if (latestCompletedId) {
+      setExpandedDiffs(new Set([latestCompletedId]))
+      return
+    }
+    setExpandedDiffs(new Set())
+  }, [latestCompletedId])
+
+  function toggleDiff(id: string) {
+    setExpandedDiffs((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
 
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-[var(--text-secondary)]">Execution</span>
-        <ActionButton variant="default" onClick={onRefresh} disabled={refreshDisabled}>
-          Refresh
-        </ActionButton>
-      </div>
-
-      {shouldShowLogs && (
-        <div className="flex flex-col gap-1.5">
-          <div className="text-xs text-[var(--text-secondary)]">
-            Live output {logsLoading ? '(loading...)' : ''}
-          </div>
-          <pre className="max-h-[220px] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2 font-mono text-[11px] text-[var(--text-primary)]">
-            {logs.length > 0 ? logs.join('\n') : 'No output yet.'}
-          </pre>
-        </div>
+      {interactionsLoading && (
+        <div className="text-xs text-[var(--text-secondary)]">Loading interactions...</div>
       )}
 
-      {!shouldShowLogs && artifactsLoading && (
-        <div className="text-xs text-[var(--text-secondary)]">Loading artifacts...</div>
-      )}
-
-      {!shouldShowLogs && !artifactsLoading && !latestArtifact && (
-        <div className="text-xs text-[var(--text-secondary)]">
-          No artifacts found for this task yet.
-        </div>
-      )}
-
-      {!shouldShowLogs && latestArtifact && (
-        <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-secondary)] sm:grid-cols-4">
-            <div>
-              <span className="block text-[10px] uppercase">Exit code</span>
-              <span className="font-mono text-[var(--text-primary)]">
-                {latestArtifact.exit_code}
-              </span>
+      {!interactionsLoading && runInteractions.length === 0 && (
+        <>
+          {task.status === 'planned' && !readOnly ? (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+              <ToolModelSelector
+                tools={tools}
+                selectedTool={runTool}
+                selectedModel={runModel}
+                models={runModels}
+                modelsFetching={runModelsFetching}
+                onToolChange={onRunToolChange}
+                onModelChange={onRunModelChange}
+                controlClass={controlClass}
+                toolPlaceholder="- phase/default tool"
+                modelPlaceholder="- default model"
+                className="contents"
+              />
+              <ActionButton variant="primary" onClick={onRun} disabled={runPending}>
+                {runPending ? 'Running…' : 'Run'}
+              </ActionButton>
             </div>
-            <div>
-              <span className="block text-[10px] uppercase">Duration</span>
-              <span className="font-mono text-[var(--text-primary)]">
-                {formatDuration(latestArtifact.duration_ms)}
-              </span>
-            </div>
-            <div className="col-span-2">
-              <span className="block text-[10px] uppercase">Captured at</span>
-              <span className="font-mono text-[var(--text-primary)]">
-                {new Date(latestArtifact.created_at).toLocaleString()}
-              </span>
-            </div>
-          </div>
-
-          {latestArtifact.diff ? (
-            <DiffViewer
-              data={{
-                task_id: task.id,
-                title: task.title,
-                diff: latestArtifact.diff,
-                files_changed: [],
-                actions: [],
-              }}
-            />
           ) : (
-            <div className="text-xs text-[var(--text-secondary)]">No diff captured.</div>
+            <div className="text-xs text-[var(--text-secondary)]">
+              No execution interactions found for this task yet.
+            </div>
           )}
+        </>
+      )}
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <div className="text-xs text-[var(--text-secondary)]">stdout</div>
-              <pre className="max-h-[180px] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2 font-mono text-[11px] text-[var(--text-primary)]">
-                {latestArtifact.stdout || '(empty)'}
-              </pre>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <div className="text-xs text-[var(--text-secondary)]">stderr</div>
-              <pre className="max-h-[180px] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2 font-mono text-[11px] text-[var(--status-failed)]">
-                {latestArtifact.stderr || '(empty)'}
-              </pre>
-            </div>
-          </div>
+      {!interactionsLoading && runInteractions.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {runInteractions.map((item) => {
+            const isLatestCompleted =
+              item.status === 'completed' && item.id === latestCompletedId
+            const isLatestFailed = item.status === 'failed' && item.id === latestFailedId
+            const itemReviews = reviews.filter((review) => review.interaction_id === item.id)
+
+            return (
+              <InteractionEntry
+                key={item.id}
+                interaction={item}
+                activeLogId={activeLogId}
+                onToggleLog={onToggleLog}
+              >
+                {item.status === 'completed' && item.diff && (
+                  <>
+                    <button
+                      type="button"
+                      className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      onClick={() => toggleDiff(item.id)}
+                    >
+                      {expandedDiffs.has(item.id) ? '▾ Hide diff' : '▸ Show diff'}
+                    </button>
+                    {expandedDiffs.has(item.id) && (
+                      <DiffViewer
+                        data={{
+                          task_id: task.id,
+                          title: task.title,
+                          diff: item.diff,
+                          files_changed: [],
+                          actions: [],
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+
+                {isLatestCompleted &&
+                  task.status === 'review' &&
+                  !readOnly &&
+                  !hasRunningExecution && (
+                  <InlineReviewActions
+                    interactionId={item.id}
+                    feedback={feedback}
+                    reviewExpanded={reviewExpanded}
+                    approving={approving}
+                    requesting={requesting}
+                    reviewActionError={reviewActionError}
+                    tools={tools}
+                    rerunTool={rerunTool}
+                    rerunModel={rerunModel}
+                    rerunModels={rerunModels}
+                    rerunModelsFetching={rerunModelsFetching}
+                    controlClass={controlClass}
+                    onFeedbackChange={onFeedbackChange}
+                    onExpandRequestChanges={() => setReviewExpanded(true)}
+                    onCancelRequestChanges={() => setReviewExpanded(false)}
+                    onApprove={onApprove}
+                    onRequestChanges={onRequestChanges}
+                    onRerunToolChange={onRerunToolChange}
+                    onRerunModelChange={onRerunModelChange}
+                  />
+                )}
+
+                {isLatestFailed && !readOnly && (
+                  <FailedRunActions
+                    tools={tools}
+                    rerunTool={rerunTool}
+                    rerunModel={rerunModel}
+                    rerunModels={rerunModels}
+                    rerunModelsFetching={rerunModelsFetching}
+                    controlClass={controlClass}
+                    rerunning={rerunning}
+                    onRerun={onRerun}
+                    onRerunToolChange={onRerunToolChange}
+                    onRerunModelChange={onRerunModelChange}
+                  />
+                )}
+
+                {item.status === 'completed' && itemReviews.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    {itemReviews.map((review) => (
+                      <div
+                        key={review.id}
+                        className={[
+                          'rounded-md border p-2.5',
+                          review.status === 'pending'
+                            ? 'border-amber-500/40 bg-amber-500/10'
+                            : 'border-emerald-500/35 bg-emerald-500/10 opacity-80',
+                        ].join(' ')}
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+                            {review.status}
+                          </span>
+                          <span className="text-[11px] text-[var(--text-secondary)]">
+                            {formatRelativeTime(review.created_at)}
+                          </span>
+                        </div>
+                        <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
+                          {review.feedback}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </InteractionEntry>
+            )
+          })}
         </div>
       )}
     </div>

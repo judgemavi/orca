@@ -3,10 +3,11 @@ package commands
 import (
 	"fmt"
 	"os"
+	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/integrator"
-	"github.com/jasjeetmavi/orca/internal/ops"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -55,42 +56,51 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := ops.WithOperation(db, "merge", "", func() error {
-		fmt.Println("merge.started")
+	interactions := interaction.NewStore(db, ".orca/interactions")
+	writer, err := interactions.Begin(nil, "merge", "orca")
+	if err != nil {
+		return fmt.Errorf("begin merge interaction: %w", err)
+	}
+	defer writer.Close()
 
-		repoDir, _ := os.Getwd()
-		ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
-		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (config.ToolConfig, error) {
-			if _, err := store.Get(taskID); err != nil {
-				return config.ToolConfig{}, err
-			}
-			_, tc, err := cfg.ResolveToolForPhase("merge", "")
-			if err != nil {
-				return config.ToolConfig{}, err
-			}
-			return tc, nil
-		})
-		merged, failed, err := ig.MergeBatch(taskIDs)
+	fmt.Println("merge.started")
+
+	repoDir, _ := os.Getwd()
+	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands, interactions)
+	ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
+		if _, err := store.Get(taskID); err != nil {
+			return "", nil, "", 0, err
+		}
+		toolName, d, err := cfg.ResolveToolForPhase("merge", "")
 		if err != nil {
-			return fmt.Errorf("merge batch: %w", err)
+			return "", nil, "", 0, err
 		}
+		model := cfg.ResolveModelForPhase("merge", "", d)
+		return toolName, d, model, 10 * time.Minute, nil
+	})
+	merged, failed, err := ig.MergeBatch(taskIDs)
+	if err != nil {
+		_ = interactions.Finish(writer.ID(), "failed", interaction.WithError(err.Error()))
+		return fmt.Errorf("merge batch: %w", err)
+	}
 
-		for _, id := range merged {
-			fmt.Printf("merge.progress task=%s status=merged\n", short(id))
-			if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
-				warnf("set task %s merged: %v", short(id), err)
-			}
-			fmt.Printf("  ✓ Merged task-%s\n", short(id))
+	for _, id := range merged {
+		fmt.Printf("merge.progress task=%s status=merged\n", short(id))
+		_ = writer.WriteString(fmt.Sprintf("merge.progress task=%s status=merged\n", id))
+		if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+			warnf("set task %s merged: %v", short(id), err)
 		}
-		for _, id := range failed {
-			fmt.Printf("merge.progress task=%s status=failed\n", short(id))
-			fmt.Printf("  ✗ Failed task-%s\n", short(id))
-		}
-		fmt.Println("merge.completed")
-		fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failed))
-		return nil
-	}); err != nil {
-		return err
+		fmt.Printf("  ✓ Merged task-%s\n", short(id))
+	}
+	for _, id := range failed {
+		fmt.Printf("merge.progress task=%s status=failed\n", short(id))
+		_ = writer.WriteString(fmt.Sprintf("merge.progress task=%s status=failed\n", id))
+		fmt.Printf("  ✗ Failed task-%s\n", short(id))
+	}
+	fmt.Println("merge.completed")
+	fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failed))
+	if err := interactions.Finish(writer.ID(), "completed"); err != nil {
+		return fmt.Errorf("finish merge interaction: %w", err)
 	}
 	return nil
 }

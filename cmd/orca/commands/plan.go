@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -30,26 +32,31 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	toolName, _ := cmd.Flags().GetString("tool")
 	auto, _ := cmd.Flags().GetBool("auto")
 
-	var toolCfg config.ToolConfig
+	var selectedTool string
+	var selectedDriver driver.Driver
 	if toolName != "" {
-		tc, ok := cfg.Tools[toolName]
-		if !ok {
-			return fmt.Errorf("tool %q not found in config", toolName)
+		name, drv, err := cfg.ResolveToolForPhase("plan", toolName)
+		if err != nil {
+			return err
 		}
-		toolCfg = tc
+		selectedTool = name
+		selectedDriver = drv
 	} else {
-		for _, tc := range cfg.Tools {
-			toolCfg = tc
-			break
+		name, drv, err := cfg.ResolveToolForPhase("plan", "")
+		if err != nil {
+			return err
 		}
+		selectedTool = name
+		selectedDriver = drv
 	}
+	model := cfg.ResolveModelForPhase("plan", "", selectedDriver)
 
 	repoDir, _ := os.Getwd()
 	store := task.NewStore(db)
-	d := decompose.New(toolCfg, repoDir)
+	decomposer := decompose.New(selectedTool, selectedDriver, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
 
 	fmt.Printf("Decomposing: %s\n\n", goal)
-	tasks, err := d.Run(goal)
+	tasks, _, err := decomposer.Run(nil, goal)
 	if err != nil {
 		return fmt.Errorf("decompose: %w", err)
 	}

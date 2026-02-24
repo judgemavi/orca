@@ -1,10 +1,9 @@
 package api
 
 import (
-	"encoding/json"
-	"log/slog"
 	"net/http"
-	"strings"
+
+	"github.com/jasjeetmavi/orca/internal/executor"
 )
 
 // POST /api/v1/tasks/run
@@ -15,6 +14,8 @@ func (s *Server) handleRunTasks(w http.ResponseWriter, r *http.Request) {
 
 	req, ok := decodeJSON[struct {
 		TaskIDs []string `json:"task_ids"`
+		Tool    string   `json:"tool"`
+		Model   string   `json:"model"`
 	}](w, r, true)
 	if !ok {
 		return
@@ -42,38 +43,26 @@ func (s *Server) handleRunTasks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	opID := ""
-	opID = s.startAsyncOp(
-		w,
-		"run",
-		strings.Join(req.TaskIDs, ","),
-		"run",
-		map[string]interface{}{"operation_id": ""},
-		map[string]interface{}{"operation_id": "", "task_ids": req.TaskIDs},
-		func() {
-			results, err := s.executor.RunBatch(req.TaskIDs)
-			if err != nil {
-				if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
-					slog.Error("mark operation failed", "operation_id", opID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "run.failed", Data: map[string]interface{}{
-					"error":    err.Error(),
-					"task_ids": req.TaskIDs,
-				}})
-				return
-			}
-
-			resultJSON, _ := json.Marshal(results)
-			if err := s.ops.Complete(opID, string(resultJSON)); err != nil {
-				slog.Error("mark operation completed", "operation_id", opID, "err", err)
-			}
-			s.hub.Broadcast(Event{Type: "run.completed", Data: map[string]interface{}{
-				"results":  results,
+	s.runAsyncHandler(w, "run", map[string]interface{}{
+		"task_ids": req.TaskIDs,
+		"tool":     req.Tool,
+		"model":    req.Model,
+	}, func() {
+		results, err := s.executor.RunBatch(req.TaskIDs, executor.RunOpts{
+			ToolOverride:  req.Tool,
+			ModelOverride: req.Model,
+		})
+		if err != nil {
+			s.hub.Broadcast(Event{Type: "run.failed", Data: map[string]interface{}{
+				"error":    err.Error(),
 				"task_ids": req.TaskIDs,
 			}})
-		},
-	)
-	if opID == "" {
-		return
-	}
+			return
+		}
+
+		s.hub.Broadcast(Event{Type: "run.completed", Data: map[string]interface{}{
+			"results":  results,
+			"task_ids": req.TaskIDs,
+		}})
+	})
 }

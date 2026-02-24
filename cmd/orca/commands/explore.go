@@ -6,8 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/spf13/cobra"
 )
 
@@ -75,21 +76,24 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 	}
 
 	toolName, _ := cmd.Flags().GetString("tool")
-	var toolCfg config.ToolConfig
+	var selectedTool string
+	var d driver.Driver
 	if toolName != "" {
-		tc, ok := cfg.Tools[toolName]
-		if !ok {
-			return fmt.Errorf("tool %q not found in config", toolName)
+		var err error
+		selectedTool, d, err = cfg.ResolveToolForPhase("explore", toolName)
+		if err != nil {
+			return err
 		}
-		toolCfg = tc
 	} else {
-		for _, tc := range cfg.Tools {
-			toolCfg = tc
-			break
+		var err error
+		selectedTool, d, err = cfg.ResolveToolForPhase("explore", "")
+		if err != nil {
+			return err
 		}
 	}
+	model := cfg.ResolveModelForPhase("explore", "", d)
 
-	explorer := explore.New(toolCfg, repoDir)
+	explorer := explore.New(selectedTool, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
 	if explore.LoadContext(repoDir) != "" {
 		if stale, err := explore.IsStale(repoDir); err == nil && stale {
 			fmt.Println("Note: existing context was stale (codebase changed since last explore). Refreshing...")

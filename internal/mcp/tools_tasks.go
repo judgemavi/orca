@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/jasjeetmavi/orca/internal/executor"
 )
 
 func (s *Server) HandleTasksListTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -236,7 +238,13 @@ func (s *Server) HandleTasksRunTool(params map[string]interface{}) (interface{},
 		}
 	}
 
-	results, err := s.executor.RunBatch(taskIDs)
+	toolOverride, _ := params["tool"].(string)
+	modelOverride, _ := params["model"].(string)
+
+	results, err := s.executor.RunBatch(taskIDs, executor.RunOpts{
+		ToolOverride:  toolOverride,
+		ModelOverride: modelOverride,
+	})
 	if err != nil {
 		return nil, err
 	}

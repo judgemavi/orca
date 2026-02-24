@@ -9,9 +9,7 @@ dist/
 web/node_modules/
 
 # Orca orchestrator
-.orca/worktrees/
-.orca/*.db-wal
-.orca/*.db-shm
+.orca/
 
 # Web build output
 web/dist/
@@ -43,7 +41,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-# Orca orchestrator
-.orca/*.db
-# Orca orchestrator
-.orca/orca.log*

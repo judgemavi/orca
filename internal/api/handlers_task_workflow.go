@@ -6,9 +6,52 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/jasjeetmavi/orca/internal/executor"
 )
 
 // ========== Task Workflow ==========
+
+// POST /api/v1/tasks/{id}/approve-plan
+func (s *Server) handleApprovePlan(w http.ResponseWriter, r *http.Request, id string) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	store := s.taskStore
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
+		return
+	}
+
+	tk, err := store.Get(resolved)
+	if err != nil {
+		jsonError(w, err, http.StatusNotFound)
+		return
+	}
+	if tk.Status != "pending" {
+		jsonError(w, "task must be in pending status to approve plan", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(tk.Plan) == "" {
+		jsonError(w, "task must have a plan to approve", http.StatusBadRequest)
+		return
+	}
+
+	if err := store.Update(resolved, map[string]interface{}{"status": "planned"}); err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	updated, err := store.Get(resolved)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
+	jsonOK(w, updated)
+}
 
 // POST /api/v1/tasks/{id}/approve
 func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id string) {
@@ -64,19 +107,25 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 	}
 
 	type changesReq struct {
-		Feedback string `json:"feedback"`
+		Feedback      string `json:"feedback"`
+		InteractionID string `json:"interaction_id"`
+		Tool          string `json:"tool"`
+		Model         string `json:"model"`
 	}
 	req, ok := decodeJSON[changesReq](w, r, false)
 	if !ok {
 		return
 	}
 	feedback := strings.TrimSpace(req.Feedback)
+	interactionID := strings.TrimSpace(req.InteractionID)
+	tool := strings.TrimSpace(req.Tool)
+	model := strings.TrimSpace(req.Model)
 	if feedback == "" {
 		jsonError(w, "feedback required", http.StatusBadRequest)
 		return
 	}
 
-	if _, err := store.AddReview(resolved, feedback); err != nil {
+	if _, err := store.AddReview(resolved, feedback, interactionID); err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
@@ -93,7 +142,10 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 	s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
 
 	go func(ctx context.Context, taskID string) {
-		if err := s.executor.RunSingle(ctx, taskID); err != nil {
+		if err := s.executor.RunSingleWithOpts(ctx, taskID, executor.RunOpts{
+			ToolOverride:  tool,
+			ModelOverride: model,
+		}); err != nil {
 			slog.Error("request changes rerun failed", "task_id", taskID, "err", err)
 		}
 	}(s.ctx, resolved)
@@ -126,12 +178,12 @@ func (s *Server) handleListTaskArtifacts(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	artifacts, err := store.ListArtifacts(resolved)
+	interactions, err := s.interactions.ListByPhase(resolved, "run")
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, map[string]interface{}{"artifacts": artifacts})
+	jsonOK(w, map[string]interface{}{"artifacts": interactions})
 }
 
 func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request, id string) {

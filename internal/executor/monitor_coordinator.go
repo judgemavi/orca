@@ -47,7 +47,7 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 	)
 	e.monitors = append(e.monitors, stuck)
 
-	if (e.config.Orchestrator.CostBudget > 0 || e.config.Monitor.TaskBudget > 0) && e.costTracker != nil && len(taskIDs) > 0 {
+	if (e.config.Orchestrator.CostBudget > 0 || e.config.Monitor.TaskBudget > 0) && e.interactions != nil && len(taskIDs) > 0 {
 		taskBudget := e.config.Monitor.TaskBudget
 		if taskBudget <= 0 {
 			taskBudget = e.config.Orchestrator.CostBudget / float64(len(taskIDs))
@@ -114,7 +114,7 @@ func (e *Executor) checkConflicts(taskIDs, files []string) {
 func (e *Executor) checkBudget(taskID string) float64 {
 	var total sql.NullFloat64
 	if err := e.db.QueryRow(
-		`SELECT SUM(estimated_cost) FROM costs WHERE task_id = ?`,
+		`SELECT SUM(estimated_cost) FROM task_interactions WHERE task_id = ?`,
 		taskID,
 	).Scan(&total); err != nil {
 		slog.Warn("monitor query task cost failed", "task_id", taskID, "err", err)

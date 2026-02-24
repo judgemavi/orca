@@ -6,6 +6,7 @@ interface Props {
   isDeletable: boolean
   deleting: boolean
   saving: boolean
+  formId: string
   form: ReturnType<typeof useTaskForm>
   onDelete: () => void
   onClose: () => void
@@ -16,6 +17,7 @@ export function TaskActionsBar({
   isDeletable,
   deleting,
   saving,
+  formId,
   form,
   onDelete,
   onClose,
@@ -36,7 +38,7 @@ export function TaskActionsBar({
         {isEditable && (
           <form.Subscribe selector={(state) => state.isDirty}>
             {(isDirty) => (
-              <ActionButton variant="primary" type="submit" disabled={saving || !isDirty}>
+              <ActionButton variant="primary" type="submit" form={formId} disabled={saving || !isDirty}>
                 {saving ? 'Saving…' : 'Save'}
               </ActionButton>
             )}

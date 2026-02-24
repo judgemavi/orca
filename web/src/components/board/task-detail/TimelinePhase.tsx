@@ -2,22 +2,22 @@ import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 export type TimelinePhaseState = 'disabled' | 'active' | 'completed'
-export type TimelinePhaseId = 'planning' | 'execution' | 'review' | 'merge'
+export type TimelinePhaseId = 'planning' | 'execution' | 'merge'
 
 const PHASE_LABELS: Record<TimelinePhaseId, string> = {
   planning: 'Planning',
   execution: 'Execution',
-  review: 'Review',
   merge: 'Merge',
 }
 
 interface Props {
   phase: TimelinePhaseId
   state: TimelinePhaseState
+  headerAction?: ReactNode
   children: ReactNode
 }
 
-export function TimelinePhase({ phase, state, children }: Props) {
+export function TimelinePhase({ phase, state, headerAction, children }: Props) {
   const isDisabled = state === 'disabled'
   const isActive = state === 'active'
   const isCompleted = state === 'completed'
@@ -44,13 +44,16 @@ export function TimelinePhase({ phase, state, children }: Props) {
       >
         {isCompleted && <Check size={11} strokeWidth={3} />}
       </div>
-      <div
-        className={[
-          'mb-2 text-xs font-semibold uppercase tracking-[0.06em]',
-          isActive ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]',
-        ].join(' ')}
-      >
-        {PHASE_LABELS[phase]}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div
+          className={[
+            'text-xs font-semibold uppercase tracking-[0.06em]',
+            isActive ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]',
+          ].join(' ')}
+        >
+          {PHASE_LABELS[phase]}
+        </div>
+        {headerAction ? <div>{headerAction}</div> : null}
       </div>
       {children}
     </section>

@@ -2,19 +2,16 @@ package api
 
 import (
 	"net/http"
-
-	"github.com/jasjeetmavi/orca/internal/cost"
 )
 
 // ========== Costs ==========
 
 func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
-	ct := cost.NewTracker(s.db)
 	runID := r.URL.Query().Get("run_id")
 
 	if runID != "" {
-		total, _ := ct.RunTotal(runID)
-		summary, _ := ct.RunSummary(runID)
+		total, _ := s.interactions.RunTotal(runID)
+		summary, _ := s.interactions.RunSummary(runID)
 		jsonOK(w, map[string]interface{}{
 			"run_id": runID,
 			"total":  total,
@@ -23,10 +20,10 @@ func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectTotal, _ := ct.ProjectTotal()
-	summary, _ := ct.ProjectSummary()
+	projectTotal, _ := s.interactions.ProjectTotal()
+	summary, _ := s.interactions.ProjectSummary()
 	budget := s.cfg.Orchestrator.CostBudget
-	remaining, _ := ct.BudgetRemaining(budget)
+	remaining, _ := s.interactions.BudgetRemaining(budget)
 
 	jsonOK(w, map[string]interface{}{
 		"total":     projectTotal,

@@ -70,14 +70,14 @@ func (s *Store) UpdateDependencies(taskID string, deps []string) error {
 	return nil
 }
 
-// GetReady returns all pending tasks whose deps are all merged (or have no deps).
+// GetReady returns all planned tasks whose deps are all merged (or have no deps).
 // Tasks with deps that are only "completed" but not yet merged are NOT ready —
 // the dependent task needs the dep's code in the integration branch.
 func (s *Store) GetReady() ([]*Task, error) {
 	return s.queryTasks(
 		`SELECT t.id, t.title, t.description, t.plan, t.session_id, t.parent_id, t.status, t.created_at, t.updated_at
 		 FROM tasks t
-		 WHERE t.status = 'pending'
+		 WHERE t.status = 'planned'
 		   AND NOT EXISTS (
 		     SELECT 1 FROM task_deps d
 		     JOIN tasks dep ON dep.id = d.depends_on

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/model"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
@@ -118,7 +119,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 				jsonError(w, "can only move failed tasks to pending", http.StatusBadRequest)
 				return
 			}
-		case "approved", "running", "merged", "review":
+		case "planned", "approved", "running", "merged", "review":
 			jsonError(w, "cannot manually set status to "+newStatus, http.StatusBadRequest)
 			return
 		}
@@ -180,13 +181,13 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	requestedTool := strings.TrimSpace(r.URL.Query().Get("tool"))
 
 	if requestedTool != "" {
-		toolCfg, ok := s.cfg.Tools[requestedTool]
+		d, ok := driver.Get(requestedTool)
 		if !ok {
 			jsonError(w, fmt.Sprintf("tool %q not found", requestedTool), http.StatusBadRequest)
 			return
 		}
 		resp := map[string][]model.Model{
-			requestedTool: model.FromConfig(requestedTool, toolCfg),
+			requestedTool: model.FromDriver(requestedTool, d),
 		}
 		jsonOK(w, map[string]interface{}{"tools": resp})
 		return

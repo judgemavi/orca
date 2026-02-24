@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/jasjeetmavi/orca/internal/cost"
 	"github.com/jasjeetmavi/orca/internal/explore"
 )
 
@@ -18,8 +17,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		counts[t.Status]++
 	}
 
-	ct := cost.NewTracker(s.db)
-	projectTotal, _ := ct.ProjectTotal()
+	projectTotal, _ := s.interactions.ProjectTotal()
+	runningInteractions, _ := s.interactions.ListByStatus("running")
 	contextExists := explore.LoadContext(s.repoDir) != ""
 	stale, _ := explore.IsStale(s.repoDir)
 	age := explore.ContextAge(s.repoDir)
@@ -36,6 +35,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"context_age_minutes": int(age.Minutes()),
 		"total_cost":          projectTotal,
 		"budget":              s.cfg.Orchestrator.CostBudget,
+		"running_operations":  len(runningInteractions),
 	}
 
 	jsonOK(w, status)

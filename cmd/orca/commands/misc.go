@@ -1,13 +1,14 @@
 package commands
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/orchestrator"
 	"github.com/spf13/cobra"
 )
@@ -54,14 +55,41 @@ func (r *Registry) runOps(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	if err := ensureOperationsTable(db); err != nil {
-		return fmt.Errorf("ensure operations table: %w", err)
-	}
 	includeAll, _ := cmd.Flags().GetBool("all")
-	ops, err := listOperations(db, includeAll)
+	query := `SELECT id, phase, task_id, status, started_at, finished_at, error FROM task_interactions`
+	if !includeAll {
+		query += ` WHERE status = 'running' OR COALESCE(finished_at, started_at) >= datetime('now', '-5 minutes')`
+	}
+	query += ` ORDER BY started_at DESC`
+
+	rows, err := db.Query(query)
 	if err != nil {
 		return fmt.Errorf("list operations: %w", err)
 	}
+	defer rows.Close()
+
+	type opRow struct {
+		id         string
+		phase      string
+		taskID     sql.NullString
+		status     string
+		startedAt  time.Time
+		finishedAt sql.NullTime
+		errText    sql.NullString
+	}
+
+	ops := make([]opRow, 0)
+	for rows.Next() {
+		var op opRow
+		if err := rows.Scan(&op.id, &op.phase, &op.taskID, &op.status, &op.startedAt, &op.finishedAt, &op.errText); err != nil {
+			return fmt.Errorf("scan operation: %w", err)
+		}
+		ops = append(ops, op)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read operations: %w", err)
+	}
+
 	if len(ops) == 0 {
 		if includeAll {
 			fmt.Println("No operations recorded.")
@@ -72,26 +100,29 @@ func (r *Registry) runOps(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, op := range ops {
-		var elapsed time.Duration
-		if op.Status == "running" {
-			elapsed = time.Since(op.CreatedAt)
-		} else {
-			elapsed = op.UpdatedAt.Sub(op.CreatedAt)
+		elapsed := time.Since(op.startedAt)
+		if op.status != "running" && op.finishedAt.Valid {
+			elapsed = op.finishedAt.Time.Sub(op.startedAt)
 		}
 		if elapsed < 0 {
 			elapsed = 0
+		} else {
+			elapsed = elapsed.Round(time.Second)
 		}
 
-		target := op.TargetID
+		target := ""
+		if op.taskID.Valid {
+			target = op.taskID.String
+		}
 		if strings.TrimSpace(target) == "" {
 			target = "-"
 		} else {
 			target = short(target)
 		}
 
-		fmt.Printf("%-8s %-14s target=%-8s elapsed=%-8s status=%s\n", short(op.ID), op.Type, target, elapsed.Round(time.Second), op.Status)
-		if op.Error != "" {
-			fmt.Printf("  error: %s\n", op.Error)
+		fmt.Printf("%-8s %-14s target=%-8s elapsed=%-8s status=%s\n", short(op.id), op.phase, target, elapsed, op.status)
+		if op.errText.Valid && strings.TrimSpace(op.errText.String) != "" {
+			fmt.Printf("  error: %s\n", op.errText.String)
 		}
 	}
 	return nil
@@ -118,13 +149,16 @@ func (r *Registry) runOrc(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write mcp config: %w", err)
 	}
 
-	_, toolCfg, err := orchestrator.ResolveSupervisorTool(cfg)
+	toolName, d, model, err := orchestrator.ResolveSupervisorTool(cfg)
 	if err != nil {
 		return fmt.Errorf("resolve supervisor tool: %w", err)
 	}
+	if d == nil {
+		return fmt.Errorf("resolve supervisor tool %q: nil driver", toolName)
+	}
 
-	launchArgs := orchestrator.BuildLaunchArgs(toolCfg, mcpConfigPath)
-	c := exec.Command(toolCfg.Binary, launchArgs...)
+	launchArgs := orchestrator.BuildLaunchArgs(d, model, mcpConfigPath)
+	c := exec.Command(d.Binary(), launchArgs...)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -139,12 +173,12 @@ func (r *Registry) runCosts(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	ct := cost.NewTracker(db)
+	ct := interaction.NewStore(db, ".orca/interactions")
 	runFlag, _ := cmd.Flags().GetString("run")
 
 	if runFlag != "" {
 		var runID string
-		err := db.QueryRow(`SELECT DISTINCT run_id FROM costs WHERE run_id LIKE ? ORDER BY created_at DESC LIMIT 1`, runFlag+"%").Scan(&runID)
+		err := db.QueryRow(`SELECT DISTINCT run_id FROM task_interactions WHERE run_id LIKE ? ORDER BY started_at DESC LIMIT 1`, runFlag+"%").Scan(&runID)
 		if err != nil {
 			return fmt.Errorf("no run matching %q", runFlag)
 		}
@@ -171,7 +205,7 @@ func (r *Registry) runCosts(cmd *cobra.Command, args []string) error {
 	projectTotal, _ := ct.ProjectTotal()
 	if projectTotal == 0 {
 		var count int
-		db.QueryRow(`SELECT COUNT(*) FROM costs`).Scan(&count)
+		db.QueryRow(`SELECT COUNT(*) FROM task_interactions`).Scan(&count)
 		if count == 0 {
 			fmt.Println("No cost data recorded yet.")
 			return nil
@@ -189,10 +223,10 @@ func (r *Registry) runCosts(cmd *cobra.Command, args []string) error {
 	}
 
 	rows, err := db.Query(`SELECT run_id, COALESCE(SUM(estimated_cost), 0), COUNT(DISTINCT task_id)
-		 FROM costs
+		 FROM task_interactions
 		 WHERE run_id IS NOT NULL
 		 GROUP BY run_id
-		 ORDER BY MIN(created_at) DESC
+		 ORDER BY MIN(started_at) DESC
 		 LIMIT 10`)
 	if err == nil {
 		defer rows.Close()

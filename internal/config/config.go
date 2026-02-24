@@ -1,35 +1,28 @@
-// Package config handles orca.yaml parsing and tool adapter configuration.
+// Package config handles Orca configuration and tool adapter selection.
 package config
 
 import (
-	_ "embed"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/logging"
-	"gopkg.in/yaml.v3"
 )
 
-//go:embed defaults.yaml
-var defaultsYAML []byte
-
 type Config struct {
-	Project      ProjectConfig         `yaml:"project" json:"project"`
-	Tools        map[string]ToolConfig `yaml:"tools" json:"tools"`
-	Defaults     DefaultsConfig        `yaml:"defaults" json:"defaults"`
-	Validation   ValidationConfig      `yaml:"validation" json:"validation"`
-	Workers      WorkersConfig         `yaml:"workers" json:"workers"`
-	Orchestrator OrchestratorConfig    `yaml:"orchestrator" json:"orchestrator"`
-	Monitor      MonitorConfig         `yaml:"monitor" json:"monitor"`
-	Quality      QualityConfig         `yaml:"quality" json:"quality"`
-	Logging      logging.Config        `yaml:"logging" json:"logging"`
-	Cleanup      CleanupConfig         `yaml:"cleanup" json:"cleanup"`
-	Server       ServerConfig          `yaml:"server" json:"server"`
+	Project      ProjectConfig      `yaml:"project" json:"project"`
+	Tools        []string           `yaml:"tools" json:"tools"`
+	Defaults     DefaultsConfig     `yaml:"defaults" json:"defaults"`
+	Validation   ValidationConfig   `yaml:"validation" json:"validation"`
+	Workers      WorkersConfig      `yaml:"workers" json:"workers"`
+	Orchestrator OrchestratorConfig `yaml:"orchestrator" json:"orchestrator"`
+	Monitor      MonitorConfig      `yaml:"monitor" json:"monitor"`
+	Quality      QualityConfig      `yaml:"quality" json:"quality"`
+	Logging      logging.Config     `yaml:"logging" json:"logging"`
+	Cleanup      CleanupConfig      `yaml:"cleanup" json:"cleanup"`
+	Server       ServerConfig       `yaml:"server" json:"server"`
 }
 
 type ServerConfig struct {
@@ -40,54 +33,6 @@ type ProjectConfig struct {
 	Name              string `yaml:"name" json:"name"`
 	IntegrationBranch string `yaml:"integration_branch" json:"integration_branch"`
 	WorktreeDir       string `yaml:"worktree_dir" json:"worktree_dir"`
-}
-
-type ToolConfig struct {
-	Binary           string           `yaml:"binary" json:"binary"`
-	Model            string           `yaml:"model" json:"model,omitempty"`
-	Models           []string         `yaml:"models" json:"models,omitempty"`
-	InteractiveArgs  []string         `yaml:"interactive_args" json:"interactive_args,omitempty"`
-	HeadlessArgs     []string         `yaml:"headless_args" json:"headless_args,omitempty"`
-	ResumeArgs       []string         `yaml:"resume_args" json:"resume_args,omitempty"`
-	SessionIDPattern string           `yaml:"session_id_pattern" json:"session_id_pattern,omitempty"`
-	Timeout          string           `yaml:"timeout" json:"timeout"`
-	Mode             string           `yaml:"mode" json:"mode"`
-	PromptMode       string           `yaml:"prompt_mode" json:"prompt_mode"`
-	Output           ToolOutputConfig `yaml:"output,omitempty" json:"output,omitempty"`
-	Cost             ToolCostConfig   `yaml:"cost,omitempty" json:"cost,omitempty"`
-}
-
-type ToolOutputConfig struct {
-	Mode        string `yaml:"mode,omitempty" json:"mode,omitempty"`
-	ResultField string `yaml:"result_field,omitempty" json:"result_field,omitempty"`
-	ResultPath  string `yaml:"result_path,omitempty" json:"result_path,omitempty"`
-	Pattern     string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
-}
-
-type ToolCostConfig struct {
-	Mode        string `yaml:"mode,omitempty" json:"mode,omitempty"`
-	CostField   string `yaml:"cost_field,omitempty" json:"cost_field,omitempty"`
-	UsageInput  string `yaml:"usage_input,omitempty" json:"usage_input,omitempty"`
-	UsageOutput string `yaml:"usage_output,omitempty" json:"usage_output,omitempty"`
-	Pattern     string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
-}
-
-func (t *ToolConfig) UnmarshalYAML(value *yaml.Node) error {
-	type rawToolConfig ToolConfig
-	var raw rawToolConfig
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-
-	*t = ToolConfig(raw)
-	if strings.TrimSpace(t.Output.Mode) == "" {
-		t.Output.Mode = "stdout"
-	}
-	if strings.TrimSpace(t.Cost.Mode) == "" {
-		t.Cost.Mode = "none"
-	}
-
-	return nil
 }
 
 type ValidationConfig struct {
@@ -133,102 +78,36 @@ type CleanupConfig struct {
 	TTL string `yaml:"ttl" json:"ttl"`
 }
 
-// Load reads and parses a orca.yaml config file.
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config: %w", err)
-	}
-
-	cfg, err := Default()
-	if err != nil {
-		return nil, err
-	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
-	}
-	if cfg.Project.WorktreeDir != "" && !filepath.IsAbs(cfg.Project.WorktreeDir) {
-		// Resolve relative to the repo root (parent of the .orca config dir).
-		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), "..", cfg.Project.WorktreeDir))
-		if err == nil {
-			cfg.Project.WorktreeDir = abs
-		}
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
-	}
-	return &cfg, nil
+var defaultConfig = Config{
+	Project: ProjectConfig{
+		IntegrationBranch: "orca/integration",
+		WorktreeDir:       ".orca/worktrees",
+	},
+	Tools:    []string{"claude"},
+	Defaults: DefaultsConfig{Tool: "claude"},
+	Workers:  WorkersConfig{MaxParallel: 3},
+	Orchestrator: OrchestratorConfig{
+		SupervisorTool: "claude",
+	},
+	Monitor: MonitorConfig{
+		StuckCheckInterval: "60s",
+		MaxStuckCycles:     10,
+		ConflictInterval:   "30s",
+	},
+	Quality: QualityConfig{Enabled: true, ScopeCheck: true, TestDelta: true},
+	Logging: logging.Config{Level: "info", File: ".orca/orca.log", MaxSize: "50mb"},
+	Cleanup: CleanupConfig{TTL: "168h"},
+	Server:  ServerConfig{Addr: ":8080"},
 }
 
-// Default returns a Config parsed from the embedded defaults.yaml.
+// Default returns a copy of built-in defaults.
 func Default() (Config, error) {
-	var cfg Config
-	if err := yaml.Unmarshal(defaultsYAML, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse embedded defaults.yaml: %w", err)
+	cfg := defaultConfig
+	if cfg.Orchestrator.Phases == nil {
+		cfg.Orchestrator.Phases = map[string]PhaseConfig{}
 	}
+	cfg.Tools = append([]string(nil), cfg.Tools...)
 	return cfg, nil
-}
-
-// Save writes the config to a yaml file at path.
-func (c *Config) Save(path string) error {
-	data, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-	return nil
-}
-
-// sectionComments maps top-level yaml keys to descriptive comments.
-var sectionComments = map[string]string{
-	"project":      "Project identity and branch settings",
-	"tools":        "CLI tool adapters — binary paths, args, models, timeouts",
-	"defaults":     "Default tool and model used when not overridden per-phase",
-	"validation":   "Commands to run after integration (e.g. test suites)",
-	"workers":      "Parallel worker settings",
-	"orchestrator": "Supervisor agent config — tool, model, cost budget, per-phase overrides",
-	"monitor":      "Stuck detection, conflict checking, per-task budget",
-	"quality":      "Quality gates applied during review",
-	"logging":      "Application logging config — level, file path, rotation size",
-	"cleanup":      "Worktree cleanup settings",
-	"server":       "Web UI server settings",
-}
-
-// SaveAnnotated writes the config with section header comments.
-func (c *Config) SaveAnnotated(path string) error {
-	var node yaml.Node
-	if err := node.Encode(c); err != nil {
-		return fmt.Errorf("encode config: %w", err)
-	}
-
-	// node.Encode produces a MappingNode; find it whether wrapped in a document or not.
-	mapping := &node
-	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
-		mapping = node.Content[0]
-	}
-	if mapping.Kind == yaml.MappingNode {
-		for i := 0; i < len(mapping.Content)-1; i += 2 {
-			key := mapping.Content[i]
-			if comment, ok := sectionComments[key.Value]; ok {
-				key.HeadComment = comment
-			}
-		}
-	}
-
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("create config file: %w", err)
-	}
-	defer f.Close()
-
-	enc := yaml.NewEncoder(f)
-	enc.SetIndent(2)
-	if err := enc.Encode(&node); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-	return enc.Close()
 }
 
 // Validate checks config values for semantic correctness.
@@ -237,24 +116,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("workers.max_parallel must be >= 1, got %d", c.Workers.MaxParallel)
 	}
 
-	toolNames := make([]string, 0, len(c.Tools))
-	for name := range c.Tools {
-		toolNames = append(toolNames, name)
-	}
-	sort.Strings(toolNames)
-
-	for _, name := range toolNames {
-		tool := c.Tools[name]
-		if strings.TrimSpace(tool.Binary) == "" {
-			return fmt.Errorf("tools.%s.binary must be non-empty", name)
-		}
-
-		d, err := time.ParseDuration(tool.Timeout)
-		if err != nil {
-			return fmt.Errorf("tools.%s.timeout must be a valid duration: %w", name, err)
-		}
-		if d <= 0 {
-			return fmt.Errorf("tools.%s.timeout must be > 0, got %q", name, tool.Timeout)
+	for _, toolName := range c.Tools {
+		if _, ok := driver.Get(toolName); !ok {
+			return fmt.Errorf("tools contains unknown tool %q", toolName)
 		}
 	}
 
@@ -280,109 +144,89 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Orchestrator.SupervisorTool != "" {
-		if _, ok := c.Tools[c.Orchestrator.SupervisorTool]; !ok {
-			return fmt.Errorf("orchestrator.supervisor_tool %q not found in tools", c.Orchestrator.SupervisorTool)
+		if _, ok := driver.Get(c.Orchestrator.SupervisorTool); !ok {
+			return fmt.Errorf("orchestrator.supervisor_tool %q not found in drivers", c.Orchestrator.SupervisorTool)
 		}
 	}
 	if c.Defaults.Tool != "" {
-		if _, ok := c.Tools[c.Defaults.Tool]; !ok {
-			return fmt.Errorf("defaults.tool %q not found in tools", c.Defaults.Tool)
+		if _, ok := driver.Get(c.Defaults.Tool); !ok {
+			return fmt.Errorf("defaults.tool %q not found in drivers", c.Defaults.Tool)
+		}
+	}
+	for phase, phaseCfg := range c.Orchestrator.Phases {
+		if phaseCfg.Tool == "" {
+			continue
+		}
+		if _, ok := driver.Get(phaseCfg.Tool); !ok {
+			return fmt.Errorf("orchestrator.phases.%s.tool %q not found in drivers", phase, phaseCfg.Tool)
 		}
 	}
 
 	return nil
 }
 
-// ResolvePhaseToolConfig returns the tool name and config for a given phase.
-// Resolution: phases.<phase>.tool -> defaults.tool -> first alphabetical tool.
-// Model: phases.<phase>.model -> tool's configured model (defaults.model only when tool also came from defaults).
-func (c *Config) ResolvePhaseToolConfig(phase string) (string, ToolConfig, error) {
-	if len(c.Tools) == 0 {
-		return "", ToolConfig{}, fmt.Errorf("no tools configured")
-	}
-
-	var (
-		toolName    string
-		ok          bool
-		fromDefault bool // true when tool was resolved via defaults, not a phase override
-	)
-
-	if phaseCfg, phaseExists := c.Orchestrator.Phases[phase]; phaseExists && phaseCfg.Tool != "" {
-		toolName = phaseCfg.Tool
-		_, ok = c.Tools[toolName]
-		if !ok {
-			return "", ToolConfig{}, fmt.Errorf("unknown tool %q for orchestrator phase %q", toolName, phase)
+func (c *Config) ResolveToolForPhase(phase, override string) (string, driver.Driver, error) {
+	toolName := strings.TrimSpace(override)
+	if toolName == "" {
+		if pc, ok := c.Orchestrator.Phases[phase]; ok && pc.Tool != "" {
+			toolName = pc.Tool
 		}
-	} else if c.Defaults.Tool != "" {
+	}
+	if toolName == "" {
 		toolName = c.Defaults.Tool
-		fromDefault = true
-		_, ok = c.Tools[toolName]
-		if !ok {
-			return "", ToolConfig{}, fmt.Errorf("unknown default tool %q", toolName)
-		}
-	} else {
-		names := make([]string, 0, len(c.Tools))
-		for name := range c.Tools {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		toolName = names[0]
-		fromDefault = true
+	}
+	if toolName == "" && len(c.Tools) > 0 {
+		toolName = c.Tools[0]
+	}
+	if toolName == "" {
+		return "", nil, fmt.Errorf("no tool configured for phase %q", phase)
 	}
 
-	toolCfg := c.Tools[toolName]
-	if phaseCfg, phaseExists := c.Orchestrator.Phases[phase]; phaseExists && phaseCfg.Model != "" {
-		toolCfg.Model = phaseCfg.Model
-	} else if fromDefault && c.Defaults.Model != "" {
-		toolCfg.Model = c.Defaults.Model
+	d, ok := driver.Get(toolName)
+	if !ok {
+		return "", nil, fmt.Errorf("tool %q not found", toolName)
 	}
-
-	return toolName, toolCfg, nil
+	return toolName, d, nil
 }
 
-// ResolveToolForPhase resolves effective tool config for a phase.
-// Resolution: override -> config phase/default tool.
-// Model resolution: config phase/default model.
-func (c *Config) ResolveToolForPhase(phase, override string) (string, ToolConfig, error) {
-	if len(c.Tools) == 0 {
-		return "", ToolConfig{}, fmt.Errorf("no tools configured")
-	}
-
-	toolName := strings.TrimSpace(override)
-	if toolName != "" {
-		toolCfg, ok := c.Tools[toolName]
-		if !ok {
-			return "", ToolConfig{}, fmt.Errorf("tool %q not found", toolName)
+func (c *Config) ResolveModelForPhase(phase, override string, d driver.Driver) string {
+	if model := strings.TrimSpace(override); model != "" {
+		if ValidateModel(d.Name(), model, d) != "" {
+			return model
 		}
-		if _, phaseToolCfg, err := c.ResolvePhaseToolConfig(phase); err == nil {
-			if model := ValidateModel(toolName, phaseToolCfg.Model, toolCfg); model != "" {
-				toolCfg.Model = model
+	}
+	if pc, ok := c.Orchestrator.Phases[phase]; ok {
+		if model := strings.TrimSpace(pc.Model); model != "" {
+			if ValidateModel(d.Name(), model, d) != "" {
+				return model
 			}
 		}
-		return toolName, toolCfg, nil
 	}
-
-	var err error
-	toolName, toolCfg, err := c.ResolvePhaseToolConfig(phase)
-	if err != nil {
-		return "", ToolConfig{}, err
+	if model := strings.TrimSpace(c.Defaults.Model); model != "" {
+		if ValidateModel(d.Name(), model, d) != "" {
+			return model
+		}
 	}
-	return toolName, toolCfg, nil
+	models := d.Models()
+	if len(models) > 0 {
+		return models[0]
+	}
+	return ""
 }
 
-// ValidateModel returns model only when it's allowed by toolCfg.Models.
-func ValidateModel(toolName, model string, toolCfg ToolConfig) string {
+// ValidateModel returns model only when it's allowed by driver models.
+func ValidateModel(toolName, model string, d driver.Driver) string {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return ""
 	}
-	for _, m := range toolCfg.Models {
+	for _, m := range d.Models() {
 		if m == model {
 			return model
 		}
 	}
 	if toolName == "" {
-		toolName = toolCfg.Binary
+		toolName = d.Name()
 	}
 	slog.Warn(fmt.Sprintf("task model %q not in %s models list, using default", model, toolName))
 	return ""

@@ -5,6 +5,7 @@ interface Props {
   variant?: 'default' | 'primary' | 'danger'
   disabled?: boolean
   type?: 'button' | 'submit' | 'reset'
+  form?: string
 }
 
 export function ActionButton({
@@ -14,6 +15,7 @@ export function ActionButton({
   variant = 'default',
   disabled = false,
   type = 'button',
+  form,
 }: Props) {
   const base =
     'inline-flex items-center rounded-md border px-3 py-1 text-[13px] font-medium transition-all duration-150'
@@ -31,6 +33,7 @@ export function ActionButton({
       onClick={onClick}
       disabled={disabled}
       type={type}
+      form={form}
     >
       {children ?? label}
     </button>

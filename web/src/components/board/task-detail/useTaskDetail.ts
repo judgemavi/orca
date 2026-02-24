@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { Artifact, Task, ReviewArtifact, WSEvent } from '../../../types'
+import type { Task, WSEvent } from '../../../types'
 import { api } from '../../../api'
 import { useTaskForm } from '../../../hooks/forms/useTaskForm'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
@@ -9,13 +9,15 @@ import {
   useSavePlanMutation,
   useTaskPlanQuery,
 } from '../../../hooks/queries/usePlan'
+import {
+  useInteractionsQuery,
+} from './useInteractions'
 
 export interface TaskDetailProps {
   task: Task
   tools: string[]
   lastWSEvent?: WSEvent | null
   isOperationRunning: (type: string, targetId?: string) => boolean
-  onClose: () => void
   onSaved: () => void
   onDeleted: () => void
 }
@@ -25,10 +27,12 @@ export function useTaskDetail({
   tools,
   lastWSEvent,
   isOperationRunning,
-  onClose,
   onSaved,
   onDeleted,
 }: TaskDetailProps) {
+  const onSavedRef = useRef(onSaved)
+  onSavedRef.current = onSaved
+
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [merging, setMerging] = useState(false)
@@ -36,7 +40,6 @@ export function useTaskDetail({
   const [conflictError, setConflictError] = useState<string | null>(null)
   const [conflictWorktreePath, setConflictWorktreePath] = useState<string>('')
   const [showManualResolve, setShowManualResolve] = useState(false)
-  const [showDiff, setShowDiff] = useState(false)
   const [approving, setApproving] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [requesting, setRequesting] = useState(false)
@@ -52,8 +55,19 @@ export function useTaskDetail({
   const [planEditing, setPlanEditing] = useState(false)
   const [planGenerating, setPlanGenerating] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
+  const [approvingPlan, setApprovingPlan] = useState(false)
+  const [requestingPlanChanges, setRequestingPlanChanges] = useState(false)
+  const [planFeedback, setPlanFeedback] = useState('')
+  const [planReviewExpanded, setPlanReviewExpanded] = useState(false)
   const [generateTool, setGenerateTool] = useState('')
   const [generateModel, setGenerateModel] = useState('')
+  const [runTool, setRunTool] = useState('')
+  const [runModel, setRunModel] = useState('')
+  const [runPending, setRunPending] = useState(false)
+  const [rerunTool, setRerunTool] = useState('')
+  const [rerunModel, setRerunModel] = useState('')
+  const [mergeTool, setMergeTool] = useState('')
+  const [mergeModel, setMergeModel] = useState('')
 
   const form = useTaskForm(
     {
@@ -77,6 +91,9 @@ export function useTaskDetail({
   )
 
   const generateModelsQuery = useModelsQuery(generateTool || undefined)
+  const runModelsQuery = useModelsQuery(runTool || undefined)
+  const rerunModelsQuery = useModelsQuery(rerunTool || undefined)
+  const mergeModelsQuery = useModelsQuery(mergeTool || undefined)
   const taskPlanQuery = useTaskPlanQuery(task.id)
   const savePlanMutation = useSavePlanMutation()
   const generatePlanMutation = useGeneratePlanMutation()
@@ -84,20 +101,9 @@ export function useTaskDetail({
   const { data: reviewsData } = useQuery({
     queryKey: ['task-reviews', task.id],
     queryFn: () => api.getTaskReviews(task.id),
-    enabled: ['review', 'failed', 'approved', 'merged'].includes(task.status),
+    enabled: Boolean(task.id),
   })
-  const artifactsQuery = useQuery({
-    queryKey: ['task-artifacts', task.id],
-    queryFn: () => api.getTaskArtifacts(task.id),
-    enabled: task.status !== 'pending',
-    refetchInterval: task.status === 'running' ? 2000 : false,
-  })
-  const taskLogsQuery = useQuery({
-    queryKey: ['task-logs', task.id],
-    queryFn: () => api.getTaskLogs(task.id, 2000),
-    enabled: task.status === 'running',
-    refetchInterval: task.status === 'running' ? 1500 : false,
-  })
+  const interactionsQuery = useInteractionsQuery(task.id)
   const reviews = useMemo(
     () =>
       [...(reviewsData?.reviews ?? [])].sort(
@@ -106,32 +112,60 @@ export function useTaskDetail({
       ),
     [reviewsData?.reviews],
   )
-  const artifacts = useMemo<Artifact[]>(
+  const interactions = useMemo(
     () =>
-      [...(artifactsQuery.data?.artifacts ?? [])].sort(
+      [...(interactionsQuery.data ?? [])].sort(
         (a, b) =>
-          Date.parse(b.created_at || '') - Date.parse(a.created_at || ''),
+          Date.parse(a.started_at || '') - Date.parse(b.started_at || ''),
       ),
-    [artifactsQuery.data?.artifacts],
+    [interactionsQuery.data],
   )
-  const logs = taskLogsQuery.data ?? []
 
-  const artifact = useMemo<ReviewArtifact | null>(() => {
-    const latest = artifacts[0]
-    if (!latest?.diff) return null
-    return {
-      task_id: task.id,
-      title: task.title,
-      status: task.status,
-      diff: latest.diff,
-      files: [],
-      duration_ms: latest.duration_ms,
-    }
-  }, [artifacts, task.id, task.status, task.title])
+  const runInteractions = useMemo(
+    () => interactions.filter((item) => item.phase === 'run'),
+    [interactions],
+  )
+  const planInteractions = useMemo(
+    () => interactions.filter((item) => item.phase === 'plan'),
+    [interactions],
+  )
+  const mergeInteractions = useMemo(
+    () => interactions.filter((item) => item.phase === 'merge'),
+    [interactions],
+  )
+  const planInteractionIDs = useMemo(
+    () => new Set(planInteractions.map((item) => item.id)),
+    [planInteractions],
+  )
+  const runInteractionIDs = useMemo(
+    () => new Set(runInteractions.map((item) => item.id)),
+    [runInteractions],
+  )
+  const planReviews = useMemo(
+    () =>
+      reviews.filter(
+        (review) =>
+          Boolean(review.interaction_id) &&
+          planInteractionIDs.has(review.interaction_id as string),
+      ),
+    [reviews, planInteractionIDs],
+  )
+  const runReviews = useMemo(
+    () =>
+      reviews.filter(
+        (review) =>
+          Boolean(review.interaction_id) &&
+          runInteractionIDs.has(review.interaction_id as string),
+      ),
+    [reviews, runInteractionIDs],
+  )
 
   const generationModels = generateTool
     ? (generateModelsQuery.data?.[generateTool] ?? [])
     : []
+  const runModels = runTool ? (runModelsQuery.data?.[runTool] ?? []) : []
+  const rerunModels = rerunTool ? (rerunModelsQuery.data?.[rerunTool] ?? []) : []
+  const mergeModels = mergeTool ? (mergeModelsQuery.data?.[mergeTool] ?? []) : []
 
   useEffect(() => {
     form.reset({
@@ -142,8 +176,19 @@ export function useTaskDetail({
     setPlanDraft('')
     setPlanEditing(false)
     setPlanError(null)
+    setApprovingPlan(false)
+    setRequestingPlanChanges(false)
+    setPlanFeedback('')
+    setPlanReviewExpanded(false)
     setGenerateTool('')
     setGenerateModel('')
+    setRunTool('')
+    setRunModel('')
+    setRunPending(false)
+    setRerunTool('')
+    setRerunModel('')
+    setMergeTool('')
+    setMergeModel('')
     setApproving(false)
     setFeedback('')
     setRequesting(false)
@@ -206,7 +251,7 @@ export function useTaskDetail({
       setMerging(false)
       setMergeProgress(null)
       setConflictError(null)
-      onSaved()
+      onSavedRef.current()
     } else if (lastWSEvent.type === 'task.updated') {
       const status = String((lastWSEvent.data as any)?.status ?? '')
       if (
@@ -248,7 +293,7 @@ export function useTaskDetail({
         String((lastWSEvent.data as any)?.error ?? 'Failed to generate plan'),
       )
     }
-  }, [lastWSEvent, task.id, onSaved])
+  }, [lastWSEvent, task.id])
 
   const handleDelete = async () => {
     if (!confirm(`Delete "${task.title}"?`)) return
@@ -274,10 +319,28 @@ export function useTaskDetail({
       setMergeProgress('Auto-resolve queued...')
     }
     try {
-      await api.mergeTask(task.id, mode)
+      await api.mergeTask(
+        task.id,
+        mode,
+        mergeTool || undefined,
+        mergeModel || undefined,
+      )
     } catch (err: any) {
       alert(err.message ?? 'Merge failed')
       setMerging(false)
+    }
+  }
+
+  const handleRun = async () => {
+    setRunPending(true)
+    setReviewActionError(null)
+    try {
+      await api.runTasks([task.id], runTool || undefined, runModel || undefined)
+      onSaved()
+    } catch (err: any) {
+      setReviewActionError(err?.message ?? 'Run failed')
+    } finally {
+      setRunPending(false)
     }
   }
 
@@ -296,16 +359,6 @@ export function useTaskDetail({
     }
   }
 
-  const handleRegeneratePlan = () => {
-    if (
-      !confirm(
-        'Regenerate plan? This will replace your current working plan draft.',
-      )
-    )
-      return
-    void handleGeneratePlan()
-  }
-
   const handleSavePlan = async () => {
     setPlanError(null)
     try {
@@ -315,6 +368,56 @@ export function useTaskDetail({
       onSaved()
     } catch (err: any) {
       setPlanError(err?.message ?? 'Failed to save plan')
+    }
+  }
+
+  const handleApprovePlan = async () => {
+    setApprovingPlan(true)
+    setPlanError(null)
+    try {
+      await api.approvePlan(task.id)
+      setPlanReviewExpanded(false)
+      onSaved()
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'Approve plan failed')
+    } finally {
+      setApprovingPlan(false)
+    }
+  }
+
+  const handleRequestPlanChanges = async (
+    interactionId?: string,
+    feedbackText?: string,
+    tool?: string,
+    model?: string,
+  ) => {
+    const trimmedFeedback = (feedbackText ?? planFeedback).trim()
+    if (!trimmedFeedback) {
+      setPlanError('Feedback is required')
+      return
+    }
+    const trimmedInteractionID = (interactionId ?? '').trim()
+    if (!trimmedInteractionID) {
+      setPlanError('Interaction ID is required')
+      return
+    }
+
+    setRequestingPlanChanges(true)
+    setPlanError(null)
+    try {
+      await api.requestPlanChanges(
+        task.id,
+        trimmedFeedback,
+        trimmedInteractionID,
+        tool || generateTool || undefined,
+        model || generateModel || undefined,
+      )
+      setPlanReviewExpanded(false)
+      setPlanFeedback('')
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'Request plan changes failed')
+    } finally {
+      setRequestingPlanChanges(false)
     }
   }
 
@@ -331,7 +434,11 @@ export function useTaskDetail({
     }
   }
 
-  const handleRequestChanges = async () => {
+  const handleRequestChanges = async (
+    interactionId?: string,
+    tool?: string,
+    model?: string,
+  ) => {
     const trimmedFeedback = feedback.trim()
     if (!trimmedFeedback) {
       setReviewActionError('Feedback is required')
@@ -341,9 +448,8 @@ export function useTaskDetail({
     setRequesting(true)
     setReviewActionError(null)
     try {
-      await api.requestChanges(task.id, trimmedFeedback)
+      await api.requestChanges(task.id, trimmedFeedback, interactionId, tool, model)
       onSaved()
-      onClose()
     } catch (err: any) {
       setReviewActionError(err?.message ?? 'Request changes failed')
     } finally {
@@ -355,7 +461,7 @@ export function useTaskDetail({
     setRerunning(true)
     setReviewActionError(null)
     try {
-      await api.runTasks([task.id])
+      await api.runTasks([task.id], rerunTool || undefined, rerunModel || undefined)
       onSaved()
     } catch (err: any) {
       setReviewActionError(err?.message ?? 'Re-run failed')
@@ -364,7 +470,7 @@ export function useTaskDetail({
     }
   }
 
-  const hasPlan = Boolean(plan)
+  const hasPlan = Boolean(plan?.trim())
   const planLoading = taskPlanQuery.isLoading
   const planSaving = savePlanMutation.isPending
 
@@ -387,14 +493,16 @@ export function useTaskDetail({
     setShowManualResolve,
 
     // review
-    artifact,
-    artifacts,
-    logs,
-    logsLoading: taskLogsQuery.isLoading || taskLogsQuery.isFetching,
-    artifactsLoading: artifactsQuery.isLoading || artifactsQuery.isFetching,
+    interactions,
+    planInteractions,
+    runInteractions,
+    mergeInteractions,
+    planReviews,
+    runReviews,
+    interactionsLoading:
+      interactionsQuery.isLoading ||
+      interactionsQuery.isFetching,
     reviews,
-    showDiff,
-    setShowDiff,
     feedback,
     setFeedback,
     approving,
@@ -410,6 +518,10 @@ export function useTaskDetail({
     planLoading,
     planSaving,
     planError,
+    approvingPlan,
+    requestingPlanChanges,
+    planFeedback,
+    planReviewExpanded,
     hasPlan,
     tools,
     generateTool,
@@ -417,25 +529,45 @@ export function useTaskDetail({
     generationModels,
     generateModelsFetching: generateModelsQuery.isFetching,
     generatePlanPending: generatePlanMutation.isPending,
+    runTool,
+    runModel,
+    runModels,
+    runModelsFetching: runModelsQuery.isFetching,
+    runPending,
+    rerunTool,
+    rerunModel,
+    rerunModels,
+    rerunModelsFetching: rerunModelsQuery.isFetching,
+    mergeTool,
+    mergeModel,
+    mergeModels,
+    mergeModelsFetching: mergeModelsQuery.isFetching,
     setPlanDraft,
     setPlanEditing,
+    setPlanFeedback,
+    setPlanReviewExpanded,
     setGenerateTool,
     setGenerateModel,
+    setRunTool,
+    setRunModel,
+    setRerunTool,
+    setRerunModel,
+    setMergeTool,
+    setMergeModel,
 
     // handlers
     handleDelete,
     handleMerge,
+    handleRun,
     handleGeneratePlan,
-    handleRegeneratePlan,
     handleSavePlan,
+    handleApprovePlan,
+    handleRequestPlanChanges,
     handleApprove,
     handleRequestChanges,
     handleRerun,
-    refetchArtifacts: () => {
-      void artifactsQuery.refetch()
-    },
-    refetchLogs: () => {
-      void taskLogsQuery.refetch()
+    refetchInteractions: () => {
+      void interactionsQuery.refetch()
     },
   }
 }

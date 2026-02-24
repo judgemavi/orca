@@ -1,17 +1,17 @@
 package executor
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/procutil"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/worker"
@@ -42,22 +42,10 @@ func (e *Executor) streamPipe(ctx context.Context, info taskInfo, outputCh chan<
 		WorktreePath: info.worktreePath,
 	}
 
-	toolCfg := info.toolCfg
-	if len(info.args) > 0 {
-		if strings.EqualFold(toolCfg.Mode, "interactive") && len(toolCfg.InteractiveArgs) > 0 {
-			toolCfg.InteractiveArgs = append([]string(nil), info.args...)
-		} else {
-			toolCfg.HeadlessArgs = append([]string(nil), info.args...)
-		}
-	}
-
-	workerAdapter, err := worker.NewWorker(toolCfg)
+	workerAdapter, err := worker.NewWorker(info.driver, info.model, info.timeout)
 	if err != nil {
 		result.Stderr = fmt.Sprintf("create adapter: %v", err)
 		return result
-	}
-	if info.model != "" {
-		workerAdapter.SetModel(info.model)
 	}
 	if info.taskTitle != "" {
 		workerAdapter.SetTaskTitle(info.taskTitle)
@@ -67,9 +55,17 @@ func (e *Executor) streamPipe(ctx context.Context, info taskInfo, outputCh chan<
 		e.startProcess(info.taskID, cmd, "")
 	})
 
-	res, err := workerAdapter.Execute(ctx, info.taskID, info.prompt, info.worktreePath)
-	if err != nil {
-		result.Stderr = fmt.Sprintf("execute: %v", err)
+	var (
+		res     *worker.Result
+		execErr error
+	)
+	if info.resumeSessionID != "" {
+		res, execErr = workerAdapter.ExecuteResume(ctx, info.taskID, info.resumeSessionID, info.resumeFeedback, info.worktreePath)
+	} else {
+		res, execErr = workerAdapter.Execute(ctx, info.taskID, info.prompt, info.worktreePath)
+	}
+	if execErr != nil {
+		result.Stderr = fmt.Sprintf("execute: %v", execErr)
 		return result
 	}
 
@@ -79,9 +75,12 @@ func (e *Executor) streamPipe(ctx context.Context, info taskInfo, outputCh chan<
 	result.Stdout = res.Stdout
 	result.Stderr = res.Stderr
 	result.Duration = res.Duration
+	result.InputTokens = res.InputTokens
+	result.OutputTokens = res.OutputTokens
+	result.TotalCost = res.TotalCost
 	if res.ExitCode == 0 {
 		result.Status = "review"
-		e.storeSessionID(info.taskID, parseSessionID(info.toolCfg.SessionIDPattern, res.Stdout))
+		e.storeSessionID(info.taskID, res.SessionID)
 	}
 	return result
 }
@@ -95,23 +94,19 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 		WorktreePath: info.worktreePath,
 	}
 
-	timeout, err := time.ParseDuration(info.toolCfg.Timeout)
-	if err != nil {
-		result.Stderr = fmt.Sprintf("parse timeout %q: %v", info.toolCfg.Timeout, err)
-		return result
-	}
+	timeout := info.timeout
 	if timeout <= 0 {
-		result.Stderr = fmt.Sprintf("invalid timeout %q: must be positive", info.toolCfg.Timeout)
+		result.Stderr = "invalid timeout: must be positive"
 		return result
 	}
 
 	args := info.args
 	if len(args) == 0 {
-		args = buildWorkerArgs(info.toolCfg, info.prompt, info.model, info.worktreePath)
+		args = buildWorkerArgs(info, info.prompt, info.model, info.worktreePath)
 	}
 	sess, err := e.sessionMgr.Create(pty.CreateOpts{
 		Type:    pty.SessionWorker,
-		Command: info.toolCfg.Binary,
+		Command: info.driver.Binary(),
 		Args:    args,
 		Dir:     info.worktreePath,
 		Tool:    info.toolName,
@@ -142,27 +137,69 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	}()
 
 	start := time.Now()
-	var output bytes.Buffer
-	streamErr := procutil.Stream(procutil.StreamOptions{
-		TaskID: info.taskID,
-		Stream: "stdout",
-		Reader: sess.Pty,
-		Buffer: &output,
-		EmitLine: func(taskID, stream, line string, ts time.Time) {
-			if outputCh == nil {
-				return
-			}
+	var rawOutput bytes.Buffer
+	var parsedText strings.Builder
+	var totalCost driver.Cost
+	sessionID := ""
+	scanner := bufio.NewScanner(sess.Pty)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		line := append([]byte(nil), scanner.Bytes()...)
+		rawOutput.WriteString(string(line))
+		rawOutput.WriteByte('\n')
+		now := time.Now()
+		if outputCh != nil {
 			outputCh <- worker.OutputLine{
-				TaskID: taskID,
-				Stream: stream,
-				Line:   line,
-				Time:   ts,
+				TaskID: info.taskID,
+				Stream: "raw",
+				Line:   string(line),
+				Time:   now,
 			}
-		},
-	})
+		}
+		event, err := info.driver.ParseEvent(line)
+		if err != nil {
+			slog.Warn("parse PTY event failed", "task_id", info.taskID, "err", err)
+			continue
+		}
+		switch event.Type {
+		case driver.EventText:
+			if event.Text == "" {
+				continue
+			}
+			parsedText.WriteString(event.Text)
+			if outputCh != nil {
+				outputCh <- worker.OutputLine{
+					TaskID: info.taskID,
+					Stream: "stdout",
+					Line:   event.Text,
+					Time:   now,
+				}
+			}
+		case driver.EventCost:
+			if event.Cost != nil {
+				totalCost.InputTokens += event.Cost.InputTokens
+				totalCost.OutputTokens += event.Cost.OutputTokens
+				totalCost.TotalCost += event.Cost.TotalCost
+			}
+			if event.SessionID != "" {
+				sessionID = event.SessionID
+			}
+		case driver.EventSession:
+			if event.SessionID != "" {
+				sessionID = event.SessionID
+			}
+		}
+	}
+	streamErr := scanner.Err()
 	close(readDone)
 	result.Duration = time.Since(start)
-	result.Stdout = output.String()
+	result.Stdout = parsedText.String()
+	if result.Stdout == "" {
+		result.Stdout = rawOutput.String()
+	}
+	result.InputTokens = totalCost.InputTokens
+	result.OutputTokens = totalCost.OutputTokens
+	result.TotalCost = totalCost.TotalCost
 
 	if streamErr != nil {
 		slog.Warn("stream PTY failed", "task_id", info.taskID, "err", streamErr)
@@ -200,7 +237,7 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 
 	if result.ExitCode == 0 {
 		result.Status = "review"
-		e.storeSessionID(info.taskID, parseSessionID(info.toolCfg.SessionIDPattern, result.Stdout))
+		e.storeSessionID(info.taskID, sessionID)
 	}
 	return result
 }
@@ -212,21 +249,6 @@ func (e *Executor) storeSessionID(taskID, sessionID string) {
 	if err := e.taskStore.SetSessionID(taskID, sessionID); err != nil {
 		slog.Warn("set session_id failed", "task_id", taskID, "session_id", sessionID, "err", err)
 	}
-}
-
-func parseSessionID(pattern, output string) string {
-	if pattern == "" {
-		return ""
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return ""
-	}
-	m := re.FindStringSubmatch(output)
-	if len(m) < 2 {
-		return ""
-	}
-	return m[1]
 }
 
 func waitSessionExitCode(sess *pty.Session) int {
@@ -242,44 +264,11 @@ func waitSessionExitCode(sess *pty.Session) int {
 	return sess.ExitCode
 }
 
-func buildWorkerArgs(toolCfg config.ToolConfig, prompt, model, worktreePath string) []string {
-	argsCfg := toolCfg.HeadlessArgs
-	if strings.EqualFold(toolCfg.Mode, "interactive") && len(toolCfg.InteractiveArgs) > 0 {
-		argsCfg = toolCfg.InteractiveArgs
-	}
-
+func buildWorkerArgs(info taskInfo, prompt, model, worktreePath string) []string {
 	contextContent := procutil.LoadContextFromWorktree(worktreePath)
-	args := make([]string, len(argsCfg))
-	for i, arg := range argsCfg {
-		arg = strings.ReplaceAll(arg, "{{prompt}}", prompt)
-		arg = strings.ReplaceAll(arg, "{{context}}", contextContent)
-		args[i] = arg
-	}
-
-	selectedModel := toolCfg.Model
-	if model != "" {
-		selectedModel = model
-	}
-	if selectedModel != "" {
-		args = append(args, "--model", selectedModel)
-	}
-	return args
-}
-
-func buildResumeArgs(toolCfg config.ToolConfig, sessionID, feedback, model string) []string {
-	args := make([]string, len(toolCfg.ResumeArgs))
-	for i, arg := range toolCfg.ResumeArgs {
-		arg = strings.ReplaceAll(arg, "{{session_id}}", sessionID)
-		arg = strings.ReplaceAll(arg, "{{feedback}}", feedback)
-		args[i] = arg
-	}
-
-	selectedModel := toolCfg.Model
-	if model != "" {
-		selectedModel = model
-	}
-	if selectedModel != "" {
-		args = append(args, "--model", selectedModel)
+	args := info.driver.HeadlessArgs(prompt, model)
+	for i := range args {
+		args[i] = strings.ReplaceAll(args[i], "{{context}}", contextContent)
 	}
 	return args
 }

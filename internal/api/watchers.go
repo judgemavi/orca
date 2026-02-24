@@ -14,14 +14,14 @@ import (
 // real-time updates to WebSocket clients.
 func (s *Server) setupWatchers(ctx context.Context, taskStore *task.Store) {
 	watcher := state.NewWatcher(s.db, state.WatcherCallbacks{
-		OnTaskChange:      s.newTaskChangeHandler(taskStore),
-		OnOperationChange: s.handleOperationChanges,
-		OnSessionChange:   s.handleSessionChanges,
+		OnTaskChange:        s.newTaskChangeHandler(taskStore),
+		OnInteractionChange: s.handleInteractionChanges,
+		OnSessionChange:     s.handleSessionChanges,
 	}, state.WatcherOpts{})
 	go watcher.Run(ctx)
 
-	if err := s.ops.MarkStaleAsFailed(); err != nil {
-		slog.Error("mark stale operations failed", "err", err)
+	if err := s.interactions.MarkStaleAsFailed(); err != nil {
+		slog.Error("mark stale interactions failed", "err", err)
 	}
 
 	if s.sessionMgr != nil {
@@ -63,14 +63,25 @@ func (s *Server) newTaskChangeHandler(taskStore *task.Store) func([]state.TaskCh
 	}
 }
 
-func (s *Server) handleOperationChanges(changes []state.OperationChange) {
+func (s *Server) handleInteractionChanges(changes []state.InteractionChange) {
 	for _, c := range changes {
-		op, err := s.ops.Get(c.OperationID)
-		if err == nil {
-			s.hub.Broadcast(Event{Type: "operation.updated", Data: op})
+		interactionID := c.InteractionID
+		in, err := s.interactions.Get(interactionID)
+		if err != nil {
+			s.hub.Broadcast(Event{Type: "interaction.updated", Data: map[string]string{"id": interactionID}})
 			continue
 		}
-		s.hub.Broadcast(Event{Type: "operation.updated", Data: map[string]string{"id": c.OperationID}})
+
+		eventType := "interaction.updated"
+		switch in.Status {
+		case "running":
+			eventType = "interaction.started"
+		case "completed":
+			eventType = "interaction.completed"
+		case "failed":
+			eventType = "interaction.failed"
+		}
+		s.hub.Broadcast(Event{Type: eventType, Data: in})
 	}
 }
 

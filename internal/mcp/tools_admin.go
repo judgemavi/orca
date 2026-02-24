@@ -12,19 +12,20 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/cost"
 	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/logging"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 func (s *Server) HandleExploreTool(_ json.RawMessage) (interface{}, error) {
-	_, toolCfg, err := s.config.ResolvePhaseToolConfig("explore")
+	toolName, d, err := s.config.ResolveToolForPhase("explore", "")
 	if err != nil {
 		return nil, err
 	}
+	model := s.config.ResolveModelForPhase("explore", "", d)
 
-	explorer := explore.New(toolCfg, s.repoDir)
+	explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions"))
 	outPath, err := explorer.Run()
 	if err != nil {
 		return nil, err
@@ -143,7 +144,7 @@ func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, e
 		return nil, fmt.Errorf("cost tracking not configured")
 	}
 
-	tracker := cost.NewTracker(s.db)
+	tracker := interaction.NewStore(s.db, ".orca/interactions")
 	budget := s.config.Orchestrator.CostBudget
 	total, err := tracker.ProjectTotal()
 	if err != nil {
@@ -182,7 +183,7 @@ func (s *Server) HandleQualityResultsTool(argsRaw json.RawMessage) (interface{},
 
 	var qualityJSON sql.NullString
 	err = s.db.QueryRow(
-		`SELECT quality_json FROM artifacts WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`,
+		`SELECT quality_json FROM task_interactions WHERE task_id = ? AND phase = 'run' ORDER BY started_at DESC LIMIT 1`,
 		taskID,
 	).Scan(&qualityJSON)
 	if err == sql.ErrNoRows {

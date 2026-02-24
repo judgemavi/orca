@@ -5,18 +5,16 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/jasjeetmavi/orca/cmd/orca/commands"
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/cost"
 	"github.com/jasjeetmavi/orca/internal/executor"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/logging"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 const skipRuntimeInitAnnotation = "orca.skip_runtime_init"
@@ -40,7 +38,7 @@ func (rt *runtimeState) init() error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	cfg, err := config.Load(filepath.Join(".orca", "orca.yaml"))
+	cfg, err := config.LoadFromDB(db.DB)
 	if err != nil {
 		db.Close()
 		return fmt.Errorf("load config: %w", err)
@@ -54,7 +52,7 @@ func (rt *runtimeState) init() error {
 	rt.db = db
 	rt.cfg = cfg
 	rt.store = task.NewStore(db)
-	rt.executor = executor.NewExecutor(db, rt.store, wm, cfg, repoDir, executor.ExecutorOptions{CostTracker: cost.NewTracker(db)})
+	rt.executor = executor.NewExecutor(db, rt.store, wm, cfg, repoDir, executor.ExecutorOptions{Interactions: interaction.NewStore(db, ".orca/interactions")})
 	slog.Info("runtime.initialized", "db_path", dbPath)
 	return nil
 }
@@ -107,25 +105,14 @@ func main() {
 	root := &cobra.Command{Use: "orca", Short: "Multi-agent CLI orchestrator"}
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		logCfg := logging.DefaultConfig()
-		configPath := filepath.Join(".orca", "orca.yaml")
-		data, err := os.ReadFile(configPath)
-		if err == nil {
-			var parsed struct {
-				Logging logging.Config `yaml:"logging"`
+		skipRuntime := shouldSkipRuntimeInit(cmd)
+		if !skipRuntime {
+			if err := rt.init(); err != nil {
+				return err
 			}
-			if unmarshalErr := yaml.Unmarshal(data, &parsed); unmarshalErr == nil {
-				if strings.TrimSpace(parsed.Logging.Level) != "" {
-					logCfg.Level = parsed.Logging.Level
-				}
-				if strings.TrimSpace(parsed.Logging.File) != "" {
-					logCfg.File = parsed.Logging.File
-				}
-				if strings.TrimSpace(parsed.Logging.MaxSize) != "" {
-					logCfg.MaxSize = parsed.Logging.MaxSize
-				}
+			if rt.cfg != nil {
+				logCfg = rt.cfg.Logging
 			}
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("read logging config: %w", err)
 		}
 
 		cleanup, err := logging.Init(logCfg)
@@ -135,15 +122,8 @@ func main() {
 		loggingCleanup = cleanup
 		slog.Info("orca command start", "cmd", cmd.CommandPath(), "args", args)
 
-		if shouldSkipRuntimeInit(cmd) {
+		if skipRuntime {
 			return nil
-		}
-		if err := rt.init(); err != nil {
-			if loggingCleanup != nil {
-				loggingCleanup()
-				loggingCleanup = nil
-			}
-			return err
 		}
 		return nil
 	}

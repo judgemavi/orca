@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/banner"
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/model"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -92,6 +92,7 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 
 func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {
 	orcaDir := filepath.Join(cwd, ".orca")
+	dbPath := filepath.Join(orcaDir, "state.db")
 
 	var existingCfg *config.Config
 	if _, err := os.Stat(orcaDir); err == nil {
@@ -105,8 +106,7 @@ func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {
 		if !reinit {
 			return nil, false, nil
 		}
-		cfgPath := filepath.Join(orcaDir, "orca.yaml")
-		if loaded, loadErr := config.Load(cfgPath); loadErr == nil {
+		if loaded, loadErr := loadConfigFromDBPath(dbPath); loadErr == nil {
 			existingCfg = loaded
 		}
 	}
@@ -160,7 +160,13 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		for i, name := range detected {
 			preSelected := true
 			if existingCfg != nil {
-				_, preSelected = existingCfg.Tools[name]
+				preSelected = false
+				for _, enabled := range existingCfg.Tools {
+					if enabled == name {
+						preSelected = true
+						break
+					}
+				}
 			}
 			toolOpts[i] = huh.NewOption(name, name).Selected(preSelected)
 		}
@@ -181,13 +187,8 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 
 	var toolModels []toolModelInfo
 	for _, name := range available {
-		if tc, ok := cfg.Tools[name]; ok {
-			ms := model.FromConfig(name, tc)
-			ids := make([]string, len(ms))
-			for i, m := range ms {
-				ids[i] = m.ID
-			}
-			toolModels = append(toolModels, toolModelInfo{name: name, models: ids})
+		if d, ok := driver.Get(name); ok {
+			toolModels = append(toolModels, toolModelInfo{name: name, models: d.Models()})
 		}
 	}
 
@@ -196,6 +197,7 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	maxParallelStr := "3"
 	defaultTool := available[0]
 	supervisorTool := available[0]
+	defaultModel := ""
 	supervisorModel := ""
 	costBudget := "0"
 	validationCmd := ""
@@ -225,6 +227,7 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 				defaultTool = existingCfg.Defaults.Tool
 			}
 		}
+		defaultModel = existingCfg.Defaults.Model
 		if existingCfg.Orchestrator.SupervisorTool != "" {
 			foundSupervisorTool := false
 			for _, name := range available {
@@ -253,34 +256,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			defaultToolOpts[i] = huh.NewOption(name, name)
 		}
 
-		type modelBinding struct {
-			name  string
-			value string
-		}
-		modelBindings := make([]*modelBinding, 0, len(toolModels))
-		var modelFields []huh.Field
-		for _, tm := range toolModels {
-			if len(tm.models) == 0 {
-				continue
-			}
-			defaultModel := tm.models[0]
-			if existingCfg != nil {
-				if tc, ok := existingCfg.Tools[tm.name]; ok && tc.Model != "" {
-					defaultModel = tc.Model
-				}
-			}
-			mb := &modelBinding{name: tm.name, value: defaultModel}
-			modelBindings = append(modelBindings, mb)
-			opts := make([]huh.Option[string], len(tm.models))
-			for i, m := range tm.models {
-				opts[i] = huh.NewOption(m, m)
-			}
-			modelFields = append(modelFields, huh.NewSelect[string]().
-				Title(fmt.Sprintf("Default model for %s", tm.name)).
-				Options(opts...).
-				Value(&mb.value))
-		}
-
 		qualityOpts := []huh.Option[string]{
 			huh.NewOption("Scope check", "scope").Selected(qualityScopeCheck),
 			huh.NewOption("Test delta", "test").Selected(qualityTestDelta),
@@ -293,6 +268,7 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 				huh.NewInput().Title("Project name").Value(&projectName),
 				huh.NewInput().Title("Integration branch").Value(&integrationBranch),
 				huh.NewSelect[string]().Title("Default tool").Options(defaultToolOpts...).Value(&defaultTool),
+				huh.NewInput().Title("Default model (optional)").Description("Used when a phase model is not set").Value(&defaultModel),
 				huh.NewInput().Title("Max parallel workers").Value(&maxParallelStr).
 					Validate(func(v string) error {
 						n, err := strconv.Atoi(v)
@@ -302,10 +278,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 						return nil
 					}),
 			),
-		}
-
-		if len(modelFields) > 0 {
-			groups = append(groups, huh.NewGroup(modelFields...))
 		}
 
 		groups = append(groups,
@@ -371,13 +343,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			}
 		}
 
-		for _, mb := range modelBindings {
-			if tc, ok := cfg.Tools[mb.name]; ok {
-				tc.Model = mb.value
-				cfg.Tools[mb.name] = tc
-			}
-		}
-
 		if len(phaseConfigs) > 0 {
 			cfg.Orchestrator.Phases = phaseConfigs
 		}
@@ -391,7 +356,9 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	cfg.Project.Name = projectName
 	cfg.Project.IntegrationBranch = integrationBranch
 	cfg.Workers.MaxParallel = maxParallel
+	cfg.Tools = append([]string(nil), available...)
 	cfg.Defaults.Tool = defaultTool
+	cfg.Defaults.Model = defaultModel
 	cfg.Orchestrator.SupervisorTool = supervisorTool
 	cfg.Orchestrator.SupervisorModel = supervisorModel
 
@@ -407,16 +374,9 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	cfg.Quality.TestDelta = qualityTestDelta
 	cfg.Quality.AlignmentCheck = qualityAlignment
 
-	enabledTools := make(map[string]config.ToolConfig)
-	for _, name := range available {
-		if tc, ok := cfg.Tools[name]; ok {
-			enabledTools[name] = tc
-		}
+	if len(cfg.Tools) == 0 {
+		return config.Config{}, "", fmt.Errorf("at least one tool must be enabled")
 	}
-	if len(enabledTools) == 0 {
-		return config.Config{}, "", fmt.Errorf("none of the selected tools are present in config defaults")
-	}
-	cfg.Tools = enabledTools
 
 	return cfg, integrationBranch, nil
 }
@@ -506,19 +466,14 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 	if err := os.MkdirAll(orcaDir, 0755); err != nil {
 		return fmt.Errorf("create .orca directory: %w", err)
 	}
-	cfgPath := filepath.Join(orcaDir, "orca.yaml")
 	dbPath := filepath.Join(orcaDir, "state.db")
-
-	if err := cfg.SaveAnnotated(cfgPath); err != nil {
-		return fmt.Errorf("save config: %w", err)
+	db, err := state.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
 	}
-
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		db, err := state.Open(dbPath)
-		if err != nil {
-			return fmt.Errorf("create database: %w", err)
-		}
-		db.Close()
+	defer db.Close()
+	if err := cfg.SaveToDB(db.DB); err != nil {
+		return fmt.Errorf("save config: %w", err)
 	}
 
 	branchCmd := exec.Command("git", "branch", integrationBranch)
@@ -537,8 +492,20 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 	return nil
 }
 
+func loadConfigFromDBPath(dbPath string) (*config.Config, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, err
+	}
+	db, err := state.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	return config.LoadFromDB(db.DB)
+}
+
 func detectTools() []string {
-	candidates := []string{"claude", "codex", "aider"}
+	candidates := driver.Available()
 	var found []string
 	for _, name := range candidates {
 		if _, err := exec.LookPath(name); err == nil {
@@ -555,7 +522,7 @@ func ensureOrcaIgnored(cwd string) error {
 		return fmt.Errorf("read .gitignore: %w", err)
 	}
 
-	entries := []string{".orca/worktrees/", ".orca/*.db", ".orca/*.db-wal", ".orca/*.db-shm", ".orca/orca.log*"}
+	entries := []string{".orca/"}
 	var needed []string
 	for _, e := range entries {
 		if !containsIgnoreEntry(existing, e) {

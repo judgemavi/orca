@@ -47,6 +47,19 @@ export async function invalidateQueriesForWSEvent(
     return
   }
 
+  if (event.type.startsWith('interaction.')) {
+    const taskId = readString(event.data, 'task_id')
+    await Promise.all([
+      taskId
+        ? queryClient.invalidateQueries({ queryKey: ['task-interactions', taskId] })
+        : Promise.resolve(),
+      taskId
+        ? queryClient.invalidateQueries({ queryKey: ['task-interaction', taskId] })
+        : Promise.resolve(),
+    ])
+    return
+  }
+
   if (event.type === 'session.created' || event.type === 'session.exited') {
     await queryClient.invalidateQueries({ queryKey: ['sessions'] })
     return

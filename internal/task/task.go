@@ -24,12 +24,13 @@ type Task struct {
 }
 
 type TaskReview struct {
-	ID          string     `json:"id"`
-	TaskID      string     `json:"task_id"`
-	Feedback    string     `json:"feedback"`
-	Status      string     `json:"status"` // "pending" | "addressed"
-	CreatedAt   time.Time  `json:"created_at"`
-	AddressedAt *time.Time `json:"addressed_at,omitempty"`
+	ID            string     `json:"id"`
+	TaskID        string     `json:"task_id"`
+	InteractionID *string    `json:"interaction_id,omitempty"`
+	Feedback      string     `json:"feedback"`
+	Status        string     `json:"status"` // "pending" | "addressed"
+	CreatedAt     time.Time  `json:"created_at"`
+	AddressedAt   *time.Time `json:"addressed_at,omitempty"`
 }
 
 type Store struct {
@@ -149,6 +150,7 @@ func (s *Store) Update(id string, fields map[string]interface{}) error {
 
 var deletableStatuses = map[string]bool{
 	"pending":  true,
+	"planned":  true,
 	"review":   true,
 	"approved": true,
 	"failed":   true,
@@ -178,8 +180,7 @@ func (s *Store) Delete(id string) error {
 		desc string
 	}{
 		{`DELETE FROM task_reviews WHERE task_id = ?`, "reviews"},
-		{`DELETE FROM costs WHERE task_id = ?`, "costs"},
-		{`DELETE FROM artifacts WHERE task_id = ?`, "artifacts"},
+		{`DELETE FROM task_interactions WHERE task_id = ?`, "interactions"},
 		{`DELETE FROM task_deps WHERE task_id = ?`, "deps"},
 	} {
 		if _, err := s.db.Exec(q.sql, id); err != nil {

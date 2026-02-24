@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/logging"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 func (r *Registry) runLogs(cmd *cobra.Command, args []string) error {
@@ -48,7 +48,12 @@ func (r *Registry) runLogs(cmd *cobra.Command, args []string) error {
 		since = time.Now().Add(-d)
 	}
 
-	logPath, err := resolveLogPath()
+	_, cfg, _, runtimeErr := r.loadRuntimeOrErr()
+	if runtimeErr != nil {
+		cfg = nil
+	}
+
+	logPath, err := resolveLogPath(cfg)
 	if err != nil {
 		return err
 	}
@@ -182,27 +187,11 @@ func formatHumanEntry(entry logging.Entry) string {
 	return strings.TrimSpace(strings.Join(parts, " "))
 }
 
-func resolveLogPath() (string, error) {
-	cfgPath := filepath.Join(".orca", "orca.yaml")
+func resolveLogPath(cfg *config.Config) (string, error) {
 	defaultPath := filepath.Join(".orca", "orca.log")
-
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return defaultPath, nil
-		}
-		return "", fmt.Errorf("read config: %w", err)
+	if cfg == nil {
+		return defaultPath, nil
 	}
-
-	var cfg struct {
-		Logging struct {
-			File string `yaml:"file"`
-		} `yaml:"logging"`
-	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return "", fmt.Errorf("parse config: %w", err)
-	}
-
 	logPath := strings.TrimSpace(cfg.Logging.File)
 	if logPath == "" {
 		return defaultPath, nil

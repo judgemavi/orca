@@ -1,9 +1,11 @@
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { StatusBadge } from '../components/common/StatusBadge'
+import { useState } from 'react'
+import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel'
 import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar'
 import { TaskTimeline } from '../components/board/task-detail/TaskTimeline'
 import { useTaskDetail } from '../components/board/task-detail/useTaskDetail'
 import { useTasksState } from '../components/board/useTasksState'
+import { StatusBadge } from '../components/common/StatusBadge'
 import { useLastWSEvent } from '../context/ws'
 import type { Config, Task } from '../types'
 
@@ -71,6 +73,7 @@ function TaskDetailContent({
 }) {
   const navigate = useNavigate()
   const lastWSEvent = useLastWSEvent()
+  const [activeLogId, setActiveLogId] = useState<string | null>(null)
 
   const {
     form,
@@ -84,14 +87,12 @@ function TaskDetailContent({
     conflictWorktreePath,
     showManualResolve,
     setShowManualResolve,
-    artifact,
-    artifacts,
-    logs,
-    logsLoading,
-    artifactsLoading,
-    reviews,
-    showDiff,
-    setShowDiff,
+    planInteractions,
+    runInteractions,
+    mergeInteractions,
+    interactionsLoading,
+    planReviews,
+    runReviews,
     feedback,
     setFeedback,
     approving,
@@ -99,40 +100,56 @@ function TaskDetailContent({
     rerunning,
     reviewActionError,
     plan,
-    planDraft,
-    planEditing,
     planGenerating,
     planLoading,
-    planSaving,
     planError,
+    approvingPlan,
+    requestingPlanChanges,
+    planFeedback,
+    planReviewExpanded,
     hasPlan,
     generateTool,
     generateModel,
     generationModels,
     generateModelsFetching,
     generatePlanPending,
-    setPlanDraft,
-    setPlanEditing,
+    runTool,
+    runModel,
+    runModels,
+    runModelsFetching,
+    runPending,
+    rerunTool,
+    rerunModel,
+    rerunModels,
+    rerunModelsFetching,
+    mergeTool,
+    mergeModel,
+    mergeModels,
+    mergeModelsFetching,
+    setPlanFeedback,
+    setPlanReviewExpanded,
     setGenerateTool,
     setGenerateModel,
+    setRunTool,
+    setRunModel,
+    setRerunTool,
+    setRerunModel,
+    setMergeTool,
+    setMergeModel,
     handleDelete,
     handleMerge,
+    handleRun,
     handleGeneratePlan,
-    handleRegeneratePlan,
-    handleSavePlan,
+    handleApprovePlan,
+    handleRequestPlanChanges,
     handleApprove,
     handleRequestChanges,
     handleRerun,
-    refetchArtifacts,
-    refetchLogs,
   } = useTaskDetail({
     task,
     tools,
     lastWSEvent,
     isOperationRunning: isRunning,
-    onClose: () => {
-      void navigate({ to: '/' })
-    },
     onSaved: () => {
       void invalidateBoard()
     },
@@ -144,7 +161,7 @@ function TaskDetailContent({
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-hidden px-4 py-4">
+      <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-4 py-4">
         <div className="mb-3 flex items-center justify-between">
           <Link
             to="/"
@@ -161,142 +178,197 @@ function TaskDetailContent({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)]">
-          <form
-            className="flex flex-1 flex-col gap-3.5 p-5"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void form.handleSubmit()
-            }}
-          >
-            <form.Field name="title">
-              {(field) => (
-                <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-                  Title
-                  {isEditable ? (
-                    <input
-                      className={controlClass}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                    />
-                  ) : (
-                    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
-                      {field.state.value || task.title}
-                    </div>
+          <div className="flex flex-1 flex-col gap-3.5 p-5">
+            <form
+              id="task-edit-form"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void form.handleSubmit()
+              }}
+            >
+              <div className="flex flex-col gap-3.5">
+                <form.Field name="title">
+                  {(field) => (
+                    <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+                      Title
+                      {isEditable ? (
+                        <input
+                          className={controlClass}
+                          value={field.state.value}
+                          onBlur={field.handleBlur}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                        />
+                      ) : (
+                        <div className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
+                          {field.state.value || task.title}
+                        </div>
+                      )}
+                    </label>
                   )}
-                </label>
-              )}
-            </form.Field>
+                </form.Field>
 
-            <form.Field name="description">
-              {(field) => (
-                <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-                  Description
-                  {isEditable ? (
-                    <textarea
-                      className={controlClass}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      rows={4}
-                      placeholder="No description"
-                    />
-                  ) : (
-                    <div className="min-h-[80px] whitespace-pre-wrap rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
-                      {field.state.value || 'No description'}
-                    </div>
+                <form.Field name="description">
+                  {(field) => (
+                    <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+                      Description
+                      {isEditable ? (
+                        <textarea
+                          className={controlClass}
+                          value={field.state.value}
+                          onBlur={field.handleBlur}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          rows={4}
+                          placeholder="No description"
+                        />
+                      ) : (
+                        <div className="min-h-[80px] whitespace-pre-wrap rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
+                          {field.state.value || 'No description'}
+                        </div>
+                      )}
+                    </label>
                   )}
-                </label>
-              )}
-            </form.Field>
+                </form.Field>
+              </div>
+            </form>
 
-            <TaskTimeline
-              task={task}
-              artifacts={artifacts}
-              reviews={reviews}
-              logs={logs}
-              logsLoading={logsLoading}
-              artifactsLoading={artifactsLoading}
-              config={configData}
-              artifact={artifact}
-              showDiff={showDiff}
-              feedback={feedback}
-              approving={approving}
-              requesting={requesting}
-              rerunning={rerunning}
-              reviewActionError={reviewActionError}
-              mergeProgress={mergeProgress}
-              conflictError={conflictError}
-              merging={merging}
-              showManualResolve={showManualResolve}
-              conflictWorktreePath={conflictWorktreePath}
-              isPlanningEditable={isEditable}
-              hasPlan={hasPlan}
-              plan={plan}
-              planDraft={planDraft}
-              planEditing={planEditing}
-              planGenerating={planGenerating}
-              planLoading={planLoading}
-              planSaving={planSaving}
-              planError={planError}
-              tools={tools}
-              generateTool={generateTool}
-              generateModel={generateModel}
-              generationModels={generationModels}
-              generateModelsFetching={generateModelsFetching}
-              generatePlanPending={generatePlanPending}
-              controlClass={controlClass}
-              onRefresh={() => {
-                refetchArtifacts()
-                refetchLogs()
-              }}
-              onToggleDiff={() => setShowDiff((v) => !v)}
-              onFeedbackChange={setFeedback}
-              onApprove={() => {
-                void handleApprove()
-              }}
-              onRequestChanges={() => {
-                void handleRequestChanges()
-              }}
-              onRerun={() => {
-                void handleRerun()
-              }}
-              onMerge={() => {
-                void handleMerge()
-              }}
-              onAutoResolve={() => {
-                void handleMerge('auto')
-              }}
-              onShowManualResolve={() => setShowManualResolve(true)}
-              onStartEdit={() => {
-                setPlanDraft(plan ?? '')
-                setPlanEditing(true)
-              }}
-              onPlanDraftChange={setPlanDraft}
-              onCancelEdit={() => {
-                setPlanDraft(plan ?? '')
-                setPlanEditing(false)
-              }}
-              onSavePlan={() => {
-                void handleSavePlan()
-              }}
-              onRegeneratePlan={handleRegeneratePlan}
-              onGenerateToolChange={(nextTool) => {
-                setGenerateTool(nextTool)
-                setGenerateModel('')
-              }}
-              onGenerateModelChange={setGenerateModel}
-              onGeneratePlan={() => {
-                void handleGeneratePlan()
-              }}
-            />
-          </form>
+            <div className="flex min-h-[420px] flex-col gap-4 lg:flex-row">
+              <div
+                className={[
+                  'min-h-0 w-full transition-all duration-200',
+                  activeLogId ? 'lg:w-3/5' : 'lg:w-full',
+                ].join(' ')}
+              >
+                <TaskTimeline
+                  task={task}
+                  planInteractions={planInteractions}
+                  runInteractions={runInteractions}
+                  mergeInteractions={mergeInteractions}
+                  planReviews={planReviews}
+                  runReviews={runReviews}
+                  interactionsLoading={interactionsLoading}
+                  config={configData}
+                  activeLogId={activeLogId}
+                  feedback={feedback}
+                  approving={approving}
+                  requesting={requesting}
+                  rerunning={rerunning}
+                  reviewActionError={reviewActionError}
+                  mergeProgress={mergeProgress}
+                  conflictError={conflictError}
+                  merging={merging}
+                  showManualResolve={showManualResolve}
+                  conflictWorktreePath={conflictWorktreePath}
+                  isPlanningEditable={isEditable}
+                  hasPlan={hasPlan}
+                  plan={plan}
+                  planGenerating={planGenerating}
+                  planLoading={planLoading}
+                  planError={planError}
+                  approvingPlan={approvingPlan}
+                  requestingPlanChanges={requestingPlanChanges}
+                  planFeedback={planFeedback}
+                  planReviewExpanded={planReviewExpanded}
+                  tools={tools}
+                  generateTool={generateTool}
+                  generateModel={generateModel}
+                  generationModels={generationModels}
+                  generateModelsFetching={generateModelsFetching}
+                  generatePlanPending={generatePlanPending}
+                  runTool={runTool}
+                  runModel={runModel}
+                  runModels={runModels}
+                  runModelsFetching={runModelsFetching}
+                  runPending={runPending}
+                  rerunTool={rerunTool}
+                  rerunModel={rerunModel}
+                  rerunModels={rerunModels}
+                  rerunModelsFetching={rerunModelsFetching}
+                  mergeTool={mergeTool}
+                  mergeModel={mergeModel}
+                  mergeModels={mergeModels}
+                  mergeModelsFetching={mergeModelsFetching}
+                  controlClass={controlClass}
+                  onToggleLogPanel={(interactionId) => {
+                    if (activeLogId === interactionId) {
+                      setActiveLogId(null)
+                      return
+                    }
+                    setActiveLogId(interactionId)
+                  }}
+                  onFeedbackChange={setFeedback}
+                  onApprove={() => {
+                    void handleApprove()
+                  }}
+                  onRequestChanges={(interactionId, tool, model) => {
+                    void handleRequestChanges(interactionId, tool, model)
+                  }}
+                  onRerun={() => {
+                    void handleRerun()
+                  }}
+                  onMerge={() => {
+                    void handleMerge()
+                  }}
+                  onAutoResolve={() => {
+                    void handleMerge('auto')
+                  }}
+                  onShowManualResolve={() => setShowManualResolve(true)}
+                  onPlanFeedbackChange={setPlanFeedback}
+                  onPlanReviewExpandedChange={setPlanReviewExpanded}
+                  onGenerateToolChange={(nextTool) => {
+                    setGenerateTool(nextTool)
+                    setGenerateModel('')
+                  }}
+                  onGenerateModelChange={setGenerateModel}
+                  onGeneratePlan={() => {
+                    void handleGeneratePlan()
+                  }}
+                  onApprovePlan={() => {
+                    void handleApprovePlan()
+                  }}
+                  onRequestPlanChanges={(interactionId, feedbackValue, tool, model) => {
+                    void handleRequestPlanChanges(interactionId, feedbackValue, tool, model)
+                  }}
+                  onRun={() => {
+                    void handleRun()
+                  }}
+                  onRunToolChange={(nextTool) => {
+                    setRunTool(nextTool)
+                    setRunModel('')
+                  }}
+                  onRunModelChange={setRunModel}
+                  onRerunToolChange={(nextTool) => {
+                    setRerunTool(nextTool)
+                    setRerunModel('')
+                  }}
+                  onRerunModelChange={setRerunModel}
+                  onMergeToolChange={(nextTool) => {
+                    setMergeTool(nextTool)
+                    setMergeModel('')
+                  }}
+                  onMergeModelChange={setMergeModel}
+                />
+              </div>
+
+              {activeLogId && (
+                <div className="min-h-0 w-full transform transition-all duration-200 ease-out lg:w-2/5">
+                  <InteractionLogPanel
+                    taskId={task.id}
+                    interactionId={activeLogId}
+                    onClose={() => {
+                      setActiveLogId(null)
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
 
           <TaskActionsBar
             isEditable={isEditable}
             isDeletable={isDeletable}
             deleting={deleting}
             saving={saving}
+            formId="task-edit-form"
             form={form}
             onDelete={() => {
               void handleDelete()

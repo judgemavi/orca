@@ -77,7 +77,7 @@ func (s *Server) toolDefinitions() []toolDef {
 				"properties": map[string]interface{}{
 					"status": map[string]interface{}{
 						"type":        "string",
-						"description": "Filter by status: pending, running, review, approved, merged, failed",
+						"description": "Filter by status: pending, planned, running, review, approved, merged, failed",
 					},
 				},
 			},
@@ -92,6 +92,14 @@ func (s *Server) toolDefinitions() []toolDef {
 						"type":        "array",
 						"items":       map[string]interface{}{"type": "string"},
 						"description": "Task IDs to run. If empty, runs all ready tasks up to max_parallel.",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool override for this run.",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model override for this run.",
 					},
 				},
 			},
@@ -252,15 +260,67 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
+			Name:        "tasks_approve_plan",
+			Description: "Approve a generated plan for a pending task, moving it to 'planned'.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
 			Name:        "tasks_request_changes",
 			Description: "Reject a task in review, store feedback, and re-run the worker with that feedback.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"task_id":  map[string]interface{}{"type": "string"},
-					"feedback": map[string]interface{}{"type": "string", "description": "What needs to change"},
+					"task_id": map[string]interface{}{"type": "string"},
+					"feedback": map[string]interface{}{
+						"type":        "string",
+						"description": "What needs to change",
+					},
+					"interaction_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional interaction ID linked to this review request.",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool override for rerun.",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model override for rerun.",
+					},
 				},
 				"required": []string{"task_id", "feedback"},
+			},
+		},
+		{
+			Name:        "tasks_request_plan_changes",
+			Description: "Request changes to a pending task's plan, recording feedback and regenerating the plan.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id":        map[string]interface{}{"type": "string"},
+					"feedback":       map[string]interface{}{"type": "string", "description": "What needs to change in the plan"},
+					"interaction_id": map[string]interface{}{"type": "string", "description": "Completed plan interaction ID being reviewed"},
+					"tool":           map[string]interface{}{"type": "string", "description": "Tool override for plan regeneration (optional)"},
+					"model":          map[string]interface{}{"type": "string", "description": "Model override for plan regeneration (optional)"},
+				},
+				"required": []string{"task_id", "feedback", "interaction_id"},
+			},
+		},
+		{
+			Name:        "tasks_reviews",
+			Description: "List reviews for a task, including feedback, status (pending/addressed), and linked interaction ID.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
 			},
 		},
 		{
@@ -314,7 +374,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "quality_results",
-			Description: "Get latest quality gate results for a task from stored artifacts.",
+			Description: "Get latest quality gate results for a task from run-phase task interactions.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -324,6 +384,46 @@ func (s *Server) toolDefinitions() []toolDef {
 					},
 				},
 				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "interactions_list",
+			Description: "List LLM interaction logs for a task, with optional filtering by phase and status.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Task ID to list interactions for.",
+					},
+					"phase": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional phase filter: plan, run, review, merge.",
+					},
+					"status": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional status filter: running, completed, failed.",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "interaction_get",
+			Description: "Get the formatted log content of a specific interaction. Use interactions_list to find IDs first.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"interaction_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Interaction ID from interactions_list.",
+					},
+					"raw": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Return raw NDJSON content instead of formatted text. Default: false.",
+					},
+				},
+				"required": []string{"interaction_id"},
 			},
 		},
 		{

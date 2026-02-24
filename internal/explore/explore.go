@@ -12,56 +12,107 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
 
 const contextFile = ".orca/context.md"
 
-// Explorer runs a tool headlessly to map a codebase.
 type Explorer struct {
-	toolCfg config.ToolConfig
-	repoDir string
-	goal    string
+	toolName     string
+	driver       driver.Driver
+	model        string
+	timeout      time.Duration
+	repoDir      string
+	goal         string
+	interactions *interaction.Store
 }
 
-// New creates an Explorer with the given tool config and repo directory.
-func New(toolCfg config.ToolConfig, repoDir string) *Explorer {
-	return &Explorer{toolCfg: toolCfg, repoDir: repoDir}
+func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Explorer {
+	var store *interaction.Store
+	if len(interactions) > 0 {
+		store = interactions[0]
+	}
+	return &Explorer{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
-// WithGoal sets an optional user goal to guide exploration context.
 func (e *Explorer) WithGoal(goal string) *Explorer {
 	e.goal = goal
 	return e
 }
 
-// Run executes the exploration and writes results to .orca/context.md.
 func (e *Explorer) Run() (string, error) {
-	adapter, err := worker.NewAdapter(e.toolCfg)
-	if err != nil {
-		return "", fmt.Errorf("create adapter: %w", err)
-	}
+	adapter := worker.NewAdapter(e.driver, e.model, e.timeout)
 
 	prompt := prompts.Explore
 	if e.goal != "" {
 		prompt += "\n\n## User Goal\n\n" + e.goal + "\n\nIncorporate this goal into your analysis - note what exists that supports it and what's missing."
 	}
 
+	var writer *interaction.Writer
+	if e.interactions != nil {
+		w, beginErr := e.interactions.Begin(nil, "explore", e.toolName)
+		if beginErr == nil {
+			writer = w
+		}
+	}
+	var (
+		outputCh   chan worker.OutputLine
+		outputDone chan struct{}
+	)
+	if writer != nil {
+		outputCh = make(chan worker.OutputLine, 256)
+		outputDone = make(chan struct{})
+		adapter.SetOutputChan(outputCh)
+		go func() {
+			defer close(outputDone)
+			for line := range outputCh {
+				if line.Stream == "raw" {
+					_ = writer.WriteString(line.Line + "\n")
+				}
+			}
+		}()
+	}
+
 	result, err := adapter.Execute(context.Background(), "explore", prompt, e.repoDir)
+	if outputCh != nil {
+		close(outputCh)
+		<-outputDone
+	}
+	stdout := ""
+	exitCode := -1
+	stderr := ""
+	if result != nil {
+		stdout = result.Stdout
+		exitCode = result.ExitCode
+		stderr = result.Stderr
+	}
+	if writer != nil {
+		status := "completed"
+		opts := []interaction.FinishOption{}
+		if result != nil {
+			opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
+		}
+		if err != nil {
+			status = "failed"
+			opts = append(opts, interaction.WithError(err.Error()))
+		} else if exitCode != 0 {
+			status = "failed"
+			opts = append(opts, interaction.WithError(fmt.Sprintf("explorer exited %d: %s", exitCode, stderr)))
+		}
+		_ = e.interactions.Finish(writer.ID(), status, opts...)
+		_ = writer.Close()
+	}
 	if err != nil {
 		return "", fmt.Errorf("execute explorer: %w", err)
 	}
-
-	if result.ExitCode != 0 {
-		return "", fmt.Errorf("explorer exited %d: stderr=%s stdout=%s",
-			result.ExitCode, truncate(result.Stderr, 500), truncate(result.Stdout, 500))
+	if exitCode != 0 {
+		return "", fmt.Errorf("explorer exited %d: stderr=%s stdout=%s", exitCode, truncate(stderr, 500), truncate(stdout, 500))
 	}
 
-	// Extract text based on the tool's configured output mode.
-	content := worker.ExtractOutput(e.toolCfg.Output, result.Stdout, e.repoDir)
-
+	content := stdout
 	outPath := filepath.Join(e.repoDir, contextFile)
 	if err := os.WriteFile(outPath, []byte(content), 0644); err != nil {
 		return "", fmt.Errorf("write context: %w", err)
@@ -74,12 +125,10 @@ func (e *Explorer) Run() (string, error) {
 	return outPath, nil
 }
 
-// ContextPath returns the expected context file path for a repo.
 func ContextPath(repoDir string) string {
 	return filepath.Join(repoDir, contextFile)
 }
 
-// LoadContext reads the context file if it exists. Returns empty string if not found.
 func LoadContext(repoDir string) string {
 	data, err := os.ReadFile(ContextPath(repoDir))
 	if err != nil {
@@ -88,7 +137,6 @@ func LoadContext(repoDir string) string {
 	return string(data)
 }
 
-// WriteManualContext writes user-provided content to the context file.
 func WriteManualContext(repoDir, content string) (string, error) {
 	outPath := ContextPath(repoDir)
 	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
@@ -104,7 +152,6 @@ func WriteManualContext(repoDir, content string) (string, error) {
 	return outPath, nil
 }
 
-// WriteManualContextFromFile copies a file's contents to the context file.
 func WriteManualContextFromFile(repoDir, sourcePath string) (string, error) {
 	data, err := os.ReadFile(sourcePath)
 	if err != nil {
@@ -113,8 +160,6 @@ func WriteManualContextFromFile(repoDir, sourcePath string) (string, error) {
 	return WriteManualContext(repoDir, string(data))
 }
 
-// IsStale returns true if the codebase file tree has changed since exploration.
-// Returns false if no hash file exists (never explored = not stale, just missing).
 func IsStale(repoDir string) (bool, error) {
 	hashPath := filepath.Join(repoDir, ".orca/context.hash")
 	stored, err := os.ReadFile(hashPath)
@@ -128,7 +173,6 @@ func IsStale(repoDir string) (bool, error) {
 	return strings.TrimSpace(string(stored)) != current, nil
 }
 
-// ContextAge returns how old the context file is. Returns 0 if not found.
 func ContextAge(repoDir string) time.Duration {
 	info, err := os.Stat(ContextPath(repoDir))
 	if err != nil {
@@ -137,7 +181,6 @@ func ContextAge(repoDir string) time.Duration {
 	return time.Since(info.ModTime())
 }
 
-// truncate returns s cut to maxLen, appending "..." if truncated.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -145,7 +188,6 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// hashFileTree returns a sha256 hex digest of `git ls-files` output in repoDir.
 func hashFileTree(repoDir string) (string, error) {
 	cmd := exec.Command("git", "ls-files")
 	cmd.Dir = repoDir

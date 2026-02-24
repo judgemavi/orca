@@ -13,13 +13,15 @@ const STATUS_PRIORITY: Record<Task['status'], number> = {
   running: 0,
   review: 1,
   failed: 2,
-  pending: 3,
-  approved: 4,
-  merged: 5,
+  planned: 3,
+  pending: 4,
+  approved: 5,
+  merged: 6,
 }
 
 const STATUS_STYLES: Record<Task['status'], string> = {
   pending: 'bg-slate-500/15 text-slate-300',
+  planned: 'bg-indigo-500/15 text-indigo-300',
   running: 'bg-blue-500/15 text-blue-300',
   review: 'bg-amber-500/15 text-amber-300',
   failed: 'bg-red-500/15 text-red-300',

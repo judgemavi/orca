@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/decompose"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 )
 
@@ -24,30 +25,15 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 		return nil, fmt.Errorf("goal is required")
 	}
 
-	var (
-		toolCfg config.ToolConfig
-		found   bool
-	)
-	if args.Tool != "" {
-		tc, ok := s.config.Tools[args.Tool]
-		if !ok {
-			return nil, fmt.Errorf("tool %q not found in config", args.Tool)
-		}
-		toolCfg = tc
-		found = true
-	} else {
-		for _, tc := range s.config.Tools {
-			toolCfg = tc
-			found = true
-			break
-		}
+	toolName, d, err := s.config.ResolveToolForPhase("plan", args.Tool)
+	if err != nil {
+		return nil, err
 	}
-	if !found {
-		return nil, fmt.Errorf("no tools configured")
-	}
+	model := s.config.ResolveModelForPhase("plan", "", d)
 
-	d := decompose.New(toolCfg, s.repoDir)
-	tasks, err := d.Run(args.Goal)
+	interactions := interaction.NewStore(s.db, ".orca/interactions")
+	decomposer := decompose.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions)
+	tasks, _, err := decomposer.Run(nil, args.Goal)
 	if err != nil {
 		return nil, fmt.Errorf("decompose: %w", err)
 	}
@@ -116,18 +102,16 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 		return nil, err
 	}
 
-	_, toolCfg, err := s.config.ResolveToolForPhase("plan", args.Tool)
+	toolName, d, err := s.config.ResolveToolForPhase("plan", args.Tool)
 	if err != nil {
 		return nil, err
 	}
+	model := s.config.ResolveModelForPhase("plan", args.Model, d)
 
-	generator := planpkg.New(toolCfg, s.repoDir)
+	interactions := interaction.NewStore(s.db, ".orca/interactions")
+	generator := planpkg.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions)
 	var planContent string
-	if args.Model != "" {
-		planContent, err = generator.GenerateWithModel(t.Title, t.Description, args.Model)
-	} else {
-		planContent, err = generator.Generate(t.Title, t.Description)
-	}
+	planContent, err = generator.Generate(taskID, t.Title, t.Description)
 	if err != nil {
 		return nil, fmt.Errorf("generate plan: %w", err)
 	}
@@ -170,18 +154,15 @@ func (s *Server) HandleTasksPlanEvaluateTool(argsRaw json.RawMessage) (interface
 		return nil, err
 	}
 
-	_, toolCfg, err := s.config.ResolveToolForPhase("explore", args.Tool)
+	toolName, d, err := s.config.ResolveToolForPhase("explore", args.Tool)
 	if err != nil {
 		return nil, err
 	}
+	model := s.config.ResolveModelForPhase("explore", args.Model, d)
 
-	evaluator := evaluate.New(toolCfg, s.repoDir)
+	evaluator := evaluate.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions"))
 	var evaluationResult *evaluate.EvaluationResult
-	if args.Model != "" {
-		evaluationResult, err = evaluator.EvaluateWithModel(t.Title, t.Description, args.Model)
-	} else {
-		evaluationResult, err = evaluator.Evaluate(t.Title, t.Description)
-	}
+	evaluationResult, err = evaluator.Evaluate(taskID, t.Title, t.Description)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate plan: %w", err)
 	}

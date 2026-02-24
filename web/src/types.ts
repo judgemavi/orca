@@ -5,6 +5,7 @@ export interface Task {
   parent_id: string | null
   status:
     | 'pending'
+    | 'planned'
     | 'running'
     | 'review'
     | 'approved'
@@ -19,10 +20,11 @@ export interface Task {
 export interface TaskReview {
   id: string
   task_id: string
+  interaction_id?: string
   feedback: string
   status: 'pending' | 'addressed'
   created_at: string
-  addressed_at: string | null
+  addressed_at?: string
 }
 
 export interface PhaseOverride {
@@ -95,6 +97,28 @@ export interface Artifact {
   exit_code: number
   duration_ms: number
   created_at: string
+}
+
+export interface Interaction {
+  id: string
+  task_id: string | null
+  phase: string
+  attempt: number
+  tool: string
+  status: 'running' | 'completed' | 'failed'
+  error?: string
+  diff?: string
+  exit_code?: number
+  duration_ms?: number
+  input_tokens: number
+  output_tokens: number
+  estimated_cost: number
+  started_at: string
+  finished_at: string | null
+}
+
+export interface InteractionWithContent extends Interaction {
+  content: string
 }
 
 export interface ProposedTask {

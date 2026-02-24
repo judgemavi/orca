@@ -18,7 +18,9 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 
 	assertMigrationVersions(t, db.DB, len(migrations))
 	assertTaskColumns(t, db.DB, "plan", "session_id")
-	assertArtifactColumns(t, db.DB, "quality_json")
+	assertInteractionColumns(t, db.DB, "quality_json", "log_path", "phase", "status")
+	assertReviewColumns(t, db.DB, "interaction_id")
+	assertTableExists(t, db.DB, "config")
 	assertDBVersion(t, db, 0)
 
 	if err := db.Close(); err != nil {
@@ -33,7 +35,9 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 
 	assertMigrationVersions(t, db.DB, len(migrations))
 	assertTaskColumns(t, db.DB, "plan", "session_id")
-	assertArtifactColumns(t, db.DB, "quality_json")
+	assertInteractionColumns(t, db.DB, "quality_json", "log_path", "phase", "status")
+	assertReviewColumns(t, db.DB, "interaction_id")
+	assertTableExists(t, db.DB, "config")
 	assertDBVersion(t, db, 0)
 }
 
@@ -60,7 +64,9 @@ func TestOpenMigratesLegacyUnversionedDB(t *testing.T) {
 
 	assertMigrationVersions(t, db.DB, len(migrations))
 	assertTaskColumns(t, db.DB, "plan", "session_id")
-	assertArtifactColumns(t, db.DB, "quality_json")
+	assertInteractionColumns(t, db.DB, "quality_json", "log_path", "phase", "status")
+	assertReviewColumns(t, db.DB, "interaction_id")
+	assertTableExists(t, db.DB, "config")
 	assertDBVersion(t, db, 0)
 }
 
@@ -127,18 +133,34 @@ func assertTaskColumns(t *testing.T, db *sql.DB, columns ...string) {
 	}
 }
 
-func assertArtifactColumns(t *testing.T, db *sql.DB, columns ...string) {
+func assertInteractionColumns(t *testing.T, db *sql.DB, columns ...string) {
 	t.Helper()
 	for _, column := range columns {
 		var count int
 		if err := db.QueryRow(
-			`SELECT COUNT(*) FROM pragma_table_info('artifacts') WHERE name = ?`,
+			`SELECT COUNT(*) FROM pragma_table_info('task_interactions') WHERE name = ?`,
 			column,
 		).Scan(&count); err != nil {
-			t.Fatalf("check artifacts.%s column: %v", column, err)
+			t.Fatalf("check task_interactions.%s column: %v", column, err)
 		}
 		if count != 1 {
-			t.Fatalf("artifacts.%s missing", column)
+			t.Fatalf("task_interactions.%s missing", column)
+		}
+	}
+}
+
+func assertReviewColumns(t *testing.T, db *sql.DB, columns ...string) {
+	t.Helper()
+	for _, column := range columns {
+		var count int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info('task_reviews') WHERE name = ?`,
+			column,
+		).Scan(&count); err != nil {
+			t.Fatalf("check task_reviews.%s column: %v", column, err)
+		}
+		if count != 1 {
+			t.Fatalf("task_reviews.%s missing", column)
 		}
 	}
 }
@@ -152,6 +174,20 @@ func assertDBVersion(t *testing.T, db *DB, want int64) {
 	}
 	if got != want {
 		t.Fatalf("db_version = %d, want %d", got, want)
+	}
+}
+
+func assertTableExists(t *testing.T, db *sql.DB, table string) {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(
+		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`,
+		table,
+	).Scan(&count); err != nil {
+		t.Fatalf("check table %s: %v", table, err)
+	}
+	if count != 1 {
+		t.Fatalf("table %s missing", table)
 	}
 }
 
@@ -183,40 +219,33 @@ CREATE TABLE IF NOT EXISTS task_reviews (
 	addressed_at DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS artifacts (
-	id           TEXT PRIMARY KEY,
-	task_id      TEXT NOT NULL REFERENCES tasks(id),
-	run_id       TEXT,
-	diff         TEXT,
-	stdout       TEXT,
-	stderr       TEXT,
-	exit_code    INTEGER,
-	duration_ms  INTEGER,
-	quality_json TEXT,
-	created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS costs (
+CREATE TABLE IF NOT EXISTS task_interactions (
 	id             TEXT PRIMARY KEY,
-	run_id         TEXT,
 	task_id        TEXT REFERENCES tasks(id),
+	phase          TEXT NOT NULL,
+	attempt        INTEGER NOT NULL DEFAULT 1,
+	run_id         TEXT,
 	tool           TEXT NOT NULL,
+	model          TEXT,
+	log_path       TEXT NOT NULL,
+	status         TEXT NOT NULL DEFAULT 'running',
+	error          TEXT,
+	diff           TEXT,
+	exit_code      INTEGER,
+	duration_ms    INTEGER,
+	quality_json   TEXT,
 	input_tokens   INTEGER DEFAULT 0,
 	output_tokens  INTEGER DEFAULT 0,
 	estimated_cost REAL DEFAULT 0.0,
-	created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+	started_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+	finished_at    DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS operations (
-	id         TEXT PRIMARY KEY,
-	type       TEXT NOT NULL,
-	target_id  TEXT NOT NULL,
-	status     TEXT NOT NULL DEFAULT 'running',
-	result     TEXT,
-	error      TEXT,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+CREATE INDEX IF NOT EXISTS idx_interactions_task_phase
+	ON task_interactions(task_id, phase);
+
+CREATE INDEX IF NOT EXISTS idx_interactions_status
+	ON task_interactions(status);
 
 CREATE TABLE IF NOT EXISTS sessions (
 	id          TEXT PRIMARY KEY,
@@ -258,14 +287,14 @@ BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;
 
-CREATE TRIGGER IF NOT EXISTS operations_version_insert
-AFTER INSERT ON operations
+CREATE TRIGGER IF NOT EXISTS interactions_version_insert
+AFTER INSERT ON task_interactions
 BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;
 
-CREATE TRIGGER IF NOT EXISTS operations_version_update
-AFTER UPDATE ON operations
+CREATE TRIGGER IF NOT EXISTS interactions_version_update
+AFTER UPDATE ON task_interactions
 BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;

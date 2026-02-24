@@ -1,22 +1,21 @@
 import { TaskExecutionSection } from './TaskExecutionSection'
 import { TaskMergeStatus } from './TaskMergeStatus'
 import { TaskPlanSection } from './TaskPlanSection'
-import { TaskReviewSection } from './TaskReviewSection'
 import { TimelinePhase } from './TimelinePhase'
-import type { Artifact, Config, ReviewArtifact, Task, TaskReview } from '../../../types'
+import type { Config, Interaction, Task, TaskReview } from '../../../types'
 
 type PhaseState = 'disabled' | 'active' | 'completed'
 
 interface Props {
   task: Task
-  artifacts: Artifact[]
-  reviews: TaskReview[]
-  logs: string[]
-  logsLoading: boolean
-  artifactsLoading: boolean
+  planInteractions: Interaction[]
+  runInteractions: Interaction[]
+  mergeInteractions: Interaction[]
+  planReviews: TaskReview[]
+  runReviews: TaskReview[]
+  interactionsLoading: boolean
   config: Config
-  artifact: ReviewArtifact | null
-  showDiff: boolean
+  activeLogId: string | null
   feedback: string
   approving: boolean
   requesting: boolean
@@ -30,74 +29,96 @@ interface Props {
   isPlanningEditable: boolean
   hasPlan: boolean
   plan: string | null
-  planDraft: string
-  planEditing: boolean
   planGenerating: boolean
   planLoading: boolean
-  planSaving: boolean
   planError: string | null
+  approvingPlan: boolean
+  requestingPlanChanges: boolean
+  planFeedback: string
+  planReviewExpanded: boolean
   tools: string[]
   generateTool: string
   generateModel: string
   generationModels: Array<{ id: string; name: string }>
   generateModelsFetching: boolean
   generatePlanPending: boolean
+  runTool: string
+  runModel: string
+  runModels: Array<{ id: string; name: string }>
+  runModelsFetching: boolean
+  runPending: boolean
+  rerunTool: string
+  rerunModel: string
+  rerunModels: Array<{ id: string; name: string }>
+  rerunModelsFetching: boolean
+  mergeTool: string
+  mergeModel: string
+  mergeModels: Array<{ id: string; name: string }>
+  mergeModelsFetching: boolean
   controlClass: string
-  onRefresh: () => void
-  onToggleDiff: () => void
+  onToggleLogPanel: (interactionId: string) => void
   onFeedbackChange: (value: string) => void
   onApprove: () => void
-  onRequestChanges: () => void
+  onRequestChanges: (interactionId?: string, tool?: string, model?: string) => void
   onRerun: () => void
   onMerge: () => void
   onAutoResolve: () => void
   onShowManualResolve: () => void
-  onStartEdit: () => void
-  onPlanDraftChange: (value: string) => void
-  onCancelEdit: () => void
-  onSavePlan: () => void
-  onRegeneratePlan: () => void
+  onPlanFeedbackChange: (value: string) => void
+  onPlanReviewExpandedChange: (value: boolean) => void
   onGenerateToolChange: (value: string) => void
   onGenerateModelChange: (value: string) => void
   onGeneratePlan: () => void
+  onApprovePlan: () => void
+  onRequestPlanChanges: (
+    interactionId?: string,
+    feedback?: string,
+    tool?: string,
+    model?: string,
+  ) => void
+  onRun: () => void
+  onRunToolChange: (value: string) => void
+  onRunModelChange: (value: string) => void
+  onRerunToolChange: (value: string) => void
+  onRerunModelChange: (value: string) => void
+  onMergeToolChange: (value: string) => void
+  onMergeModelChange: (value: string) => void
 }
 
-function stateFor(taskStatus: Task['status'], phase: 'planning' | 'execution' | 'review' | 'merge'): PhaseState {
-  const sequence: Array<'planning' | 'execution' | 'review' | 'merge'> = [
-    'planning',
-    'execution',
-    'review',
-    'merge',
-  ]
-
-  const activeByStatus: Record<Task['status'], 'planning' | 'execution' | 'review' | 'merge'> = {
-    pending: 'planning',
-    running: 'execution',
-    review: 'review',
-    failed: 'review',
-    approved: 'merge',
-    merged: 'merge',
+function stateFor(task: Task, phase: 'planning' | 'execution' | 'merge'): PhaseState {
+  if (phase === 'planning') {
+    return task.status === 'pending' ? 'active' : 'completed'
   }
 
-  const active = activeByStatus[taskStatus]
-  const phaseIndex = sequence.indexOf(phase)
-  const activeIndex = sequence.indexOf(active)
+  if (phase === 'execution') {
+    if (task.status === 'pending') return 'disabled'
+    if (task.status === 'planned') return 'active'
+    if (task.status === 'running' || task.status === 'review' || task.status === 'failed') {
+      return 'active'
+    }
+    if (task.status === 'approved' || task.status === 'merged') return 'completed'
+    return 'disabled'
+  }
 
-  if (phaseIndex < activeIndex) return 'completed'
-  if (phaseIndex === activeIndex) return taskStatus === 'merged' ? 'completed' : 'active'
+  if (phase === 'merge') {
+    if (task.status === 'approved') return 'active'
+    if (task.status === 'merged') return 'completed'
+    return 'disabled'
+  }
+
   return 'disabled'
 }
 
 export function TaskTimeline({
   task,
-  artifacts,
-  reviews,
-  logs,
-  logsLoading,
-  artifactsLoading,
+  planInteractions,
+  runInteractions,
+  mergeInteractions,
+  planReviews,
+  runReviews,
+  interactionsLoading,
   config,
-  artifact,
-  showDiff,
+  activeLogId,
   feedback,
   approving,
   requesting,
@@ -111,21 +132,34 @@ export function TaskTimeline({
   isPlanningEditable,
   hasPlan,
   plan,
-  planDraft,
-  planEditing,
   planGenerating,
   planLoading,
-  planSaving,
   planError,
+  approvingPlan,
+  requestingPlanChanges,
+  planFeedback,
+  planReviewExpanded,
   tools,
   generateTool,
   generateModel,
   generationModels,
   generateModelsFetching,
   generatePlanPending,
+  runTool,
+  runModel,
+  runModels,
+  runModelsFetching,
+  runPending,
+  rerunTool,
+  rerunModel,
+  rerunModels,
+  rerunModelsFetching,
+  mergeTool,
+  mergeModel,
+  mergeModels,
+  mergeModelsFetching,
   controlClass,
-  onRefresh,
-  onToggleDiff,
+  onToggleLogPanel,
   onFeedbackChange,
   onApprove,
   onRequestChanges,
@@ -133,19 +167,25 @@ export function TaskTimeline({
   onMerge,
   onAutoResolve,
   onShowManualResolve,
-  onStartEdit,
-  onPlanDraftChange,
-  onCancelEdit,
-  onSavePlan,
-  onRegeneratePlan,
+  onPlanFeedbackChange,
+  onPlanReviewExpandedChange,
   onGenerateToolChange,
   onGenerateModelChange,
   onGeneratePlan,
+  onApprovePlan,
+  onRequestPlanChanges,
+  onRun,
+  onRunToolChange,
+  onRunModelChange,
+  onRerunToolChange,
+  onRerunModelChange,
+  onMergeToolChange,
+  onMergeModelChange,
 }: Props) {
-  const planningState = stateFor(task.status, 'planning')
-  const executionState = stateFor(task.status, 'execution')
-  const reviewState = stateFor(task.status, 'review')
-  const mergeState = stateFor(task.status, 'merge')
+  const taskForPhaseState = { ...task, plan: plan ?? task.plan }
+  const planningState = stateFor(taskForPhaseState, 'planning')
+  const executionState = stateFor(taskForPhaseState, 'execution')
+  const mergeState = stateFor(taskForPhaseState, 'merge')
   const hasDefaultTool = Boolean(config.defaults?.tool)
 
   return (
@@ -159,16 +199,17 @@ export function TaskTimeline({
           </div>
         )}
         <TaskPlanSection
-          isEditable={isPlanningEditable}
+          canGenerate={isPlanningEditable && !hasPlan}
+          canReviewPlan={isPlanningEditable && hasPlan}
           readOnly={planningState !== 'active'}
           hasPlan={hasPlan}
-          plan={plan}
-          planDraft={planDraft}
-          planEditing={planEditing}
           planGenerating={planGenerating}
           planLoading={planLoading}
-          planSaving={planSaving}
           planError={planError}
+          approvingPlan={approvingPlan}
+          requestingPlanChanges={requestingPlanChanges}
+          planFeedback={planFeedback}
+          planReviewExpanded={planReviewExpanded}
           tools={tools}
           generateTool={generateTool}
           generateModel={generateModel}
@@ -176,60 +217,79 @@ export function TaskTimeline({
           generateModelsFetching={generateModelsFetching}
           generatePlanPending={generatePlanPending}
           controlClass={controlClass}
-          onStartEdit={onStartEdit}
-          onPlanDraftChange={onPlanDraftChange}
-          onCancelEdit={onCancelEdit}
-          onSavePlan={onSavePlan}
-          onRegeneratePlan={onRegeneratePlan}
+          planInteractions={planInteractions}
+          reviews={planReviews}
+          activeLogId={activeLogId}
+          onToggleLog={onToggleLogPanel}
+          onPlanFeedbackChange={onPlanFeedbackChange}
+          onPlanReviewExpandedChange={onPlanReviewExpandedChange}
           onGenerateToolChange={onGenerateToolChange}
           onGenerateModelChange={onGenerateModelChange}
           onGeneratePlan={onGeneratePlan}
+          onApprovePlan={onApprovePlan}
+          onRequestPlanChanges={onRequestPlanChanges}
         />
       </TimelinePhase>
 
       <TimelinePhase phase="execution" state={executionState}>
         <TaskExecutionSection
           task={task}
-          artifacts={artifacts}
-          logs={logs}
-          logsLoading={logsLoading}
-          artifactsLoading={artifactsLoading}
-          readOnly={executionState !== 'active'}
-          onRefresh={onRefresh}
-        />
-      </TimelinePhase>
-
-      <TimelinePhase phase="review" state={reviewState}>
-        <TaskReviewSection
-          task={task}
-          artifact={artifact}
-          showDiff={showDiff}
+          tools={tools}
+          runTool={runTool}
+          runModel={runModel}
+          runModels={runModels}
+          runModelsFetching={runModelsFetching}
+          runPending={runPending}
+          runInteractions={runInteractions}
+          interactionsLoading={interactionsLoading}
+          activeLogId={activeLogId}
           feedback={feedback}
           approving={approving}
           requesting={requesting}
           rerunning={rerunning}
           reviewActionError={reviewActionError}
-          reviews={reviews}
-          readOnly={reviewState !== 'active'}
-          onToggleDiff={onToggleDiff}
+          reviews={runReviews}
+          rerunTool={rerunTool}
+          rerunModel={rerunModel}
+          rerunModels={rerunModels}
+          rerunModelsFetching={rerunModelsFetching}
+          controlClass={controlClass}
+          readOnly={executionState !== 'active'}
+          onToggleLog={onToggleLogPanel}
           onFeedbackChange={onFeedbackChange}
           onApprove={onApprove}
           onRequestChanges={onRequestChanges}
+          onRun={onRun}
           onRerun={onRerun}
+          onRunToolChange={onRunToolChange}
+          onRunModelChange={onRunModelChange}
+          onRerunToolChange={onRerunToolChange}
+          onRerunModelChange={onRerunModelChange}
         />
       </TimelinePhase>
 
       <TimelinePhase phase="merge" state={mergeState}>
         <TaskMergeStatus
+          tools={tools}
+          mergeTool={mergeTool}
+          mergeModel={mergeModel}
+          mergeModels={mergeModels}
+          mergeModelsFetching={mergeModelsFetching}
+          controlClass={controlClass}
           mergeProgress={mergeProgress}
           conflictError={conflictError}
           merging={merging}
           showManualResolve={showManualResolve}
           conflictWorktreePath={conflictWorktreePath}
+          mergeInteractions={mergeInteractions}
+          activeLogId={activeLogId}
           readOnly={mergeState !== 'active'}
+          onToggleLog={onToggleLogPanel}
           onMerge={onMerge}
           onAutoResolve={onAutoResolve}
           onShowManualResolve={onShowManualResolve}
+          onMergeToolChange={onMergeToolChange}
+          onMergeModelChange={onMergeModelChange}
         />
       </TimelinePhase>
     </div>

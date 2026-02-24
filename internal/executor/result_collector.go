@@ -9,9 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/quality"
 	"github.com/jasjeetmavi/orca/internal/worker"
 )
@@ -32,7 +30,7 @@ func (e *Executor) collectResult(prepared []taskInfo, baselineSnapshot *quality.
 
 	outputCh := make(chan worker.OutputLine, 4096)
 	outputDone := make(chan struct{})
-	go e.captureOutput(outputCh, outputDone)
+	go e.captureOutput(outputCh, outputDone, preparedWriters(prepared))
 
 	var wg sync.WaitGroup
 	for i, ti := range prepared {
@@ -77,6 +75,7 @@ func (e *Executor) collectResult(prepared []taskInfo, baselineSnapshot *quality.
 
 			slog.Info("task.started", "task_id", info.taskID, "tool", info.toolName, "run_id", e.runID)
 			taskResult := e.runTask(runCtx, info, outputCh)
+			taskResult.Model = info.model
 			results[idx] = taskResult
 			slog.Info("task.completed", "task_id", info.taskID, "status", taskResult.Status, "exit_code", taskResult.ExitCode, "duration", taskResult.Duration)
 			e.emitDone(info.taskID, taskResult.ExitCode)
@@ -89,19 +88,24 @@ func (e *Executor) collectResult(prepared []taskInfo, baselineSnapshot *quality.
 	return results
 }
 
-func (e *Executor) captureOutput(outputCh <-chan worker.OutputLine, done chan<- struct{}) {
+func (e *Executor) captureOutput(outputCh <-chan worker.OutputLine, done chan<- struct{}, writers map[string]*interaction.Writer) {
 	defer close(done)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	batch := make([]worker.OutputLine, 0, 128)
 	flush := func() {
-		if e.outputHook == nil || len(batch) == 0 {
+		if len(batch) == 0 {
 			batch = batch[:0]
 			return
 		}
 		for _, line := range batch {
-			e.outputHook(line)
+			if w := writers[line.TaskID]; w != nil && line.Stream == "raw" {
+				_ = w.WriteString(line.Line + "\n")
+			}
+			if e.outputHook != nil {
+				e.outputHook(line)
+			}
 		}
 		batch = batch[:0]
 	}
@@ -183,40 +187,53 @@ func (e *Executor) buildQualityJSON(r TaskResult) sql.NullString {
 	return sql.NullString{String: string(buf), Valid: true}
 }
 
-func (e *Executor) storeArtifacts(runID string, results []TaskResult) {
-	for _, r := range results {
-		qualityJSON := e.buildQualityJSON(r)
-		_, err := e.db.Exec(
-			`INSERT INTO artifacts (id, task_id, run_id, diff, stdout, stderr, exit_code, duration_ms, quality_json)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.New().String(), r.TaskID, runID,
-			r.Diff, r.Stdout, r.Stderr, r.ExitCode, r.Duration.Milliseconds(), qualityJSON,
-		)
-		if err != nil {
-			slog.Warn("store artifact failed", "task_id", r.TaskID, "err", err)
+func preparedWriters(prepared []taskInfo) map[string]*interaction.Writer {
+	writers := make(map[string]*interaction.Writer, len(prepared))
+	for _, info := range prepared {
+		if info.logWriter != nil {
+			writers[info.taskID] = info.logWriter
 		}
 	}
+	return writers
 }
 
-func (e *Executor) recordCost(runID string, prepared []taskInfo, results []TaskResult) {
-	if e.costTracker == nil {
+func (e *Executor) finishRunInteractions(runID string, prepared []taskInfo, results []TaskResult) {
+	if e.interactions == nil {
 		return
 	}
 
-	costCfgByTaskID := make(map[string]config.ToolCostConfig, len(prepared))
-	for _, info := range prepared {
-		costCfgByTaskID[info.taskID] = info.toolCfg.Cost
-	}
-
-	for _, r := range results {
-		in, out, c, err := cost.ParseCost(costCfgByTaskID[r.TaskID], r.Stdout)
-		if err != nil {
-			slog.Warn("parse cost failed", "task_id", r.TaskID, "err", err)
+	for i, r := range results {
+		if i >= len(prepared) {
+			continue
 		}
-		if in > 0 || out > 0 || c > 0 {
-			if err := e.costTracker.Record(runID, r.TaskID, r.ToolName, in, out, c); err != nil {
-				slog.Warn("record cost failed", "task_id", r.TaskID, "run_id", runID, "err", err)
-			}
+		info := prepared[i]
+		if info.logWriter == nil {
+			continue
+		}
+
+		status := "completed"
+		if r.Status == "failed" {
+			status = "failed"
+		}
+		opts := []interaction.FinishOption{
+			interaction.WithRunID(runID),
+			interaction.WithModel(r.Model),
+			interaction.WithExitCode(r.ExitCode),
+			interaction.WithDuration(r.Duration),
+			interaction.WithDiff(r.Diff),
+			interaction.WithCost(r.InputTokens, r.OutputTokens, r.TotalCost),
+		}
+		if r.Stderr != "" && status == "failed" {
+			opts = append(opts, interaction.WithError(r.Stderr))
+		}
+		if qualityJSON := e.buildQualityJSON(r); qualityJSON.Valid {
+			opts = append(opts, interaction.WithQuality(qualityJSON.String))
+		}
+		if err := e.interactions.Finish(info.logWriter.ID(), status, opts...); err != nil {
+			slog.Warn("finish interaction failed", "task_id", r.TaskID, "err", err)
+		}
+		if err := info.logWriter.Close(); err != nil {
+			slog.Warn("close interaction log failed", "task_id", r.TaskID, "err", err)
 		}
 	}
 }

@@ -14,7 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/jasjeetmavi/orca/prompts"
@@ -29,24 +30,30 @@ type Integrator struct {
 
 	// For auto-rebase re-run support.
 	worktreeDir  string
-	toolResolver func(taskID string) (config.ToolConfig, error)
+	toolResolver func(taskID string) (string, driver.Driver, string, time.Duration, error)
+	interactions *interaction.Store
 
 	mu       sync.Mutex
 	lockPath string
 }
 
 // New creates an Integrator.
-func New(repoDir, integrationBranch string, validationCmds []string) *Integrator {
+func New(repoDir, integrationBranch string, validationCmds []string, interactions ...*interaction.Store) *Integrator {
+	var store *interaction.Store
+	if len(interactions) > 0 {
+		store = interactions[0]
+	}
 	return &Integrator{
 		repoDir:           repoDir,
 		integrationBranch: integrationBranch,
 		validationCmds:    validationCmds,
 		lockPath:          filepath.Join(repoDir, ".orca", "integration.lock"),
+		interactions:      store,
 	}
 }
 
 // SetRerunConfig configures the integrator for auto-rebase re-run support.
-func (i *Integrator) SetRerunConfig(worktreeDir string, resolver func(string) (config.ToolConfig, error)) {
+func (i *Integrator) SetRerunConfig(worktreeDir string, resolver func(string) (string, driver.Driver, string, time.Duration, error)) {
 	i.worktreeDir = worktreeDir
 	i.toolResolver = resolver
 }
@@ -122,7 +129,7 @@ func (i *Integrator) MergeWithRerun(taskID string) error {
 	})
 }
 
-func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
+func (i *Integrator) mergeWithRerunUnlocked(taskID string) (retErr error) {
 	// Try clean merge first.
 	if err := i.mergeUnlocked(taskID); err == nil {
 		return nil
@@ -145,21 +152,74 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 	rebaseCmd.CombinedOutput() // ignore error — conflict is expected
 
 	// Resolve tool.
-	toolCfg, err := i.toolResolver(taskID)
+	toolName, d, model, timeout, err := i.toolResolver(taskID)
 	if err != nil {
 		i.abortRebaseInWorktree(wtPath)
 		return fmt.Errorf("resolve tool for conflict resolution: %w", err)
 	}
 
-	adapter, err := worker.NewAdapter(toolCfg)
-	if err != nil {
-		i.abortRebaseInWorktree(wtPath)
-		return fmt.Errorf("create adapter for conflict resolution: %w", err)
+	var (
+		logWriter *interaction.Writer
+		inTokens  int64
+		outTokens int64
+		costTotal float64
+	)
+	if i.interactions != nil {
+		taskRef := taskID
+		w, beginErr := i.interactions.Begin(&taskRef, "merge", toolName)
+		if beginErr == nil {
+			logWriter = w
+			defer func() {
+				status := "completed"
+				opts := []interaction.FinishOption{
+					interaction.WithCost(inTokens, outTokens, costTotal),
+				}
+				if retErr != nil {
+					status = "failed"
+					opts = append(opts, interaction.WithError(retErr.Error()))
+				}
+				_ = i.interactions.Finish(logWriter.ID(), status, opts...)
+				_ = logWriter.Close()
+			}()
+		}
 	}
+
+	adapter := worker.NewAdapter(d, model, timeout)
+	var (
+		outputCh   chan worker.OutputLine
+		outputDone chan struct{}
+	)
+	if logWriter != nil {
+		outputCh = make(chan worker.OutputLine, 256)
+		outputDone = make(chan struct{})
+		adapter.SetOutputChan(outputCh)
+		go func() {
+			defer close(outputDone)
+			for line := range outputCh {
+				if line.Stream == "raw" {
+					_ = logWriter.WriteString(line.Line + "\n")
+				}
+			}
+		}()
+	}
+	defer func() {
+		if outputCh != nil {
+			close(outputCh)
+			<-outputDone
+		}
+	}()
 
 	prompt := prompts.ConflictResolve
 
-	if _, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath); execErr != nil {
+	result, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath)
+	if logWriter != nil {
+		if result != nil {
+			inTokens += result.InputTokens
+			outTokens += result.OutputTokens
+			costTotal += result.TotalCost
+		}
+	}
+	if execErr != nil {
 		i.abortRebaseInWorktree(wtPath)
 		return fmt.Errorf("tool failed to resolve conflicts: %w", execErr)
 	}
@@ -190,7 +250,15 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 		}
 
 		// Another commit has conflicts — run tool again.
-		if _, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath); execErr != nil {
+		result, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath)
+		if logWriter != nil {
+			if result != nil {
+				inTokens += result.InputTokens
+				outTokens += result.OutputTokens
+				costTotal += result.TotalCost
+			}
+		}
+		if execErr != nil {
 			i.abortRebaseInWorktree(wtPath)
 			return fmt.Errorf("tool failed to resolve conflicts (attempt %d): %w", attempt+2, execErr)
 		}

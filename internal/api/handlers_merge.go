@@ -1,15 +1,13 @@
 package api
 
 import (
-	"database/sql"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
@@ -24,7 +22,9 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 	}
 
 	type mergeReq struct {
-		Mode string `json:"mode"` // "" (default), "auto"
+		Mode  string `json:"mode"` // "" (default), "auto"
+		Tool  string `json:"tool"`
+		Model string `json:"model"`
 	}
 	req, ok := decodeJSON[mergeReq](w, r, true)
 	if !ok {
@@ -61,99 +61,73 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 		}
 	}
 
-	ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
+	ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
 	mode := strings.TrimSpace(req.Mode)
-	opID := ""
-	opID = s.startAsyncOp(
-		w,
-		"merge",
-		resolved,
-		"merge",
-		map[string]interface{}{"operation_id": "", "task_id": resolved},
-		map[string]string{"operation_id": ""},
-		func() {
-			taskID := resolved
-			operationID := opID
+	s.runAsyncHandler(w, "merge", map[string]string{"status": "merging"}, func() {
+		taskID := resolved
 
-			s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
-				"operation_id": operationID,
-				"task_id":      taskID,
-				"mode":         mode,
+		s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
+			"task_id": taskID,
+			"mode":    mode,
+		}})
+
+		var mergeErr error
+		if mode == "auto" {
+			ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (string, driver.Driver, string, time.Duration, error) {
+				return s.resolveToolConfigForTask(id, req.Tool, req.Model)
+			})
+			s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]string{
+				"task_id": taskID,
+				"message": "Auto-resolving conflicts...",
 			}})
+			mergeErr = ig.MergeWithRerun(taskID)
+		} else {
+			mergeErr = ig.MergeAndValidate(taskID)
+		}
+		if mergeErr != nil {
+			failData := map[string]interface{}{
+				"task_id": taskID,
+				"error":   mergeErr.Error(),
+			}
+			if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
+				failData["conflict"] = true
+				failData["worktree_path"] = worktree.ResolveTaskDir(s.cfg.Project.WorktreeDir, taskID)
+			}
+			s.hub.Broadcast(Event{Type: "merge.failed", Data: failData})
+			return
+		}
 
-			var mergeErr error
-			if mode == "auto" {
-				ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (config.ToolConfig, error) {
-					return s.resolveToolConfigForTask(id)
-				})
-				s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]string{
-					"task_id": taskID,
-					"message": "Auto-resolving conflicts...",
-				}})
-				mergeErr = ig.MergeWithRerun(taskID)
-			} else {
-				mergeErr = ig.MergeAndValidate(taskID)
-			}
-			if mergeErr != nil {
-				if opErr := s.ops.Fail(operationID, mergeErr.Error()); opErr != nil {
-					slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
-				}
-				failData := map[string]interface{}{
-					"operation_id": operationID,
-					"task_id":      taskID,
-					"error":        mergeErr.Error(),
-				}
-				if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
-					failData["conflict"] = true
-					failData["worktree_path"] = worktree.ResolveTaskDir(s.cfg.Project.WorktreeDir, taskID)
-				}
-				s.hub.Broadcast(Event{Type: "merge.failed", Data: failData})
-				return
-			}
+		if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
+			s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
+				"task_id": taskID,
+				"error":   err.Error(),
+			}})
+			return
+		}
+		if err := s.executor.Worktrees().Remove(taskID); err != nil {
+			slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
+		}
 
-			if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
-				if opErr := s.ops.Fail(operationID, err.Error()); opErr != nil {
-					slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
-					"operation_id": operationID,
-					"task_id":      taskID,
-					"error":        err.Error(),
-				}})
-				return
-			}
-			if err := s.executor.Worktrees().Remove(taskID); err != nil {
-				slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
-			}
-
-			updated, getErr := store.Get(taskID)
-			if getErr != nil {
-				slog.Warn("load task after merge failed", "task_id", taskID, "err", getErr)
-				updated = &task.Task{ID: taskID, Status: "merged"}
-			}
-			resultBytes, _ := json.Marshal(updated)
-			if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-				slog.Debug("complete merge operation failed", "operation_id", operationID, "err", err)
-			}
-			s.hub.Broadcast(Event{Type: "merge.completed", Data: updated})
-			s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
-		},
-	)
-	if opID == "" {
-		return
-	}
+		updated, getErr := store.Get(taskID)
+		if getErr != nil {
+			updated = &task.Task{ID: taskID, Status: "merged"}
+		}
+		s.hub.Broadcast(Event{Type: "merge.completed", Data: updated})
+		s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
+	})
 }
 
-func (s *Server) resolveToolConfigForTask(taskID string) (config.ToolConfig, error) {
+func (s *Server) resolveToolConfigForTask(taskID string, toolOverride string, modelOverride string) (string, driver.Driver, string, time.Duration, error) {
 	if _, err := s.taskStore.Get(taskID); err != nil {
-		return config.ToolConfig{}, err
+		return "", nil, "", 0, err
 	}
 
-	_, toolCfg, err := s.cfg.ResolveToolForPhase("merge", "")
+	toolName, d, err := s.cfg.ResolveToolForPhase("merge", toolOverride)
 	if err != nil {
-		return config.ToolConfig{}, err
+		return "", nil, "", 0, err
 	}
-	return toolCfg, nil
+	model := s.cfg.ResolveModelForPhase("merge", modelOverride, d)
+	return toolName, d, model, 10 * time.Minute, nil
 }
 
 func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
@@ -165,11 +139,11 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.ops.GetByTarget("global", "merge"); err == nil {
-		jsonError(w, "merge already in progress", http.StatusConflict)
-		return
-	} else if !errors.Is(err, sql.ErrNoRows) {
+	if running, err := s.interactions.IsRunning(nil, "merge"); err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
+		return
+	} else if running {
+		jsonError(w, "merge already in progress", http.StatusConflict)
 		return
 	}
 
@@ -190,71 +164,45 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opID := ""
-	opID = s.startAsyncOp(
-		w,
-		"merge",
-		"global",
-		"merge",
-		map[string]interface{}{"operation_id": ""},
-		map[string]string{"operation_id": ""},
-		func() {
-			operationID := opID
-			ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
-			merged := make([]string, 0, len(taskIDs))
-			failed := make([]string, 0)
+	s.runAsyncHandler(w, "merge", map[string]string{"status": "merging"}, func() {
+		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
+		merged := make([]string, 0, len(taskIDs))
+		failed := make([]string, 0)
 
-			s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
-				"operation_id": operationID,
-			}})
+		s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{}})
 
-			for _, taskID := range taskIDs {
-				err := ig.MergeAndValidate(taskID)
-				if err != nil {
-					failed = append(failed, taskID)
-					s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
-						"operation_id": operationID,
-						"task_id":      taskID,
-						"status":       "failed",
-						"error":        err.Error(),
-					}})
-					continue
-				}
-
-				merged = append(merged, taskID)
-				if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
-					slog.Warn("set task merged failed", "task_id", taskID, "err", err)
-				}
-				if err := s.executor.Worktrees().Remove(taskID); err != nil {
-					slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
-				}
-				if updated, err := store.Get(taskID); err == nil {
-					s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
-				}
-
+		for _, taskID := range taskIDs {
+			err := ig.MergeAndValidate(taskID)
+			if err != nil {
+				failed = append(failed, taskID)
 				s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
-					"operation_id": operationID,
-					"task_id":      taskID,
-					"status":       "merged",
+					"task_id": taskID,
+					"status":  "failed",
+					"error":   err.Error(),
 				}})
+				continue
 			}
 
-			resultBytes, _ := json.Marshal(map[string]interface{}{
-				"merged": merged,
-				"failed": failed,
-			})
-			if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-				slog.Debug("complete merge operation failed", "operation_id", operationID, "err", err)
+			merged = append(merged, taskID)
+			if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
+				slog.Warn("set task merged failed", "task_id", taskID, "err", err)
+			}
+			if err := s.executor.Worktrees().Remove(taskID); err != nil {
+				slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
+			}
+			if updated, err := store.Get(taskID); err == nil {
+				s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
 			}
 
-			s.hub.Broadcast(Event{Type: "merge.completed", Data: map[string]interface{}{
-				"operation_id": operationID,
-				"merged":       merged,
-				"failed":       failed,
+			s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
+				"task_id": taskID,
+				"status":  "merged",
 			}})
-		},
-	)
-	if opID == "" {
-		return
-	}
+		}
+
+		s.hub.Broadcast(Event{Type: "merge.completed", Data: map[string]interface{}{
+			"merged": merged,
+			"failed": failed,
+		}})
+	})
 }
