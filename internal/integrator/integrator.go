@@ -227,10 +227,16 @@ func (i *Integrator) resolveTaskBranch(taskID string) string {
 		if branch := strings.TrimSpace(string(out)); branch != "" {
 			// Take first match (should be exactly one).
 			lines := strings.SplitN(branch, "\n", 2)
-			return strings.TrimSpace(strings.TrimPrefix(lines[0], "*"))
+			return normalizeBranchListLine(lines[0])
 		}
 	}
 	return exact
+}
+
+func normalizeBranchListLine(line string) string {
+	branch := strings.TrimSpace(line)
+	branch = strings.TrimLeft(branch, "*+ ")
+	return strings.TrimSpace(branch)
 }
 
 func (i *Integrator) resolveWorktreePath(taskID string) string {

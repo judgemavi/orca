@@ -338,6 +338,40 @@ func TestMergeBatchDiffErrorSortsFirst(t *testing.T) {
 	}
 }
 
+func TestResolveTaskBranchStripsWorktreeMarker(t *testing.T) {
+	dir := setupRepo(t)
+	taskID := "8f7dbbe0-23cc-4fd8-b0be-d167c010bc85"
+	titleSuffix := "extract-config-resolvetoolforphase-and-config"
+	branch := "orca/task-" + taskID + "--" + titleSuffix
+	wtDir := filepath.Join(t.TempDir(), "wt")
+	wtPath := filepath.Join(wtDir, "task-"+taskID+"--"+titleSuffix)
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	if err := os.MkdirAll(wtDir, 0755); err != nil {
+		t.Fatalf("mkdir wtDir: %v", err)
+	}
+
+	run("worktree", "add", wtPath, "-b", branch, "orca/integration")
+	t.Cleanup(func() {
+		run("worktree", "remove", wtPath)
+		run("branch", "-D", branch)
+	})
+
+	ig := New(dir, "orca/integration", nil)
+	got := ig.resolveTaskBranch(taskID)
+	if got != branch {
+		t.Fatalf("resolveTaskBranch() = %q, want %q", got, branch)
+	}
+}
+
 func TestAcquireFileLockLifecycle(t *testing.T) {
 	dir := setupRepo(t)
 	ig := New(dir, "orca/integration", nil)
