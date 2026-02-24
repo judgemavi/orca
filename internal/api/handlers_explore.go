@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -39,17 +38,7 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 
 	jsonResponse(w, 202, map[string]interface{}{"data": map[string]string{"status": "exploring"}})
 
-	go func() {
-		defer func() {
-			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("explore panic: %v", rec)
-				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					slog.Error("mark explore operation failed", "operation_id", opID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "explore.failed", Data: map[string]string{"error": errMsg}})
-			}
-		}()
-
+	s.runAsync(opID, "explore", nil, func() {
 		explorer := explore.New(toolCfg, s.repoDir)
 		outPath, err := explorer.Run()
 		if err != nil {
@@ -64,7 +53,7 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 			slog.Debug("complete explore operation failed", "operation_id", opID, "err", err)
 		}
 		s.hub.Broadcast(Event{Type: "explore.completed", Data: map[string]string{"path": outPath}})
-	}()
+	})
 }
 
 func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
@@ -73,11 +62,11 @@ func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutContext(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	type contextReq struct {
 		Content string `json:"content"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[contextReq](w, r, false)
+	if !ok {
 		return
 	}
 

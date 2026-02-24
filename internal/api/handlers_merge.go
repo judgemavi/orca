@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -27,11 +26,11 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
-	var req struct {
+	type mergeReq struct {
 		Mode string `json:"mode"` // "" (default), "auto"
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[mergeReq](w, r, true)
+	if !ok {
 		return
 	}
 
@@ -78,29 +77,18 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 	}
 
 	mode := strings.TrimSpace(req.Mode)
-	go func(taskID, mergeMode, operationID string) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("merge panic: %v", rec)
-				if opErr := s.ops.Fail(operationID, errMsg); opErr != nil {
-					slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
-					"operation_id": operationID,
-					"task_id":      taskID,
-					"error":        errMsg,
-				}})
-			}
-		}()
+	s.runAsync(opID, "merge", map[string]interface{}{"operation_id": opID, "task_id": resolved}, func() {
+		taskID := resolved
+		operationID := opID
 
 		s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
 			"operation_id": operationID,
 			"task_id":      taskID,
-			"mode":         mergeMode,
+			"mode":         mode,
 		}})
 
 		var mergeErr error
-		if mergeMode == "auto" {
+		if mode == "auto" {
 			ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (config.ToolConfig, error) {
 				return s.resolveToolConfigForTask(id)
 			})
@@ -160,7 +148,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 		}
 		s.hub.Broadcast(Event{Type: "merge.completed", Data: updated})
 		s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
-	}(resolved, mode, opID)
+	})
 
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]string{"operation_id": opID},
@@ -249,30 +237,18 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]string{"operation_id": opID},
 	})
 
-	go func(operationID string, ids []string) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("merge panic: %v", rec)
-				if opErr := s.ops.Fail(operationID, errMsg); opErr != nil {
-					slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
-					"operation_id": operationID,
-					"error":        errMsg,
-				}})
-			}
-		}()
-
+	s.runAsync(opID, "merge", map[string]interface{}{"operation_id": opID}, func() {
+		operationID := opID
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
 		store := s.taskStore
-		merged := make([]string, 0, len(ids))
+		merged := make([]string, 0, len(taskIDs))
 		failed := make([]string, 0)
 
 		s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
 			"operation_id": operationID,
 		}})
 
-		for _, taskID := range ids {
+		for _, taskID := range taskIDs {
 			err := ig.MergeAndValidate(taskID)
 			if err != nil {
 				failed = append(failed, taskID)
@@ -316,5 +292,5 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 			"merged":       merged,
 			"failed":       failed,
 		}})
-	}(opID, taskIDs)
+	})
 }

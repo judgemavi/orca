@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -69,11 +68,11 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	var req struct {
+	type changesReq struct {
 		Feedback string `json:"feedback"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[changesReq](w, r, false)
+	if !ok {
 		return
 	}
 	feedback := strings.TrimSpace(req.Feedback)

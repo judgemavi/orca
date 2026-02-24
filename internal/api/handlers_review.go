@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -80,11 +79,11 @@ func (s *Server) handleGetReview(w http.ResponseWriter, r *http.Request, sprintI
 }
 
 func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprintID string) {
-	var req struct {
+	type reviewReq struct {
 		Auto bool `json:"auto"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[reviewReq](w, r, true)
+	if !ok {
 		return
 	}
 
@@ -144,20 +143,7 @@ func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprint
 		return
 	}
 
-	go func(opID, sprintID string, reviewToolCfg config.ToolConfig, inputs []review.ReviewInput) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				errMsg := fmt.Sprintf("review panic: %v", rec)
-				if opErr := s.ops.Fail(opID, errMsg); opErr != nil {
-					slog.Error("mark review operation failed", "operation_id", opID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "review.failed", Data: map[string]interface{}{
-					"operation_id": opID,
-					"error":        errMsg,
-				}})
-			}
-		}()
-
+	s.runAsync(opID, "review", map[string]interface{}{"operation_id": opID}, func() {
 		s.hub.Broadcast(Event{Type: "review.started", Data: map[string]interface{}{
 			"operation_id": opID,
 			"sprint_id":    sprintID,
@@ -205,7 +191,7 @@ func (s *Server) handlePostReview(w http.ResponseWriter, r *http.Request, sprint
 			"sprint_id":    sprintID,
 			"results":      results,
 		}})
-	}(opID, sprintID, reviewToolCfg, inputs)
+	})
 
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{"operation_id": opID})
 }

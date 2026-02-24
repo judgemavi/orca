@@ -11,6 +11,16 @@ import (
 	"github.com/jasjeetmavi/orca/internal/task"
 )
 
+type createTaskReq struct {
+	Title        string               `json:"title"`
+	Description  string               `json:"description"`
+	ParentID     string               `json:"parent_id"`
+	Tool         string               `json:"tool"`
+	AssignedTool string               `json:"assigned_tool"`
+	Model        string               `json:"model"`
+	PhaseConfig  *task.PhaseConfigMap `json:"phase_config,omitempty"`
+}
+
 // ========== Task CRUD ==========
 
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
@@ -47,17 +57,8 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request, id string
 }
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Title        string               `json:"title"`
-		Description  string               `json:"description"`
-		ParentID     string               `json:"parent_id"`
-		Tool         string               `json:"tool"`
-		AssignedTool string               `json:"assigned_tool"`
-		Model        string               `json:"model"`
-		PhaseConfig  *task.PhaseConfigMap `json:"phase_config,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	req, ok := decodeJSON[createTaskReq](w, r, false)
+	if !ok {
 		return
 	}
 	if req.Title == "" {
@@ -110,9 +111,8 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
-	var body map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonError(w, "invalid JSON", 400)
+	body, ok := decodeJSON[map[string]interface{}](w, r, false)
+	if !ok {
 		return
 	}
 
