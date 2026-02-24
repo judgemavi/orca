@@ -1,0 +1,146 @@
+package api
+
+import (
+	"context"
+	"database/sql"
+	"log/slog"
+
+	"github.com/jasjeetmavi/orca/internal/pty"
+	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/task"
+)
+
+// setupWatchers creates DB change watchers and event hooks that broadcast
+// real-time updates to WebSocket clients.
+func (s *Server) setupWatchers(ctx context.Context, taskStore *task.Store) {
+	watcher := state.NewWatcher(s.db, state.WatcherCallbacks{
+		OnTaskChange:      s.newTaskChangeHandler(taskStore),
+		OnSprintChange:    s.handleSprintChanges,
+		OnOperationChange: s.handleOperationChanges,
+		OnSessionChange:   s.handleSessionChanges,
+	}, state.WatcherOpts{})
+	go watcher.Run(ctx)
+
+	if err := s.ops.MarkStaleAsFailed(); err != nil {
+		slog.Error("mark stale operations failed", "err", err)
+	}
+
+	s.planner.SetEventHook(func(eventType string, id string) {
+		s.hub.Broadcast(Event{Type: eventType, Data: map[string]string{"id": id}})
+	})
+
+	if s.sessionMgr != nil {
+		s.sessionMgr.SetEventHook(func(eventType string, sess *pty.Session) {
+			s.hub.Broadcast(Event{
+				Type: eventType,
+				Data: map[string]interface{}{
+					"id":        sess.ID,
+					"type":      string(sess.Type),
+					"tool":      sess.Tool,
+					"task_id":   sess.TaskID,
+					"exit_code": sess.ExitCode,
+				},
+			})
+		})
+	}
+}
+
+// newTaskChangeHandler returns a callback that broadcasts task changes.
+// taskStore is passed as a param since it's not stored on the Server struct.
+func (s *Server) newTaskChangeHandler(taskStore *task.Store) func([]state.TaskChange) {
+	return func(changes []state.TaskChange) {
+		for _, c := range changes {
+			switch c.Type {
+			case state.ChangeCreated:
+				t, err := taskStore.Get(c.TaskID)
+				if err == nil {
+					s.hub.Broadcast(Event{Type: "task.created", Data: t})
+				}
+			case state.ChangeUpdated:
+				t, err := taskStore.Get(c.TaskID)
+				if err == nil {
+					s.hub.Broadcast(Event{Type: "task.updated", Data: t})
+				}
+			case state.ChangeDeleted:
+				s.hub.Broadcast(Event{Type: "task.deleted", Data: map[string]string{"id": c.TaskID}})
+			}
+		}
+	}
+}
+
+func (s *Server) handleSprintChanges(changes []state.SprintChange) {
+	for _, c := range changes {
+		if c.Type == state.ChangeCreated || c.Type == state.ChangeUpdated || c.Type == state.ChangeDeleted {
+			sp, err := s.planner.Get(c.SprintID)
+			if err == nil {
+				s.hub.Broadcast(Event{Type: "sprint.updated", Data: sp})
+				continue
+			}
+			s.hub.Broadcast(Event{Type: "sprint.updated", Data: map[string]string{"id": c.SprintID}})
+		}
+	}
+}
+
+func (s *Server) handleOperationChanges(changes []state.OperationChange) {
+	for _, c := range changes {
+		op, err := s.ops.Get(c.OperationID)
+		if err == nil {
+			s.hub.Broadcast(Event{Type: "operation.updated", Data: op})
+			continue
+		}
+		s.hub.Broadcast(Event{Type: "operation.updated", Data: map[string]string{"id": c.OperationID}})
+	}
+}
+
+func (s *Server) handleSessionChanges(changes []state.SessionChange) {
+	for _, c := range changes {
+		row := s.db.QueryRow(
+			`SELECT id, type, tool, task_id, status, exit_code FROM sessions WHERE id = ?`,
+			c.SessionID,
+		)
+		var (
+			id       string
+			typ      string
+			toolName string
+			taskID   sql.NullString
+			status   string
+			exitCode int
+		)
+		if err := row.Scan(&id, &typ, &toolName, &taskID, &status, &exitCode); err != nil {
+			continue
+		}
+		taskIDValue := ""
+		if taskID.Valid {
+			taskIDValue = taskID.String
+		}
+
+		switch c.Type {
+		case state.ChangeCreated:
+			s.hub.Broadcast(Event{
+				Type: "session.created",
+				Data: map[string]interface{}{
+					"id":        id,
+					"type":      typ,
+					"tool":      toolName,
+					"task_id":   taskIDValue,
+					"status":    status,
+					"exit_code": exitCode,
+				},
+			})
+		case state.ChangeUpdated:
+			if status == "exited" {
+				s.hub.Broadcast(Event{
+					Type: "session.exited",
+					Data: map[string]interface{}{
+						"id":        id,
+						"type":      typ,
+						"tool":      toolName,
+						"task_id":   taskIDValue,
+						"status":    status,
+						"exit_code": exitCode,
+					},
+				})
+			}
+		}
+	}
+}
