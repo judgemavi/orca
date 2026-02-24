@@ -104,11 +104,11 @@ orchestrator:
       tool: codex
       model: gpt-5.3-codex
     plan:
-      tool: codex
+      tool: claude
       model: ""
     review:
-      tool: codex
-      model: gpt-5.3-codex
+      tool: claude
+      model: claude-sonnet-4-6
     sprint:
       tool: codex
       model: ""

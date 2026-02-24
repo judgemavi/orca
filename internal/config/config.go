@@ -296,15 +296,16 @@ func (c *Config) Validate() error {
 
 // ResolvePhaseToolConfig returns the tool name and config for a given phase.
 // Resolution: phases.<phase>.tool -> defaults.tool -> first alphabetical tool.
-// Model override: phases.<phase>.model -> defaults.model -> tool's configured model.
+// Model: phases.<phase>.model -> tool's configured model (defaults.model only when tool also came from defaults).
 func (c *Config) ResolvePhaseToolConfig(phase string) (string, ToolConfig, error) {
 	if len(c.Tools) == 0 {
 		return "", ToolConfig{}, fmt.Errorf("no tools configured")
 	}
 
 	var (
-		toolName string
-		ok       bool
+		toolName    string
+		ok          bool
+		fromDefault bool // true when tool was resolved via defaults, not a phase override
 	)
 
 	if phaseCfg, phaseExists := c.Orchestrator.Phases[phase]; phaseExists && phaseCfg.Tool != "" {
@@ -315,6 +316,7 @@ func (c *Config) ResolvePhaseToolConfig(phase string) (string, ToolConfig, error
 		}
 	} else if c.Defaults.Tool != "" {
 		toolName = c.Defaults.Tool
+		fromDefault = true
 		_, ok = c.Tools[toolName]
 		if !ok {
 			return "", ToolConfig{}, fmt.Errorf("unknown default tool %q", toolName)
@@ -326,12 +328,13 @@ func (c *Config) ResolvePhaseToolConfig(phase string) (string, ToolConfig, error
 		}
 		sort.Strings(names)
 		toolName = names[0]
+		fromDefault = true
 	}
 
 	toolCfg := c.Tools[toolName]
 	if phaseCfg, phaseExists := c.Orchestrator.Phases[phase]; phaseExists && phaseCfg.Model != "" {
 		toolCfg.Model = phaseCfg.Model
-	} else if c.Defaults.Model != "" {
+	} else if fromDefault && c.Defaults.Model != "" {
 		toolCfg.Model = c.Defaults.Model
 	}
 

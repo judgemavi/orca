@@ -404,7 +404,7 @@ func TestResolvePhaseToolConfig_PhaseOverride(t *testing.T) {
 		wantTool  string
 		wantModel string
 	}{
-		{phase: "explore", wantTool: "codex", wantModel: "default-model"},
+		{phase: "explore", wantTool: "codex", wantModel: "codex-base"},
 		{phase: "plan", wantTool: "claude", wantModel: "default-model"},
 		{phase: "review", wantTool: "claude", wantModel: "default-model"},
 	}
