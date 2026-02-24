@@ -29,7 +29,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/plan", s.handlePlan)
 	mux.HandleFunc("/api/v1/plan/accept", s.handlePlanAccept)
 	mux.HandleFunc("/api/v1/plan/reject", s.handlePlanReject)
-	mux.HandleFunc("/api/v1/operations", s.handleListOperations)
+	mux.HandleFunc("/api/v1/operations", s.handleListRunningInteractions)
 
 	// Costs, Config, Status
 	mux.HandleFunc("/api/v1/costs", s.handleCosts)
@@ -250,6 +250,8 @@ func (s *Server) routeConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.handleGetConfig(w, r)
+	case http.MethodPut:
+		s.handleUpdateConfig(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

@@ -64,16 +64,6 @@ export interface ModelInfo {
   provider: string
 }
 
-export interface ReviewArtifact {
-  task_id: string
-  title: string
-  status: string
-  diff: string
-  files: string[]
-  duration_ms: number
-  quality?: QualityResult
-}
-
 export interface TaskResult {
   task_id: string
   tool_name: string
@@ -85,18 +75,6 @@ export interface TaskResult {
   stderr: string
   duration_ms: number
   worktree_path: string
-}
-
-export interface Artifact {
-  id: string
-  task_id: string
-  run_id: string | null
-  diff: string
-  stdout: string
-  stderr: string
-  exit_code: number
-  duration_ms: number
-  created_at: string
 }
 
 export interface Interaction {

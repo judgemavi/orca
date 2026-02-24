@@ -8,7 +8,6 @@ import type {
   Config,
   MonitorAlert,
   WorktreeStatus,
-  Artifact,
   Interaction,
   InteractionWithContent,
 } from './types'
@@ -119,8 +118,6 @@ export const api = {
     }),
   getTaskReviews: (id: string) =>
     request<{ reviews: TaskReview[] }>(`/tasks/${id}/reviews`),
-  getTaskArtifacts: (id: string) =>
-    request<{ artifacts: Artifact[] }>(`/tasks/${id}/artifacts`),
   listInteractions: (taskId: string) =>
     request<{ interactions: Interaction[] }>(`/tasks/${taskId}/interactions`),
   getInteraction: (taskId: string, logId: string) =>

@@ -91,3 +91,41 @@ func TestSaveToDBRoundTrip(t *testing.T) {
 		t.Fatalf("logging.file = %q, want .orca/custom.log", loaded.Logging.File)
 	}
 }
+
+func TestUpdateFromDBMergesAndPersists(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	if err := cfg.SaveToDB(db.DB); err != nil {
+		t.Fatalf("SaveToDB: %v", err)
+	}
+
+	updated, err := UpdateFromDB(db.DB, []byte(`{"defaults":{"tool":"codex"},"workers":{"max_parallel":5}}`))
+	if err != nil {
+		t.Fatalf("UpdateFromDB: %v", err)
+	}
+	if updated.Defaults.Tool != "codex" {
+		t.Fatalf("defaults.tool = %q, want codex", updated.Defaults.Tool)
+	}
+	if updated.Workers.MaxParallel != 5 {
+		t.Fatalf("workers.max_parallel = %d, want 5", updated.Workers.MaxParallel)
+	}
+
+	reloaded, err := LoadFromDB(db.DB)
+	if err != nil {
+		t.Fatalf("LoadFromDB: %v", err)
+	}
+	if reloaded.Defaults.Tool != "codex" {
+		t.Fatalf("reloaded defaults.tool = %q, want codex", reloaded.Defaults.Tool)
+	}
+	if reloaded.Workers.MaxParallel != 5 {
+		t.Fatalf("reloaded workers.max_parallel = %d, want 5", reloaded.Workers.MaxParallel)
+	}
+}

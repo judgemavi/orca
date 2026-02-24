@@ -254,7 +254,7 @@ func readInteractionDelta(path string, offset int64) (string, int64, error) {
 	return string(b), offset + int64(len(b)), nil
 }
 
-func (s *Server) handleListOperations(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListRunningInteractions(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}

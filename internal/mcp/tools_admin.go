@@ -33,6 +33,35 @@ func (s *Server) HandleExploreTool(_ json.RawMessage) (interface{}, error) {
 	return map[string]interface{}{"path": outPath}, nil
 }
 
+func (s *Server) HandleConfigGetTool(argsRaw json.RawMessage) (interface{}, error) {
+	if _, err := parseArgs[struct{}](argsRaw); err != nil {
+		return nil, fmt.Errorf("config_get: %w", err)
+	}
+	return s.config, nil
+}
+
+func (s *Server) HandleConfigUpdateTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		Patch json.RawMessage `json:"patch"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("config_update: %w", err)
+	}
+	if len(args.Patch) == 0 {
+		return nil, fmt.Errorf("config_update: patch is required")
+	}
+
+	cfg, err := config.UpdateFromDB(s.db.DB, args.Patch)
+	if err != nil {
+		return nil, fmt.Errorf("config_update: %w", err)
+	}
+	s.config = cfg
+	if s.onEvent != nil {
+		s.onEvent("config.updated", cfg)
+	}
+	return cfg, nil
+}
+
 func (s *Server) HandleExploreStatusTool(_ json.RawMessage) (interface{}, error) {
 	exists := explore.LoadContext(s.repoDir) != ""
 	stale, err := explore.IsStale(s.repoDir)

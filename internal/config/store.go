@@ -53,3 +53,22 @@ func (c *Config) SaveToDB(db *sql.DB) error {
 	}
 	return nil
 }
+
+// UpdateFromDB applies a partial JSON patch over the persisted config, validates,
+// and stores the merged result.
+func UpdateFromDB(db *sql.DB, patch json.RawMessage) (*Config, error) {
+	cfg, err := LoadFromDB(db)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(patch, cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config patch: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
+	if err := cfg.SaveToDB(db); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}

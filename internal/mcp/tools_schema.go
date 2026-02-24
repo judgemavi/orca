@@ -249,6 +249,28 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
+			Name:        "config_get",
+			Description: "Get the current runtime configuration.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "config_update",
+			Description: "Apply a partial JSON patch to configuration and persist it.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"patch": map[string]interface{}{
+						"type":        "object",
+						"description": "Partial configuration object to merge and persist.",
+					},
+				},
+				"required": []string{"patch"},
+			},
+		},
+		{
 			Name:        "tasks_approve",
 			Description: "Approve a task that is in 'review' status, moving it to 'approved'.",
 			InputSchema: map[string]interface{}{

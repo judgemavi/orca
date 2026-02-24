@@ -12,70 +12,70 @@ import (
 )
 
 type Config struct {
-	Project      ProjectConfig      `yaml:"project" json:"project"`
-	Tools        []string           `yaml:"tools" json:"tools"`
-	Defaults     DefaultsConfig     `yaml:"defaults" json:"defaults"`
-	Validation   ValidationConfig   `yaml:"validation" json:"validation"`
-	Workers      WorkersConfig      `yaml:"workers" json:"workers"`
-	Orchestrator OrchestratorConfig `yaml:"orchestrator" json:"orchestrator"`
-	Monitor      MonitorConfig      `yaml:"monitor" json:"monitor"`
-	Quality      QualityConfig      `yaml:"quality" json:"quality"`
-	Logging      logging.Config     `yaml:"logging" json:"logging"`
-	Cleanup      CleanupConfig      `yaml:"cleanup" json:"cleanup"`
-	Server       ServerConfig       `yaml:"server" json:"server"`
+	Project      ProjectConfig      `json:"project"`
+	Tools        []string           `json:"tools"`
+	Defaults     DefaultsConfig     `json:"defaults"`
+	Validation   ValidationConfig   `json:"validation"`
+	Workers      WorkersConfig      `json:"workers"`
+	Orchestrator OrchestratorConfig `json:"orchestrator"`
+	Monitor      MonitorConfig      `json:"monitor"`
+	Quality      QualityConfig      `json:"quality"`
+	Logging      logging.Config     `json:"logging"`
+	Cleanup      CleanupConfig      `json:"cleanup"`
+	Server       ServerConfig       `json:"server"`
 }
 
 type ServerConfig struct {
-	Addr string `yaml:"addr" json:"addr"`
+	Addr string `json:"addr"`
 }
 
 type ProjectConfig struct {
-	Name              string `yaml:"name" json:"name"`
-	IntegrationBranch string `yaml:"integration_branch" json:"integration_branch"`
-	WorktreeDir       string `yaml:"worktree_dir" json:"worktree_dir"`
+	Name              string `json:"name"`
+	IntegrationBranch string `json:"integration_branch"`
+	WorktreeDir       string `json:"worktree_dir"`
 }
 
 type ValidationConfig struct {
-	Commands []string `yaml:"commands" json:"commands"`
+	Commands []string `json:"commands"`
 }
 
 type WorkersConfig struct {
-	MaxParallel int `yaml:"max_parallel" json:"max_parallel"`
+	MaxParallel int `json:"max_parallel"`
 }
 
 type PhaseConfig struct {
-	Tool  string `yaml:"tool" json:"tool"`
-	Model string `yaml:"model" json:"model"`
+	Tool  string `json:"tool"`
+	Model string `json:"model"`
 }
 
 type DefaultsConfig struct {
-	Tool  string `yaml:"tool" json:"tool"`
-	Model string `yaml:"model" json:"model"`
+	Tool  string `json:"tool"`
+	Model string `json:"model"`
 }
 
 type OrchestratorConfig struct {
-	CostBudget      float64                `yaml:"cost_budget" json:"cost_budget"`
-	SupervisorTool  string                 `yaml:"supervisor_tool" json:"supervisor_tool"`
-	SupervisorModel string                 `yaml:"supervisor_model" json:"supervisor_model"`
-	Phases          map[string]PhaseConfig `yaml:"phases" json:"phases"`
+	CostBudget      float64                `json:"cost_budget"`
+	SupervisorTool  string                 `json:"supervisor_tool"`
+	SupervisorModel string                 `json:"supervisor_model"`
+	Phases          map[string]PhaseConfig `json:"phases"`
 }
 
 type MonitorConfig struct {
-	StuckCheckInterval string  `yaml:"stuck_check_interval" json:"stuck_check_interval"`
-	MaxStuckCycles     int     `yaml:"max_stuck_cycles" json:"max_stuck_cycles"`
-	ConflictInterval   string  `yaml:"conflict_check_interval" json:"conflict_check_interval"`
-	TaskBudget         float64 `yaml:"task_budget" json:"task_budget"`
+	StuckCheckInterval string  `json:"stuck_check_interval"`
+	MaxStuckCycles     int     `json:"max_stuck_cycles"`
+	ConflictInterval   string  `json:"conflict_check_interval"`
+	TaskBudget         float64 `json:"task_budget"`
 }
 
 type QualityConfig struct {
-	Enabled        bool `yaml:"enabled" json:"enabled"`
-	ScopeCheck     bool `yaml:"scope_check" json:"scope_check"`
-	TestDelta      bool `yaml:"test_delta" json:"test_delta"`
-	AlignmentCheck bool `yaml:"alignment_check" json:"alignment_check"`
+	Enabled        bool `json:"enabled"`
+	ScopeCheck     bool `json:"scope_check"`
+	TestDelta      bool `json:"test_delta"`
+	AlignmentCheck bool `json:"alignment_check"`
 }
 
 type CleanupConfig struct {
-	TTL string `yaml:"ttl" json:"ttl"`
+	TTL string `json:"ttl"`
 }
 
 var defaultConfig = Config{

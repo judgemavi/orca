@@ -65,6 +65,11 @@ export async function invalidateQueriesForWSEvent(
     return
   }
 
+  if (event.type === 'config.updated') {
+    await queryClient.invalidateQueries({ queryKey: ['config'] })
+    return
+  }
+
   if (
     event.type === 'run.completed' ||
     event.type === 'run.failed' ||

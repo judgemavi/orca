@@ -49,6 +49,8 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"tasks_plan_evaluate":        s.HandleTasksPlanEvaluateTool,
 		"task_plan_evaluate":         s.HandleTasksPlanEvaluateTool,
 		"project_status":             s.HandleProjectStatusTool,
+		"config_get":                 s.HandleConfigGetTool,
+		"config_update":              s.HandleConfigUpdateTool,
 		"tasks_approve":              s.HandleTasksApproveTool,
 		"task_approve":               s.HandleTasksApproveTool,
 		"tasks_approve_plan":         s.HandleTasksApprovePlanTool,

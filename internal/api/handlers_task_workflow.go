@@ -171,21 +171,6 @@ func (s *Server) handleListTaskReviews(w http.ResponseWriter, r *http.Request, i
 	jsonOK(w, map[string]interface{}{"reviews": reviews})
 }
 
-func (s *Server) handleListTaskArtifacts(w http.ResponseWriter, r *http.Request, id string) {
-	store := s.taskStore
-	resolved, ok := resolveTaskID(w, store, id)
-	if !ok {
-		return
-	}
-
-	interactions, err := s.interactions.ListByPhase(resolved, "run")
-	if err != nil {
-		jsonError(w, err, http.StatusInternalServerError)
-		return
-	}
-	jsonOK(w, map[string]interface{}{"artifacts": interactions})
-}
-
 func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request, id string) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
