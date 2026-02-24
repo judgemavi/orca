@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasjeetmavi/orca/internal/ops"
-	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // ========== Sprints ==========
@@ -117,7 +116,7 @@ func (s *Server) handleSprintAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	taskID, err := store.ResolveID(req.TaskID)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -178,7 +177,7 @@ func (s *Server) handleSprintUnassign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	taskID, err := store.ResolveID(req.TaskID)
 	if err != nil {
 		jsonError(w, err, 404)

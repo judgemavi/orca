@@ -12,7 +12,6 @@ import (
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/decompose"
 	"github.com/jasjeetmavi/orca/internal/ops"
-	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // ========== Plan (Decompose) ==========
@@ -327,7 +326,7 @@ func (s *Server) handlePlanReject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createTasksFromProposed(tasks []decompose.ProposedTask) ([]string, error) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	createdIDs := make([]string, len(tasks))
 	for i, t := range tasks {
 		created, err := store.Create(t.Title, t.Description, "", t.SuggestedTool)

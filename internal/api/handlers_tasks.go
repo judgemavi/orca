@@ -24,7 +24,7 @@ import (
 // ========== Tasks ==========
 
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	status := r.URL.Query().Get("status")
 
 	var tasks []*task.Task
@@ -42,7 +42,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request, id string) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -79,7 +79,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		toolName = strings.TrimSpace(req.AssignedTool)
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	t, err := store.Create(req.Title, req.Description, req.ParentID, toolName)
 	if err != nil {
 		jsonError(w, err, 500)
@@ -113,7 +113,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id string) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -186,7 +186,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 
 // POST /api/v1/tasks/{id}/approve
 func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id string) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -225,7 +225,7 @@ func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id st
 
 // POST /api/v1/tasks/{id}/request-changes
 func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id string) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -284,7 +284,7 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 }
 
 func (s *Server) handleListTaskReviews(w http.ResponseWriter, r *http.Request, id string) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -299,7 +299,7 @@ func (s *Server) handleListTaskReviews(w http.ResponseWriter, r *http.Request, i
 }
 
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id string) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -336,7 +336,7 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request, id string)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -365,7 +365,7 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request, id string)
 }
 
 func (s *Server) handleGetReady(w http.ResponseWriter, r *http.Request) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	tasks, err := store.GetReady()
 	if err != nil {
 		jsonError(w, err, 500)
@@ -404,7 +404,7 @@ func (s *Server) handleGetTaskPlan(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -434,7 +434,7 @@ func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -464,7 +464,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -554,7 +554,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 
-		store := task.NewStore(s.db)
+		store := s.taskStore
 		if err := store.SetPlan(taskID, content); err != nil {
 			if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
 				slog.Error("mark plan operation failed", "operation_id", opID, "err", opErr)
@@ -602,7 +602,7 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -665,7 +665,7 @@ func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -711,7 +711,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	wm := s.executor.Worktrees()
 	worktreeList, err := wm.List()
 	if err != nil {
