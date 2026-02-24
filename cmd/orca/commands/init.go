@@ -185,15 +185,12 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	projectName := filepath.Base(cwd)
 	integrationBranch := "orca/integration"
 	maxParallelStr := "3"
-	defaultTool := available[0]
 	supervisorTool := available[0]
-	defaultModel := ""
 	supervisorModel := ""
 	costBudget := "0"
 	validationCmd := ""
 	qualityScopeCheck := true
 	qualityTestDelta := true
-	qualityAlignment := false
 
 	if existingCfg != nil {
 		if existingCfg.Project.Name != "" {
@@ -205,19 +202,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		if existingCfg.Workers.MaxParallel > 0 {
 			maxParallelStr = strconv.Itoa(existingCfg.Workers.MaxParallel)
 		}
-		if existingCfg.Defaults.Tool != "" {
-			foundDefaultTool := false
-			for _, name := range available {
-				if name == existingCfg.Defaults.Tool {
-					foundDefaultTool = true
-					break
-				}
-			}
-			if foundDefaultTool {
-				defaultTool = existingCfg.Defaults.Tool
-			}
-		}
-		defaultModel = existingCfg.Defaults.Model
 		if existingCfg.Orchestrator.SupervisorTool != "" {
 			foundSupervisorTool := false
 			for _, name := range available {
@@ -237,19 +221,12 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		}
 		qualityScopeCheck = existingCfg.Quality.ScopeCheck
 		qualityTestDelta = existingCfg.Quality.TestDelta
-		qualityAlignment = existingCfg.Quality.AlignmentCheck
 	}
 
 	if !yes {
-		defaultToolOpts := make([]huh.Option[string], len(available))
-		for i, name := range available {
-			defaultToolOpts[i] = huh.NewOption(name, name)
-		}
-
 		qualityOpts := []huh.Option[string]{
 			huh.NewOption("Scope check", "scope").Selected(qualityScopeCheck),
 			huh.NewOption("Test delta", "test").Selected(qualityTestDelta),
-			huh.NewOption("LLM alignment check", "alignment").Selected(qualityAlignment),
 		}
 		var qualitySelected []string
 
@@ -257,8 +234,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			huh.NewGroup(
 				huh.NewInput().Title("Project name").Value(&projectName),
 				huh.NewInput().Title("Integration branch").Value(&integrationBranch),
-				huh.NewSelect[string]().Title("Default tool").Options(defaultToolOpts...).Value(&defaultTool),
-				huh.NewInput().Title("Default model (optional)").Description("Used when a phase model is not set").Value(&defaultModel),
 				huh.NewInput().Title("Max parallel workers").Value(&maxParallelStr).
 					Validate(func(v string) error {
 						n, err := strconv.Atoi(v)
@@ -314,27 +289,27 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			}
 		}
 
-		phaseConfigs, err := selectPhases(defaultTool, available, toolModels, existingCfg)
+		phaseConfigs, err := selectPhases(available, toolModels, existingCfg)
 		if err != nil {
 			return config.Config{}, "", err
 		}
 
 		qualityScopeCheck = false
 		qualityTestDelta = false
-		qualityAlignment = false
 		for _, v := range qualitySelected {
 			switch v {
 			case "scope":
 				qualityScopeCheck = true
 			case "test":
 				qualityTestDelta = true
-			case "alignment":
-				qualityAlignment = true
 			}
 		}
 
-		if len(phaseConfigs) > 0 {
-			cfg.Orchestrator.Phases = phaseConfigs
+		cfg.Orchestrator.Phases = phaseConfigs
+	} else {
+		// Non-interactive: set all phases to first available tool
+		for _, phase := range []string{"explore", "plan", "run", "review", "merge"} {
+			cfg.Orchestrator.Phases[phase] = config.PhaseConfig{Tool: available[0]}
 		}
 	}
 
@@ -347,8 +322,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	cfg.Project.IntegrationBranch = integrationBranch
 	cfg.Workers.MaxParallel = maxParallel
 	cfg.Tools = append([]string(nil), available...)
-	cfg.Defaults.Tool = defaultTool
-	cfg.Defaults.Model = defaultModel
 	cfg.Orchestrator.SupervisorTool = supervisorTool
 	cfg.Orchestrator.SupervisorModel = supervisorModel
 
@@ -359,10 +332,9 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		cfg.Validation.Commands = []string{validationCmd}
 	}
 
-	cfg.Quality.Enabled = qualityScopeCheck || qualityTestDelta || qualityAlignment
+	cfg.Quality.Enabled = qualityScopeCheck || qualityTestDelta
 	cfg.Quality.ScopeCheck = qualityScopeCheck
 	cfg.Quality.TestDelta = qualityTestDelta
-	cfg.Quality.AlignmentCheck = qualityAlignment
 
 	if len(cfg.Tools) == 0 {
 		return config.Config{}, "", fmt.Errorf("at least one tool must be enabled")
@@ -371,11 +343,11 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	return cfg, integrationBranch, nil
 }
 
-func selectPhases(defaultTool string, available []string, toolModels []toolModelInfo, existingCfg *config.Config) (map[string]config.PhaseConfig, error) {
+func selectPhases(available []string, toolModels []toolModelInfo, existingCfg *config.Config) (map[string]config.PhaseConfig, error) {
 	phases := []string{"explore", "plan", "run", "review", "merge"}
 	phaseToolSelections := make(map[string]string, len(phases))
 	for _, phase := range phases {
-		phaseToolSelections[phase] = ""
+		phaseToolSelections[phase] = available[0]
 		if existingCfg != nil {
 			if pc, ok := existingCfg.Orchestrator.Phases[phase]; ok && pc.Tool != "" {
 				phaseToolSelections[phase] = pc.Tool
@@ -392,9 +364,9 @@ func selectPhases(defaultTool string, available []string, toolModels []toolModel
 	for i, phase := range phases {
 		pb := &phaseToolBinding{phase: phase, value: phaseToolSelections[phase]}
 		phaseBindings[i] = pb
-		opts := []huh.Option[string]{huh.NewOption(fmt.Sprintf("(default: %s)", defaultTool), "")}
-		for _, name := range available {
-			opts = append(opts, huh.NewOption(name, name))
+		opts := make([]huh.Option[string], len(available))
+		for j, name := range available {
+			opts[j] = huh.NewOption(name, name)
 		}
 		phaseFields = append(phaseFields, huh.NewSelect[string]().
 			Title(fmt.Sprintf("%s phase tool", phase)).
@@ -407,9 +379,6 @@ func selectPhases(defaultTool string, available []string, toolModels []toolModel
 
 	phaseModelSelections := make(map[string]string, len(phases))
 	for _, pb := range phaseBindings {
-		if pb.value == "" {
-			continue
-		}
 		phaseModelSelections[pb.phase] = ""
 		if existingCfg != nil {
 			if pc, ok := existingCfg.Orchestrator.Phases[pb.phase]; ok {
@@ -439,9 +408,6 @@ func selectPhases(defaultTool string, available []string, toolModels []toolModel
 
 	phaseConfigs := make(map[string]config.PhaseConfig)
 	for _, pb := range phaseBindings {
-		if pb.value == "" {
-			continue
-		}
 		phaseConfigs[pb.phase] = config.PhaseConfig{
 			Tool:  pb.value,
 			Model: phaseModelSelections[pb.phase],

@@ -171,6 +171,11 @@ export const api = {
       {},
     ),
   getConfig: () => request<Config>('/config'),
+  updateConfig: (patch: Partial<Config>) =>
+    request<Config>('/config', {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
   listModels: async (tool?: string): Promise<Record<string, ModelInfo[]>> => {
     const query = tool ? `?tool=${encodeURIComponent(tool)}` : ''
     const data = await request<{ tools: Record<string, ModelInfo[]> }>(

@@ -152,7 +152,7 @@ func (e *Executor) IsTaskRunning(taskID string) bool {
 }
 
 func (e *Executor) budgetAwareEnabled() bool {
-	return e.config.Monitor.TaskBudget > 0 || e.config.Orchestrator.CostBudget > 0
+	return e.config.Orchestrator.TaskBudget > 0 || e.config.Orchestrator.CostBudget > 0
 }
 
 // RunBatch executes all tasks in a batch: transitions to running, creates worktrees,

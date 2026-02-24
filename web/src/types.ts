@@ -38,24 +38,27 @@ export interface Config {
     integration_branch: string
     worktree_dir: string
   }
-  defaults?: { tool?: string; model?: string }
-  tools: Record<
-    string,
-    {
-      binary: string
-      mode: string
-      timeout: string
-      model?: string
-      models?: string[]
-    }
-  >
+  tools: string[]
+  validation: { commands: string[] }
   workers: { max_parallel: number }
   orchestrator: {
     cost_budget: number
-    supervisor_tool?: string
-    supervisor_model?: string
-    phases?: Record<string, PhaseOverride>
+    task_budget: number
+    supervisor_tool: string
+    supervisor_model: string
+    phases: Record<string, { tool: string; model: string }>
   }
+  monitor: {
+    stuck_check_interval: string
+    max_stuck_cycles: number
+    conflict_check_interval: string
+  }
+  quality: {
+    enabled: boolean
+    scope_check: boolean
+    test_delta: boolean
+  }
+  logging: { level: string; file: string; max_size: string }
 }
 
 export interface ModelInfo {
@@ -160,7 +163,6 @@ export interface QualityTestDelta {
 export interface QualityResult {
   scope?: QualityScope
   test_delta?: QualityTestDelta
-  alignment?: { aligned: boolean; reason: string }
 }
 
 export interface MonitorAlert {

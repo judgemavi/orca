@@ -10,8 +10,7 @@ import (
 
 func TestResolveToolForPhase(t *testing.T) {
 	cfg := Config{
-		Tools:    []string{"claude", "codex"},
-		Defaults: DefaultsConfig{Tool: "claude"},
+		Tools: []string{"claude", "codex"},
 		Orchestrator: OrchestratorConfig{Phases: map[string]PhaseConfig{
 			"run": {Tool: "codex"},
 		}},
@@ -23,11 +22,18 @@ func TestResolveToolForPhase(t *testing.T) {
 	if name != "codex" || d.Name() != "codex" {
 		t.Fatalf("got %q/%q, want codex", name, d.Name())
 	}
+	// Falls back to Tools[0] when no phase config
+	name2, _, err := cfg.ResolveToolForPhase("review", "")
+	if err != nil {
+		t.Fatalf("ResolveToolForPhase fallback: %v", err)
+	}
+	if name2 != "claude" {
+		t.Fatalf("fallback got %q, want claude", name2)
+	}
 }
 
 func TestResolveModelForPhase(t *testing.T) {
 	cfg := Config{
-		Defaults: DefaultsConfig{Model: "claude-sonnet-4-6"},
 		Orchestrator: OrchestratorConfig{Phases: map[string]PhaseConfig{
 			"plan": {Model: "claude-opus-4-6"},
 		}},
@@ -36,8 +42,11 @@ func TestResolveModelForPhase(t *testing.T) {
 	if got := cfg.ResolveModelForPhase("plan", "", d); got != "claude-opus-4-6" {
 		t.Fatalf("phase model = %q", got)
 	}
-	if got := cfg.ResolveModelForPhase("review", "", d); got != "claude-sonnet-4-6" {
-		t.Fatalf("default model = %q", got)
+	// Falls back to driver's first model when no phase config
+	got := cfg.ResolveModelForPhase("review", "", d)
+	models := d.Models()
+	if len(models) > 0 && got != models[0] {
+		t.Fatalf("fallback model = %q, want %q", got, models[0])
 	}
 }
 
@@ -52,8 +61,8 @@ func TestLoadFromDBReturnsDefaultWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFromDB: %v", err)
 	}
-	if cfg.Defaults.Tool != "claude" {
-		t.Fatalf("defaults.tool = %q, want claude", cfg.Defaults.Tool)
+	if len(cfg.Tools) == 0 || cfg.Tools[0] != "claude" {
+		t.Fatalf("tools = %v, want [claude]", cfg.Tools)
 	}
 }
 
@@ -70,7 +79,6 @@ func TestSaveToDBRoundTrip(t *testing.T) {
 	}
 	cfg.Project.Name = "orca-test"
 	cfg.Tools = []string{"claude", "codex"}
-	cfg.Defaults.Tool = "codex"
 	cfg.Logging.File = ".orca/custom.log"
 
 	if err := cfg.SaveToDB(db.DB); err != nil {
@@ -84,8 +92,8 @@ func TestSaveToDBRoundTrip(t *testing.T) {
 	if loaded.Project.Name != "orca-test" {
 		t.Fatalf("project.name = %q, want orca-test", loaded.Project.Name)
 	}
-	if loaded.Defaults.Tool != "codex" {
-		t.Fatalf("defaults.tool = %q, want codex", loaded.Defaults.Tool)
+	if len(loaded.Tools) != 2 || loaded.Tools[1] != "codex" {
+		t.Fatalf("tools = %v, want [claude codex]", loaded.Tools)
 	}
 	if loaded.Logging.File != ".orca/custom.log" {
 		t.Fatalf("logging.file = %q, want .orca/custom.log", loaded.Logging.File)
@@ -107,12 +115,12 @@ func TestUpdateFromDBMergesAndPersists(t *testing.T) {
 		t.Fatalf("SaveToDB: %v", err)
 	}
 
-	updated, err := UpdateFromDB(db.DB, []byte(`{"defaults":{"tool":"codex"},"workers":{"max_parallel":5}}`))
+	updated, err := UpdateFromDB(db.DB, []byte(`{"tools":["claude","codex"],"workers":{"max_parallel":5}}`))
 	if err != nil {
 		t.Fatalf("UpdateFromDB: %v", err)
 	}
-	if updated.Defaults.Tool != "codex" {
-		t.Fatalf("defaults.tool = %q, want codex", updated.Defaults.Tool)
+	if len(updated.Tools) != 2 || updated.Tools[1] != "codex" {
+		t.Fatalf("tools = %v, want [claude codex]", updated.Tools)
 	}
 	if updated.Workers.MaxParallel != 5 {
 		t.Fatalf("workers.max_parallel = %d, want 5", updated.Workers.MaxParallel)
@@ -122,8 +130,8 @@ func TestUpdateFromDBMergesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFromDB: %v", err)
 	}
-	if reloaded.Defaults.Tool != "codex" {
-		t.Fatalf("reloaded defaults.tool = %q, want codex", reloaded.Defaults.Tool)
+	if len(reloaded.Tools) != 2 || reloaded.Tools[1] != "codex" {
+		t.Fatalf("reloaded tools = %v, want [claude codex]", reloaded.Tools)
 	}
 	if reloaded.Workers.MaxParallel != 5 {
 		t.Fatalf("reloaded workers.max_parallel = %d, want 5", reloaded.Workers.MaxParallel)

@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildConfigPatchNestedPath(t *testing.T) {
-	patch, err := buildConfigPatch("defaults.tool", "codex")
+	patch, err := buildConfigPatch("orchestrator.supervisor_tool", "codex")
 	if err != nil {
 		t.Fatalf("buildConfigPatch: %v", err)
 	}
@@ -16,12 +16,12 @@ func TestBuildConfigPatchNestedPath(t *testing.T) {
 		t.Fatalf("unmarshal patch: %v", err)
 	}
 
-	defaults, ok := decoded["defaults"].(map[string]interface{})
+	orch, ok := decoded["orchestrator"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("defaults missing or invalid type: %#v", decoded["defaults"])
+		t.Fatalf("orchestrator missing or invalid type: %#v", decoded["orchestrator"])
 	}
-	if got := defaults["tool"]; got != "codex" {
-		t.Fatalf("defaults.tool = %#v, want codex", got)
+	if got := orch["supervisor_tool"]; got != "codex" {
+		t.Fatalf("orchestrator.supervisor_tool = %#v, want codex", got)
 	}
 }
 

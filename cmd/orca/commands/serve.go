@@ -20,7 +20,7 @@ import (
 
 func RegisterServe(root *cobra.Command, r *Registry) {
 	serveCmd := &cobra.Command{Use: "serve", Short: "Start the Orca web server", RunE: r.runServe}
-	serveCmd.Flags().String("addr", "", "Listen address (overrides config)")
+	serveCmd.Flags().IntP("port", "p", 8080, "Port to listen on")
 	serveCmd.Flags().Bool("orchestrator", false, "Auto-start the orchestrator agent")
 	root.AddCommand(serveCmd)
 }
@@ -34,13 +34,8 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 
 	repoDir, _ := os.Getwd()
 
-	addr, _ := cmd.Flags().GetString("addr")
-	if addr == "" {
-		addr = cfg.Server.Addr
-	}
-	if addr == "" {
-		addr = ":8080"
-	}
+	port, _ := cmd.Flags().GetInt("port")
+	addr := fmt.Sprintf(":%d", port)
 
 	var frontendFS fs.FS
 	if sub, err := fs.Sub(web.DistFS, "dist"); err == nil {

@@ -6,6 +6,7 @@ import {
 import App from './App'
 import { TasksPage } from './pages/TasksPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
+import { ConfigPage } from './pages/ConfigPage'
 
 const rootRoute = createRootRoute({
   component: App,
@@ -23,7 +24,13 @@ const taskDetailRoute = createRoute({
   component: TaskDetailPage,
 })
 
-const routeTree = rootRoute.addChildren([tasksRoute, taskDetailRoute])
+const configRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/config',
+  component: ConfigPage,
+})
+
+const routeTree = rootRoute.addChildren([tasksRoute, taskDetailRoute, configRoute])
 
 export const router = createRouter({ routeTree, basepath: '/ui' })
 

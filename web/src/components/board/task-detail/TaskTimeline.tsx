@@ -186,7 +186,7 @@ export function TaskTimeline({
   const planningState = stateFor(taskForPhaseState, 'planning')
   const executionState = stateFor(taskForPhaseState, 'execution')
   const mergeState = stateFor(taskForPhaseState, 'merge')
-  const hasDefaultTool = Boolean(config.defaults?.tool)
+  const hasDefaultTool = (config.tools?.length ?? 0) > 0
 
   return (
     <div className="relative pl-8">
@@ -195,7 +195,7 @@ export function TaskTimeline({
       <TimelinePhase phase="planning" state={planningState}>
         {!hasDefaultTool && (
           <div className="mb-2 text-[11px] text-[var(--text-secondary)]">
-            No default tool configured.
+            No tool configured.
           </div>
         )}
         <TaskPlanSection

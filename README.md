@@ -105,7 +105,7 @@ orca cleanup
 orca logs [--level ... --task ... --since ... --tail ... --follow --json]
 orca models
 orca config show
-orca serve [--addr <addr>] [--orchestrator]
+orca serve [--port <port>] [--orchestrator]
 orca mcp
 orca orc
 ```

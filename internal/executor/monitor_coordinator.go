@@ -18,21 +18,21 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 	stuckCheckInterval := 30 * time.Second
 	if raw := strings.TrimSpace(e.config.Monitor.StuckCheckInterval); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err != nil {
-			slog.Warn("monitor invalid stuck_check_interval, using default", "raw", raw, "default", "60s", "err", err)
+			slog.Warn("monitor invalid stuck_check_interval, using default", "raw", raw, "default", "30s", "err", err)
 		} else {
 			stuckCheckInterval = parsed
 		}
 	}
 
-	maxStuckCycles := e.config.Monitor.MaxStuckCycles
-	if maxStuckCycles == 0 {
-		maxStuckCycles = 3
+	maxStuckCycles := 3
+	if e.config.Monitor.MaxStuckCycles > 0 {
+		maxStuckCycles = e.config.Monitor.MaxStuckCycles
 	}
 
 	conflictInterval := 15 * time.Second
 	if raw := strings.TrimSpace(e.config.Monitor.ConflictInterval); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err != nil {
-			slog.Warn("monitor invalid conflict_check_interval, using default", "raw", raw, "default", "30s", "err", err)
+			slog.Warn("monitor invalid conflict_check_interval, using default", "raw", raw, "default", "15s", "err", err)
 		} else {
 			conflictInterval = parsed
 		}
@@ -47,8 +47,8 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 	)
 	e.monitors = append(e.monitors, stuck)
 
-	if (e.config.Orchestrator.CostBudget > 0 || e.config.Monitor.TaskBudget > 0) && e.interactions != nil && len(taskIDs) > 0 {
-		taskBudget := e.config.Monitor.TaskBudget
+	if (e.config.Orchestrator.CostBudget > 0 || e.config.Orchestrator.TaskBudget > 0) && e.interactions != nil && len(taskIDs) > 0 {
+		taskBudget := e.config.Orchestrator.TaskBudget
 		if taskBudget <= 0 {
 			taskBudget = e.config.Orchestrator.CostBudget / float64(len(taskIDs))
 		}

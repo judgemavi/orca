@@ -14,19 +14,12 @@ import (
 type Config struct {
 	Project      ProjectConfig      `json:"project"`
 	Tools        []string           `json:"tools"`
-	Defaults     DefaultsConfig     `json:"defaults"`
 	Validation   ValidationConfig   `json:"validation"`
 	Workers      WorkersConfig      `json:"workers"`
 	Orchestrator OrchestratorConfig `json:"orchestrator"`
 	Monitor      MonitorConfig      `json:"monitor"`
 	Quality      QualityConfig      `json:"quality"`
 	Logging      logging.Config     `json:"logging"`
-	Cleanup      CleanupConfig      `json:"cleanup"`
-	Server       ServerConfig       `json:"server"`
-}
-
-type ServerConfig struct {
-	Addr string `json:"addr"`
 }
 
 type ProjectConfig struct {
@@ -48,34 +41,24 @@ type PhaseConfig struct {
 	Model string `json:"model"`
 }
 
-type DefaultsConfig struct {
-	Tool  string `json:"tool"`
-	Model string `json:"model"`
-}
-
 type OrchestratorConfig struct {
 	CostBudget      float64                `json:"cost_budget"`
+	TaskBudget      float64                `json:"task_budget"`
 	SupervisorTool  string                 `json:"supervisor_tool"`
 	SupervisorModel string                 `json:"supervisor_model"`
 	Phases          map[string]PhaseConfig `json:"phases"`
 }
 
 type MonitorConfig struct {
-	StuckCheckInterval string  `json:"stuck_check_interval"`
-	MaxStuckCycles     int     `json:"max_stuck_cycles"`
-	ConflictInterval   string  `json:"conflict_check_interval"`
-	TaskBudget         float64 `json:"task_budget"`
+	StuckCheckInterval string `json:"stuck_check_interval"`
+	MaxStuckCycles     int    `json:"max_stuck_cycles"`
+	ConflictInterval   string `json:"conflict_check_interval"`
 }
 
 type QualityConfig struct {
-	Enabled        bool `json:"enabled"`
-	ScopeCheck     bool `json:"scope_check"`
-	TestDelta      bool `json:"test_delta"`
-	AlignmentCheck bool `json:"alignment_check"`
-}
-
-type CleanupConfig struct {
-	TTL string `json:"ttl"`
+	Enabled    bool `json:"enabled"`
+	ScopeCheck bool `json:"scope_check"`
+	TestDelta  bool `json:"test_delta"`
 }
 
 var defaultConfig = Config{
@@ -83,9 +66,8 @@ var defaultConfig = Config{
 		IntegrationBranch: "orca/integration",
 		WorktreeDir:       ".orca/worktrees",
 	},
-	Tools:    []string{"claude"},
-	Defaults: DefaultsConfig{Tool: "claude"},
-	Workers:  WorkersConfig{MaxParallel: 3},
+	Tools:   []string{"claude"},
+	Workers: WorkersConfig{MaxParallel: 3},
 	Orchestrator: OrchestratorConfig{
 		SupervisorTool: "claude",
 	},
@@ -96,8 +78,6 @@ var defaultConfig = Config{
 	},
 	Quality: QualityConfig{Enabled: true, ScopeCheck: true, TestDelta: true},
 	Logging: logging.Config{Level: "info", File: ".orca/orca.log", MaxSize: "50mb"},
-	Cleanup: CleanupConfig{TTL: "168h"},
-	Server:  ServerConfig{Addr: ":8080"},
 }
 
 // Default returns a copy of built-in defaults.
@@ -132,25 +112,20 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("monitor.conflict_check_interval must be a valid duration: %w", err)
 		}
 	}
-
 	if c.Monitor.MaxStuckCycles < 0 {
 		return fmt.Errorf("monitor.max_stuck_cycles must be >= 0, got %d", c.Monitor.MaxStuckCycles)
 	}
-	if c.Monitor.TaskBudget < 0 {
-		return fmt.Errorf("monitor.task_budget must be >= 0, got %v", c.Monitor.TaskBudget)
-	}
+
 	if c.Orchestrator.CostBudget < 0 {
 		return fmt.Errorf("orchestrator.cost_budget must be >= 0, got %v", c.Orchestrator.CostBudget)
+	}
+	if c.Orchestrator.TaskBudget < 0 {
+		return fmt.Errorf("orchestrator.task_budget must be >= 0, got %v", c.Orchestrator.TaskBudget)
 	}
 
 	if c.Orchestrator.SupervisorTool != "" {
 		if _, ok := driver.Get(c.Orchestrator.SupervisorTool); !ok {
 			return fmt.Errorf("orchestrator.supervisor_tool %q not found in drivers", c.Orchestrator.SupervisorTool)
-		}
-	}
-	if c.Defaults.Tool != "" {
-		if _, ok := driver.Get(c.Defaults.Tool); !ok {
-			return fmt.Errorf("defaults.tool %q not found in drivers", c.Defaults.Tool)
 		}
 	}
 	for phase, phaseCfg := range c.Orchestrator.Phases {
@@ -171,9 +146,6 @@ func (c *Config) ResolveToolForPhase(phase, override string) (string, driver.Dri
 		if pc, ok := c.Orchestrator.Phases[phase]; ok && pc.Tool != "" {
 			toolName = pc.Tool
 		}
-	}
-	if toolName == "" {
-		toolName = c.Defaults.Tool
 	}
 	if toolName == "" && len(c.Tools) > 0 {
 		toolName = c.Tools[0]
@@ -200,11 +172,6 @@ func (c *Config) ResolveModelForPhase(phase, override string, d driver.Driver) s
 			if ValidateModel(d.Name(), model, d) != "" {
 				return model
 			}
-		}
-	}
-	if model := strings.TrimSpace(c.Defaults.Model); model != "" {
-		if ValidateModel(d.Name(), model, d) != "" {
-			return model
 		}
 	}
 	models := d.Models()
