@@ -23,11 +23,6 @@ type TaskChange struct {
 	TaskID string
 }
 
-type SprintChange struct {
-	Type     ChangeType
-	SprintID string
-}
-
 type OperationChange struct {
 	Type        ChangeType
 	OperationID string
@@ -45,7 +40,6 @@ type WatcherOpts struct {
 
 type WatcherCallbacks struct {
 	OnTaskChange      func([]TaskChange)
-	OnSprintChange    func([]SprintChange)
 	OnOperationChange func([]OperationChange)
 	OnSessionChange   func([]SessionChange)
 }
@@ -55,12 +49,10 @@ type Watcher struct {
 	db             *DB
 	lastVersion    int64
 	lastTasks      map[string]time.Time // taskID -> last known updated_at
-	lastSprints    map[string]string    // sprintID -> status
 	lastOperations map[string]string    // operationID -> status
 	lastSessions   map[string]string    // sessionID -> status
 
 	onTaskChange      func([]TaskChange)
-	onSprintChange    func([]SprintChange)
 	onOperationChange func([]OperationChange)
 	onSessionChange   func([]SessionChange)
 
@@ -76,11 +68,9 @@ func NewWatcher(db *DB, callbacks WatcherCallbacks, opts WatcherOpts) *Watcher {
 		db:                db,
 		lastVersion:       -1,
 		lastTasks:         make(map[string]time.Time),
-		lastSprints:       make(map[string]string),
 		lastOperations:    make(map[string]string),
 		lastSessions:      make(map[string]string),
 		onTaskChange:      callbacks.OnTaskChange,
-		onSprintChange:    callbacks.OnSprintChange,
 		onOperationChange: callbacks.OnOperationChange,
 		onSessionChange:   callbacks.OnSessionChange,
 		opts:              opts,
@@ -119,11 +109,6 @@ func (w *Watcher) poll() {
 		log.Printf("watcher poll: snapshot tasks: %v", err)
 		return
 	}
-	currentSprints, err := w.snapshotStatusTable(`SELECT id, status FROM sprints`)
-	if err != nil {
-		log.Printf("watcher poll: snapshot sprints: %v", err)
-		return
-	}
 	currentOperations, err := w.snapshotStatusTable(`SELECT id, status FROM operations`)
 	if err != nil {
 		log.Printf("watcher poll: snapshot operations: %v", err)
@@ -138,7 +123,6 @@ func (w *Watcher) poll() {
 	// First observation initializes state without emitting synthetic events.
 	if w.lastVersion == -1 {
 		w.lastTasks = currentTasks
-		w.lastSprints = currentSprints
 		w.lastOperations = currentOperations
 		w.lastSessions = currentSessions
 		w.lastVersion = version
@@ -146,9 +130,6 @@ func (w *Watcher) poll() {
 	}
 
 	taskChanges := diffTaskSnapshots(w.lastTasks, currentTasks)
-	sprintChanges := diffStatusSnapshots(w.lastSprints, currentSprints, func(changeType ChangeType, id string) SprintChange {
-		return SprintChange{Type: changeType, SprintID: id}
-	})
 	operationChanges := diffStatusSnapshots(w.lastOperations, currentOperations, func(changeType ChangeType, id string) OperationChange {
 		return OperationChange{Type: changeType, OperationID: id}
 	})
@@ -157,16 +138,12 @@ func (w *Watcher) poll() {
 	})
 
 	w.lastTasks = currentTasks
-	w.lastSprints = currentSprints
 	w.lastOperations = currentOperations
 	w.lastSessions = currentSessions
 	w.lastVersion = version
 
 	if len(taskChanges) > 0 && w.onTaskChange != nil {
 		w.onTaskChange(taskChanges)
-	}
-	if len(sprintChanges) > 0 && w.onSprintChange != nil {
-		w.onSprintChange(sprintChanges)
 	}
 	if len(operationChanges) > 0 && w.onOperationChange != nil {
 		w.onOperationChange(operationChanges)

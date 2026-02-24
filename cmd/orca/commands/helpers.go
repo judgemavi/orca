@@ -15,7 +15,7 @@ func statusIcon(status string) string {
 		return "✓"
 	case "decomposed":
 		return "◈"
-	case "running", "in_sprint":
+	case "running":
 		return "●"
 	case "failed":
 		return "✗"

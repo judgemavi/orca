@@ -2,7 +2,7 @@ import type { Config } from '../../../types'
 import type { useTaskForm } from '../../../hooks/forms/useTaskForm'
 import { PhaseConfigFields } from '../PhaseConfigFields'
 
-const PHASES: Array<'plan' | 'sprint' | 'review'> = ['plan', 'sprint', 'review']
+const PHASES: Array<'plan' | 'run' | 'review'> = ['plan', 'run', 'review']
 
 interface Props {
   taskTitle: string
@@ -13,7 +13,7 @@ interface Props {
   config: Config
 }
 
-function phaseLabel(phase: 'plan' | 'sprint' | 'review') {
+function phaseLabel(phase: 'plan' | 'run' | 'review') {
   return phase[0].toUpperCase() + phase.slice(1)
 }
 
@@ -90,7 +90,7 @@ export function TaskMetaSection({
                       const defaultModel = config.defaults?.model ?? ''
                       form.setFieldValue('phases', {
                         plan: { tool: defaultTool, model: defaultModel },
-                        sprint: { tool: defaultTool, model: defaultModel },
+                        run: { tool: defaultTool, model: defaultModel },
                         review: { tool: defaultTool, model: defaultModel },
                       })
                     }

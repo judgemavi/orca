@@ -1,4 +1,4 @@
-// Package state manages SQLite persistence for tasks, sprints, artifacts, and exploration context.
+// Package state manages SQLite persistence for tasks, artifacts, and exploration context.
 package state
 
 import (
@@ -111,135 +111,6 @@ var migrations = []migration{
 		sql:       schemaV1,
 		isApplied: schemaV1Applied,
 	},
-	{
-		version: 2,
-		sql:     `ALTER TABLE tasks ADD COLUMN model TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "tasks", "model")
-		},
-	},
-	{
-		version: 3,
-		sql:     `ALTER TABLE tasks ADD COLUMN plan TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "tasks", "plan")
-		},
-	},
-	{
-		version: 4,
-		sql:     `ALTER TABLE tasks ADD COLUMN session_id TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "tasks", "session_id")
-		},
-	},
-	{
-		version: 5,
-		sql: `
-CREATE TABLE IF NOT EXISTS meta (
-	key   TEXT PRIMARY KEY,
-	value TEXT NOT NULL
-);
-
-INSERT OR IGNORE INTO meta (key, value) VALUES ('db_version', '0');
-
-CREATE TRIGGER IF NOT EXISTS tasks_version_insert
-AFTER INSERT ON tasks
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS tasks_version_update
-AFTER UPDATE ON tasks
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS tasks_version_delete
-AFTER DELETE ON tasks
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasTable(tx, "meta")
-		},
-	},
-	{
-		version: 6,
-		sql: `
-CREATE TRIGGER IF NOT EXISTS sprints_version_insert
-AFTER INSERT ON sprints
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS sprints_version_update
-AFTER UPDATE ON sprints
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS sprints_version_delete
-AFTER DELETE ON sprints
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS operations_version_insert
-AFTER INSERT ON operations
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS operations_version_update
-AFTER UPDATE ON operations
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS sessions_version_insert
-AFTER INSERT ON sessions
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS sessions_version_update
-AFTER UPDATE ON sessions
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			var count int
-			err := tx.QueryRow(
-				`SELECT COUNT(1) FROM sqlite_master WHERE type='trigger' AND name='sprints_version_insert'`,
-			).Scan(&count)
-			return count > 0, err
-		},
-	},
-	{
-		version: 7,
-		sql:     `ALTER TABLE tasks ADD COLUMN phase_config TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "tasks", "phase_config")
-		},
-	},
-	{
-		version: 8,
-		sql:     `ALTER TABLE artifacts ADD COLUMN quality_json TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "artifacts", "quality_json")
-		},
-	},
-	{
-		version: 9,
-		sql:     `UPDATE tasks SET status = 'approved' WHERE status = 'completed'`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			var count int
-			err := tx.QueryRow(`SELECT COUNT(*) FROM tasks WHERE status = 'completed'`).Scan(&count)
-			return count == 0, err
-		},
-	},
 }
 
 // DBVersion returns the current persisted db_version sentinel value.
@@ -258,7 +129,6 @@ func schemaV1Applied(tx *sql.Tx) (bool, error) {
 		"tasks",
 		"task_deps",
 		"task_reviews",
-		"sprints",
 		"artifacts",
 		"costs",
 		"operations",
@@ -315,17 +185,25 @@ func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
 }
 
 const schemaV1 = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+	version    INTEGER PRIMARY KEY,
+	applied_at DATETIME NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
-	id          TEXT PRIMARY KEY,
-	title       TEXT NOT NULL,
-	description TEXT,
-	prompt      TEXT,
-	parent_id   TEXT REFERENCES tasks(id),
-	status      TEXT NOT NULL DEFAULT 'pending',
+	id            TEXT PRIMARY KEY,
+	title         TEXT NOT NULL,
+	description   TEXT,
+	prompt        TEXT,
+	model         TEXT,
+	phase_config  TEXT,
+	plan          TEXT,
+	session_id    TEXT,
+	parent_id     TEXT REFERENCES tasks(id),
+	status        TEXT NOT NULL DEFAULT 'pending',
 	assigned_tool TEXT,
-	sprint_id   TEXT,
-	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+	created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS task_deps (
@@ -343,28 +221,22 @@ CREATE TABLE IF NOT EXISTS task_reviews (
 	addressed_at DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS sprints (
-	id           TEXT PRIMARY KEY,
-	status       TEXT NOT NULL DEFAULT 'planning',
-	created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-	completed_at DATETIME
-);
-
 CREATE TABLE IF NOT EXISTS artifacts (
-	id          TEXT PRIMARY KEY,
-	task_id     TEXT NOT NULL REFERENCES tasks(id),
-	sprint_id   TEXT NOT NULL REFERENCES sprints(id),
-	diff        TEXT,
-	stdout      TEXT,
-	stderr      TEXT,
-	exit_code   INTEGER,
-	duration_ms INTEGER,
-	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+	id           TEXT PRIMARY KEY,
+	task_id      TEXT NOT NULL REFERENCES tasks(id),
+	run_id       TEXT,
+	diff         TEXT,
+	stdout       TEXT,
+	stderr       TEXT,
+	exit_code    INTEGER,
+	duration_ms  INTEGER,
+	quality_json TEXT,
+	created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS costs (
 	id             TEXT PRIMARY KEY,
-	sprint_id      TEXT REFERENCES sprints(id),
+	run_id         TEXT,
 	task_id        TEXT REFERENCES tasks(id),
 	tool           TEXT NOT NULL,
 	input_tokens   INTEGER DEFAULT 0,
@@ -398,4 +270,53 @@ CREATE TABLE IF NOT EXISTS sessions (
 	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
 	exited_at   DATETIME
 );
+
+CREATE TABLE IF NOT EXISTS meta (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO meta (key, value) VALUES ('db_version', '0');
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_insert
+AFTER INSERT ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_update
+AFTER UPDATE ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_delete
+AFTER DELETE ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS operations_version_insert
+AFTER INSERT ON operations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS operations_version_update
+AFTER UPDATE ON operations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_version_insert
+AFTER INSERT ON sessions
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_version_update
+AFTER UPDATE ON sessions
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
 `

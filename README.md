@@ -1,40 +1,38 @@
 # Orca
 
-Multi-agent CLI orchestrator for AI coding tools. Coordinates Claude Code, Codex, Aider, and other CLI agents on shared codebases using git worktree isolation and a scrum-inspired execution model.
+Multi-agent CLI orchestrator for AI coding tools. Orca coordinates Claude Code, Codex, Aider, and similar CLI agents on shared codebases using git worktrees and direct task execution.
 
 ## How It Works
 
-Orca wraps existing AI CLI tools as workers — it doesn't call LLM APIs directly. The execution model mirrors a dev team:
+Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 
-1. **Explore** — Analyze the codebase and generate context
-2. **Evaluate** — Assess task complexity and decide if decomposition is needed
-3. **Plan** — Decompose goals into small, dependency-aware tasks
-4. **Sprint** — Execute tasks in parallel on isolated git worktrees
-4. **Review** — Review diffs with quality gates (scope check, test delta, alignment)
-5. **Merge** — Merge approved work into an integration branch with validation
+1. `explore` — generate/refresh codebase context
+2. `breakdown` — decompose goals into dependency-aware tasks
+3. `tasks plan` / `tasks evaluate` — refine task implementation plans
+4. `run` — execute ready tasks directly (parallel, isolated worktrees)
+5. `review` — approve or request changes
+6. `merge` — merge approved tasks into integration branch
 
-Workers never communicate directly. All coordination flows through the supervisor (you, or an LLM in autopilot mode).
+Task flow: `pending → running → review → approved → merged`.
 
 ## Features
 
-- **Tool-agnostic** — Works with any CLI agent (Claude Code, Codex, Aider, or custom tools)
-- **Git worktree isolation** — Each task runs on its own branch (`orca/task-{id}`), no file collisions
-- **Smart integration** — Merges smallest diffs first to minimize conflicts, with rebase and tool-assisted conflict resolution
-- **Quality gates** — Scope creep detection, test regression analysis, optional LLM alignment checks
-- **Sprint monitoring** — Stuck detection, budget enforcement, live conflict prediction
-- **Crash recovery** — Detects orphaned tasks and interrupted sprints, recovers gracefully
-- **Cost tracking** — Per-task and per-sprint cost tracking with budget caps
-- **Web UI** — Real-time board view with WebSocket updates, console panel, terminal streaming
-- **MCP server** — 30 MCP tools for LLM-driven orchestration (autopilot mode)
-- **Single binary** — Go binary with embedded web frontend, SQLite state, YAML config
+- Tool-agnostic worker execution
+- Git worktree isolation per task branch (`orca/task-{id}`)
+- Quality gates + review loop (`review request-changes` re-runs task)
+- Cost tracking per run (`run_id`) and per tool
+- Web UI with live status/events
+- Task table UI (sortable/filterable) with task detail modal + review panel
+- MCP server for agentic orchestration
+- Single Go binary with embedded web frontend
 
 ## Requirements
 
 - Go 1.25+
 - Git
 - At least one supported AI CLI tool: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), or [Aider](https://aider.chat)
-- [Task](https://taskfile.dev) (optional, for build commands)
-- [Bun](https://bun.sh) (for building the web frontend)
+- [Task](https://taskfile.dev) (optional)
+- [Bun](https://bun.sh) (for web build)
 
 ## Installation
 
@@ -44,7 +42,7 @@ cd orca
 task build
 ```
 
-The binary is output to `dist/orca`. Add `dist/` to your `PATH` or copy it where you need it.
+Binary output: `dist/orca`.
 
 ## Quick Start
 
@@ -53,214 +51,97 @@ The binary is output to `dist/orca`. Add `dist/` to your `PATH` or copy it where
 cd your-project
 orca init
 
-# Explore the codebase (generates context for workers)
+# Generate context
 orca explore
 
-# Add tasks
+# Add or decompose work
 orca tasks add "Implement user authentication"
-orca tasks add "Add rate limiting to API endpoints"
+orca breakdown "Add rate limiting and retry safety across API clients"
 
-# Or break down a goal into tasks automatically
-orca breakdown "Add comprehensive error handling across the API layer"
+# Run ready tasks directly
+orca run
 
-# Plan and run a sprint
-orca sprint plan
-orca sprint start
-
-# Review work
-orca sprint review
-orca sprint review --auto    # LLM-assisted review
+# Review outcomes
+orca review approve <task-id>
+# or
+orca review request-changes <task-id> "Address failing tests and tighten error handling"
 
 # Merge approved tasks
 orca merge
 
-# Launch web UI
+# Optional dashboard
 orca serve
 ```
 
 ## CLI Reference
 
-```
-orca init                          Initialize Orca in a git repo
-orca explore                       Analyze codebase, generate context
-orca explore --check               Check if context is stale
-orca explore --manual <file>       Use a markdown file as context
-orca explore --stdin               Read context from stdin
-orca explore --tool <tool>         Use a specific tool for exploration
+```text
+orca init
+orca explore [--check|--manual <file>|--stdin|--tool <tool>]
+orca breakdown "goal" [--tool <tool>] [--auto]
 
-orca breakdown "goal"              Break down a goal into tasks
-orca tasks                          List all tasks
-orca tasks add "title"              Add a task
-orca tasks show <id>                Show full task details
-orca tasks edit <id>                Edit a task
-orca tasks delete <id>              Delete a task
-orca tasks reopen <id...>           Move failed tasks back to pending
-orca tasks merge <id>               Merge an approved task
-orca tasks plan <id>                Generate implementation plan for a task
-orca tasks evaluate <id>            Evaluate if a task needs decomposition
+orca tasks
+orca tasks add "title" [--description ...] [--depends-on ...] [--tool ...] [--model ...]
+orca tasks list
+orca tasks show <id>
+orca tasks edit <id>
+orca tasks delete <id>
+orca tasks reopen <id...>
+orca tasks evaluate <id> [--tool ...] [--model ...] [--json]
+orca tasks plan <id> [--save] [--edit] [--tool ...] [--model ...]
+orca tasks merge <id>
 
-orca sprint plan                   Select tasks for next sprint
-orca sprint assign <id...>         Manually add tasks to sprint
-orca sprint unassign <id...>       Remove tasks from sprint
-orca sprint start                  Execute the sprint
-orca sprint status                 Check worker progress
-orca sprint review                 Review sprint work
-orca sprint resume                 Recover interrupted sprint
-orca sprint cancel                 Cancel running sprint
-orca sprint reset                  Reset sprint, revert tasks
+orca run [task-id...]
+orca run --no-merge
 
-orca review approve <id>           Approve a reviewed task
-orca review request-changes <id>   Request changes on a task
+orca review approve <id>
+orca review request-changes <id> "feedback"
 
-orca merge                         Merge approved tasks
-orca merge --dry-run               Preview merge
-
-orca run                           Plan, start, review, merge in one shot
-orca cleanup                       Remove stale worktrees
-orca status                        Show project overview
-orca log                           Show sprint history
-orca costs                         Show cost summary
-orca ops                           List tracked operations
-orca config show                   Print current config
-orca models                        List available models
-orca logs                          Show application logs
-orca serve                         Start web UI
-orca serve --addr <addr>           Listen address (overrides config)
-orca serve --orchestrator          Auto-start the orchestrator agent
-orca mcp                           Run MCP server (stdio)
-orca orc                           Launch orchestrator agent
-```
-
-## Configuration
-
-Orca stores config in `.orca/orca.yaml`. Run `orca init` to generate a fully annotated config.
-
-```yaml
-project:
-  name: my-project
-  integration_branch: orca/integration
-  worktree_dir: .orca/worktrees
-
-tools:
-  claude:
-    binary: claude
-    model: claude-sonnet-4-6
-    headless_args: ["-p", "{{prompt}}", "--output-format", "json"]
-    timeout: 600s
-  codex:
-    binary: codex
-    headless_args: ["exec", "{{prompt}}", "--full-auto"]
-    timeout: 600s
-
-defaults:
-  tool: claude
-  model: ""
-
-workers:
-  max_parallel: 3
-
-orchestrator:
-  cost_budget: 5.0
-  supervisor_tool: claude
-  supervisor_model: ""
-  phases: {}
-
-validation:
-  commands:
-    - "go test ./..."
-
-monitor:
-  stuck_check_interval: 60s
-  max_stuck_cycles: 10
-  conflict_check_interval: 30s
-  task_budget: 0
-
-quality:
-  enabled: true
-  scope_check: true
-  test_delta: true
-  alignment_check: false
-
-cleanup:
-  ttl: 168h
-
-server:
-  addr: ":8080"
-```
-
-## MCP Configuration
-
-Orca ships an MCP server (`orca mcp`) that exposes 30+ tools for orchestration. When you run `orca serve` or `orca orc`, MCP configs are auto-generated for supported tools:
-
-| Tool | Config file | How it's used |
-|------|-------------|---------------|
-| Claude | `.orca/mcp.json` | Passed via `--mcp-config` flag (configured in `interactive_args`) |
-| Codex | `.codex/config.toml` | Auto-discovered by codex from project directory |
-
-### Other tools (manual setup)
-
-For tools not listed above (e.g. aider, custom CLIs), you must configure MCP manually. Orca's MCP server runs over stdio:
-
-```bash
-# The MCP server command:
+orca merge [--dry-run]
+orca status
+orca costs [--run <run-id-prefix>]
+orca ops [--all]
+orca cleanup
+orca logs [--level ... --task ... --since ... --tail ... --follow --json]
+orca models
+orca config show
+orca serve [--addr <addr>] [--orchestrator]
 orca mcp
+orca orc
 ```
 
-Point your tool's MCP config at this command. For example, if your tool reads a JSON MCP config:
+## MCP
 
-```json
-{
-  "mcpServers": {
-    "orca": {
-      "command": "/path/to/orca",
-      "args": ["mcp"],
-      "cwd": "/path/to/your/repo"
-    }
-  }
-}
-```
+`orca mcp` exposes MCP tools for task orchestration, including:
 
-Or for TOML-based configs:
-
-```toml
-[mcp_servers.orca]
-command = "/path/to/orca"
-args = ["mcp"]
-cwd = "/path/to/your/repo"
-```
-
-The `ORCA_MCP_CONFIG` environment variable is also set at runtime pointing to `.orca/mcp.json` — tools that support env-based config can use this.
+- Task lifecycle: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
+- Planning: `breakdown`, `tasks_plan_evaluate`, `tasks_plan_generate`
+- Execution: `tasks_run`
+- Review/integration: `tasks_approve`, `tasks_request_changes`, `merge`, `tasks_merge`
 
 ## Project Structure
 
-```
-cmd/orca/           CLI entry point and all commands
+```text
+cmd/orca/           CLI entrypoint + command registration
 internal/
   api/              HTTP/WebSocket API server
-  banner/           ASCII banner for init
-  config/           YAML config loading + defaults
-  cost/             Cost tracking and parsing
-  decompose/        Goal -> task decomposition via LLM
+  cost/             Cost tracking and summaries
+  decompose/        Goal -> task decomposition
   evaluate/         Task complexity evaluation
+  executor/         Batch task execution (RunBatch)
   explore/          Codebase exploration + staleness
-  integrator/       Merge ordering, conflict resolution
-  llm/              Low-level LLM invocation helpers
-  mcp/              MCP tool definitions (stdio server)
-  model/            Model catalog per tool
-  monitor/          Stuck detection, budget, conflicts
-  ops/              Operation tracking store
-  orchestrator/     Supervisor agent launcher + MCP config
-  plan/             Task implementation plan generation
-  pty/              PTY session management for web terminal
-  quality/          Scope check, test delta
-  review/           Automated review
-  sprint/           Sprint planning + execution
-  state/            SQLite state DB + change watcher
-  task/             Task store (SQLite)
-  testutil/         Shared test helpers
-  worker/           Worker execution (headless + interactive)
-  worktree/         Git worktree management
-prompts/            LLM prompt templates (explore, plan, evaluate, review, etc.)
+  integrator/       Merge and validation
+  mcp/              MCP server tool handlers/schemas
+  monitor/          Runtime monitors
+  ops/              Operation tracking
+  plan/             Implementation plan generation
+  quality/          Quality gates
+  review/           Review flows
+  state/            SQLite migrations + watcher
+  task/             Task store + dependency graph
+  worker/           Worker adapter
+  worktree/         Worktree lifecycle
+prompts/            Prompt templates
 web/                React + Vite frontend
 ```
 

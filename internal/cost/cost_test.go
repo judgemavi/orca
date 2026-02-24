@@ -31,20 +31,17 @@ func setupCostFixture(t *testing.T) *costFixture {
 	}
 }
 
-func (f *costFixture) seedSprintTask(t *testing.T) (string, string) {
+func (f *costFixture) seedRunTask(t *testing.T) (string, string) {
 	t.Helper()
 
-	sprintID := uuid.New().String()
+	runID := uuid.New().String()
 	taskID := uuid.New().String()
 
-	if _, err := f.db.Exec(`INSERT INTO sprints (id, status) VALUES (?, 'completed')`, sprintID); err != nil {
-		t.Fatalf("insert sprint: %v", err)
-	}
 	if _, err := f.db.Exec(`INSERT INTO tasks (id, title, status) VALUES (?, ?, 'completed')`, taskID, "Task"); err != nil {
 		t.Fatalf("insert task: %v", err)
 	}
 
-	return sprintID, taskID
+	return runID, taskID
 }
 
 func floatEqual(a, b float64) bool {
@@ -53,56 +50,56 @@ func floatEqual(a, b float64) bool {
 
 func TestRecord(t *testing.T) {
 	f := setupCostFixture(t)
-	sprintID, taskID := f.seedSprintTask(t)
+	runID, taskID := f.seedRunTask(t)
 
-	err := f.tracker.Record(sprintID, taskID, "claude", 120, 45, 0.42)
+	err := f.tracker.Record(runID, taskID, "claude", 120, 45, 0.42)
 	if err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 
-	var sprintGot, taskGot, tool string
+	var runGot, taskGot, tool string
 	var inGot, outGot int64
 	var costGot float64
 	err = f.db.QueryRow(
-		`SELECT sprint_id, task_id, tool, input_tokens, output_tokens, estimated_cost FROM costs`,
-	).Scan(&sprintGot, &taskGot, &tool, &inGot, &outGot, &costGot)
+		`SELECT run_id, task_id, tool, input_tokens, output_tokens, estimated_cost FROM costs`,
+	).Scan(&runGot, &taskGot, &tool, &inGot, &outGot, &costGot)
 	if err != nil {
 		t.Fatalf("query cost row: %v", err)
 	}
 
-	if sprintGot != sprintID || taskGot != taskID || tool != "claude" || inGot != 120 || outGot != 45 || !floatEqual(costGot, 0.42) {
-		t.Fatalf("unexpected row values: sprint=%s task=%s tool=%s in=%d out=%d cost=%f", sprintGot, taskGot, tool, inGot, outGot, costGot)
+	if runGot != runID || taskGot != taskID || tool != "claude" || inGot != 120 || outGot != 45 || !floatEqual(costGot, 0.42) {
+		t.Fatalf("unexpected row values: run=%s task=%s tool=%s in=%d out=%d cost=%f", runGot, taskGot, tool, inGot, outGot, costGot)
 	}
 }
 
-func TestSprintTotal(t *testing.T) {
+func TestRunTotal(t *testing.T) {
 	f := setupCostFixture(t)
-	sprintID, taskID := f.seedSprintTask(t)
+	runID, taskID := f.seedRunTask(t)
 
 	for _, c := range []float64{0.10, 0.20, 0.30} {
-		if err := f.tracker.Record(sprintID, taskID, "claude", 1, 1, c); err != nil {
+		if err := f.tracker.Record(runID, taskID, "claude", 1, 1, c); err != nil {
 			t.Fatalf("Record: %v", err)
 		}
 	}
 
-	total, err := f.tracker.SprintTotal(sprintID)
+	total, err := f.tracker.RunTotal(runID)
 	if err != nil {
-		t.Fatalf("SprintTotal: %v", err)
+		t.Fatalf("RunTotal: %v", err)
 	}
 	if !floatEqual(total, 0.60) {
-		t.Fatalf("SprintTotal = %.2f, want 0.60", total)
+		t.Fatalf("RunTotal = %.2f, want 0.60", total)
 	}
 }
 
 func TestProjectTotal(t *testing.T) {
 	f := setupCostFixture(t)
-	s1, t1 := f.seedSprintTask(t)
-	s2, t2 := f.seedSprintTask(t)
+	r1, t1 := f.seedRunTask(t)
+	r2, t2 := f.seedRunTask(t)
 
-	if err := f.tracker.Record(s1, t1, "claude", 1, 1, 1.25); err != nil {
+	if err := f.tracker.Record(r1, t1, "claude", 1, 1, 1.25); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
-	if err := f.tracker.Record(s2, t2, "codex", 1, 1, 2.75); err != nil {
+	if err := f.tracker.Record(r2, t2, "codex", 1, 1, 2.75); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 
@@ -117,9 +114,9 @@ func TestProjectTotal(t *testing.T) {
 
 func TestBudgetRemaining(t *testing.T) {
 	f := setupCostFixture(t)
-	sprintID, taskID := f.seedSprintTask(t)
+	runID, taskID := f.seedRunTask(t)
 
-	if err := f.tracker.Record(sprintID, taskID, "claude", 1, 1, 2.50); err != nil {
+	if err := f.tracker.Record(runID, taskID, "claude", 1, 1, 2.50); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 
@@ -142,9 +139,9 @@ func TestBudgetRemaining(t *testing.T) {
 
 func TestCheckBudget(t *testing.T) {
 	f := setupCostFixture(t)
-	sprintID, taskID := f.seedSprintTask(t)
+	runID, taskID := f.seedRunTask(t)
 
-	if err := f.tracker.Record(sprintID, taskID, "claude", 1, 1, 5.00); err != nil {
+	if err := f.tracker.Record(runID, taskID, "claude", 1, 1, 5.00); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 
@@ -161,27 +158,27 @@ func TestCheckBudget(t *testing.T) {
 	}
 }
 
-func TestSprintSummary(t *testing.T) {
+func TestRunSummary(t *testing.T) {
 	f := setupCostFixture(t)
-	sprintID, taskID := f.seedSprintTask(t)
-	_, taskID2 := f.seedSprintTask(t)
+	runID, taskID := f.seedRunTask(t)
+	_, taskID2 := f.seedRunTask(t)
 
-	if err := f.tracker.Record(sprintID, taskID, "claude", 100, 40, 0.50); err != nil {
+	if err := f.tracker.Record(runID, taskID, "claude", 100, 40, 0.50); err != nil {
 		t.Fatalf("Record 1: %v", err)
 	}
-	if err := f.tracker.Record(sprintID, taskID2, "claude", 10, 5, 0.10); err != nil {
+	if err := f.tracker.Record(runID, taskID2, "claude", 10, 5, 0.10); err != nil {
 		t.Fatalf("Record 2: %v", err)
 	}
-	if err := f.tracker.Record(sprintID, taskID, "codex", 20, 30, 0.20); err != nil {
+	if err := f.tracker.Record(runID, taskID, "codex", 20, 30, 0.20); err != nil {
 		t.Fatalf("Record 3: %v", err)
 	}
 
-	summary, err := f.tracker.SprintSummary(sprintID)
+	summary, err := f.tracker.RunSummary(runID)
 	if err != nil {
-		t.Fatalf("SprintSummary: %v", err)
+		t.Fatalf("RunSummary: %v", err)
 	}
 	if len(summary) != 2 {
-		t.Fatalf("SprintSummary entries = %d, want 2", len(summary))
+		t.Fatalf("RunSummary entries = %d, want 2", len(summary))
 	}
 
 	byTool := map[string]ToolSummary{}
@@ -201,16 +198,16 @@ func TestSprintSummary(t *testing.T) {
 
 func TestProjectSummary(t *testing.T) {
 	f := setupCostFixture(t)
-	s1, t1 := f.seedSprintTask(t)
-	s2, t2 := f.seedSprintTask(t)
+	r1, t1 := f.seedRunTask(t)
+	r2, t2 := f.seedRunTask(t)
 
-	if err := f.tracker.Record(s1, t1, "claude", 10, 20, 0.30); err != nil {
+	if err := f.tracker.Record(r1, t1, "claude", 10, 20, 0.30); err != nil {
 		t.Fatalf("Record 1: %v", err)
 	}
-	if err := f.tracker.Record(s2, t2, "claude", 20, 40, 0.70); err != nil {
+	if err := f.tracker.Record(r2, t2, "claude", 20, 40, 0.70); err != nil {
 		t.Fatalf("Record 2: %v", err)
 	}
-	if err := f.tracker.Record(s2, t2, "codex", 5, 8, 0.10); err != nil {
+	if err := f.tracker.Record(r2, t2, "codex", 5, 8, 0.10); err != nil {
 		t.Fatalf("Record 3: %v", err)
 	}
 

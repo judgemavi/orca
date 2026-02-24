@@ -22,8 +22,15 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 
 func (s *Server) toolHandlers() map[string]toolHandler {
 	return map[string]toolHandler{
-		"tasks_list":            s.HandleTasksListTool,
-		"task_list":             s.HandleTasksListTool,
+		"tasks_list": s.HandleTasksListTool,
+		"task_list":  s.HandleTasksListTool,
+		"tasks_run": func(argsRaw json.RawMessage) (interface{}, error) {
+			var params map[string]interface{}
+			if err := json.Unmarshal(argsRaw, &params); err != nil {
+				return nil, fmt.Errorf("tasks_run: parse args: %w", err)
+			}
+			return s.HandleTasksRunTool(params)
+		},
 		"tasks_create":          s.HandleTasksCreateTool,
 		"task_create":           s.HandleTasksCreateTool,
 		"tasks_update":          s.HandleTasksUpdateTool,
@@ -41,17 +48,7 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"task_plan_generate":    s.HandleTasksPlanGenerateTool,
 		"tasks_plan_evaluate":   s.HandleTasksPlanEvaluateTool,
 		"task_plan_evaluate":    s.HandleTasksPlanEvaluateTool,
-		"sprint_plan":           s.HandleSprintPlanTool,
-		"sprint_assign":         s.HandleSprintAssignTool,
-		"sprint_unassign":       s.HandleSprintUnassignTool,
-		"sprint_start":          s.HandleSprintStartTool,
-		"sprint_status":         s.HandleSprintStatusTool,
 		"project_status":        s.HandleProjectStatusTool,
-		"sprint_cancel":         s.HandleSprintCancelTool,
-		"sprint_reset":          s.HandleSprintResetTool,
-		"sprint_resume":         s.HandleSprintResumeTool,
-		"review_get":            s.HandleReviewGetTool,
-		"review_sprint":         s.HandleReviewSprintTool,
 		"tasks_approve":         s.HandleTasksApproveTool,
 		"task_approve":          s.HandleTasksApproveTool,
 		"tasks_request_changes": s.HandleTasksRequestChangesTool,

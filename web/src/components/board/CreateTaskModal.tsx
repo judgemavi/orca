@@ -16,14 +16,14 @@ interface Props {
 const controlClass =
   'w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-2 text-[13px] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent)]'
 
-type PhaseValues = Record<'plan' | 'sprint' | 'review', { tool: string; model: string }>
+type PhaseValues = Record<'plan' | 'run' | 'review', { tool: string; model: string }>
 
 function buildDefaultPhaseValues(config: Config): PhaseValues {
   const tool = config.defaults?.tool ?? ''
   const model = config.defaults?.model ?? ''
   return {
     plan: { tool, model },
-    sprint: { tool, model },
+    run: { tool, model },
     review: { tool, model },
   }
 }
@@ -62,13 +62,13 @@ export function CreateTaskModal({ config, onClose, onCreated }: Props) {
     },
     async (values) => {
       setError('')
-      const sprintPhase = values.phases.sprint
+      const runPhase = values.phases.run
       const compatTool = values.useDefaults
         ? (config.defaults?.tool ?? '')
-        : (sprintPhase.tool || config.defaults?.tool || '')
+        : (runPhase.tool || config.defaults?.tool || '')
       const compatModel = values.useDefaults
         ? (config.defaults?.model ?? '')
-        : (sprintPhase.model || config.defaults?.model || '')
+        : (runPhase.model || config.defaults?.model || '')
 
       const phaseConfig = values.useDefaults
         ? { use_defaults: true }
@@ -76,7 +76,7 @@ export function CreateTaskModal({ config, onClose, onCreated }: Props) {
             use_defaults: false,
             phases: {
               plan: toPhaseOverride(values.phases.plan),
-              sprint: toPhaseOverride(values.phases.sprint),
+              run: toPhaseOverride(values.phases.run),
               review: toPhaseOverride(values.phases.review),
             },
           }

@@ -10,8 +10,8 @@ interface Props {
 
 const STATUS_ORDER = [
   'running',
-  'in_sprint',
   'pending',
+  'review',
   'approved',
   'merged',
   'failed',

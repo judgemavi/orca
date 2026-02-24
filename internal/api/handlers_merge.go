@@ -122,7 +122,6 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 				}})
 				return
 			}
-			s.completeSprintIfNeeded(tk.SprintID)
 			if err := s.executor.Worktrees().Remove(taskID); err != nil {
 				slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
 			}
@@ -164,23 +163,8 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := decodeJSON[struct {
-		SprintID string `json:"sprint_id"`
-	}](w, r, true)
-
-	sprintID := req.SprintID
-	if sprintID == "" {
-		err := s.db.QueryRow(
-			`SELECT id FROM sprints WHERE status IN ('completed', 'failed') ORDER BY completed_at DESC LIMIT 1`,
-		).Scan(&sprintID)
-		if err == sql.ErrNoRows {
-			jsonError(w, "no completed sprints to merge", http.StatusNotFound)
-			return
-		}
-		if err != nil {
-			jsonError(w, err, http.StatusInternalServerError)
-			return
-		}
+	if _, ok := decodeJSON[map[string]interface{}](w, r, true); !ok {
+		return
 	}
 
 	if _, err := s.ops.GetByTarget("global", "merge"); err == nil {
@@ -191,18 +175,16 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sp, err := s.planner.Get(sprintID)
+	store := s.taskStore
+	approved, err := store.ListByStatus("approved")
 	if err != nil {
-		jsonError(w, err, http.StatusNotFound)
+		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
-	var taskIDs []string
-	for _, id := range sp.TaskIDs {
-		t, err := s.planner.GetTask(id)
-		if err == nil && t.Status == "approved" {
-			taskIDs = append(taskIDs, id)
-		}
+	taskIDs := make([]string, 0, len(approved))
+	for _, tk := range approved {
+		taskIDs = append(taskIDs, tk.ID)
 	}
 
 	if len(taskIDs) == 0 {
@@ -221,7 +203,6 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		func() {
 			operationID := opID
 			ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
-			store := s.taskStore
 			merged := make([]string, 0, len(taskIDs))
 			failed := make([]string, 0)
 

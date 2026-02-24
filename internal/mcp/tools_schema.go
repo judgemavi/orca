@@ -77,7 +77,21 @@ func (s *Server) toolDefinitions() []toolDef {
 				"properties": map[string]interface{}{
 					"status": map[string]interface{}{
 						"type":        "string",
-						"description": "Filter by status: pending, in_sprint, running, approved, merged, failed",
+						"description": "Filter by status: pending, running, review, approved, merged, failed",
+					},
+				},
+			},
+		},
+		{
+			Name:        "tasks_run",
+			Description: "Run tasks through the executor. If no task_ids specified, runs all ready tasks.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Task IDs to run. If empty, runs all ready tasks up to max_parallel.",
 					},
 				},
 			},
@@ -237,128 +251,11 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "sprint_plan",
-			Description: "Create a new sprint and auto-assign ready tasks.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"max_tasks": map[string]interface{}{
-						"type":        "integer",
-						"description": "Max tasks to include",
-					},
-				},
-			},
-		},
-		{
-			Name:        "sprint_assign",
-			Description: "Add tasks to the active sprint (creates one if none exists).",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"task_ids": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "Task IDs to assign to the sprint",
-					},
-				},
-				"required": []string{"task_ids"},
-			},
-		},
-		{
-			Name:        "sprint_unassign",
-			Description: "Remove tasks from the active sprint.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"task_ids": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "Task IDs to remove from the sprint",
-					},
-				},
-				"required": []string{"task_ids"},
-			},
-		},
-		{
-			Name:        "sprint_start",
-			Description: "Start a planned sprint, executing all assigned tasks.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{
-						"type":        "string",
-						"description": "Sprint ID to start",
-					},
-				},
-				"required": []string{"sprint_id"},
-			},
-		},
-		{
-			Name:        "sprint_status",
-			Description: "Get the active sprint's status, tasks, and progress.",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
-			},
-		},
-		{
 			Name:        "project_status",
-			Description: "Get project overview: task counts by status, active sprint info, and project name.",
+			Description: "Get project overview: task counts by status and project name.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
-			},
-		},
-		{
-			Name:        "sprint_cancel",
-			Description: "Cancel the currently running sprint and kill all workers.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to cancel"},
-				},
-				"required": []string{"sprint_id"},
-			},
-		},
-		{
-			Name:        "sprint_reset",
-			Description: "Reset a completed or failed sprint: cleanup worktrees and revert tasks to pending.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to reset"},
-				},
-				"required": []string{"sprint_id"},
-			},
-		},
-		{
-			Name:        "sprint_resume",
-			Description: "Detect and recover orphaned tasks from an interrupted sprint.",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
-			},
-		},
-		{
-			Name:        "review_get",
-			Description: "Get review artifacts (diffs, files changed, duration) for a completed sprint.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to review"},
-				},
-				"required": []string{"sprint_id"},
-			},
-		},
-		{
-			Name:        "review_sprint",
-			Description: "Run automated LLM review on all completed tasks in a sprint. Blocks until review finishes.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to review"},
-				},
-				"required": []string{"sprint_id"},
 			},
 		},
 		{
@@ -431,10 +328,6 @@ func (s *Server) toolDefinitions() []toolDef {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{
-						"type":        "string",
-						"description": "Optional sprint ID for sprint-level totals instead of project totals.",
-					},
 				},
 			},
 		},
@@ -470,10 +363,6 @@ func (s *Server) toolDefinitions() []toolDef {
 						"type":        "string",
 						"description": "Optional task ID to attach as structured attribute.",
 					},
-					"sprint_id": map[string]interface{}{
-						"type":        "string",
-						"description": "Optional sprint ID to attach as structured attribute.",
-					},
 					"attrs": map[string]interface{}{
 						"type":                 "object",
 						"additionalProperties": true,
@@ -496,10 +385,6 @@ func (s *Server) toolDefinitions() []toolDef {
 					"task_id": map[string]interface{}{
 						"type":        "string",
 						"description": "Optional task ID filter.",
-					},
-					"sprint_id": map[string]interface{}{
-						"type":        "string",
-						"description": "Optional sprint ID filter.",
 					},
 					"since": map[string]interface{}{
 						"type":        "string",

@@ -6,47 +6,64 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
 
 func RegisterRun(root *cobra.Command, r *Registry) {
-	runCmd := &cobra.Command{Use: "run", Short: "Plan, start, review, and merge in one shot", RunE: r.runRun}
+	runCmd := &cobra.Command{Use: "run", Short: "Run ready tasks (or specific task IDs)", RunE: r.runRun}
 	runCmd.Flags().Bool("no-merge", false, "Skip auto-merge after success")
 	root.AddCommand(runCmd)
 }
 
 func (r *Registry) runRun(cmd *cobra.Command, args []string) error {
-	db, cfg, planner, executor, err := r.loadRuntimeOrErr()
+	db, cfg, exec, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
 	noMerge, _ := cmd.Flags().GetBool("no-merge")
+	store := task.NewStore(db)
 
-	active, err := planner.GetActive()
-	if err != nil {
-		return fmt.Errorf("check active sprint: %w", err)
-	}
-	if active != nil {
-		return fmt.Errorf("sprint %s already active — reset it first", short(active.ID))
+	var taskIDs []string
+	if len(args) > 0 {
+		for _, arg := range args {
+			id, resolveErr := resolveTaskID(store, arg)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			taskIDs = append(taskIDs, id)
+		}
+	} else {
+		ready, readyErr := store.GetReady()
+		if readyErr != nil {
+			return fmt.Errorf("get ready tasks: %w", readyErr)
+		}
+		if len(ready) == 0 {
+			return fmt.Errorf("no ready tasks")
+		}
+		maxParallel := cfg.Workers.MaxParallel
+		if maxParallel <= 0 {
+			maxParallel = 1
+		}
+		if len(ready) > maxParallel {
+			ready = ready[:maxParallel]
+		}
+		for _, t := range ready {
+			taskIDs = append(taskIDs, t.ID)
+		}
 	}
 
-	s, err := planner.Plan(cfg.Workers.MaxParallel)
-	if err != nil {
-		return fmt.Errorf("plan: %w", err)
-	}
-	fmt.Printf("Planned sprint %s (%d tasks)\n", short(s.ID), len(s.TaskIDs))
-
-	fmt.Println("Running...")
-	results, err := executor.Run(s)
+	fmt.Printf("Running %d task(s)...\n", len(taskIDs))
+	results, err := exec.RunBatch(taskIDs)
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
 
 	var succeeded, failed int
 	for _, rt := range results {
-		t, _ := planner.GetTask(rt.TaskID)
+		t, _ := store.Get(rt.TaskID)
 		title := rt.TaskID
 		if t != nil {
 			title = t.Title
@@ -67,17 +84,19 @@ func (r *Registry) runRun(cmd *cobra.Command, args []string) error {
 	repoDir, _ := os.Getwd()
 	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
 
-	var taskIDs []string
+	var mergeIDs []string
 	for _, rt := range results {
-		if rt.Status == "approved" {
-			taskIDs = append(taskIDs, rt.TaskID)
+		if rt.Status == "approved" || rt.Status == "review" {
+			mergeIDs = append(mergeIDs, rt.TaskID)
 		}
 	}
 
-	merged, failedIDs, err := ig.MergeBatch(taskIDs)
-	if err != nil {
-		return fmt.Errorf("merge: %w", err)
+	if len(mergeIDs) > 0 {
+		merged, failedIDs, mergeErr := ig.MergeBatch(mergeIDs)
+		if mergeErr != nil {
+			return fmt.Errorf("merge: %w", mergeErr)
+		}
+		fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failedIDs))
 	}
-	fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failedIDs))
 	return nil
 }

@@ -11,13 +11,12 @@ import (
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/ops"
-	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
 
 func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
-	db, cfg, _, executor, err := r.loadRuntimeOrErr()
+	db, cfg, executor, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -99,15 +98,6 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 		return nil
 	}); err != nil {
 		return err
-	}
-
-	// Complete sprint if all tasks are now merged (or none remain).
-	if tk.SprintID != "" {
-		if done, err := sprint.TryComplete(db, tk.SprintID); err != nil {
-			warnf("check sprint completion: %v", err)
-		} else if done {
-			fmt.Printf("Sprint %s completed\n", short(tk.SprintID))
-		}
 	}
 
 	return nil
@@ -205,7 +195,7 @@ func (r *Registry) runReviewRequestChanges(cmd *cobra.Command, args []string) er
 		return fmt.Errorf("update status for task %s: %w", short(taskID), err)
 	}
 
-	runtimeDB, _, _, executor, err := r.loadRuntimeOrErr()
+	runtimeDB, _, executor, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}

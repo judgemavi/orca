@@ -20,7 +20,7 @@ func RegisterPlan(root *cobra.Command, r *Registry) {
 }
 
 func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}

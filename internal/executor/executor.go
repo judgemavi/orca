@@ -1,4 +1,4 @@
-package sprint
+package executor
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/monitor"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/quality"
+	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/internal/worktree"
@@ -58,10 +59,11 @@ type ExecutorOptions struct {
 	BroadcastHook func(taskID, status string)
 }
 
-// Executor orchestrates sprint execution: worktree creation, parallel worker
+// Executor orchestrates task execution: worktree creation, parallel worker
 // spawning, result collection, and artifact storage.
 type Executor struct {
-	planner    *Planner
+	db         *state.DB
+	taskStore  *task.Store
 	worktrees  *worktree.Manager
 	config     *config.Config
 	repoDir    string
@@ -78,7 +80,7 @@ type Executor struct {
 	mu       sync.Mutex
 	running  map[string]*exec.Cmd
 	sessions map[string]string
-	sprintID string // set during Run for Cancel to reference
+	runID    string // ephemeral, set during RunBatch
 
 	outputHook func(worker.OutputLine)
 	doneHook   func(taskID string, exitCode int)
@@ -91,15 +93,16 @@ type Executor struct {
 	runBaselineSnapshot *quality.Snapshot
 }
 
-// NewExecutor creates an Executor wired to the given planner, worktree manager,
+// NewExecutor creates an Executor wired to DB, task store, worktree manager,
 // config, and repo directory.
-func NewExecutor(planner *Planner, wm *worktree.Manager, cfg *config.Config, repoDir string, opts ExecutorOptions, sessionMgr ...*pty.SessionManager) *Executor {
+func NewExecutor(db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg *config.Config, repoDir string, opts ExecutorOptions, sessionMgr ...*pty.SessionManager) *Executor {
 	var mgr *pty.SessionManager
 	if len(sessionMgr) > 0 {
 		mgr = sessionMgr[0]
 	}
 	return &Executor{
-		planner:       planner,
+		db:            db,
+		taskStore:     taskStore,
 		worktrees:     wm,
 		config:        cfg,
 		repoDir:       repoDir,
@@ -133,42 +136,52 @@ func (e *Executor) budgetAwareEnabled() bool {
 	return e.config.Monitor.TaskBudget > 0 || e.config.Orchestrator.CostBudget > 0
 }
 
-// Run executes all tasks in a sprint: transitions to running, creates worktrees,
+// RunBatch executes all tasks in a batch: transitions to running, creates worktrees,
 // runs workers in parallel, collects results, updates task statuses, stores artifacts.
-func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
+func (e *Executor) RunBatch(taskIDs []string) ([]TaskResult, error) {
 	maxParallel := e.config.Workers.MaxParallel
 	if maxParallel <= 0 {
 		maxParallel = 1
 	}
-	if len(s.TaskIDs) > maxParallel {
-		return nil, fmt.Errorf("sprint %s has %d tasks, exceeds workers.max_parallel=%d", s.ID, len(s.TaskIDs), maxParallel)
+	if len(taskIDs) > maxParallel {
+		return nil, fmt.Errorf("batch has %d tasks, exceeds workers.max_parallel=%d", len(taskIDs), maxParallel)
 	}
 
 	if err := e.worktrees.EnsureIntegrationBranch(e.config.Project.IntegrationBranch); err != nil {
 		return nil, fmt.Errorf("ensure integration branch: %w", err)
 	}
-	if err := e.planner.Start(s.ID); err != nil {
-		return nil, fmt.Errorf("start sprint: %w", err)
+
+	for _, id := range taskIDs {
+		if err := e.taskStore.Update(id, map[string]interface{}{"status": "running"}); err != nil {
+			return nil, fmt.Errorf("set task %s running: %w", id, err)
+		}
+		if e.broadcastHook != nil {
+			e.broadcastHook(id, "running")
+		}
 	}
-	slog.Info("sprint.started", "sprint_id", s.ID, "task_count", len(s.TaskIDs))
+
+	runID := uuid.New().String()
+	e.runID = runID
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.runCtx = ctx
-	e.sprintID = s.ID
-	defer func() { e.runCtx = nil }()
+	defer func() {
+		e.runCtx = nil
+		e.runID = ""
+	}()
 
 	contextPrefix := ""
 	if cctx := explore.LoadContext(e.repoDir); cctx != "" {
 		contextPrefix = "## Codebase Context\n\n" + cctx + "\n\n---\n\n"
 	}
 
-	prepared, createdTaskIDs, err := e.prepareSprintTasks(s, contextPrefix)
+	prepared, _, err := e.prepareTasks(taskIDs, contextPrefix)
 	if err != nil {
-		e.rollbackPreparation(s, createdTaskIDs)
+		e.rollbackPreparation(taskIDs)
 		return nil, err
 	}
 
-	monCancel := e.startMonitors(ctx, createdTaskIDs)
+	monCancel := e.startMonitors(ctx, taskIDs)
 	defer e.stopMonitors(monCancel)
 
 	baselineSnapshot := e.takeBaselineSnapshot()
@@ -176,25 +189,25 @@ func (e *Executor) Run(s *Sprint) ([]TaskResult, error) {
 	defer func() { e.runBaselineSnapshot = nil }()
 
 	results := e.collectResult(prepared, baselineSnapshot)
-	e.storeArtifacts(s.ID, results)
-	e.recordCost(s.ID, prepared, results)
-	if err := e.finalizeSprint(s.ID, results); err != nil {
+	e.storeArtifacts(runID, results)
+	e.recordCost(runID, prepared, results)
+	if err := e.finalizeRun(results); err != nil {
 		return results, err
 	}
 	return results, nil
 }
 
-func (e *Executor) prepareSprintTasks(s *Sprint, contextPrefix string) ([]taskInfo, []string, error) {
-	prepared := make([]taskInfo, 0, len(s.TaskIDs))
-	createdTaskIDs := make([]string, 0, len(s.TaskIDs))
+func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string) ([]taskInfo, []string, error) {
+	prepared := make([]taskInfo, 0, len(taskIDs))
+	createdTaskIDs := make([]string, 0, len(taskIDs))
 
-	for _, taskID := range s.TaskIDs {
-		t, err := e.planner.GetTask(taskID)
+	for _, taskID := range taskIDs {
+		t, err := e.taskStore.Get(taskID)
 		if err != nil {
 			return nil, createdTaskIDs, fmt.Errorf("get task %s: %w", taskID, err)
 		}
 
-		toolName, toolCfg, err := e.resolveTaskToolConfig(t, "sprint")
+		toolName, toolCfg, err := e.resolveTaskToolConfig(t, "run")
 		if err != nil {
 			return nil, createdTaskIDs, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 		}
@@ -235,12 +248,12 @@ func (e *Executor) prepareSprintTasks(s *Sprint, contextPrefix string) ([]taskIn
 	return prepared, createdTaskIDs, nil
 }
 
-func (e *Executor) finalizeSprint(sprintID string, results []TaskResult) error {
+func (e *Executor) finalizeRun(results []TaskResult) error {
 	failedCount := 0
 	succeededCount := 0
 	for _, r := range results {
-		if err := e.planner.CompleteTask(sprintID, r.TaskID, r.Status); err != nil {
-			slog.Warn("complete task failed", "task_id", r.TaskID, "sprint_id", sprintID, "err", err)
+		if err := e.taskStore.Update(r.TaskID, map[string]interface{}{"status": r.Status}); err != nil {
+			slog.Warn("complete task failed", "task_id", r.TaskID, "run_id", e.runID, "err", err)
 		}
 		if r.Status == "failed" {
 			failedCount++
@@ -249,9 +262,8 @@ func (e *Executor) finalizeSprint(sprintID string, results []TaskResult) error {
 		}
 	}
 
-	slog.Info("sprint.executed", "sprint_id", sprintID, "succeeded", succeededCount, "failed", failedCount)
-	_, err := e.planner.CompleteSprintIfDone(sprintID)
-	return err
+	slog.Info("run.executed", "run_id", e.runID, "succeeded", succeededCount, "failed", failedCount)
+	return nil
 }
 
 func (e *Executor) emitDone(taskID string, exitCode int) {
@@ -272,13 +284,14 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	runID := uuid.New().String()
 
-	t, err := e.planner.GetTask(taskID)
+	t, err := e.taskStore.Get(taskID)
 	if err != nil {
 		return fmt.Errorf("get task %s: %w", taskID, err)
 	}
 
-	toolName, toolCfg, err := e.resolveTaskToolConfig(t, "sprint")
+	toolName, toolCfg, err := e.resolveTaskToolConfig(t, "run")
 	if err != nil {
 		return fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 	}
@@ -312,8 +325,7 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 		prompt = contextPrefix + prompt
 	}
 
-	taskStore := task.NewStore(e.planner.DB())
-	reviewID, feedback, err := taskStore.GetPendingReview(taskID)
+	reviewID, feedback, err := e.taskStore.GetPendingReview(taskID)
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("get pending review for task %s: %w", taskID, err)
 	}
@@ -333,7 +345,7 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 	}
 	prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
 
-	if err := taskStore.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
+	if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
 		return fmt.Errorf("set task running: %w", err)
 	}
 	if e.broadcastHook != nil {
@@ -349,7 +361,7 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("worker panic", "task_id", taskID, "panic", r)
-			_ = taskStore.Update(taskID, map[string]interface{}{"status": "failed"})
+			_ = e.taskStore.Update(taskID, map[string]interface{}{"status": "failed"})
 			if e.broadcastHook != nil {
 				e.broadcastHook(taskID, "failed")
 			}
@@ -377,26 +389,24 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 	<-outputDone
 	e.emitDone(taskID, result.ExitCode)
 
-	if err := taskStore.Update(taskID, map[string]interface{}{"status": result.Status}); err != nil {
+	if err := e.taskStore.Update(taskID, map[string]interface{}{"status": result.Status}); err != nil {
 		slog.Warn("update task status failed", "task_id", taskID, "status", result.Status, "err", err)
 	}
 	if e.broadcastHook != nil {
 		e.broadcastHook(taskID, result.Status)
 	}
 
-	if t.SprintID != "" {
-		_, err := e.planner.DB().Exec(
-			`INSERT INTO artifacts (id, task_id, sprint_id, diff, stdout, stderr, exit_code, duration_ms, quality_json)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.New().String(), taskID, t.SprintID,
-			result.Diff, result.Stdout, result.Stderr, result.ExitCode, result.Duration.Milliseconds(), nil,
-		)
-		if err != nil {
-			slog.Warn("store artifact failed", "task_id", taskID, "err", err)
-		}
+	_, err = e.db.Exec(
+		`INSERT INTO artifacts (id, task_id, run_id, diff, stdout, stderr, exit_code, duration_ms, quality_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), taskID, runID,
+		result.Diff, result.Stdout, result.Stderr, result.ExitCode, result.Duration.Milliseconds(), nil,
+	)
+	if err != nil {
+		slog.Warn("store artifact failed", "task_id", taskID, "run_id", runID, "err", err)
 	}
 	if reviewID != "" && result.ExitCode == 0 {
-		if err := taskStore.AddressReview(reviewID); err != nil {
+		if err := e.taskStore.AddressReview(reviewID); err != nil {
 			slog.Warn("address review failed", "review_id", reviewID, "task_id", taskID, "err", err)
 		}
 	}
@@ -457,26 +467,23 @@ func (e *Executor) Cancel() error {
 	return nil
 }
 
-// rollbackPreparation cleans up worktrees created during prep and resets task/sprint state.
-func (e *Executor) rollbackPreparation(s *Sprint, createdTaskIDs []string) {
-	for _, taskID := range createdTaskIDs {
+// rollbackPreparation cleans up worktrees created during prep and resets task state.
+func (e *Executor) rollbackPreparation(taskIDs []string) {
+	for _, taskID := range taskIDs {
 		if err := e.worktrees.Remove(taskID); err != nil {
 			slog.Warn("rollback remove worktree failed", "task_id", taskID, "err", err)
 		}
-	}
-	if err := e.planner.ResetSprintTasks(s.ID); err != nil {
-		slog.Warn("rollback reset sprint tasks failed", "sprint_id", s.ID, "err", err)
-	}
-	if err := e.planner.Fail(s.ID); err != nil {
-		slog.Warn("rollback fail sprint failed", "sprint_id", s.ID, "err", err)
+		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "pending"}); err != nil {
+			slog.Warn("rollback reset task failed", "task_id", taskID, "err", err)
+		}
 	}
 }
 
-// Cleanup removes worktrees for all tasks in the sprint. Logs errors but
+// CleanupTasks removes worktrees for all tasks in the batch. Logs errors but
 // continues cleanup for remaining tasks. Returns the first error encountered.
-func (e *Executor) Cleanup(s *Sprint) error {
+func (e *Executor) CleanupTasks(taskIDs []string) error {
 	var firstErr error
-	for _, taskID := range s.TaskIDs {
+	for _, taskID := range taskIDs {
 		if err := e.worktrees.Remove(taskID); err != nil {
 			slog.Warn("remove worktree failed", "task_id", taskID, "err", err)
 			if firstErr == nil {

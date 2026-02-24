@@ -4,7 +4,7 @@ export interface TaskFormValues {
   title: string
   description: string
   useDefaults: boolean
-  phases: Record<'plan' | 'sprint' | 'review', { tool: string; model: string }>
+  phases: Record<'plan' | 'run' | 'review', { tool: string; model: string }>
 }
 
 export const taskFormDefaults: TaskFormValues = {
@@ -13,7 +13,7 @@ export const taskFormDefaults: TaskFormValues = {
   useDefaults: true,
   phases: {
     plan: { tool: '', model: '' },
-    sprint: { tool: '', model: '' },
+    run: { tool: '', model: '' },
     review: { tool: '', model: '' },
   },
 }

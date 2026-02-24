@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-// BudgetEnforcer periodically checks task and sprint spend against configured limits.
+// BudgetEnforcer periodically checks task and run spend against configured limits.
 type BudgetEnforcer struct {
 	interval     time.Duration
 	taskIDs      []string
 	taskBudget   float64                     // max $ per task (0 = disabled)
-	sprintBudget float64                     // max $ per sprint (0 = disabled)
+	runBudget    float64                     // max $ per run (0 = disabled)
 	costFn       func(taskID string) float64 // returns current cost for a task
 	onExceeded   func(taskID string, spent float64, limit float64)
 
@@ -23,7 +23,7 @@ type BudgetEnforcer struct {
 }
 
 // NewBudgetEnforcer creates a new enforcer with sane defaults.
-func NewBudgetEnforcer(interval time.Duration, taskBudget, sprintBudget float64,
+func NewBudgetEnforcer(interval time.Duration, taskBudget, runBudget float64,
 	costFn func(string) float64,
 	onExceeded func(string, float64, float64),
 	taskIDs []string,
@@ -36,7 +36,7 @@ func NewBudgetEnforcer(interval time.Duration, taskBudget, sprintBudget float64,
 		interval:     interval,
 		taskIDs:      append([]string(nil), taskIDs...),
 		taskBudget:   taskBudget,
-		sprintBudget: sprintBudget,
+		runBudget:    runBudget,
 		costFn:       costFn,
 		onExceeded:   onExceeded,
 		fired:        make(map[string]bool),
@@ -137,8 +137,8 @@ func (b *BudgetEnforcer) check(taskIDs []string) {
 		}
 	}
 
-	if b.sprintBudget > 0 && total >= b.sprintBudget && b.markFired("sprint") {
-		events = append(events, event{taskID: "sprint", spent: total, limit: b.sprintBudget})
+	if b.runBudget > 0 && total >= b.runBudget && b.markFired("run") {
+		events = append(events, event{taskID: "run", spent: total, limit: b.runBudget})
 	}
 
 	for _, ev := range events {

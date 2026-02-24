@@ -1,4 +1,4 @@
-package sprint
+package executor
 
 import (
 	"bytes"
@@ -14,7 +14,6 @@ import (
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/procutil"
 	"github.com/jasjeetmavi/orca/internal/pty"
-	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worker"
 )
 
@@ -210,7 +209,7 @@ func (e *Executor) storeSessionID(taskID, sessionID string) {
 	if sessionID == "" {
 		return
 	}
-	if err := task.NewStore(e.planner.DB()).SetSessionID(taskID, sessionID); err != nil {
+	if err := e.taskStore.SetSessionID(taskID, sessionID); err != nil {
 		slog.Warn("set session_id failed", "task_id", taskID, "session_id", sessionID, "err", err)
 	}
 }

@@ -12,12 +12,11 @@ import (
 
 // Filter defines optional constraints for querying JSONL log entries.
 type Filter struct {
-	Level    string
-	TaskID   string
-	SprintID string
-	Since    time.Time
-	Pattern  string
-	Limit    int
+	Level   string
+	TaskID  string
+	Since   time.Time
+	Pattern string
+	Limit   int
 }
 
 // Entry is a single log line parsed from ndjson.
@@ -42,7 +41,6 @@ func Query(logPath string, filter Filter) ([]Entry, error) {
 
 	normalizedLevel := strings.ToLower(strings.TrimSpace(filter.Level))
 	taskID := strings.TrimSpace(filter.TaskID)
-	sprintID := strings.TrimSpace(filter.SprintID)
 	pattern := strings.ToLower(strings.TrimSpace(filter.Pattern))
 
 	reader := bufio.NewReader(f)
@@ -80,13 +78,6 @@ func Query(logPath string, filter Filter) ([]Entry, error) {
 		}
 
 		if taskID != "" && attrString(entry.Attrs["task_id"]) != taskID {
-			if readErr == io.EOF {
-				break
-			}
-			continue
-		}
-
-		if sprintID != "" && attrString(entry.Attrs["sprint_id"]) != sprintID {
 			if readErr == io.EOF {
 				break
 			}

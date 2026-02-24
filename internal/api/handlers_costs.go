@@ -10,15 +10,15 @@ import (
 
 func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 	ct := cost.NewTracker(s.db)
-	sprintFlag := r.URL.Query().Get("sprint_id")
+	runID := r.URL.Query().Get("run_id")
 
-	if sprintFlag != "" {
-		total, _ := ct.SprintTotal(sprintFlag)
-		summary, _ := ct.SprintSummary(sprintFlag)
+	if runID != "" {
+		total, _ := ct.RunTotal(runID)
+		summary, _ := ct.RunSummary(runID)
 		jsonOK(w, map[string]interface{}{
-			"sprint_id": sprintFlag,
-			"total":     total,
-			"tools":     summary,
+			"run_id": runID,
+			"total":  total,
+			"tools":  summary,
 		})
 		return
 	}

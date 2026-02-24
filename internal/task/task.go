@@ -1,4 +1,4 @@
-// Package task handles task CRUD, dependency graph, and sprint batching.
+// Package task handles task CRUD and dependency graph.
 package task
 
 import (
@@ -23,7 +23,6 @@ type Task struct {
 	ParentID     string          `json:"parent_id,omitempty"`
 	Status       string          `json:"status"`
 	AssignedTool string          `json:"assigned_tool,omitempty"`
-	SprintID     string          `json:"sprint_id,omitempty"`
 	DependsOn    []string        `json:"depends_on"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
@@ -36,7 +35,7 @@ type PhaseOverride struct {
 
 type PhaseConfigMap struct {
 	UseDefaults bool                     `json:"use_defaults"`
-	Phases      map[string]PhaseOverride `json:"phases,omitempty"` // keys: "plan", "sprint", "review"
+	Phases      map[string]PhaseOverride `json:"phases,omitempty"` // keys: "plan", "run", "review"
 }
 
 type TaskReview struct {
@@ -93,7 +92,7 @@ func (s *Store) Create(title, description, parentID, assignedTool string) (*Task
 
 func (s *Store) Get(id string) (*Task, error) {
 	t, err := s.scanTask(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, created_at, updated_at
 		 FROM tasks WHERE id = ?`, id,
 	)
 	if err != nil {
@@ -110,14 +109,14 @@ func (s *Store) Get(id string) (*Task, error) {
 
 func (s *Store) List() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, created_at, updated_at
 		 FROM tasks ORDER BY created_at`,
 	)
 }
 
 func (s *Store) ListByStatus(status string) ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, created_at, updated_at
 		 FROM tasks WHERE status = ? ORDER BY created_at`, status,
 	)
 }
@@ -173,11 +172,10 @@ func (s *Store) Update(id string, fields map[string]interface{}) error {
 }
 
 var deletableStatuses = map[string]bool{
-	"pending":   true,
-	"in_sprint": true,
-	"review":    true,
-	"approved":  true,
-	"failed":    true,
+	"pending":  true,
+	"review":   true,
+	"approved": true,
+	"failed":   true,
 }
 
 func (s *Store) Delete(id string) error {

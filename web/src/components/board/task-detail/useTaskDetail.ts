@@ -9,7 +9,6 @@ import {
   useSavePlanMutation,
   useTaskPlanQuery,
 } from '../../../hooks/queries/usePlan'
-import { useReviewQuery } from '../../../hooks/queries/useSprints'
 import {
   buildTaskPhaseValues,
   shouldUseDefaults,
@@ -20,7 +19,6 @@ export interface TaskDetailProps {
   task: Task
   tools: string[]
   config: Config
-  sprintId?: string
   lastWSEvent?: WSEvent | null
   isOperationRunning: (type: string, targetId?: string) => boolean
   onClose: () => void
@@ -32,7 +30,6 @@ export function useTaskDetail({
   task,
   tools,
   config,
-  sprintId,
   lastWSEvent,
   isOperationRunning,
   onClose,
@@ -74,16 +71,16 @@ export function useTaskDetail({
     async (values) => {
       setSaving(true)
       try {
-        const sprintPhase = values.phases.sprint
-        const compatTool = sprintPhase.tool || config.defaults?.tool || ''
-        const compatModel = sprintPhase.model || config.defaults?.model || ''
+        const runPhase = values.phases.run
+        const compatTool = runPhase.tool || config.defaults?.tool || ''
+        const compatModel = runPhase.model || config.defaults?.model || ''
         const phaseConfig = values.useDefaults
           ? { use_defaults: true }
           : {
               use_defaults: false,
               phases: {
                 plan: toPhaseOverride(values.phases.plan),
-                sprint: toPhaseOverride(values.phases.sprint),
+                run: toPhaseOverride(values.phases.run),
                 review: toPhaseOverride(values.phases.review),
               },
             }
@@ -109,12 +106,6 @@ export function useTaskDetail({
   const savePlanMutation = useSavePlanMutation()
   const generatePlanMutation = useGeneratePlanMutation()
 
-  const effectiveSprintId = sprintId || task.sprint_id
-  const reviewSprintId =
-    ['review', 'approved', 'merged'].includes(task.status) && effectiveSprintId
-      ? effectiveSprintId
-      : ''
-  const reviewQuery = useReviewQuery(reviewSprintId)
   const { data: reviewsData } = useQuery({
     queryKey: ['task-reviews', task.id],
     queryFn: () => api.getTaskReviews(task.id),
@@ -130,12 +121,8 @@ export function useTaskDetail({
   )
 
   const artifact = useMemo<ReviewArtifact | null>(() => {
-    if (!reviewQuery.data?.artifacts) return null
-    return (
-      reviewQuery.data.artifacts.find((item) => item.task_id === task.id) ??
-      null
-    )
-  }, [reviewQuery.data?.artifacts, task.id])
+    return null
+  }, [])
 
   const generationModels = generateTool
     ? (generateModelsQuery.data?.[generateTool] ?? [])

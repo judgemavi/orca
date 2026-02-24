@@ -4,15 +4,15 @@ import { CreateTaskModal } from './CreateTaskModal'
 import { TaskDetailModal } from './task-detail/TaskDetailModal'
 import { ReviewPanel } from './ReviewPanel'
 import { Toast } from '../common/Toast'
-import { BoardHeader } from './BoardHeader'
-import { BoardColumns } from './BoardColumns'
-import { useBoardState } from './useBoardState'
+import { TasksToolbar } from './TasksToolbar'
+import { TasksTable } from './TasksTable'
+import { useTasksState } from './useTasksState'
 
 interface Props {
   lastWSEvent: WSEvent | null
 }
 
-export function BoardView({ lastWSEvent }: Props) {
+export function TasksView({ lastWSEvent }: Props) {
   const {
     actionLoading,
     showCreate,
@@ -22,22 +22,17 @@ export function BoardView({ lastWSEvent }: Props) {
     setShowReview,
     toastError,
     setToastError,
-    sprint,
+    tasks,
     configData,
     loading,
-    tasksByStatus,
-    activeTask,
+    reviewTasks,
+    approvedTasks,
     selectedTask,
     tools,
     isRunning,
-    sensors,
-    canDropTaskToColumn,
     invalidateBoard,
-    refreshAfterTaskUpdate,
-    runSprintAction,
-    handleDragStart,
-    handleDragEnd,
-  } = useBoardState()
+    runTasks,
+  } = useTasksState()
 
   if (loading) {
     return (
@@ -47,11 +42,7 @@ export function BoardView({ lastWSEvent }: Props) {
     )
   }
 
-  const activeSprintId = sprint?.id ?? ''
-  const sprintStarting =
-    activeSprintId !== '' && isRunning('sprint_start', activeSprintId)
-  const reviewRunning =
-    activeSprintId !== '' && isRunning('review', activeSprintId)
+  const runPending = isRunning('run')
   const merging = isRunning('merge')
   const decomposeRunning = isRunning('decompose')
   const cleanupRunning = isRunning('cleanup')
@@ -60,58 +51,67 @@ export function BoardView({ lastWSEvent }: Props) {
   return (
     <div className="flex flex-1 overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <BoardHeader
-          sprint={sprint}
+        <TasksToolbar
           actionLoading={actionLoading}
-          sprintStarting={sprintStarting}
-          reviewRunning={reviewRunning}
-          merging={merging}
+          runPending={runPending}
+          mergePending={merging}
+          reviewOpen={showReview}
+          hasReviewTasks={reviewTasks.length > 0}
+          hasApprovedTasks={approvedTasks.length > 0}
           decomposeRunning={decomposeRunning}
           cleanupRunning={cleanupRunning}
           exploring={exploring}
-          onPlanSprint={() => {
-            void runSprintAction(() => api.planSprint())
-          }}
-          onStartSprint={(sprintId) => {
-            void runSprintAction(() => api.startSprint(sprintId))
-          }}
-          onCancelSprint={(sprintId) => {
-            void runSprintAction(() => api.cancelSprint(sprintId))
+          onRun={() => {
+            const selectedReadyTaskId =
+              selectedTask &&
+              (selectedTask.status === 'pending' ||
+                selectedTask.status === 'failed')
+                ? selectedTask.id
+                : undefined
+            void runTasks(
+              selectedReadyTaskId ? [selectedReadyTaskId] : undefined,
+            )
           }}
           onToggleReview={() => setShowReview((v) => !v)}
           onMerge={() => {
-            void runSprintAction(() => api.merge())
+            void (async () => {
+              try {
+                await api.merge()
+                await invalidateBoard()
+              } catch (err: any) {
+                setToastError(err?.message ?? 'Merge failed')
+              }
+            })()
           }}
-          onResetSprint={(sprintId) => {
-            void runSprintAction(() => api.resetSprint(sprintId))
-          }}
+          onCreateTask={() => setShowCreate(true)}
         />
 
-        <BoardColumns
-          tasksByStatus={tasksByStatus}
-          activeTask={activeTask}
-          canDropTaskToColumn={canDropTaskToColumn}
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onCreateTask={() => setShowCreate(true)}
+        <TasksTable
+          tasks={tasks}
           onSelectTask={(taskId) => setSelectedTaskId(taskId)}
-          refreshAfterTaskUpdate={refreshAfterTaskUpdate}
         />
       </div>
 
-      {showReview &&
-        sprint &&
-        (sprint.status === 'completed' || sprint.status === 'failed') && (
-          <ReviewPanel
-            sprint={sprint}
-            onClose={() => setShowReview(false)}
-            onMerged={() => {
-              setShowReview(false)
-              void invalidateBoard()
-            }}
-          />
-        )}
+      {showReview && (
+        <ReviewPanel
+          reviewTasks={reviewTasks}
+          approvedTasks={approvedTasks}
+          onSelectTask={(taskId) => setSelectedTaskId(taskId)}
+          onClose={() => setShowReview(false)}
+          onMerge={() => {
+            void (async () => {
+              try {
+                await api.merge()
+                setShowReview(false)
+                await invalidateBoard()
+              } catch (err: any) {
+                setToastError(err?.message ?? 'Merge failed')
+              }
+            })()
+          }}
+          merging={merging}
+        />
+      )}
 
       {showCreate && configData && (
         <CreateTaskModal
@@ -129,7 +129,6 @@ export function BoardView({ lastWSEvent }: Props) {
           task={selectedTask}
           tools={tools}
           config={configData}
-          sprintId={sprint?.id}
           lastWSEvent={lastWSEvent}
           isOperationRunning={isRunning}
           onClose={() => setSelectedTaskId(null)}

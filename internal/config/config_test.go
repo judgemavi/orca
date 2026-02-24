@@ -155,9 +155,9 @@ func TestDefault(t *testing.T) {
 	if cfg.Defaults.Tool != "claude" {
 		t.Fatalf("defaults.tool = %q, want claude", cfg.Defaults.Tool)
 	}
-	if cfg.Monitor.StuckCheckInterval != "30s" ||
-		cfg.Monitor.MaxStuckCycles != 3 ||
-		cfg.Monitor.ConflictInterval != "15s" ||
+	if cfg.Monitor.StuckCheckInterval != "60s" ||
+		cfg.Monitor.MaxStuckCycles != 10 ||
+		cfg.Monitor.ConflictInterval != "30s" ||
 		cfg.Monitor.TaskBudget != 0 {
 		t.Fatalf("monitor defaults mismatch: %+v", cfg.Monitor)
 	}
@@ -432,7 +432,7 @@ func TestResolvePhaseToolConfig_DefaultsFallback(t *testing.T) {
 		Defaults: DefaultsConfig{Tool: "codex"},
 	}
 
-	for _, phase := range []string{"explore", "plan", "sprint", "review", "merge"} {
+	for _, phase := range []string{"explore", "plan", "run", "review", "merge"} {
 		toolName, _, err := cfg.ResolvePhaseToolConfig(phase)
 		if err != nil {
 			t.Fatalf("ResolvePhaseToolConfig(%q): %v", phase, err)
@@ -583,14 +583,14 @@ func TestDefaultsYAML_NewFields(t *testing.T) {
 	if cfg.Defaults.Tool != "claude" {
 		t.Fatalf("defaults.tool = %q, want claude", cfg.Defaults.Tool)
 	}
-	if cfg.Monitor.StuckCheckInterval != "30s" {
-		t.Fatalf("monitor.stuck_check_interval = %q, want 30s", cfg.Monitor.StuckCheckInterval)
+	if cfg.Monitor.StuckCheckInterval != "60s" {
+		t.Fatalf("monitor.stuck_check_interval = %q, want 60s", cfg.Monitor.StuckCheckInterval)
 	}
-	if cfg.Monitor.MaxStuckCycles != 3 {
-		t.Fatalf("monitor.max_stuck_cycles = %d, want 3", cfg.Monitor.MaxStuckCycles)
+	if cfg.Monitor.MaxStuckCycles != 10 {
+		t.Fatalf("monitor.max_stuck_cycles = %d, want 10", cfg.Monitor.MaxStuckCycles)
 	}
-	if cfg.Monitor.ConflictInterval != "15s" {
-		t.Fatalf("monitor.conflict_check_interval = %q, want 15s", cfg.Monitor.ConflictInterval)
+	if cfg.Monitor.ConflictInterval != "30s" {
+		t.Fatalf("monitor.conflict_check_interval = %q, want 30s", cfg.Monitor.ConflictInterval)
 	}
 	if cfg.Quality.Enabled != true || cfg.Quality.ScopeCheck != true || cfg.Quality.TestDelta != true || cfg.Quality.AlignmentCheck != false {
 		t.Fatalf("quality defaults mismatch: %+v", cfg.Quality)
@@ -697,9 +697,9 @@ orchestrator:
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.Monitor.StuckCheckInterval != "30s" ||
-		cfg.Monitor.MaxStuckCycles != 3 ||
-		cfg.Monitor.ConflictInterval != "15s" ||
+	if cfg.Monitor.StuckCheckInterval != "60s" ||
+		cfg.Monitor.MaxStuckCycles != 10 ||
+		cfg.Monitor.ConflictInterval != "30s" ||
 		cfg.Monitor.TaskBudget != 0 {
 		t.Fatalf("monitor defaults not applied: %+v", cfg.Monitor)
 	}

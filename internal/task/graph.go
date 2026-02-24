@@ -1,4 +1,4 @@
-// Package task handles task CRUD, dependency graph, and sprint batching.
+// Package task handles task CRUD and dependency graph.
 package task
 
 import "slices"

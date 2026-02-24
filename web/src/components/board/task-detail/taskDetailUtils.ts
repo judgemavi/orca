@@ -1,7 +1,7 @@
 import type { Config, Task } from '../../../types'
 
 export type PhaseValues = Record<
-  'plan' | 'sprint' | 'review',
+  'plan' | 'run' | 'review',
   { tool: string; model: string }
 >
 
@@ -10,7 +10,7 @@ export function buildDefaultPhaseValues(config: Config): PhaseValues {
   const model = config.defaults?.model ?? ''
   return {
     plan: { tool, model },
-    sprint: { tool, model },
+    run: { tool, model },
     review: { tool, model },
   }
 }
@@ -23,9 +23,9 @@ export function buildTaskPhaseValues(task: Task, config: Config): PhaseValues {
         tool: task.phase_config.phases.plan?.tool ?? defaults.plan.tool,
         model: task.phase_config.phases.plan?.model ?? defaults.plan.model,
       },
-      sprint: {
-        tool: task.phase_config.phases.sprint?.tool ?? defaults.sprint.tool,
-        model: task.phase_config.phases.sprint?.model ?? defaults.sprint.model,
+      run: {
+        tool: task.phase_config.phases.run?.tool ?? defaults.run.tool,
+        model: task.phase_config.phases.run?.model ?? defaults.run.model,
       },
       review: {
         tool: task.phase_config.phases.review?.tool ?? defaults.review.tool,
@@ -42,7 +42,7 @@ export function buildTaskPhaseValues(task: Task, config: Config): PhaseValues {
   const legacyModel = task.model ?? ''
   return {
     plan: { tool: legacyTool, model: legacyModel },
-    sprint: { tool: legacyTool, model: legacyModel },
+    run: { tool: legacyTool, model: legacyModel },
     review: { tool: legacyTool, model: legacyModel },
   }
 }

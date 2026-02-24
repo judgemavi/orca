@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import type { Config } from '../../types'
 import { useModelsQuery } from '../../hooks/queries/useModels'
 
-const PHASES = ['plan', 'sprint', 'review'] as const
+const PHASES = ['plan', 'run', 'review'] as const
 
 type PhaseName = (typeof PHASES)[number]
 

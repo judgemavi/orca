@@ -97,12 +97,3 @@ func (s *Server) startAsyncOp(w http.ResponseWriter, opType, targetID, eventPref
 	s.runAsync(opID, eventPrefix, extraData, fn)
 	return opID
 }
-
-func (s *Server) completeSprintIfNeeded(sprintID string) {
-	if sprintID == "" {
-		return
-	}
-	if _, err := s.planner.CompleteSprintIfDone(sprintID); err != nil {
-		slog.Warn("complete sprint check failed", "sprint_id", sprintID, "err", err)
-	}
-}

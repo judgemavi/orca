@@ -1,5 +1,5 @@
 import type { ProjectStatus } from '../../types'
-import { StatusBadge, StatusIcon } from '../common/StatusBadge'
+import { StatusIcon } from '../common/StatusBadge'
 import { ActionButton } from '../common/ActionButton'
 
 interface Props {
@@ -9,8 +9,8 @@ interface Props {
 
 const STATUS_ORDER = [
   'pending',
-  'in_sprint',
   'running',
+  'review',
   'approved',
   'merged',
   'failed',
@@ -18,10 +18,6 @@ const STATUS_ORDER = [
 
 export function StatusCard({ data, onAction }: Props) {
   const taskCounts = data?.task_counts ?? {}
-  const activeSprint = data?.active_sprint as {
-    id?: string
-    status?: string
-  } | null
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-900 p-4">
@@ -47,21 +43,6 @@ export function StatusCard({ data, onAction }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-2 text-[13px]">
-          <span className="min-w-16 text-slate-400">Sprint:</span>
-          <span>
-            {activeSprint ? (
-              <>
-                <span className="font-mono text-[13px]">
-                  {(activeSprint.id ?? '').slice(0, 8)}
-                </span>{' '}
-                <StatusBadge status={activeSprint.status ?? 'unknown'} />
-              </>
-            ) : (
-              <span className="text-slate-400">none</span>
-            )}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 text-[13px]">
           <span className="min-w-16 text-slate-400">Context:</span>
           <span>
             {data?.context_exists ? '\u2713 loaded' : '\u2717 not loaded'}
@@ -75,11 +56,7 @@ export function StatusCard({ data, onAction }: Props) {
         </div>
       </div>
       <div className="flex gap-2">
-        <ActionButton
-          label="Plan Sprint"
-          variant="primary"
-          onClick={() => onAction?.('plan sprint')}
-        />
+        <ActionButton label="Run Tasks" variant="primary" onClick={() => onAction?.('run tasks')} />
         <ActionButton label="View Tasks" onClick={() => onAction?.('tasks')} />
       </div>
     </div>

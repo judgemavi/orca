@@ -136,7 +136,7 @@ func TestPhaseConfig_CreateAndGet(t *testing.T) {
 		UseDefaults: false,
 		Phases: map[string]PhaseOverride{
 			"plan":   {Tool: "claude", Model: "claude-sonnet-4-6"},
-			"sprint": {Tool: "codex", Model: "gpt-5-codex"},
+			"run": {Tool: "codex", Model: "gpt-5-codex"},
 			"review": {Tool: "claude", Model: "claude-opus-4-6"},
 		},
 	}
@@ -187,7 +187,7 @@ func TestPhaseConfig_UseDefaultsTrue(t *testing.T) {
 	pc := PhaseConfigMap{
 		UseDefaults: true,
 		Phases: map[string]PhaseOverride{
-			"sprint": {Tool: "codex"},
+			"run": {Tool: "codex"},
 		},
 	}
 	if err := store.Update(created.ID, map[string]interface{}{"phase_config": pc}); err != nil {
@@ -216,7 +216,7 @@ func TestPhaseConfig_Update(t *testing.T) {
 
 	initial := PhaseConfigMap{
 		Phases: map[string]PhaseOverride{
-			"sprint": {Tool: "claude", Model: "claude-sonnet-4-6"},
+			"run": {Tool: "claude", Model: "claude-sonnet-4-6"},
 		},
 	}
 	if err := store.Update(created.ID, map[string]interface{}{"phase_config": initial}); err != nil {
@@ -225,7 +225,7 @@ func TestPhaseConfig_Update(t *testing.T) {
 
 	updatedPC := PhaseConfigMap{
 		Phases: map[string]PhaseOverride{
-			"sprint": {Tool: "codex", Model: "gpt-5-codex"},
+			"run": {Tool: "codex", Model: "gpt-5-codex"},
 			"review": {Tool: "claude", Model: "claude-opus-4-6"},
 		},
 	}
@@ -255,7 +255,7 @@ func TestPhaseConfig_ClearWithNull(t *testing.T) {
 
 	pc := PhaseConfigMap{
 		Phases: map[string]PhaseOverride{
-			"sprint": {Tool: "claude"},
+			"run": {Tool: "claude"},
 		},
 	}
 	if err := store.Update(created.ID, map[string]interface{}{"phase_config": pc}); err != nil {
@@ -578,7 +578,7 @@ func TestDeleteBlockedByStatus(t *testing.T) {
 	}
 
 	// Deletable statuses should work.
-	for _, status := range []string{"pending", "in_sprint", "review", "approved", "failed"} {
+	for _, status := range []string{"pending", "review", "approved", "failed"} {
 		tk, err := store.Create("Task "+status, "", "", "")
 		if err != nil {
 			t.Fatalf("create %s: %v", status, err)

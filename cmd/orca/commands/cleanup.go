@@ -18,7 +18,7 @@ func newCleanupCmd(r *Registry) *cobra.Command {
 }
 
 func (r *Registry) runCleanup(cmd *cobra.Command, args []string) error {
-	db, _, _, executor, err := r.loadRuntimeOrErr()
+	db, _, executor, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}

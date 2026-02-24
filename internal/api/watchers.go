@@ -15,7 +15,6 @@ import (
 func (s *Server) setupWatchers(ctx context.Context, taskStore *task.Store) {
 	watcher := state.NewWatcher(s.db, state.WatcherCallbacks{
 		OnTaskChange:      s.newTaskChangeHandler(taskStore),
-		OnSprintChange:    s.handleSprintChanges,
 		OnOperationChange: s.handleOperationChanges,
 		OnSessionChange:   s.handleSessionChanges,
 	}, state.WatcherOpts{})
@@ -24,10 +23,6 @@ func (s *Server) setupWatchers(ctx context.Context, taskStore *task.Store) {
 	if err := s.ops.MarkStaleAsFailed(); err != nil {
 		slog.Error("mark stale operations failed", "err", err)
 	}
-
-	s.planner.SetEventHook(func(eventType string, id string) {
-		s.hub.Broadcast(Event{Type: eventType, Data: map[string]string{"id": id}})
-	})
 
 	if s.sessionMgr != nil {
 		s.sessionMgr.SetEventHook(func(eventType string, sess *pty.Session) {
@@ -64,19 +59,6 @@ func (s *Server) newTaskChangeHandler(taskStore *task.Store) func([]state.TaskCh
 			case state.ChangeDeleted:
 				s.hub.Broadcast(Event{Type: "task.deleted", Data: map[string]string{"id": c.TaskID}})
 			}
-		}
-	}
-}
-
-func (s *Server) handleSprintChanges(changes []state.SprintChange) {
-	for _, c := range changes {
-		if c.Type == state.ChangeCreated || c.Type == state.ChangeUpdated || c.Type == state.ChangeDeleted {
-			sp, err := s.planner.Get(c.SprintID)
-			if err == nil {
-				s.hub.Broadcast(Event{Type: "sprint.updated", Data: sp})
-				continue
-			}
-			s.hub.Broadcast(Event{Type: "sprint.updated", Data: map[string]string{"id": c.SprintID}})
 		}
 	}
 }

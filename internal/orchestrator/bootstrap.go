@@ -152,18 +152,10 @@ var AllowedTools = []string{
 	"mcp__orca__tasks_plan_evaluate",
 	"mcp__orca__task_plan_generate",
 	"mcp__orca__task_merge",
-	// MCP tools — sprint
-	"mcp__orca__sprint_plan",
-	"mcp__orca__sprint_start",
-	"mcp__orca__sprint_status",
-	"mcp__orca__sprint_assign",
-	"mcp__orca__sprint_unassign",
-	"mcp__orca__sprint_cancel",
-	"mcp__orca__sprint_reset",
-	"mcp__orca__sprint_resume",
+	// MCP tools — execution
+	"mcp__orca__tasks_run",
 	// MCP tools — review
 	"mcp__orca__review_get",
-	"mcp__orca__review_sprint",
 	// MCP tools — integration
 	"mcp__orca__merge",
 	// MCP tools — exploration

@@ -44,7 +44,7 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}

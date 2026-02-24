@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/ops"
 	"github.com/jasjeetmavi/orca/internal/orchestrator"
 	"github.com/jasjeetmavi/orca/internal/pty"
-	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
@@ -22,8 +22,7 @@ import (
 type Server struct {
 	db         *state.DB
 	cfg        *config.Config
-	planner    *sprint.Planner
-	executor   *sprint.Executor
+	executor   *executor.Executor
 	taskStore  *task.Store
 	ops        *ops.Store
 	repoDir    string
@@ -41,13 +40,13 @@ type Server struct {
 
 // NewServer creates a Server and starts the WebSocket hub.
 // frontendFS is optional — pass nil to disable static file serving.
-func NewServer(db *state.DB, cfg *config.Config, planner *sprint.Planner, executor *sprint.Executor, repoDir string, frontendFS fs.FS, sessionMgr *pty.SessionManager) *Server {
-	return NewServerWithHub(db, cfg, planner, executor, repoDir, frontendFS, sessionMgr, nil)
+func NewServer(db *state.DB, cfg *config.Config, exec *executor.Executor, repoDir string, frontendFS fs.FS, sessionMgr *pty.SessionManager) *Server {
+	return NewServerWithHub(db, cfg, exec, repoDir, frontendFS, sessionMgr, nil)
 }
 
 // NewServerWithHub creates a Server with an optional pre-created hub.
 // If hub is nil, a new hub is created and started.
-func NewServerWithHub(db *state.DB, cfg *config.Config, planner *sprint.Planner, executor *sprint.Executor, repoDir string, frontendFS fs.FS, sessionMgr *pty.SessionManager, hub *Hub) *Server {
+func NewServerWithHub(db *state.DB, cfg *config.Config, exec *executor.Executor, repoDir string, frontendFS fs.FS, sessionMgr *pty.SessionManager, hub *Hub) *Server {
 	if hub == nil {
 		hub = NewHub()
 		go hub.Run()
@@ -59,8 +58,7 @@ func NewServerWithHub(db *state.DB, cfg *config.Config, planner *sprint.Planner,
 	srv := &Server{
 		db:         db,
 		cfg:        cfg,
-		planner:    planner,
-		executor:   executor,
+		executor:   exec,
 		taskStore:  taskStore,
 		ops:        opsStore,
 		repoDir:    repoDir,
@@ -73,8 +71,8 @@ func NewServerWithHub(db *state.DB, cfg *config.Config, planner *sprint.Planner,
 
 	srv.setupWatchers(ctx, taskStore)
 
-	if executor != nil {
-		executor.SetMonitorAlertHook(func(alertType, taskID, message string) {
+	if exec != nil {
+		exec.SetMonitorAlertHook(func(alertType, taskID, message string) {
 			srv.AddMonitorAlert(MonitorAlert{
 				Type:      alertType,
 				TaskID:    taskID,

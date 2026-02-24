@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -109,7 +108,7 @@ func (r *Registry) runTaskList(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -222,7 +221,7 @@ func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
-	db, cfg, _, executor, err := r.loadRuntimeOrErr()
+	db, cfg, executor, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -259,7 +258,6 @@ func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	sprintID := t.SprintID
 	if err := store.Delete(id); err != nil {
 		return fmt.Errorf("delete task: %w", err)
 	}
@@ -270,14 +268,6 @@ func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 	fmt.Printf("Deleted task %s: %s\n", short(t.ID), t.Title)
-	// End sprint if all its tasks have been deleted.
-	if sprintID != "" {
-		if ended, err := sprint.TryComplete(db, sprintID); err != nil {
-			warnf("check sprint after delete: %v", err)
-		} else if ended {
-			fmt.Printf("Sprint %s completed (no tasks remaining)\n", short(sprintID))
-		}
-	}
 	return nil
 }
 
@@ -370,7 +360,7 @@ func (r *Registry) runTaskReopen(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		if err := store.Update(id, map[string]interface{}{"status": "pending", "sprint_id": nil}); err != nil {
+		if err := store.Update(id, map[string]interface{}{"status": "pending"}); err != nil {
 			errorf("reopen task %s: %v", short(id), err)
 			continue
 		}

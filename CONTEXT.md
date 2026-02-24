@@ -2,311 +2,122 @@
 
 ## Project Overview
 
-Orca is a **multi-agent CLI orchestrator** for AI coding tools (Claude Code, Codex, Aider). It coordinates multiple AI workers on shared codebases using git worktree isolation and a scrum-inspired execution model: explore → decompose → sprint → review → merge. Ships as a single Go binary with an embedded React dashboard and SQLite state.
+Orca is a multi-agent CLI orchestrator for AI coding tools (Claude Code, Codex, Aider). It coordinates workers on shared codebases using git worktree isolation and a direct execution pipeline:
+
+`explore → decompose → plan → run → review → merge`
+
+Ready tasks run directly via `executor.RunBatch()`.
 
 ---
 
 ## Directory Structure
 
-```
+```text
 orca/
-├── cmd/orca/                  # CLI entry point
-│   ├── main.go                # Runtime state, command registration, lifecycle
-│   └── commands/              # 14 command modules (task, sprint, merge, etc.)
-│
-├── internal/                  # Core business logic (23 packages)
-│   ├── state/                 # SQLite persistence (schema, migrations, change watcher)
-│   ├── task/                  # Task CRUD & dependency graph (Store: 16 methods)
-│   ├── config/                # YAML config parsing + embedded defaults
-│   ├── sprint/                # Planning, execution, monitoring
-│   ├── worker/                # CLI tool adapter (headless/interactive/resume modes)
-│   ├── explore/               # Codebase analysis via headless LLM
-│   ├── decompose/             # Goal → task breakdown via LLM
-│   ├── integrator/            # Branch merging, conflict resolution, validation
-│   ├── review/                # Automated code review + alignment checks
-│   ├── quality/               # Pre-review gates (scope creep, test delta)
-│   ├── monitor/               # Stuck detection, conflict prediction, budget enforcement
-│   ├── cost/                  # Per-sprint/tool cost tracking & token parsing
-│   ├── llm/                   # LLM utilities (JSON/markdown extraction)
-│   ├── mcp/                   # MCP stdio server (30+ tools, JSONRPC 2.0)
-│   ├── orchestrator/          # Supervisor agent bootstrap & MCP config
-│   ├── plan/                  # Task implementation planning via LLM
-│   ├── api/                   # HTTP/WebSocket server (React dashboard backend)
-│   ├── pty/                   # Interactive terminal session management
+├── cmd/orca/                  # CLI entrypoint and command modules
+├── internal/
+│   ├── api/                   # HTTP/WebSocket backend
+│   ├── config/                # YAML config and defaults
+│   ├── cost/                  # Token/cost tracking (run-scoped)
+│   ├── decompose/             # Goal -> task breakdown
+│   ├── evaluate/              # Task complexity evaluation
+│   ├── executor/              # Direct task batch execution (RunBatch)
+│   ├── explore/               # Codebase context generation
+│   ├── integrator/            # Merge + validation
+│   ├── mcp/                   # MCP stdio server tools
+│   ├── monitor/               # Stuck/conflict/budget runtime monitors
 │   ├── ops/                   # Operation audit log
-│   ├── worktree/              # Git worktree lifecycle (create/delete/checkout)
-│   ├── model/                 # Tool model catalog
-│   ├── testutil/              # Shared test fixtures
-│   └── banner/                # ASCII art init wizard
-│
-├── prompts/                   # LLM prompt templates (.md files + loader)
-│   ├── explore.md, decompose.md, plan.md, review.md
-│   ├── orchestrator.md, alignment.md, conflict_resolve.md
-│   └── prompts.go             # Template loading
-│
-├── web/                       # React 19 frontend (embedded in binary)
-│   ├── src/
-│   │   ├── components/        # board/ (Kanban), console/ (diff viewer), terminal/ (xterm)
-│   │   ├── hooks/             # React Query integration
-│   │   ├── api.ts             # Fetch wrapper + WebSocket client
-│   │   ├── types.ts           # TypeScript models
-│   │   └── App.tsx            # Root component
-│   └── vite.config.ts
-│
-├── .orca/                     # Runtime state (generated, gitignored)
-│   ├── orca.yaml              # Project config
-│   ├── state.db               # SQLite (WAL mode)
-│   ├── context.md             # Explore output
-│   ├── mcp.json               # MCP config for tool processes
-│   └── worktrees/             # Per-task git worktrees
-│
-├── Taskfile.yml               # Build orchestration (task runner)
-├── go.mod / go.sum            # Go deps
-└── PLAN.md                    # Feature roadmap
+│   ├── plan/                  # Implementation planning
+│   ├── pty/                   # Interactive terminal sessions
+│   ├── quality/               # Scope/test/alignment quality gates
+│   ├── review/                # Automated review helpers
+│   ├── state/                 # SQLite persistence + migrations + watcher
+│   ├── task/                  # Task CRUD + dependency graph
+│   ├── worker/                # CLI tool adapter/execution
+│   └── worktree/              # Git worktree lifecycle
+├── prompts/                   # Prompt templates used by phases/orchestrator
+├── web/                       # Embedded React dashboard
+└── .orca/                     # Runtime state (config/db/context/worktrees)
 ```
 
 ---
 
-## Key Patterns
+## Execution Model
 
-### Architecture: Scrum-Inspired Pipeline
+### Pipeline
 
-```
-Explore → Decompose → Sprint Plan → Sprint Execute → Review → Merge
-```
+`Explore → Decompose → Plan → Run → Review → Merge`
 
-Each stage is a CLI command and an internal package. Tasks flow through statuses:
+### Task Status Flow
 
-```
-pending → in_sprint → running → review → approved → merged
-                              ↘ failed (can reopen)
-```
+`pending → running → review → approved → merged`
 
-Sprints: `planning → in_progress → in_review → finalized`
+Failure path: `running → failed` (can be reopened to `pending`).
 
-### Worker Adapter Pattern
+### Run Semantics
 
-`worker.Adapter` wraps any CLI tool with two modes:
-- **Headless**: binary + args template (`{{prompt}}` substitution) → stdout capture
-- **Interactive**: MCP-based with session resume support
-
-Output extraction is configurable per-tool: `json_envelope`, `stdout`, or `regex`.
-
-### Git Worktree Isolation
-
-- One branch per task: `orca/task-{id}`
-- Integration branch: `orca/integration` (not main)
-- Merge with `--no-ff`, auto-rebase on conflict
-
-### Change Detection
-
-SQLite triggers increment `meta.db_version` on every write. Watcher polls this sentinel (O(1), no table scans) → emits events → WebSocket broadcasts to dashboard.
-
-### Error Handling
-
-- Wrapped errors: `fmt.Errorf("operation: %w", err)`
-- No panics in user-facing code
-- Graceful degradation (missing context → empty string)
-- Orphan detection for hung tasks (resume or cleanup)
-
-### Naming Conventions
-
-| Scope | Convention |
-|-------|-----------|
-| Go files | `snake_case.go` |
-| Functions | `PascalCase` (exported) / `camelCase` (private) |
-| DB tables | `snake_case` |
-| Branches | `orca/task-{uuid}`, `orca/integration` |
+- `orca run` (or `POST /api/v1/tasks/run`) selects ready tasks (or explicit IDs)
+- Executor runs up to `workers.max_parallel`
+- Each task runs in its own worktree branch (`orca/task-{id}`)
+- Artifacts/costs are recorded with a `run_id`
 
 ---
 
-## Database Schema (SQLite, WAL mode)
+## Database Schema
 
-8 tables + triggers, versioned migrations (v1–v8):
+SQLite with migrations.
 
 | Table | Purpose |
-|-------|---------|
-| `tasks` | Task entries (id, title, status, sprint_id, parent_id, prompt, phase_config) |
-| `task_deps` | Dependency graph (task_id → depends_on) |
-| `task_reviews` | Review feedback (status: pending/addressed) |
-| `sprints` | Sprint batches (status: planning/in_progress/in_review/finalized) |
-| `artifacts` | Task outputs (diff, stdout, stderr, exit_code, duration_ms, quality_json) |
-| `costs` | Budget tracking (tool, input/output tokens, estimated_cost) |
-| `operations` | Audit log (type, target_id, status, result, error) |
-| `sessions` | Interactive PTY sessions (tool, pid, working_dir, status) |
-| `meta` | Sentinel for change detection (db_version) |
+|---|---|
+| `tasks` | Task records |
+| `task_deps` | Task dependency graph |
+| `task_reviews` | Review feedback history |
+| `artifacts` | Execution outputs (`diff`, logs, exit code, quality), includes `run_id` |
+| `costs` | Token/cost tracking, includes `run_id` |
+| `operations` | Async operation audit log |
+| `sessions` | PTY session metadata |
+| `meta` | DB version sentinel for watcher |
 
 ---
 
-## Dependencies
+## CLI Surface
 
-### Go (Direct)
+Core commands:
 
-| Package | Purpose |
-|---------|---------|
-| `creack/pty` | PTY allocation for interactive sessions |
-| `google/uuid` | UUID generation (task/sprint IDs) |
-| `gorilla/websocket` | WebSocket for live dashboard |
-| `mattn/go-sqlite3` | SQLite driver |
-| `spf13/cobra` | CLI framework |
-| `gopkg.in/yaml.v3` | Config parsing |
-| `charmbracelet/*` | TUI components (bubbles, lipgloss, huh) |
+- Setup/context: `init`, `explore`, `status`
+- Planning/tasks: `breakdown`, `tasks add/list/show/edit/delete/reopen/plan/evaluate/merge`
+- Execution: `run`, `review approve`, `review request-changes`, `merge`
+- Runtime/ops: `serve`, `mcp`, `orc`, `ops`, `costs`, `cleanup`, `logs`, `models`, `config show`
 
-### Frontend (Node/Bun)
-
-| Package | Purpose |
-|---------|---------|
-| `react@19` | UI framework |
-| `@tanstack/react-query@5` | Server state management |
-| `@xterm/xterm@6` | Terminal emulation |
-| `@dnd-kit/*` | Drag-and-drop (Kanban board) |
-| `react-diff-viewer-continued` | Diff rendering |
-| `tailwindcss@4` | Styling |
-| `vite@7` | Bundler |
-| `@biomejs/biome` | Linter/formatter (dev) |
-
----
-
-## Build & Test
-
-### Build (uses [Task](https://taskfile.dev))
-
-```bash
-task build          # Full build: web + Go binary → dist/orca
-task build:go       # Go binary only: go build -o dist/orca ./cmd/orca
-task web:build      # Frontend: tsc + vite → web/dist/ (embedded in Go binary)
-task web:dev        # Frontend dev server on :5173
-task clean          # rm -rf dist/ web/dist/
-```
-
-Output: single `dist/orca` binary with embedded React frontend and SQLite.
-
-### Test
-
-```bash
-task test           # go test ./cmd/... ./internal/...
-task vet            # go vet
-task lint           # vet + build
-```
-
-Go stdlib `testing` package. Key test areas: state migrations, worker output extraction, sprint planning, monitor algorithms.
-
-### Run
-
-```bash
-orca init                              # Setup .orca/ dir + config
-orca explore --goal "Add auth"         # Generate codebase context
-orca breakdown "Implement JWT auth"    # Decompose goal → tasks
-orca sprint plan                       # Select ready tasks
-orca sprint start                      # Execute workers in parallel
-orca sprint review                     # Quality gates + review
-orca merge                             # Merge approved → integration branch
-orca serve                             # Web dashboard on :8080
-orca mcp                               # Start MCP stdio server
-```
-
----
-
-## CLI Commands
-
-| Group | Commands |
-|-------|----------|
-| Setup | `init`, `explore`, `status`, `log` |
-| Tasks | `task add/edit/delete/list/show/reopen/merge/plan` |
-| Sprint | `sprint plan/assign/unassign/start/status/review/resume/cancel/reset` |
-| Review | `review approve/request-changes` |
-| Execute | `run`, `merge`, `breakdown` |
-| Server | `serve` (HTTP/WS :8080), `mcp` (stdio JSONRPC) |
-| Meta | `config show`, `models`, `costs`, `ops` |
-
----
-
-## Configuration (`.orca/orca.yaml`)
-
-```yaml
-project:
-  name: orca
-  integration_branch: orca/integration
-  worktree_dir: .orca/worktrees
-
-tools:
-  claude:
-    binary: claude
-    model: claude-opus-4-6
-    headless_args: [-p, '{{prompt}}', --output-format, json, ...]
-    interactive_args: [--mcp-config, '{{mcp_config}}', ...]
-    resume_args: [--resume, '{{session_id}}', ...]
-    timeout: 600s
-    output:
-      mode: json_envelope    # json_envelope | stdout | regex
-      result_field: result
-
-defaults:
-  tool: claude
-
-workers:
-  max_parallel: 3            # Concurrent task workers
-
-validation:
-  commands: []               # Post-integration test commands
-
-quality:
-  enabled: true
-  scope_check: true          # Detect scope creep
-  test_delta: true           # Validate test coverage
-  alignment_check: false     # LLM alignment verification
-
-monitor:
-  stuck_check_interval: 60s
-  max_stuck_cycles: 10
-  conflict_check_interval: 30s
-
-server:
-  addr: :8080
-```
+Ready tasks execute directly via `executor.RunBatch()`.
 
 ---
 
 ## Key Algorithms
 
-**Staleness check (explore)**: SHA256 of `git ls-files` output → compare with cached hash → skip regeneration if unchanged.
-
-**Stuck detection**: SHA256 of worktree file tree, compared every N seconds. If unchanged for `max_stuck_cycles` → emit stuck event.
-
-**Conflict prediction**: Intersect files in task diff with files in integration branch diff → warn if overlap exceeds threshold.
-
-**Scope creep**: Flag if files changed > threshold or lines > 500 (non-refactor), or if no tests added with >3 non-test files changed.
-
-**Sprint planning**: `GetReady()` finds tasks with all deps satisfied → batch up to `max_parallel` → create sprint.
-
-**Integration ordering**: Sort approved tasks by priority DESC → category (scaffold > config > migration > feature) → created_at ASC. Merge sequentially with validation gate after each.
+- Staleness check (`explore`): hash tracked files to detect context drift.
+- Ready queue: `GetReady()` returns `pending` tasks whose dependencies are `merged`.
+- Run execution: `executor.RunBatch()` transitions tasks to `running`, executes workers in parallel, stores artifacts/costs by `run_id`, then finalizes statuses.
+- Integration ordering: merge approved tasks deterministically to reduce conflicts.
 
 ---
 
-## MCP Server (30+ tools)
+## MCP Server
 
-Accessible via `orca mcp` (stdio JSONRPC 2.0). Key tool groups:
+Orca MCP (`orca mcp`) exposes task-oriented tools.
 
-- **Task mgmt**: `task_list`, `task_create`, `task_update`, `task_delete`
-- **Sprint ops**: `sprint_plan`, `sprint_start`, `sprint_status`
-- **Review**: `review_task`, `approval_status`
-- **Integration**: `merge`, `merge_status`
-- **Orchestration**: `breakdown`, `explore`, `plan_task`
+Key groups:
 
-Config for external tools:
-```json
-{
-  "mcpServers": {
-    "orca": { "command": "/path/to/orca", "args": ["mcp"], "cwd": "/path/to/repo" }
-  }
-}
-```
+- Task lifecycle: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
+- Planning: `breakdown`, `tasks_plan_evaluate`, `tasks_plan_generate`
+- Execution: `tasks_run`
+- Review/integration: `tasks_approve`, `tasks_request_changes`, `merge`, `tasks_merge`
+- Context/ops: `explore`, `explore_status`, `project_status`, `worktree_*`, `budget_status`, `quality_results`, `log_*`
 
 ---
 
 ## Frontend Architecture
 
-- **React Query** for server state (tasks, sprints, artifacts)
-- **WebSocket** for live updates (board broadcasts)
-- **Components**: Kanban board (`@dnd-kit`), diff viewer, xterm.js terminal, sidebar nav
-- **Dev**: `task web:dev` → Vite on :5173, proxies API to :8080
+- React Query for server state
+- WebSocket events for live task/run updates
+- Task table + task detail + terminal views for end-to-end execution visibility

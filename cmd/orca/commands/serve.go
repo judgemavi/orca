@@ -10,8 +10,9 @@ import (
 	"github.com/jasjeetmavi/orca/internal/api"
 	"github.com/jasjeetmavi/orca/internal/banner"
 	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/pty"
-	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/jasjeetmavi/orca/web"
 	"github.com/spf13/cobra"
@@ -25,7 +26,7 @@ func RegisterServe(root *cobra.Command, r *Registry) {
 }
 
 func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
-	db, cfg, planner, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -59,9 +60,10 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 
 	opts := api.NewExecutorOptions(db, hub)
 	opts.CostTracker = cost.NewTracker(db)
+	store := task.NewStore(db)
 	wm := worktree.NewManager(repoDir, cfg.Project.WorktreeDir)
-	executor := sprint.NewExecutor(planner, wm, cfg, repoDir, opts, sessionMgr)
-	srv := api.NewServerWithHub(db, cfg, planner, executor, repoDir, frontendFS, sessionMgr, hub)
+	exec := executor.NewExecutor(db, store, wm, cfg, repoDir, opts, sessionMgr)
+	srv := api.NewServerWithHub(db, cfg, exec, repoDir, frontendFS, sessionMgr, hub)
 	defer srv.Shutdown()
 
 	ln, err := net.Listen("tcp", addr)

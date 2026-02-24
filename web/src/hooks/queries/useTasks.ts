@@ -57,3 +57,13 @@ export function useDeleteTask() {
     },
   })
 }
+
+export function useRunTasksMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (taskIds?: string[]) => api.runTasks(taskIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    },
+  })
+}

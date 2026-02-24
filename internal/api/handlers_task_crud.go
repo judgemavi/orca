@@ -151,9 +151,6 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 				jsonError(w, "can only move failed tasks to pending", http.StatusBadRequest)
 				return
 			}
-		case "in_sprint":
-			jsonError(w, "use /api/v1/sprints/assign to add tasks to sprint", http.StatusBadRequest)
-			return
 		case "approved", "running", "merged", "review":
 			jsonError(w, "cannot manually set status to "+newStatus, http.StatusBadRequest)
 			return
@@ -180,14 +177,11 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id str
 	if !ok {
 		return
 	}
-	var err error
-	tk, err := store.Get(resolved)
-	if err != nil {
+	if _, err := store.Get(resolved); err != nil {
 		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
-	sprintID := tk.SprintID
 	if err := store.Delete(resolved); err != nil {
 		jsonError(w, err, http.StatusBadRequest)
 		return
@@ -196,9 +190,6 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id str
 	if err := s.executor.Worktrees().Remove(resolved); err != nil {
 		slog.Warn("cleanup worktree after delete", "task_id", resolved[:8], "err", err)
 	}
-	// End sprint if all its tasks have been deleted.
-	s.completeSprintIfNeeded(sprintID)
-
 	s.hub.Broadcast(Event{Type: "task.deleted", Data: map[string]string{"id": resolved}})
 	jsonOK(w, map[string]string{"deleted": resolved})
 }

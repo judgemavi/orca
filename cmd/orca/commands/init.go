@@ -81,11 +81,9 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("  orca tasks add \"task title\"        Add a task")
 	fmt.Println("  orca tasks list                     View all tasks")
 	fmt.Println("  orca breakdown \"goal\"             Break down a goal into tasks")
-	fmt.Println("  orca sprint plan                  Select tasks for a sprint")
-	fmt.Println("  orca sprint start                 Execute the sprint")
-	fmt.Println("  orca sprint review                Review completed work")
+	fmt.Println("  orca run                          Run ready tasks")
+	fmt.Println("  orca review approve <task-id>     Approve reviewed work")
 	fmt.Println("  orca merge                        Merge approved tasks")
-	fmt.Println("  orca run                          Do all of the above in one shot")
 	fmt.Println("  orca status                       Show project overview")
 	fmt.Println("  orca serve                        Open web UI")
 	fmt.Println("  orca orc                          Launch orchestrator (autopilot)")
@@ -424,7 +422,7 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 }
 
 func selectPhases(defaultTool string, available []string, toolModels []toolModelInfo, existingCfg *config.Config) (map[string]config.PhaseConfig, error) {
-	phases := []string{"explore", "plan", "sprint", "review", "merge"}
+	phases := []string{"explore", "plan", "run", "review", "merge"}
 	phaseToolSelections := make(map[string]string, len(phases))
 	for _, phase := range phases {
 		phaseToolSelections[phase] = ""

@@ -15,7 +15,7 @@ func RegisterMCP(root *cobra.Command, r *Registry) {
 }
 
 func (r *Registry) runMCP(cmd *cobra.Command, args []string) error {
-	db, cfg, planner, executor, err := r.loadRuntimeOrErr()
+	db, cfg, executor, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -27,7 +27,7 @@ func (r *Registry) runMCP(cmd *cobra.Command, args []string) error {
 	}
 
 	store := task.NewStore(db)
-	server := mcp.NewServer(store, planner, executor, cfg, repoDir)
+	server := mcp.NewServer(db, store, executor, cfg, repoDir)
 	if err := server.Run(); err != nil {
 		return fmt.Errorf("mcp server: %w", err)
 	}

@@ -36,25 +36,6 @@ export async function invalidateQueriesForWSEvent(
     return
   }
 
-  if (
-    event.type === 'sprint.updated' ||
-    event.type === 'sprint.planned' ||
-    event.type === 'sprint.started' ||
-    event.type === 'sprint.completed' ||
-    event.type === 'sprint.failed' ||
-    event.type === 'sprint.cancelled' ||
-    event.type === 'sprint.reset'
-  ) {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      queryClient.invalidateQueries({ queryKey: ['sprints'] }),
-      queryClient.invalidateQueries({ queryKey: ['sprint', 'active'] }),
-      queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      queryClient.invalidateQueries({ queryKey: ['status'] }),
-    ])
-    return
-  }
-
   if (event.type === 'plan.completed') {
     const taskId = readString(event.data, 'task_id')
     await Promise.all([
@@ -66,20 +47,14 @@ export async function invalidateQueriesForWSEvent(
     return
   }
 
-  if (event.type === 'review.completed') {
-    const sprintId = readString(event.data, 'sprint_id')
-    if (sprintId) {
-      await queryClient.invalidateQueries({ queryKey: ['review', sprintId] })
-    }
-    return
-  }
-
   if (event.type === 'session.created' || event.type === 'session.exited') {
     await queryClient.invalidateQueries({ queryKey: ['sessions'] })
     return
   }
 
   if (
+    event.type === 'run.completed' ||
+    event.type === 'run.failed' ||
     event.type === 'decompose.started' ||
     event.type === 'decompose.completed' ||
     event.type === 'decompose.failed' ||
@@ -92,7 +67,11 @@ export async function invalidateQueriesForWSEvent(
     event.type === 'explore.completed' ||
     event.type === 'explore.failed'
   ) {
-    await queryClient.invalidateQueries({ queryKey: ['operations'] })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      queryClient.invalidateQueries({ queryKey: ['operations'] }),
+      queryClient.invalidateQueries({ queryKey: ['status'] }),
+    ])
   }
 }
 

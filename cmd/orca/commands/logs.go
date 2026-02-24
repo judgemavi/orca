@@ -20,7 +20,6 @@ import (
 func (r *Registry) runLogs(cmd *cobra.Command, args []string) error {
 	level, _ := cmd.Flags().GetString("level")
 	taskID, _ := cmd.Flags().GetString("task")
-	sprintID, _ := cmd.Flags().GetString("sprint")
 	sinceRaw, _ := cmd.Flags().GetString("since")
 	tail, _ := cmd.Flags().GetInt("tail")
 	follow, _ := cmd.Flags().GetBool("follow")
@@ -55,10 +54,9 @@ func (r *Registry) runLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	filter := logging.Filter{
-		Level:    normalizedLevel,
-		TaskID:   strings.TrimSpace(taskID),
-		SprintID: strings.TrimSpace(sprintID),
-		Since:    since,
+		Level:  normalizedLevel,
+		TaskID: strings.TrimSpace(taskID),
+		Since:  since,
 	}
 
 	entries, err := logging.Query(logPath, filter)

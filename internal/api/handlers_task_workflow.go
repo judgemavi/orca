@@ -33,7 +33,6 @@ func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request, id st
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	s.completeSprintIfNeeded(tk.SprintID)
 
 	updated, err := store.Get(resolved)
 	if err != nil {
@@ -142,7 +141,7 @@ func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
-	if err := store.Update(resolved, map[string]interface{}{"status": "pending", "sprint_id": nil}); err != nil {
+	if err := store.Update(resolved, map[string]interface{}{"status": "pending"}); err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}

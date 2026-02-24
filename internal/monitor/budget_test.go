@@ -103,7 +103,7 @@ func TestBudgetEnforcerDisabledBudgetsNeverFire(t *testing.T) {
 	}
 }
 
-func TestBudgetEnforcerSprintBudgetSumsTasks(t *testing.T) {
+func TestBudgetEnforcerRunBudgetSumsTasks(t *testing.T) {
 	costFn := func(taskID string) float64 {
 		switch taskID {
 		case "task-1":
@@ -140,22 +140,22 @@ func TestBudgetEnforcerSprintBudgetSumsTasks(t *testing.T) {
 
 	select {
 	case ev := <-events:
-		if ev.taskID != "sprint" {
-			t.Fatalf("expected sprint callback, got %+v", ev)
+		if ev.taskID != "run" {
+			t.Fatalf("expected run callback, got %+v", ev)
 		}
 		if ev.limit != 1.0 {
-			t.Fatalf("sprint limit = %.2f, want 1.0", ev.limit)
+			t.Fatalf("run limit = %.2f, want 1.0", ev.limit)
 		}
 		if ev.spent < 1.1 {
-			t.Fatalf("sprint spent = %.2f, want at least 1.1", ev.spent)
+			t.Fatalf("run spent = %.2f, want at least 1.1", ev.spent)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("expected sprint budget callback")
+		t.Fatal("expected run budget callback")
 	}
 
 	select {
 	case extra := <-events:
-		t.Fatalf("unexpected extra sprint callback: %+v", extra)
+		t.Fatalf("unexpected extra run callback: %+v", extra)
 	case <-time.After(120 * time.Millisecond):
 	}
 }

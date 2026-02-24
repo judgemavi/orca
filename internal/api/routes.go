@@ -12,24 +12,11 @@ func (s *Server) Routes() http.Handler {
 	// Tasks
 	mux.HandleFunc("/api/v1/tasks", s.routeTasks)
 	mux.HandleFunc("/api/v1/tasks/ready", s.handleGetReady)
+	mux.HandleFunc("/api/v1/tasks/run", s.handleRunTasks)
 	mux.HandleFunc("/api/v1/tasks/", s.routeTaskByID)
 	mux.HandleFunc("/api/tasks/", s.routeTaskByID)
 	mux.HandleFunc("/api/v1/models", s.handleListModels)
 	mux.HandleFunc("/api/v1/cleanup", s.handleCleanup)
-
-	// Sprints
-	mux.HandleFunc("/api/v1/sprints", s.routeSprints)
-	mux.HandleFunc("/api/v1/sprints/active", s.handleGetActiveSprint)
-	mux.HandleFunc("/api/v1/sprints/plan", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.handlePlanSprint(w, r)
-	})
-	mux.HandleFunc("/api/v1/sprints/assign", s.handleSprintAssign)
-	mux.HandleFunc("/api/v1/sprints/unassign", s.handleSprintUnassign)
-	mux.HandleFunc("/api/v1/sprints/", s.routeSprintByID)
 
 	// Merge
 	mux.HandleFunc("/api/v1/merge", s.handleMerge)
@@ -209,60 +196,6 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 		s.handleUpdateTask(w, r, taskID)
 	case http.MethodDelete:
 		s.handleDeleteTask(w, r, taskID)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeSprints(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleListSprints(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeSprintByID(w http.ResponseWriter, r *http.Request) {
-	id := extractPathParam(r.URL.Path, "/api/v1/sprints/")
-	if id == "" {
-		jsonError(w, "missing sprint id", http.StatusBadRequest)
-		return
-	}
-
-	parts := strings.SplitN(id, "/", 2)
-	if len(parts) == 2 {
-		switch parts[1] {
-		case "start":
-			s.handleStartSprint(w, r, parts[0])
-		case "cancel":
-			s.handleCancelSprint(w, r, parts[0])
-		case "reset":
-			s.handleResetSprint(w, r, parts[0])
-		case "review":
-			s.routeSprintReview(w, r, parts[0])
-		case "plan":
-			s.handlePlanSprint(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-		return
-	}
-
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetSprint(w, r, id)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeSprintReview(w http.ResponseWriter, r *http.Request, sprintID string) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetReview(w, r, sprintID)
-	case http.MethodPost:
-		s.handlePostReview(w, r, sprintID)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

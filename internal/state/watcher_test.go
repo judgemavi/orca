@@ -113,15 +113,9 @@ func TestWatcherDetectsCrossConnectionStatusTableMutations(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	sprintCh := make(chan []SprintChange, 16)
 	operationCh := make(chan []OperationChange, 16)
 	sessionCh := make(chan []SessionChange, 16)
 	watcher := NewWatcher(db, WatcherCallbacks{
-		OnSprintChange: func(changes []SprintChange) {
-			copied := make([]SprintChange, len(changes))
-			copy(copied, changes)
-			sprintCh <- copied
-		},
 		OnOperationChange: func(changes []OperationChange) {
 			copied := make([]OperationChange, len(changes))
 			copy(copied, changes)
@@ -149,7 +143,7 @@ func TestWatcherDetectsCrossConnectionStatusTableMutations(t *testing.T) {
 		}
 	})
 
-	assertNoStatusChangeOnStartup(t, sprintCh, operationCh, sessionCh)
+	assertNoStatusChangeOnStartup(t, operationCh, sessionCh)
 
 	raw, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -157,24 +151,9 @@ func TestWatcherDetectsCrossConnectionStatusTableMutations(t *testing.T) {
 	}
 	defer raw.Close()
 
-	if _, err := raw.Exec(`INSERT INTO sprints (id, status) VALUES (?, ?)`, "sp-1", "planning"); err != nil {
-		t.Fatalf("insert sprint via second connection: %v", err)
-	}
-	waitForSprintChange(t, sprintCh, SprintChange{Type: ChangeCreated, SprintID: "sp-1"}, 1500*time.Millisecond)
-
-	if _, err := raw.Exec(`UPDATE sprints SET status = ? WHERE id = ?`, "running", "sp-1"); err != nil {
-		t.Fatalf("update sprint via second connection: %v", err)
-	}
-	waitForSprintChange(t, sprintCh, SprintChange{Type: ChangeUpdated, SprintID: "sp-1"}, 1500*time.Millisecond)
-
-	if _, err := raw.Exec(`DELETE FROM sprints WHERE id = ?`, "sp-1"); err != nil {
-		t.Fatalf("delete sprint via second connection: %v", err)
-	}
-	waitForSprintChange(t, sprintCh, SprintChange{Type: ChangeDeleted, SprintID: "sp-1"}, 1500*time.Millisecond)
-
 	if _, err := raw.Exec(
 		`INSERT INTO operations (id, type, target_id, status) VALUES (?, ?, ?, ?)`,
-		"op-1", "sprint_start", "sp-1", "running",
+		"op-1", "task_run", "sp-1", "running",
 	); err != nil {
 		t.Fatalf("insert operation via second connection: %v", err)
 	}
@@ -203,26 +182,6 @@ func TestWatcherDetectsCrossConnectionStatusTableMutations(t *testing.T) {
 }
 
 func waitForChange(t *testing.T, changeCh <-chan []TaskChange, want TaskChange, timeout time.Duration) {
-	t.Helper()
-
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
-	for {
-		select {
-		case batch := <-changeCh:
-			for _, got := range batch {
-				if got == want {
-					return
-				}
-			}
-		case <-timer.C:
-			t.Fatalf("timed out waiting for change %+v", want)
-		}
-	}
-}
-
-func waitForSprintChange(t *testing.T, changeCh <-chan []SprintChange, want SprintChange, timeout time.Duration) {
 	t.Helper()
 
 	timer := time.NewTimer(timeout)
@@ -284,7 +243,6 @@ func waitForSessionChange(t *testing.T, changeCh <-chan []SessionChange, want Se
 
 func assertNoStatusChangeOnStartup(
 	t *testing.T,
-	sprintCh <-chan []SprintChange,
 	operationCh <-chan []OperationChange,
 	sessionCh <-chan []SessionChange,
 ) {
@@ -294,8 +252,6 @@ func assertNoStatusChangeOnStartup(
 	defer timer.Stop()
 
 	select {
-	case got := <-sprintCh:
-		t.Fatalf("unexpected startup sprint callback: %+v", got)
 	case got := <-operationCh:
 		t.Fatalf("unexpected startup operation callback: %+v", got)
 	case got := <-sessionCh:

@@ -179,7 +179,6 @@ export function TaskDetailModal(props: Props) {
 
         <TaskActionsBar
           task={task}
-          artifact={artifact}
           isEditable={isEditable}
           isDeletable={isDeletable}
           deleting={deleting}

@@ -1,4 +1,4 @@
-package sprint
+package executor
 
 import (
 	"context"
@@ -113,11 +113,11 @@ func (e *Executor) checkConflicts(taskIDs, files []string) {
 
 func (e *Executor) checkBudget(taskID string) float64 {
 	var total sql.NullFloat64
-	if err := e.planner.DB().QueryRow(
-		`SELECT SUM(estimated_cost) FROM costs WHERE sprint_id = ? AND task_id = ?`,
-		e.sprintID, taskID,
+	if err := e.db.QueryRow(
+		`SELECT SUM(estimated_cost) FROM costs WHERE task_id = ?`,
+		taskID,
 	).Scan(&total); err != nil {
-		slog.Warn("monitor query task cost failed", "task_id", taskID, "sprint_id", e.sprintID, "err", err)
+		slog.Warn("monitor query task cost failed", "task_id", taskID, "err", err)
 		return 0
 	}
 	if !total.Valid {

@@ -5,7 +5,7 @@ import {
 } from 'react'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ConsolePanel } from './components/console/ConsolePanel'
-import { BoardView } from './components/board/BoardView'
+import { TasksView } from './components/board/TasksView'
 import { OperationsIndicator } from './components/common/OperationsIndicator'
 import { useWSQueryBridge } from './lib/wsQueryBridge'
 import { api } from './api'
@@ -50,7 +50,7 @@ export default function App() {
       </header>
 
       <main className="flex flex-1 overflow-hidden pb-10.5">
-        <BoardView lastWSEvent={lastWSEvent} />
+        <TasksView lastWSEvent={lastWSEvent} />
       </main>
 
       <ConsolePanel lastWSEvent={lastWSEvent} orchestratorId={orchestratorId} />

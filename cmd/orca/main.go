@@ -10,8 +10,8 @@ import (
 	"github.com/jasjeetmavi/orca/cmd/orca/commands"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/logging"
-	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
@@ -25,12 +25,11 @@ type runtimeState struct {
 	db       *state.DB
 	cfg      *config.Config
 	store    *task.Store
-	planner  *sprint.Planner
-	executor *sprint.Executor
+	executor *executor.Executor
 }
 
 func (rt *runtimeState) init() error {
-	if rt.db != nil && rt.cfg != nil && rt.store != nil && rt.planner != nil && rt.executor != nil {
+	if rt.db != nil && rt.cfg != nil && rt.store != nil && rt.executor != nil {
 		return nil
 	}
 	dbPath := filepath.Join(".orca", "state.db")
@@ -55,8 +54,7 @@ func (rt *runtimeState) init() error {
 	rt.db = db
 	rt.cfg = cfg
 	rt.store = task.NewStore(db)
-	rt.planner = sprint.NewPlanner(db)
-	rt.executor = sprint.NewExecutor(rt.planner, wm, cfg, repoDir, sprint.ExecutorOptions{CostTracker: cost.NewTracker(db)})
+	rt.executor = executor.NewExecutor(db, rt.store, wm, cfg, repoDir, executor.ExecutorOptions{CostTracker: cost.NewTracker(db)})
 	slog.Info("runtime.initialized", "db_path", dbPath)
 	return nil
 }
@@ -65,7 +63,7 @@ func (rt *runtimeState) close() {
 	if rt.db != nil {
 		_ = rt.db.Close()
 	}
-	rt.db, rt.cfg, rt.store, rt.planner, rt.executor = nil, nil, nil, nil, nil
+	rt.db, rt.cfg, rt.store, rt.executor = nil, nil, nil, nil
 }
 
 func (rt *runtimeState) openStore() (*state.DB, *task.Store, error) {
@@ -75,11 +73,11 @@ func (rt *runtimeState) openStore() (*state.DB, *task.Store, error) {
 	return rt.db, rt.store, nil
 }
 
-func (rt *runtimeState) loadRuntime() (*state.DB, *config.Config, *sprint.Planner, *sprint.Executor, error) {
+func (rt *runtimeState) loadRuntime() (*state.DB, *config.Config, *executor.Executor, error) {
 	if err := rt.init(); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
-	return rt.db, rt.cfg, rt.planner, rt.executor, nil
+	return rt.db, rt.cfg, rt.executor, nil
 }
 
 func markSkipRuntimeInit(cmd *cobra.Command) {
@@ -162,7 +160,6 @@ func main() {
 	commands.RegisterPlan(root, reg)
 	commands.RegisterRun(root, reg)
 	commands.RegisterTask(root, reg)
-	commands.RegisterSprint(root, reg)
 	commands.RegisterReview(root, reg)
 	commands.RegisterMerge(root, reg)
 	commands.RegisterServe(root, reg)

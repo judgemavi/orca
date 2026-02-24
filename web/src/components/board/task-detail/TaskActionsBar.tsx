@@ -1,10 +1,9 @@
 import type { useTaskForm } from '../../../hooks/forms/useTaskForm'
-import type { ReviewArtifact, Task } from '../../../types'
+import type { Task } from '../../../types'
 import { ActionButton } from '../../common/ActionButton'
 
 interface Props {
   task: Task
-  artifact: ReviewArtifact | null
   isEditable: boolean
   isDeletable: boolean
   deleting: boolean
@@ -19,7 +18,6 @@ interface Props {
 
 export function TaskActionsBar({
   task,
-  artifact,
   isEditable,
   isDeletable,
   deleting,
@@ -41,7 +39,7 @@ export function TaskActionsBar({
         <div />
       )}
       <div className="flex gap-2">
-        {task.status === 'approved' && artifact?.diff && (
+        {task.status === 'approved' && (
           <ActionButton variant="primary" onClick={onMerge} disabled={merging}>
             {merging ? 'Merging…' : conflictError ? 'Retry Merge' : 'Merge'}
           </ActionButton>

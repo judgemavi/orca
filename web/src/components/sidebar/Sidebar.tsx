@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { PanelLeftClose, PanelLeft } from 'lucide-react'
 import { TaskBoard } from './TaskBoard'
-import { SprintTimeline } from './SprintTimeline'
 import { api } from '../../api'
 
 interface Props {
@@ -48,7 +47,6 @@ export function Sidebar({ collapsed, onToggle, refreshKey }: Props) {
       </div>
       <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-2">
         <TaskBoard refreshKey={refreshKey} />
-        <SprintTimeline refreshKey={refreshKey} />
       </div>
       {cost !== null && (
         <div className="border-t border-slate-700 px-4 py-3">

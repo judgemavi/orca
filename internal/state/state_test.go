@@ -91,71 +91,6 @@ func TestDBVersionIncrementsOnTaskMutations(t *testing.T) {
 	assertDBVersion(t, db, 3)
 }
 
-func TestMigrationV7(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "v6.db")
-
-	legacy, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		t.Fatalf("open legacy db: %v", err)
-	}
-	t.Cleanup(func() { legacy.Close() })
-
-	if _, err := legacy.Exec(legacySchema); err != nil {
-		t.Fatalf("create legacy schema: %v", err)
-	}
-	if _, err := legacy.Exec(`
-		CREATE TABLE IF NOT EXISTS schema_migrations (
-			version    INTEGER PRIMARY KEY,
-			applied_at DATETIME NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create schema_migrations: %v", err)
-	}
-	for i := 1; i <= 6; i++ {
-		if _, err := legacy.Exec(
-			`INSERT INTO schema_migrations(version, applied_at) VALUES (?, CURRENT_TIMESTAMP)`,
-			i,
-		); err != nil {
-			t.Fatalf("seed migration version %d: %v", i, err)
-		}
-	}
-
-	if _, err := legacy.Exec(
-		`INSERT INTO tasks (id, title, assigned_tool, status) VALUES (?, ?, ?, ?)`,
-		"task-v6-1", "Legacy task", "codex", "pending",
-	); err != nil {
-		t.Fatalf("insert legacy task: %v", err)
-	}
-	if err := legacy.Close(); err != nil {
-		t.Fatalf("close legacy db: %v", err)
-	}
-
-	db, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open migrated db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-
-	assertTaskColumns(t, db.DB, "phase_config")
-	assertArtifactColumns(t, db.DB, "quality_json")
-	assertMigrationVersions(t, db.DB, len(migrations))
-
-	var phaseConfig sql.NullString
-	var assignedTool sql.NullString
-	if err := db.QueryRow(
-		`SELECT phase_config, assigned_tool FROM tasks WHERE id = ?`,
-		"task-v6-1",
-	).Scan(&phaseConfig, &assignedTool); err != nil {
-		t.Fatalf("load migrated task row: %v", err)
-	}
-	if phaseConfig.Valid {
-		t.Fatalf("phase_config valid = true (%q), want false (NULL)", phaseConfig.String)
-	}
-	if !assignedTool.Valid || assignedTool.String != "codex" {
-		t.Fatalf("assigned_tool = %#v, want %q", assignedTool, "codex")
-	}
-}
-
 func assertMigrationVersions(t *testing.T, db *sql.DB, want int) {
 	t.Helper()
 
@@ -222,18 +157,19 @@ func assertDBVersion(t *testing.T, db *DB, want int64) {
 
 const legacySchema = `
 CREATE TABLE IF NOT EXISTS tasks (
-	id          TEXT PRIMARY KEY,
-	title       TEXT NOT NULL,
-	description TEXT,
-	prompt      TEXT,
-	model       TEXT,
-	plan        TEXT,
-	parent_id   TEXT REFERENCES tasks(id),
-	status      TEXT NOT NULL DEFAULT 'pending',
+	id            TEXT PRIMARY KEY,
+	title         TEXT NOT NULL,
+	description   TEXT,
+	prompt        TEXT,
+	model         TEXT,
+	phase_config  TEXT,
+	plan          TEXT,
+	session_id    TEXT,
+	parent_id     TEXT REFERENCES tasks(id),
+	status        TEXT NOT NULL DEFAULT 'pending',
 	assigned_tool TEXT,
-	sprint_id   TEXT,
-	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+	created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS task_deps (
@@ -251,28 +187,22 @@ CREATE TABLE IF NOT EXISTS task_reviews (
 	addressed_at DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS sprints (
-	id           TEXT PRIMARY KEY,
-	status       TEXT NOT NULL DEFAULT 'planning',
-	created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-	completed_at DATETIME
-);
-
 CREATE TABLE IF NOT EXISTS artifacts (
-	id          TEXT PRIMARY KEY,
-	task_id     TEXT NOT NULL REFERENCES tasks(id),
-	sprint_id   TEXT NOT NULL REFERENCES sprints(id),
-	diff        TEXT,
-	stdout      TEXT,
-	stderr      TEXT,
-	exit_code   INTEGER,
-	duration_ms INTEGER,
-	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+	id           TEXT PRIMARY KEY,
+	task_id      TEXT NOT NULL REFERENCES tasks(id),
+	run_id       TEXT,
+	diff         TEXT,
+	stdout       TEXT,
+	stderr       TEXT,
+	exit_code    INTEGER,
+	duration_ms  INTEGER,
+	quality_json TEXT,
+	created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS costs (
 	id             TEXT PRIMARY KEY,
-	sprint_id      TEXT REFERENCES sprints(id),
+	run_id         TEXT,
 	task_id        TEXT REFERENCES tasks(id),
 	tool           TEXT NOT NULL,
 	input_tokens   INTEGER DEFAULT 0,
@@ -306,4 +236,53 @@ CREATE TABLE IF NOT EXISTS sessions (
 	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
 	exited_at   DATETIME
 );
+
+CREATE TABLE IF NOT EXISTS meta (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO meta (key, value) VALUES ('db_version', '0');
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_insert
+AFTER INSERT ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_update
+AFTER UPDATE ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_delete
+AFTER DELETE ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS operations_version_insert
+AFTER INSERT ON operations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS operations_version_update
+AFTER UPDATE ON operations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_version_insert
+AFTER INSERT ON sessions
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_version_update
+AFTER UPDATE ON sessions
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
 `

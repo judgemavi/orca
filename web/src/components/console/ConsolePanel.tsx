@@ -109,23 +109,27 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
     [],
   )
 
-  // Bootstrap: load running sprint tabs on mount
+  // Bootstrap: load running task tabs on mount
   useEffect(() => {
     Promise.all([
-      api.listOperations({ type: 'sprint_start' }),
+      api.listOperations({ type: 'run' }),
       api.listTasks(),
-      api.getActiveSprint().catch(() => null),
     ])
-      .then(([opsRes, taskRes, active]) => {
+      .then(([opsRes, taskRes]) => {
         const hasRunning = (opsRes.operations ?? []).some(
           (op) => op.status === 'running',
         )
-        if (!hasRunning || !active) return
-        const taskMap = new Map((taskRes.tasks ?? []).map((t) => [t.id, t]))
+        if (!hasRunning) return
         const nextTabs: ConsoleTaskTab[] = []
-        for (const id of active.task_ids ?? []) {
-          const task = taskMap.get(id)
-          if (!task) continue
+        for (const task of taskRes.tasks ?? []) {
+          if (
+            task.status !== 'running' &&
+            task.status !== 'review' &&
+            task.status !== 'approved' &&
+            task.status !== 'failed'
+          ) {
+            continue
+          }
           const status: TabStatus =
             task.status === 'failed'
               ? 'failed'
@@ -133,7 +137,7 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
                 ? 'done'
                 : 'running'
           nextTabs.push({
-            taskId: id,
+            taskId: task.id,
             title: task.title,
             tool: task.assigned_tool ?? 'worker',
             status,
@@ -153,24 +157,6 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
   // WS events
   useEffect(() => {
     if (!lastWSEvent) return
-
-    if (lastWSEvent.type === 'sprint.started') {
-      Promise.all([api.getActiveSprint(), api.listTasks()])
-        .then(([active, taskRes]) => {
-          if (!active) return
-          const taskMap = new Map((taskRes.tasks ?? []).map((t) => [t.id, t]))
-          for (const taskID of active.task_ids ?? []) {
-            const task = taskMap.get(taskID)
-            ensureTab(taskID, {
-              title: task?.title ?? `Task ${taskID.slice(0, 8)}`,
-              tool: task?.assigned_tool ?? 'worker',
-              status: 'running',
-            })
-          }
-        })
-        .catch(() => {})
-      return
-    }
 
     if (lastWSEvent.type === 'worker.output') {
       const data = lastWSEvent.data as unknown as WorkerOutputEvent
@@ -230,12 +216,8 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
       return
     }
 
-    if (
-      lastWSEvent.type === 'sprint.completed' ||
-      lastWSEvent.type === 'sprint.failed'
-    ) {
-      const fallback: TabStatus =
-        lastWSEvent.type === 'sprint.failed' ? 'failed' : 'done'
+    if (lastWSEvent.type === 'run.completed' || lastWSEvent.type === 'run.failed') {
+      const fallback: TabStatus = lastWSEvent.type === 'run.failed' ? 'failed' : 'done'
       setTabs((prev) =>
         prev.map((tab) =>
           tab.status === 'running' ? { ...tab, status: fallback } : tab,

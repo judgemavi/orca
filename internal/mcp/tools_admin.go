@@ -19,7 +19,7 @@ import (
 )
 
 func (s *Server) HandleExploreTool(_ json.RawMessage) (interface{}, error) {
-	_, toolCfg, err := s.cfg.ResolvePhaseToolConfig("explore")
+	_, toolCfg, err := s.config.ResolvePhaseToolConfig("explore")
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}
 	if err != nil {
 		return nil, fmt.Errorf("worktree_cleanup: %w", err)
 	}
-	if s.cfg == nil {
+	if s.config == nil {
 		return nil, fmt.Errorf("worktree cleanup not configured")
 	}
 
@@ -66,7 +66,7 @@ func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}
 		maxAgeHours = 168
 	}
 	maxAge := time.Duration(maxAgeHours) * time.Hour
-	wm := worktree.NewManager(s.repoDir, s.cfg.Project.WorktreeDir)
+	wm := worktree.NewManager(s.repoDir, s.config.Project.WorktreeDir)
 
 	if args.DryRun {
 		list, err := wm.ListWithAge()
@@ -97,10 +97,10 @@ func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}
 }
 
 func (s *Server) HandleWorktreeStatusTool(_ json.RawMessage) (interface{}, error) {
-	if s.cfg == nil {
+	if s.config == nil {
 		return nil, fmt.Errorf("worktree status not configured")
 	}
-	wm := worktree.NewManager(s.repoDir, s.cfg.Project.WorktreeDir)
+	wm := worktree.NewManager(s.repoDir, s.config.Project.WorktreeDir)
 
 	listWithAge, err := wm.ListWithAge()
 	if err != nil {
@@ -136,36 +136,15 @@ func (s *Server) HandleWorktreeStatusTool(_ json.RawMessage) (interface{}, error
 }
 
 func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, error) {
-	args, err := parseArgs[struct {
-		SprintID string `json:"sprint_id"`
-	}](argsRaw)
-	if err != nil {
+	if _, err := parseArgs[struct{}](argsRaw); err != nil {
 		return nil, fmt.Errorf("budget_status: %w", err)
 	}
-	if s.planner == nil || s.planner.DB() == nil {
+	if s.db == nil {
 		return nil, fmt.Errorf("cost tracking not configured")
 	}
 
-	tracker := cost.NewTracker(s.planner.DB())
-	budget := s.cfg.Orchestrator.CostBudget
-	if strings.TrimSpace(args.SprintID) != "" {
-		total, err := tracker.SprintTotal(args.SprintID)
-		if err != nil {
-			return nil, fmt.Errorf("sprint total: %w", err)
-		}
-		tools, err := tracker.SprintSummary(args.SprintID)
-		if err != nil {
-			return nil, fmt.Errorf("sprint summary: %w", err)
-		}
-		return map[string]interface{}{
-			"sprint_id":  args.SprintID,
-			"total_cost": total,
-			"budget":     budget,
-			"remaining":  budget - total,
-			"tools":      tools,
-		}, nil
-	}
-
+	tracker := cost.NewTracker(s.db)
+	budget := s.config.Orchestrator.CostBudget
 	total, err := tracker.ProjectTotal()
 	if err != nil {
 		return nil, fmt.Errorf("project total: %w", err)
@@ -197,12 +176,12 @@ func (s *Server) HandleQualityResultsTool(argsRaw json.RawMessage) (interface{},
 	if taskID == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
-	if s.planner == nil || s.planner.DB() == nil {
+	if s.db == nil {
 		return nil, fmt.Errorf("database not configured")
 	}
 
 	var qualityJSON sql.NullString
-	err = s.planner.DB().QueryRow(
+	err = s.db.QueryRow(
 		`SELECT quality_json FROM artifacts WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`,
 		taskID,
 	).Scan(&qualityJSON)
@@ -232,11 +211,10 @@ func (s *Server) HandleQualityResultsTool(argsRaw json.RawMessage) (interface{},
 
 func (s *Server) HandleLogEventTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		Level    string         `json:"level"`
-		Message  string         `json:"message"`
-		TaskID   string         `json:"task_id"`
-		SprintID string         `json:"sprint_id"`
-		Attrs    map[string]any `json:"attrs"`
+		Level   string         `json:"level"`
+		Message string         `json:"message"`
+		TaskID  string         `json:"task_id"`
+		Attrs   map[string]any `json:"attrs"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("log_event: %w", err)
@@ -255,9 +233,6 @@ func (s *Server) HandleLogEventTool(argsRaw json.RawMessage) (interface{}, error
 	if taskID := strings.TrimSpace(args.TaskID); taskID != "" {
 		kv = append(kv, "task_id", taskID)
 	}
-	if sprintID := strings.TrimSpace(args.SprintID); sprintID != "" {
-		kv = append(kv, "sprint_id", sprintID)
-	}
 	if len(args.Attrs) > 0 {
 		keys := make([]string, 0, len(args.Attrs))
 		for key := range args.Attrs {
@@ -275,12 +250,11 @@ func (s *Server) HandleLogEventTool(argsRaw json.RawMessage) (interface{}, error
 
 func (s *Server) HandleLogQueryTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		Level    string `json:"level"`
-		TaskID   string `json:"task_id"`
-		SprintID string `json:"sprint_id"`
-		Since    string `json:"since"`
-		Limit    int    `json:"limit"`
-		Pattern  string `json:"pattern"`
+		Level   string `json:"level"`
+		TaskID  string `json:"task_id"`
+		Since   string `json:"since"`
+		Limit   int    `json:"limit"`
+		Pattern string `json:"pattern"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("log_query: %w", err)
@@ -299,13 +273,12 @@ func (s *Server) HandleLogQueryTool(argsRaw json.RawMessage) (interface{}, error
 		return nil, fmt.Errorf("log_query since: %w", err)
 	}
 
-	entries, err := logging.Query(resolveLogPath(s.repoDir, s.cfg), logging.Filter{
-		Level:    strings.ToLower(strings.TrimSpace(args.Level)),
-		TaskID:   strings.TrimSpace(args.TaskID),
-		SprintID: strings.TrimSpace(args.SprintID),
-		Since:    since,
-		Pattern:  strings.TrimSpace(args.Pattern),
-		Limit:    args.Limit,
+	entries, err := logging.Query(resolveLogPath(s.repoDir, s.config), logging.Filter{
+		Level:   strings.ToLower(strings.TrimSpace(args.Level)),
+		TaskID:  strings.TrimSpace(args.TaskID),
+		Since:   since,
+		Pattern: strings.TrimSpace(args.Pattern),
+		Limit:   args.Limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("query logs: %w", err)

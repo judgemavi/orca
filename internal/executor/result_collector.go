@@ -1,4 +1,4 @@
-package sprint
+package executor
 
 import (
 	"context"
@@ -75,7 +75,7 @@ func (e *Executor) collectResult(prepared []taskInfo, baselineSnapshot *quality.
 				}
 			}()
 
-			slog.Info("task.started", "task_id", info.taskID, "tool", info.toolName, "sprint_id", e.sprintID)
+			slog.Info("task.started", "task_id", info.taskID, "tool", info.toolName, "run_id", e.runID)
 			taskResult := e.runTask(runCtx, info, outputCh)
 			results[idx] = taskResult
 			slog.Info("task.completed", "task_id", info.taskID, "status", taskResult.Status, "exit_code", taskResult.ExitCode, "duration", taskResult.Duration)
@@ -146,7 +146,7 @@ func (e *Executor) buildQualityJSON(r TaskResult) sql.NullString {
 
 	if e.config.Quality.ScopeCheck {
 		taskTitle := ""
-		if t, err := e.planner.GetTask(r.TaskID); err == nil {
+		if t, err := e.taskStore.Get(r.TaskID); err == nil {
 			taskTitle = t.Title
 		}
 		scope := quality.AnalyzeScope(r.TaskID, taskTitle, r.Diff)
@@ -183,13 +183,13 @@ func (e *Executor) buildQualityJSON(r TaskResult) sql.NullString {
 	return sql.NullString{String: string(buf), Valid: true}
 }
 
-func (e *Executor) storeArtifacts(sprintID string, results []TaskResult) {
+func (e *Executor) storeArtifacts(runID string, results []TaskResult) {
 	for _, r := range results {
 		qualityJSON := e.buildQualityJSON(r)
-		_, err := e.planner.DB().Exec(
-			`INSERT INTO artifacts (id, task_id, sprint_id, diff, stdout, stderr, exit_code, duration_ms, quality_json)
+		_, err := e.db.Exec(
+			`INSERT INTO artifacts (id, task_id, run_id, diff, stdout, stderr, exit_code, duration_ms, quality_json)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.New().String(), r.TaskID, sprintID,
+			uuid.New().String(), r.TaskID, runID,
 			r.Diff, r.Stdout, r.Stderr, r.ExitCode, r.Duration.Milliseconds(), qualityJSON,
 		)
 		if err != nil {
@@ -198,7 +198,7 @@ func (e *Executor) storeArtifacts(sprintID string, results []TaskResult) {
 	}
 }
 
-func (e *Executor) recordCost(sprintID string, prepared []taskInfo, results []TaskResult) {
+func (e *Executor) recordCost(runID string, prepared []taskInfo, results []TaskResult) {
 	if e.costTracker == nil {
 		return
 	}
@@ -214,8 +214,8 @@ func (e *Executor) recordCost(sprintID string, prepared []taskInfo, results []Ta
 			slog.Warn("parse cost failed", "task_id", r.TaskID, "err", err)
 		}
 		if in > 0 || out > 0 || c > 0 {
-			if err := e.costTracker.Record(sprintID, r.TaskID, r.ToolName, in, out, c); err != nil {
-				slog.Warn("record cost failed", "task_id", r.TaskID, "sprint_id", sprintID, "err", err)
+			if err := e.costTracker.Record(runID, r.TaskID, r.ToolName, in, out, c); err != nil {
+				slog.Warn("record cost failed", "task_id", r.TaskID, "run_id", runID, "err", err)
 			}
 		}
 	}

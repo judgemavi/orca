@@ -6,14 +6,12 @@ export interface Task {
   parent_id: string | null
   status:
     | 'pending'
-    | 'in_sprint'
     | 'running'
     | 'review'
     | 'approved'
     | 'merged'
     | 'failed'
   assigned_tool: string | null
-  sprint_id: string | null
   depends_on: string[]
   model: string | null
   phase_config: PhaseConfigMap | null
@@ -29,14 +27,6 @@ export interface TaskReview {
   status: 'pending' | 'addressed'
   created_at: string
   addressed_at: string | null
-}
-
-export interface Sprint {
-  id: string
-  status: 'planning' | 'running' | 'completed' | 'failed'
-  task_ids: string[]
-  created_at: string
-  completed_at: string | null
 }
 
 export interface PhaseOverride {
@@ -139,7 +129,6 @@ export interface ReviewResult {
 export interface ProjectStatus {
   project_name: string
   task_counts: Record<string, number>
-  active_sprint: { id: string; status: string } | null
   context_exists: boolean
   context_stale?: boolean
   context_age_minutes?: number
@@ -213,18 +202,6 @@ export type Block =
       }
     }
   | {
-      type: 'sprint_progress'
-      data: { sprint_id: string; tasks: SprintTaskStatus[] }
-    }
-  | {
-      type: 'sprint_result'
-      data: {
-        sprint_id: string
-        results: TaskResultSummary[]
-        actions: string[]
-      }
-    }
-  | {
       type: 'diff_viewer'
       data: {
         task_id: string
@@ -258,15 +235,6 @@ export type Block =
       data: { merged: TaskSummary[]; failed: TaskSummary[] }
     }
   | { type: 'help'; data: { commands: CommandHelp[] } }
-
-export interface SprintTaskStatus {
-  task_id: string
-  title: string
-  tool_name: string
-  status: string
-  duration_ms: number
-  progress_pct: number
-}
 
 export interface TaskResultSummary {
   task_id: string

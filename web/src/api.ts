@@ -1,10 +1,8 @@
 import type {
   Task,
   TaskReview,
-  Sprint,
   ProposedTask,
   ProjectStatus,
-  ReviewArtifact,
   ModelInfo,
   Operation,
   Config,
@@ -56,8 +54,6 @@ export const api = {
     }),
   deleteTask: (id: string) => request(`/tasks/${id}`, { method: 'DELETE' }),
 
-  listSprints: (all?: boolean) =>
-    request<{ sprints: Sprint[] }>(`/sprints${all ? '?all=true' : ''}`),
   listOperations: (params?: { target_id?: string; type?: string }) => {
     const q = new URLSearchParams()
     if (params?.target_id) q.set('target_id', params.target_id)
@@ -65,35 +61,6 @@ export const api = {
     const suffix = q.toString() ? `?${q.toString()}` : ''
     return request<{ operations: Operation[] }>(`/operations${suffix}`)
   },
-  getActiveSprint: () => request<Sprint | null>('/sprints/active'),
-  getSprint: (id: string) => request<Sprint>(`/sprints/${id}`),
-  planSprint: () => request<Sprint>('/sprints/plan', { method: 'POST' }),
-  sprintAssign: (taskId: string, sprintId?: string) =>
-    request<Sprint>('/sprints/assign', {
-      method: 'POST',
-      body: JSON.stringify({ task_id: taskId, sprint_id: sprintId }),
-    }),
-  sprintUnassign: (taskId: string) =>
-    request('/sprints/unassign', {
-      method: 'POST',
-      body: JSON.stringify({ task_id: taskId }),
-    }),
-  startSprint: (id: string) =>
-    request<{ sprint_id: string }>(`/sprints/${id}/start`, { method: 'POST' }),
-  cancelSprint: (id: string) =>
-    request(`/sprints/${id}/cancel`, { method: 'POST' }),
-  resetSprint: (id: string) =>
-    request(`/sprints/${id}/reset`, { method: 'POST' }),
-  getReview: (sprintId: string) =>
-    request<{ sprint_id: string; artifacts: ReviewArtifact[] }>(
-      `/sprints/${sprintId}/review`,
-    ),
-  startReview: (sprintId: string) =>
-    request<{ operation_id: string }>(`/sprints/${sprintId}/review`, {
-      method: 'POST',
-      body: JSON.stringify({ auto: true }),
-    }),
-
   plan: (goal: string, tool: string) =>
     request<{ operation_id: string }>('/plan', {
       method: 'POST',
@@ -121,10 +88,15 @@ export const api = {
       }),
     }),
 
-  merge: (sprintId?: string) =>
+  merge: () =>
     request<{ operation_id: string }>('/merge', {
       method: 'POST',
-      body: JSON.stringify(sprintId ? { sprint_id: sprintId } : {}),
+      body: JSON.stringify({}),
+    }),
+  runTasks: (taskIds?: string[]) =>
+    request<{ operation_id: string; task_ids: string[] }>('/tasks/run', {
+      method: 'POST',
+      body: JSON.stringify(taskIds ? { task_ids: taskIds } : {}),
     }),
   mergeTask: (taskId: string, mode?: string) =>
     request<{ operation_id: string }>(`/tasks/${taskId}/merge`, {

@@ -1,134 +1,78 @@
-import { useState } from 'react'
-import type { Sprint } from '../../types'
-import { api } from '../../api'
+import type { Task } from '../../types'
 import { ActionButton } from '../common/ActionButton'
 import { StatusBadge } from '../common/StatusBadge'
-import { useReviewQuery } from '../../hooks/queries/useSprints'
 
 interface Props {
-  sprint: Sprint
+  reviewTasks: Task[]
+  approvedTasks: Task[]
+  onSelectTask: (taskId: string) => void
   onClose: () => void
-  onMerged: () => void
+  onMerge: () => void
+  merging: boolean
 }
 
-export function ReviewPanel({ sprint, onClose, onMerged }: Props) {
-  const [expandedDiff, setExpandedDiff] = useState<string | null>(null)
-  const [merging, setMerging] = useState(false)
-  const reviewQuery = useReviewQuery(sprint.id)
-
-  const artifacts = reviewQuery.data?.artifacts ?? []
-
-  const handleMerge = async () => {
-    setMerging(true)
-    try {
-      await api.merge(sprint.id)
-      onMerged()
-    } catch (err: any) {
-      alert(err.message ?? 'Merge failed')
-    } finally {
-      setMerging(false)
-    }
-  }
-
-  const completed = artifacts.filter((a) => a.status === 'approved')
-
+export function ReviewPanel({
+  reviewTasks,
+  approvedTasks,
+  onSelectTask,
+  onClose,
+  onMerge,
+  merging,
+}: Props) {
   return (
     <div className="flex w-[480px] shrink-0 flex-col overflow-hidden border-l border-border bg-[var(--bg-primary)]">
       <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2.5">
-          <h2 className="text-sm font-semibold">
-            Review - Sprint {sprint.id.slice(0, 8)}
-          </h2>
+          <h2 className="text-sm font-semibold">Task Review</h2>
           <span className="text-xs text-[var(--text-secondary)]">
-            {completed.length} completed / {artifacts.length} total
+            {reviewTasks.length} in review/failure
           </span>
         </div>
         <button
           className="rounded px-1.5 py-1 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
           onClick={onClose}
+          type="button"
         >
           ✕
         </button>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
-        {reviewQuery.isLoading && (
+        {reviewTasks.length === 0 && (
           <div className="py-6 text-center text-[13px] text-[var(--text-secondary)]">
-            Loading artifacts...
+            No tasks in review
           </div>
         )}
-        {!reviewQuery.isLoading && artifacts.length === 0 && (
-          <div className="py-6 text-center text-[13px] text-[var(--text-secondary)]">
-            No artifacts to review
-          </div>
-        )}
-        {artifacts.map((a) => (
-          <div
-            key={a.task_id}
-            className="overflow-hidden rounded border border-border"
+        {reviewTasks.map((task) => (
+          <button
+            key={task.id}
+            className="flex flex-col gap-1 rounded border border-border bg-[var(--bg-secondary)] px-3 py-2 text-left hover:bg-[var(--bg-sidebar)]"
+            onClick={() => onSelectTask(task.id)}
+            type="button"
           >
-            <div className="flex flex-wrap items-center gap-2 bg-[var(--bg-secondary)] px-3 py-2.5">
-              <StatusBadge status={a.status} />
-              <span className="min-w-[120px] flex-1 text-[13px] font-medium">
-                {a.title}
-              </span>
-              <span className="font-mono text-[10px] text-[var(--text-secondary)]">
-                {a.task_id.slice(0, 8)}
-              </span>
-              {a.duration_ms > 0 && (
-                <span className="text-[11px] text-[var(--text-secondary)]">
-                  {(a.duration_ms / 1000).toFixed(0)}s
-                </span>
-              )}
-              {a.files && a.files.length > 0 && (
-                <div className="flex w-full flex-wrap gap-1">
-                  {a.files.map((f) => (
-                    <span
-                      key={f}
-                      className="rounded border border-border bg-[var(--bg-primary)] px-1.5 py-px font-mono text-[10px] text-[var(--text-secondary)]"
-                    >
-                      {f.split('/').pop()}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {a.diff && (
-                <button
-                  className="ml-auto whitespace-nowrap rounded border border-border px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]"
-                  onClick={() =>
-                    setExpandedDiff(
-                      expandedDiff === a.task_id ? null : a.task_id,
-                    )
-                  }
-                >
-                  {expandedDiff === a.task_id ? 'Hide diff' : 'Show diff'}
-                </button>
-              )}
+            <div className="flex items-center gap-2">
+              <StatusBadge status={task.status} />
+              <span className="text-[13px] font-medium">{task.title}</span>
             </div>
-            {expandedDiff === a.task_id && a.diff && (
-              <pre className="max-h-[400px] overflow-auto border-t border-border bg-[var(--bg-primary)] p-3 font-mono text-[11px] leading-[1.5]">
-                {a.diff}
-              </pre>
-            )}
-          </div>
+            <span className="font-mono text-[10px] text-[var(--text-secondary)]">
+              {task.id.slice(0, 8)}
+            </span>
+          </button>
         ))}
       </div>
 
-      {completed.length > 0 && (
-        <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3">
-          <span className="text-xs text-[var(--text-secondary)]">
-            {completed.length} task{completed.length !== 1 ? 's' : ''} ready to
-            merge
-          </span>
-          <ActionButton
-            variant="primary"
-            onClick={handleMerge}
-            disabled={merging}
-          >
-            {merging ? 'Merging...' : 'Merge All'}
-          </ActionButton>
-        </div>
-      )}
+      <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3">
+        <span className="text-xs text-[var(--text-secondary)]">
+          {approvedTasks.length} approved task{approvedTasks.length !== 1 ? 's' : ''} ready to merge
+        </span>
+        <ActionButton
+          variant="primary"
+          onClick={onMerge}
+          disabled={merging || approvedTasks.length === 0}
+        >
+          {merging ? 'Merging...' : 'Merge All'}
+        </ActionButton>
+      </div>
     </div>
   )
 }

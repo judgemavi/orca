@@ -16,7 +16,7 @@ import (
 )
 
 func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-// Package cost tracks per-sprint and per-tool spend for budget enforcement.
+// Package cost tracks per-run and per-tool spend for budget enforcement.
 package cost
 
 import (
@@ -12,7 +12,7 @@ import (
 // Record represents a single cost entry.
 type Record struct {
 	ID            string
-	SprintID      string
+	RunID         string
 	TaskID        string
 	Tool          string
 	InputTokens   int64
@@ -40,20 +40,20 @@ func NewTracker(db *state.DB) *Tracker {
 }
 
 // Record inserts a cost record.
-func (t *Tracker) Record(sprintID, taskID, tool string, inputTokens, outputTokens int64, cost float64) error {
+func (t *Tracker) Record(runID, taskID, tool string, inputTokens, outputTokens int64, cost float64) error {
 	_, err := t.db.Exec(
-		`INSERT INTO costs (id, sprint_id, task_id, tool, input_tokens, output_tokens, estimated_cost)
+		`INSERT INTO costs (id, run_id, task_id, tool, input_tokens, output_tokens, estimated_cost)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), sprintID, taskID, tool, inputTokens, outputTokens, cost,
+		uuid.New().String(), runID, taskID, tool, inputTokens, outputTokens, cost,
 	)
 	return err
 }
 
-// SprintTotal returns the total estimated cost for a sprint.
-func (t *Tracker) SprintTotal(sprintID string) (float64, error) {
+// RunTotal returns the total estimated cost for a run.
+func (t *Tracker) RunTotal(runID string) (float64, error) {
 	var total *float64
 	err := t.db.QueryRow(
-		`SELECT SUM(estimated_cost) FROM costs WHERE sprint_id = ?`, sprintID,
+		`SELECT SUM(estimated_cost) FROM costs WHERE run_id = ?`, runID,
 	).Scan(&total)
 	if err != nil {
 		return 0, err
@@ -64,7 +64,7 @@ func (t *Tracker) SprintTotal(sprintID string) (float64, error) {
 	return *total, nil
 }
 
-// ProjectTotal returns the total estimated cost across all sprints.
+// ProjectTotal returns the total estimated cost across all runs.
 func (t *Tracker) ProjectTotal() (float64, error) {
 	var total *float64
 	err := t.db.QueryRow(`SELECT SUM(estimated_cost) FROM costs`).Scan(&total)
@@ -105,11 +105,11 @@ func (t *Tracker) CheckBudget(budget float64) error {
 	return nil
 }
 
-// SprintSummary returns per-tool cost breakdown for a sprint.
-func (t *Tracker) SprintSummary(sprintID string) ([]ToolSummary, error) {
+// RunSummary returns per-tool cost breakdown for a run.
+func (t *Tracker) RunSummary(runID string) ([]ToolSummary, error) {
 	rows, err := t.db.Query(
 		`SELECT tool, SUM(input_tokens), SUM(output_tokens), SUM(estimated_cost)
-		 FROM costs WHERE sprint_id = ? GROUP BY tool`, sprintID,
+		 FROM costs WHERE run_id = ? GROUP BY tool`, runID,
 	)
 	if err != nil {
 		return nil, err
