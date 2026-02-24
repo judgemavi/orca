@@ -1,335 +1,43 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Task, Sprint, WSEvent } from '../../types'
+import type { WSEvent } from '../../types'
 import { api } from '../../api'
-import { BoardTaskCard } from './BoardTaskCard'
-import { DraggableTaskCard } from './DraggableTaskCard'
 import { CreateTaskModal } from './CreateTaskModal'
 import { TaskDetailModal } from './task-detail/TaskDetailModal'
 import { ReviewPanel } from './ReviewPanel'
 import { Toast } from '../common/Toast'
-import { useTasksQuery } from '../../hooks/queries/useTasks'
-import { useActiveSprintQuery } from '../../hooks/queries/useSprints'
-import { useModelsQuery } from '../../hooks/queries/useModels'
-import { useConfigQuery } from '../../hooks/queries/useConfig'
-import { useOperationsQuery } from '../../hooks/queries/useOperations'
 import { BoardHeader } from './BoardHeader'
-import { BoardColumn } from './BoardColumn'
-
-type ColumnDef =
-  | { kind: 'single'; id: Task['status']; label: string }
-  | { kind: 'grouped'; id: string; label: string; sections: { id: Task['status']; label: string }[] }
-
-const COLUMNS: ColumnDef[] = [
-  { kind: 'single', id: 'pending', label: 'Backlog' },
-  { kind: 'single', id: 'in_sprint', label: 'In Sprint' },
-  { kind: 'single', id: 'running', label: 'Running' },
-  { kind: 'grouped', id: 'outcome', label: 'Outcome', sections: [
-    { id: 'review', label: 'Review' },
-    { id: 'failed', label: 'Failed' },
-  ]},
-  { kind: 'single', id: 'approved', label: 'Approved' },
-  { kind: 'single', id: 'merged', label: 'Merged' },
-]
-
-// Flat list of all status IDs used for drag/drop and filtering.
-const ALL_STATUS_IDS: Task['status'][] = COLUMNS.flatMap((col) =>
-  col.kind === 'grouped' ? col.sections.map((s) => s.id) : [col.id as Task['status']],
-)
+import { BoardColumns } from './BoardColumns'
+import { useBoardState } from './useBoardState'
 
 interface Props {
   lastWSEvent: WSEvent | null
 }
 
-interface DraggableTaskCardWithModelsProps {
-  task: Task
-  onClick: () => void
-  onRefresh: () => void
-}
-
-function DraggableTaskCardWithModels({
-  task,
-  onClick,
-  onRefresh,
-}: DraggableTaskCardWithModelsProps) {
-  return (
-    <DraggableTaskCard
-      task={task}
-      onClick={onClick}
-      onRefresh={onRefresh}
-    />
-  )
-}
-
-interface DragOverlayTaskCardProps {
-  task: Task
-}
-
-function DragOverlayTaskCard({ task }: DragOverlayTaskCardProps) {
-  return <BoardTaskCard task={task} interactive={false} />
-}
-
 export function BoardView({ lastWSEvent }: Props) {
-  const [actionLoading, setActionLoading] = useState(false)
-  const [showCreate, setShowCreate] = useState(false)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  const [showReview, setShowReview] = useState(false)
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
-  const [toastError, setToastError] = useState<string | null>(null)
-
-  const queryClient = useQueryClient()
-  const tasksQuery = useTasksQuery()
-  const activeSprintQuery = useActiveSprintQuery()
-  const configQuery = useConfigQuery()
-  const allModelsQuery = useModelsQuery()
-  const operationsQuery = useOperationsQuery()
-  const statusQuery = useQuery({
-    queryKey: ['status'],
-    queryFn: () => api.getStatus(),
-  })
-
-  const tasks = tasksQuery.data?.tasks ?? []
-  const sprint = activeSprintQuery.data as Sprint | null
-  const operations = operationsQuery.data?.operations ?? []
-  const modelsByTool = allModelsQuery.data ?? {}
-  const loading =
-    tasksQuery.isLoading ||
-    activeSprintQuery.isLoading ||
-    configQuery.isLoading ||
-    allModelsQuery.isLoading ||
-    statusQuery.isLoading
-
-  const runningOperations = useMemo(
-    () => operations.filter((op) => op.status === 'running'),
-    [operations],
-  )
-
-  const isRunning = useCallback(
-    (type: string, targetId?: string) => {
-      return runningOperations.some(
-        (op) =>
-          op.type === type &&
-          (targetId === undefined ||
-            targetId === '' ||
-            op.target_id === targetId),
-      )
-    },
-    [runningOperations],
-  )
-
-  const tools = useMemo(() => {
-    const fromConfig = Object.keys(modelsByTool)
-    const fromAssignedTools = tasks
-      .map((t) => t.assigned_tool)
-      .filter((t): t is string => Boolean(t))
-    const fromPhaseConfig = tasks.flatMap((task) =>
-      Object.values(task.phase_config?.phases ?? {})
-        .map((phase) => phase.tool)
-        .filter((tool): tool is string => Boolean(tool)),
-    )
-    return Array.from(
-      new Set([...fromConfig, ...fromAssignedTools, ...fromPhaseConfig]),
-    ).sort((a, b) => a.localeCompare(b))
-  }, [modelsByTool, tasks])
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  )
-
-  const showError = useCallback((message: string) => {
-    setToastError(message)
-  }, [])
-
-  const invalidateBoard = useCallback(async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      queryClient.invalidateQueries({ queryKey: ['sprints'] }),
-      queryClient.invalidateQueries({ queryKey: ['sprint', 'active'] }),
-      queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      queryClient.invalidateQueries({ queryKey: ['status'] }),
-    ])
-  }, [queryClient])
-
-  const refreshAfterTaskUpdate = useCallback(() => {
-    void invalidateBoard()
-  }, [invalidateBoard])
-
-  useEffect(() => {
-    if (sprint && sprint.status !== 'completed' && sprint.status !== 'failed') {
-      setShowReview(false)
-    }
-  }, [sprint?.status])
-
-  const taskMap = useMemo(() => {
-    return new Map(tasks.map((task) => [task.id, task]))
-  }, [tasks])
-
-  const tasksByStatus = useMemo(() => {
-    const acc: Record<string, Task[]> = {}
-    for (const status of ALL_STATUS_IDS) {
-      acc[status] = tasks.filter((t) => t.status === status)
-    }
-    return acc
-  }, [tasks])
-
-  const activeTask = useMemo(
-    () => tasks.find((task) => task.id === activeTaskId) ?? null,
-    [tasks, activeTaskId],
-  )
-
-  const selectedTask = useMemo(
-    () => tasks.find((task) => task.id === selectedTaskId) ?? null,
-    [tasks, selectedTaskId],
-  )
-
-  const hasUnmetDependencies = useCallback(
-    (task: Task) => {
-      const dependencies = task.depends_on ?? []
-      return dependencies.some((depId) => {
-        const dependency = taskMap.get(depId)
-        if (!dependency) return true
-        const inSprint =
-          dependency.status === 'in_sprint' || dependency.status === 'running'
-        return (
-          !inSprint &&
-          dependency.status !== 'approved' &&
-          dependency.status !== 'merged'
-        )
-      })
-    },
-    [taskMap],
-  )
-
-  const canDropTaskToColumn = useCallback(
-    (task: Task, targetCol: string) => {
-      if (!ALL_STATUS_IDS.includes(targetCol as Task['status'])) return false
-      if (task.status === targetCol) return true
-      if (
-        task.status === 'approved' ||
-        task.status === 'merged' ||
-        task.status === 'running' ||
-        task.status === 'review'
-      )
-        return false
-      if (
-        targetCol === 'running' ||
-        targetCol === 'approved' ||
-        targetCol === 'review'
-      )
-        return false
-
-      if (targetCol === 'in_sprint') {
-        if (sprint?.status === 'running') return false
-        if (task.status !== 'pending' && task.status !== 'failed') return false
-        return !hasUnmetDependencies(task)
-      }
-
-      if (targetCol === 'pending') {
-        if (task.status === 'in_sprint') return sprint?.status === 'planning'
-        if (task.status === 'failed') return true
-        return false
-      }
-
-      return false
-    },
-    [sprint?.status, hasUnmetDependencies],
-  )
-
-  const runSprintAction = async (fn: () => Promise<unknown>) => {
-    setActionLoading(true)
-    try {
-      await fn()
-      await invalidateBoard()
-    } catch (err: any) {
-      showError(err?.message ?? 'Sprint action failed')
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  const handleDragStart = (event: DragStartEvent) => {
-    const task = tasks.find((t) => t.id === String(event.active.id))
-    if (!task) return
-    setActiveTaskId(task.id)
-  }
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveTaskId(null)
-    if (!over) return
-
-    const task = tasks.find((t) => t.id === String(active.id))
-    if (!task) return
-
-    const targetCol = String(over.id)
-    if (!ALL_STATUS_IDS.includes(targetCol as Task['status'])) return
-    if (task.status === targetCol) return
-
-    if (
-      task.status === 'approved' ||
-      task.status === 'merged' ||
-      task.status === 'running' ||
-      task.status === 'review'
-    )
-      return
-    if (
-      targetCol === 'running' ||
-      targetCol === 'approved' ||
-      targetCol === 'review'
-    )
-      return
-
-    if (targetCol === 'in_sprint') {
-      if (sprint?.status === 'running') {
-        showError('Cannot add tasks while sprint is running')
-        return
-      }
-      if (hasUnmetDependencies(task)) {
-        showError('Cannot add task to sprint: unmet dependencies')
-        return
-      }
-      try {
-        await api.sprintAssign(task.id, sprint?.id)
-        await invalidateBoard()
-      } catch (err: any) {
-        showError(err?.message ?? 'Failed to assign task to sprint')
-      }
-      return
-    }
-
-    if (targetCol === 'pending') {
-      if (task.status === 'in_sprint') {
-        if (sprint?.status !== 'planning') {
-          showError('Cannot remove tasks from running sprint')
-          return
-        }
-        try {
-          await api.sprintUnassign(task.id)
-          await invalidateBoard()
-        } catch (err: any) {
-          showError(err?.message ?? 'Failed to remove task from sprint')
-        }
-      } else if (task.status === 'failed') {
-        try {
-          await api.updateTask(task.id, { status: 'pending' } as any)
-          await invalidateBoard()
-        } catch (err: any) {
-          showError(err?.message ?? 'Failed to move task to pending')
-        }
-      }
-      return
-    }
-  }
+  const {
+    actionLoading,
+    showCreate,
+    setShowCreate,
+    setSelectedTaskId,
+    showReview,
+    setShowReview,
+    toastError,
+    setToastError,
+    sprint,
+    configData,
+    loading,
+    tasksByStatus,
+    activeTask,
+    selectedTask,
+    tools,
+    isRunning,
+    sensors,
+    canDropTaskToColumn,
+    invalidateBoard,
+    refreshAfterTaskUpdate,
+    runSprintAction,
+    handleDragStart,
+    handleDragEnd,
+  } = useBoardState()
 
   if (loading) {
     return (
@@ -379,70 +87,17 @@ export function BoardView({ lastWSEvent }: Props) {
           }}
         />
 
-        <DndContext
+        <BoardColumns
+          tasksByStatus={tasksByStatus}
+          activeTask={activeTask}
+          canDropTaskToColumn={canDropTaskToColumn}
           sensors={sensors}
-          collisionDetection={closestCenter}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-        >
-          <div className="flex flex-1 gap-0 overflow-x-auto overflow-y-hidden">
-            {COLUMNS.map((col) =>
-              col.kind === 'single' ? (
-                <BoardColumn
-                  key={col.id}
-                  id={col.id as Task['status']}
-                  label={col.label}
-                  tasks={tasksByStatus[col.id] ?? []}
-                  activeTask={activeTask}
-                  canDrop={activeTask ? canDropTaskToColumn(activeTask, col.id) : true}
-                  onCreateTask={() => setShowCreate(true)}
-                  renderTask={(task) => (
-                    <DraggableTaskCardWithModels
-                      key={task.id}
-                      task={task}
-                      onClick={() => setSelectedTaskId(task.id)}
-                      onRefresh={refreshAfterTaskUpdate}
-                    />
-                  )}
-                />
-              ) : (
-                <div
-                  key={col.id}
-                  className="flex min-w-[200px] flex-1 flex-col overflow-hidden border-r border-border last:border-r-0"
-                >
-                  {col.sections.map((section) => (
-                    <BoardColumn
-                      key={section.id}
-                      id={section.id}
-                      label={section.label}
-                      tasks={tasksByStatus[section.id] ?? []}
-                      activeTask={activeTask}
-                      canDrop={activeTask ? canDropTaskToColumn(activeTask, section.id) : true}
-                      onCreateTask={() => setShowCreate(true)}
-                      grouped
-                      renderTask={(task) => (
-                        <DraggableTaskCardWithModels
-                          key={task.id}
-                          task={task}
-                          onClick={() => setSelectedTaskId(task.id)}
-                          onRefresh={refreshAfterTaskUpdate}
-                        />
-                      )}
-                    />
-                  ))}
-                </div>
-              ),
-            )}
-          </div>
-
-          <DragOverlay>
-            {activeTask ? (
-              <div className="w-[min(360px,calc(100vw-24px))]">
-                <DragOverlayTaskCard task={activeTask} />
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+          onCreateTask={() => setShowCreate(true)}
+          onSelectTask={(taskId) => setSelectedTaskId(taskId)}
+          refreshAfterTaskUpdate={refreshAfterTaskUpdate}
+        />
       </div>
 
       {showReview &&
@@ -458,9 +113,9 @@ export function BoardView({ lastWSEvent }: Props) {
           />
         )}
 
-      {showCreate && configQuery.data && (
+      {showCreate && configData && (
         <CreateTaskModal
-          config={configQuery.data}
+          config={configData}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false)
@@ -469,11 +124,11 @@ export function BoardView({ lastWSEvent }: Props) {
         />
       )}
 
-      {selectedTask && configQuery.data && (
+      {selectedTask && configData && (
         <TaskDetailModal
           task={selectedTask}
           tools={tools}
-          config={configQuery.data}
+          config={configData}
           sprintId={sprint?.id}
           lastWSEvent={lastWSEvent}
           isOperationRunning={isRunning}
