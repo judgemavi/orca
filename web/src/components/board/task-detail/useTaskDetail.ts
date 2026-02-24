@@ -68,6 +68,10 @@ export function useTaskDetail({
   const [rerunModel, setRerunModel] = useState('')
   const [mergeTool, setMergeTool] = useState('')
   const [mergeModel, setMergeModel] = useState('')
+  const [aiReviewTool, setAIReviewTool] = useState('')
+  const [aiReviewModel, setAIReviewModel] = useState('')
+  const [aiReviewing, setAIReviewing] = useState(false)
+  const [aiReviewExpanded, setAIReviewExpanded] = useState(false)
 
   const form = useTaskForm(
     {
@@ -94,6 +98,7 @@ export function useTaskDetail({
   const runModelsQuery = useModelsQuery(runTool || undefined)
   const rerunModelsQuery = useModelsQuery(rerunTool || undefined)
   const mergeModelsQuery = useModelsQuery(mergeTool || undefined)
+  const aiReviewModelsQuery = useModelsQuery(aiReviewTool || undefined)
   const taskPlanQuery = useTaskPlanQuery(task.id)
   const savePlanMutation = useSavePlanMutation()
   const generatePlanMutation = useGeneratePlanMutation()
@@ -133,6 +138,10 @@ export function useTaskDetail({
     () => interactions.filter((item) => item.phase === 'merge'),
     [interactions],
   )
+  const reviewInteractions = useMemo(
+    () => interactions.filter((item) => item.phase === 'review'),
+    [interactions],
+  )
   const planInteractionIDs = useMemo(
     () => new Set(planInteractions.map((item) => item.id)),
     [planInteractions],
@@ -166,6 +175,9 @@ export function useTaskDetail({
   const runModels = runTool ? (runModelsQuery.data?.[runTool] ?? []) : []
   const rerunModels = rerunTool ? (rerunModelsQuery.data?.[rerunTool] ?? []) : []
   const mergeModels = mergeTool ? (mergeModelsQuery.data?.[mergeTool] ?? []) : []
+  const aiReviewModels = aiReviewTool
+    ? (aiReviewModelsQuery.data?.[aiReviewTool] ?? [])
+    : []
 
   useEffect(() => {
     form.reset({
@@ -189,6 +201,10 @@ export function useTaskDetail({
     setRerunModel('')
     setMergeTool('')
     setMergeModel('')
+    setAIReviewTool('')
+    setAIReviewModel('')
+    setAIReviewing(false)
+    setAIReviewExpanded(false)
     setApproving(false)
     setFeedback('')
     setRequesting(false)
@@ -292,6 +308,27 @@ export function useTaskDetail({
       setPlanError(
         String((lastWSEvent.data as any)?.error ?? 'Failed to generate plan'),
       )
+    } else if (
+      lastWSEvent.type === 'ai-review.completed' ||
+      lastWSEvent.type === 'interaction.completed'
+    ) {
+      const phase = (lastWSEvent.data as any)?.phase
+      if (phase === 'review' || lastWSEvent.type === 'ai-review.completed') {
+        setAIReviewing(false)
+        interactionsQuery.refetch()
+      }
+    } else if (
+      lastWSEvent.type === 'ai-review.failed' ||
+      lastWSEvent.type === 'interaction.failed'
+    ) {
+      const phase = (lastWSEvent.data as any)?.phase
+      if (phase === 'review' || lastWSEvent.type === 'ai-review.failed') {
+        setAIReviewing(false)
+        setReviewActionError(
+          String((lastWSEvent.data as any)?.error ?? 'AI review failed'),
+        )
+        interactionsQuery.refetch()
+      }
     }
   }, [lastWSEvent, task.id])
 
@@ -470,6 +507,21 @@ export function useTaskDetail({
     }
   }
 
+  const handleAIReview = async () => {
+    setAIReviewing(true)
+    setReviewActionError(null)
+    try {
+      await api.aiReview(
+        task.id,
+        aiReviewTool || undefined,
+        aiReviewModel || undefined,
+      )
+    } catch (err: any) {
+      setAIReviewing(false)
+      setReviewActionError(err?.message ?? 'AI review failed')
+    }
+  }
+
   const hasPlan = Boolean(plan?.trim())
   const planLoading = taskPlanQuery.isLoading
   const planSaving = savePlanMutation.isPending
@@ -497,6 +549,7 @@ export function useTaskDetail({
     planInteractions,
     runInteractions,
     mergeInteractions,
+    reviewInteractions,
     planReviews,
     runReviews,
     interactionsLoading:
@@ -509,6 +562,12 @@ export function useTaskDetail({
     requesting,
     rerunning,
     reviewActionError,
+    aiReviewTool,
+    aiReviewModel,
+    aiReviewModels,
+    aiReviewModelsFetching: aiReviewModelsQuery.isFetching,
+    aiReviewing,
+    aiReviewExpanded,
 
     // plan
     plan,
@@ -554,6 +613,9 @@ export function useTaskDetail({
     setRerunModel,
     setMergeTool,
     setMergeModel,
+    setAIReviewTool,
+    setAIReviewModel,
+    setAIReviewExpanded,
 
     // handlers
     handleDelete,
@@ -566,6 +628,7 @@ export function useTaskDetail({
     handleApprove,
     handleRequestChanges,
     handleRerun,
+    handleAIReview,
     refetchInteractions: () => {
       void interactionsQuery.refetch()
     },

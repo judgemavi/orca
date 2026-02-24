@@ -94,6 +94,7 @@ export interface Interaction {
   input_tokens: number
   output_tokens: number
   estimated_cost: number
+  quality_json?: string
   started_at: string
   finished_at: string | null
 }
@@ -128,6 +129,13 @@ export interface ToolSummary {
 }
 
 export interface ReviewResult {
+  task_id: string
+  approved: boolean
+  feedback: string
+  tool: string
+}
+
+export interface AIReviewResult {
   task_id: string
   approved: boolean
   feedback: string

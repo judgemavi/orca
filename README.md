@@ -10,7 +10,7 @@ Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 2. `breakdown` — decompose goals into dependency-aware tasks
 3. `tasks plan` / `tasks evaluate` — refine task implementation plans
 4. `run` — execute ready tasks directly (parallel, isolated worktrees)
-5. `review` — approve or request changes
+5. `review` — approve, request changes, or run AI review
 6. `merge` — merge approved tasks into integration branch
 
 Task flow: `pending → running → review → approved → merged`.
@@ -19,7 +19,7 @@ Task flow: `pending → running → review → approved → merged`.
 
 - Tool-agnostic worker execution
 - Git worktree isolation per task branch (`orca/task-{id}`)
-- Quality gates + review loop (`review request-changes` re-runs task)
+- Quality gates + review loop (`review request-changes` re-runs task, `review ai` runs automated AI review)
 - Cost tracking per run (`run_id`) and per tool
 - Web UI with live status/events
 - Task table UI (sortable/filterable) with task detail modal + review panel
@@ -62,6 +62,7 @@ orca breakdown "Add rate limiting and retry safety across API clients"
 orca run
 
 # Review outcomes
+orca review ai <task-id>                # AI-powered code review
 orca review approve <task-id>
 # or
 orca review request-changes <task-id> "Address failing tests and tighten error handling"
@@ -96,6 +97,7 @@ orca run --no-merge
 
 orca review approve <id>
 orca review request-changes <id> "feedback"
+orca review ai <id> [--tool ...] [--model ...]
 
 orca merge [--dry-run]
 orca status
@@ -117,7 +119,7 @@ orca orc
 - Task lifecycle: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
 - Planning: `breakdown`, `tasks_plan_evaluate`, `tasks_plan_generate`
 - Execution: `tasks_run`
-- Review/integration: `tasks_approve`, `tasks_request_changes`, `merge`, `tasks_merge`
+- Review/integration: `tasks_approve`, `tasks_request_changes`, `ai_review`, `merge`, `tasks_merge`
 
 ## Project Structure
 

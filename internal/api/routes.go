@@ -217,6 +217,16 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.handleEvaluateTask(w, r, taskID)
+		case "ai-review":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleAIReview(w, r, taskID)
 		default:
 			http.NotFound(w, r)
 		}

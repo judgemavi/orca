@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { DiffViewer } from '../../blocks/DiffViewer'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
-import type { Interaction, Task, TaskReview } from '../../../types'
+import type { AIReviewResult, Interaction, Task, TaskReview } from '../../../types'
 import { InteractionEntry } from './InteractionEntry'
 import { InlineReviewActions } from './InlineReviewActions'
 
@@ -79,11 +79,18 @@ interface Props {
   runModelsFetching: boolean
   runPending: boolean
   runInteractions: Interaction[]
+  reviewInteractions: Interaction[]
   interactionsLoading: boolean
   activeLogId: string | null
   feedback: string
   approving: boolean
   requesting: boolean
+  aiReviewExpanded: boolean
+  aiReviewing: boolean
+  aiReviewTool: string
+  aiReviewModel: string
+  aiReviewModels: Array<{ id: string; name: string }>
+  aiReviewModelsFetching: boolean
   rerunning: boolean
   reviewActionError: string | null
   reviews: TaskReview[]
@@ -97,6 +104,11 @@ interface Props {
   onFeedbackChange: (value: string) => void
   onApprove: () => void
   onRequestChanges: (interactionId?: string, tool?: string, model?: string) => void
+  onAIReview: () => void
+  onAIReviewToolChange: (value: string) => void
+  onAIReviewModelChange: (value: string) => void
+  onExpandAIReview: () => void
+  onCancelAIReview: () => void
   onRun: () => void
   onRerun: () => void
   onRunToolChange: (value: string) => void
@@ -114,11 +126,18 @@ export function TaskExecutionSection({
   runModelsFetching,
   runPending,
   runInteractions,
+  reviewInteractions,
   interactionsLoading,
   activeLogId,
   feedback,
   approving,
   requesting,
+  aiReviewExpanded,
+  aiReviewing,
+  aiReviewTool,
+  aiReviewModel,
+  aiReviewModels,
+  aiReviewModelsFetching,
   rerunning,
   reviewActionError,
   reviews,
@@ -132,6 +151,11 @@ export function TaskExecutionSection({
   onFeedbackChange,
   onApprove,
   onRequestChanges,
+  onAIReview,
+  onAIReviewToolChange,
+  onAIReviewModelChange,
+  onExpandAIReview,
+  onCancelAIReview,
   onRun,
   onRerun,
   onRunToolChange,
@@ -252,18 +276,35 @@ export function TaskExecutionSection({
                     interactionId={item.id}
                     feedback={feedback}
                     reviewExpanded={reviewExpanded}
+                    aiReviewExpanded={aiReviewExpanded}
                     approving={approving}
                     requesting={requesting}
+                    aiReviewing={aiReviewing}
                     reviewActionError={reviewActionError}
                     tools={tools}
                     rerunTool={rerunTool}
                     rerunModel={rerunModel}
                     rerunModels={rerunModels}
                     rerunModelsFetching={rerunModelsFetching}
+                    aiReviewTool={aiReviewTool}
+                    aiReviewModel={aiReviewModel}
+                    aiReviewModels={aiReviewModels}
+                    aiReviewModelsFetching={aiReviewModelsFetching}
                     controlClass={controlClass}
                     onFeedbackChange={onFeedbackChange}
-                    onExpandRequestChanges={() => setReviewExpanded(true)}
+                    onExpandRequestChanges={() => {
+                      setReviewExpanded(true)
+                      onCancelAIReview()
+                    }}
                     onCancelRequestChanges={() => setReviewExpanded(false)}
+                    onAIReview={onAIReview}
+                    onAIReviewToolChange={onAIReviewToolChange}
+                    onAIReviewModelChange={onAIReviewModelChange}
+                    onExpandAIReview={() => {
+                      setReviewExpanded(false)
+                      onExpandAIReview()
+                    }}
+                    onCancelAIReview={onCancelAIReview}
                     onApprove={onApprove}
                     onRequestChanges={onRequestChanges}
                     onRerunToolChange={onRerunToolChange}
@@ -316,8 +357,60 @@ export function TaskExecutionSection({
               </InteractionEntry>
             )
           })}
+
+          {reviewInteractions.length > 0 && (
+            <div className="flex flex-col gap-2 mt-2">
+              {reviewInteractions.map((item) => (
+                <InteractionEntry
+                  key={item.id}
+                  interaction={item}
+                  activeLogId={activeLogId}
+                  onToggleLog={onToggleLog}
+                >
+                  {item.status === 'completed' && item.quality_json && (
+                    <AIReviewResultCard qualityJson={item.quality_json} />
+                  )}
+                </InteractionEntry>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
   )
+}
+
+function AIReviewResultCard({ qualityJson }: { qualityJson: string }) {
+  try {
+    const result: AIReviewResult = JSON.parse(qualityJson)
+    return (
+      <div
+        className={[
+          'rounded-md border p-2.5',
+          result.approved
+            ? 'border-emerald-500/35 bg-emerald-500/10'
+            : 'border-amber-500/40 bg-amber-500/10',
+        ].join(' ')}
+      >
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+            AI Review
+          </span>
+          <span
+            className={[
+              'text-[10px] font-semibold uppercase',
+              result.approved ? 'text-emerald-400' : 'text-amber-400',
+            ].join(' ')}
+          >
+            {result.approved ? 'Approved' : 'Changes Suggested'}
+          </span>
+        </div>
+        <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
+          {result.feedback}
+        </div>
+      </div>
+    )
+  } catch {
+    return null
+  }
 }

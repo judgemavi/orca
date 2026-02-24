@@ -86,7 +86,7 @@ Core commands:
 
 - Setup/context: `init`, `explore`, `status`
 - Planning/tasks: `breakdown`, `tasks add/list/show/edit/delete/reopen/plan/evaluate/merge`
-- Execution: `run`, `review approve`, `review request-changes`, `merge`
+- Execution: `run`, `review approve`, `review request-changes`, `review ai`, `merge`
 - Runtime/ops: `serve`, `mcp`, `orc`, `ops`, `costs`, `cleanup`, `logs`, `models`, `config show`
 
 Ready tasks execute directly via `executor.RunBatch()`.
@@ -111,7 +111,7 @@ Key groups:
 - Task lifecycle: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
 - Planning: `breakdown`, `tasks_plan_evaluate`, `tasks_plan_generate`
 - Execution: `tasks_run`
-- Review/integration: `tasks_approve`, `tasks_request_changes`, `merge`, `tasks_merge`
+- Review/integration: `tasks_approve`, `tasks_request_changes`, `ai_review`, `merge`, `tasks_merge`
 - Context/ops: `explore`, `explore_status`, `project_status`, `worktree_*`, `budget_status`, `quality_results`, `log_*`
 
 ---

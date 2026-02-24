@@ -14,6 +14,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/review"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -231,6 +232,79 @@ func (r *Registry) runReviewRequestChanges(cmd *cobra.Command, args []string) er
 		return fmt.Errorf("get task %s after re-run: %w", short(taskID), err)
 	}
 	fmt.Printf("Task %s re-run finished with status: %s\n", short(taskID), updated.Status)
+	return nil
+}
+
+func (r *Registry) runReviewAI(cmd *cobra.Command, args []string) error {
+	db, cfg, _, err := r.loadRuntimeOrErr()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	store := task.NewStore(db)
+
+	var taskID string
+	if len(args) > 0 {
+		taskID, err = resolveTaskID(store, args[0])
+	} else {
+		taskID, err = pickTask(store, "AI review task", statusFilter("review"))
+	}
+	if err != nil {
+		return err
+	}
+
+	tk, err := store.Get(taskID)
+	if err != nil {
+		return fmt.Errorf("get task %s: %w", short(taskID), err)
+	}
+	if tk.Status != "review" {
+		return fmt.Errorf("task %s is %q, expected %q", short(taskID), tk.Status, "review")
+	}
+
+	toolFlag, _ := cmd.Flags().GetString("tool")
+	modelFlag, _ := cmd.Flags().GetString("model")
+
+	toolName, d, err := cfg.ResolveToolForPhase("review", strings.TrimSpace(toolFlag))
+	if err != nil {
+		return err
+	}
+	model := cfg.ResolveModelForPhase("review", strings.TrimSpace(modelFlag), d)
+
+	interactions := interaction.NewStore(db, ".orca/interactions")
+	runInteractions, err := interactions.ListByPhase(taskID, "run")
+	if err != nil {
+		return fmt.Errorf("list run interactions for task %s: %w", short(taskID), err)
+	}
+
+	diff := ""
+	for _, in := range runInteractions {
+		if in.Status == "completed" && strings.TrimSpace(in.Diff) != "" {
+			diff = in.Diff
+			break
+		}
+	}
+	if strings.TrimSpace(diff) == "" {
+		return fmt.Errorf("no completed run interaction with diff found")
+	}
+
+	repoDir, _ := os.Getwd()
+	reviewer := review.New(toolName, d, model, 10*time.Minute, repoDir, interactions)
+	result, err := reviewer.Review(taskID, tk.Title, tk.Description, diff)
+	if err != nil {
+		return fmt.Errorf("run ai review for task %s: %w", short(taskID), err)
+	}
+
+	status := "Changes Suggested"
+	if result.Approved {
+		status = "Approved"
+	}
+	fmt.Printf("AI Review: %s\n", short(taskID))
+	fmt.Printf("Status: %s\n", status)
+	fmt.Printf("Tool: %s\n\n", result.Tool)
+	fmt.Println("Feedback:")
+	fmt.Println(strings.TrimSpace(result.Feedback))
+
 	return nil
 }
 

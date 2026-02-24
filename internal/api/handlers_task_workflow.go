@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jasjeetmavi/orca/internal/executor"
+	"github.com/jasjeetmavi/orca/internal/review"
 )
 
 // ========== Task Workflow ==========
@@ -154,6 +156,86 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 		"status":  "running",
 		"task_id": resolved,
 	})
+}
+
+// POST /api/v1/tasks/{id}/ai-review
+func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request, id string) {
+	type aiReviewReq struct {
+		Tool  string `json:"tool"`
+		Model string `json:"model"`
+	}
+	req, ok := decodeJSON[aiReviewReq](w, r, true)
+	if !ok {
+		return
+	}
+
+	store := s.taskStore
+	resolved, ok := resolveTaskID(w, store, id)
+	if !ok {
+		return
+	}
+
+	tk, err := store.Get(resolved)
+	if err != nil {
+		jsonError(w, err, http.StatusNotFound)
+		return
+	}
+	if tk.Status != "review" {
+		jsonError(w, "task must be in review status for ai review", http.StatusBadRequest)
+		return
+	}
+
+	toolName, d, err := s.cfg.ResolveToolForPhase("review", strings.TrimSpace(req.Tool))
+	if err != nil {
+		if strings.TrimSpace(req.Tool) != "" {
+			jsonError(w, err, http.StatusBadRequest)
+		} else {
+			jsonError(w, err, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	modelOverride := s.cfg.ResolveModelForPhase("review", strings.TrimSpace(req.Model), d)
+	runInteractions, err := s.interactions.ListByPhase(resolved, "run")
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	diff := ""
+	for _, in := range runInteractions {
+		if in.Status == "completed" && strings.TrimSpace(in.Diff) != "" {
+			diff = in.Diff
+			break
+		}
+	}
+	if strings.TrimSpace(diff) == "" {
+		jsonError(w, "no completed run interaction with diff found", http.StatusBadRequest)
+		return
+	}
+
+	reviewer := review.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
+	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
+		"status":  "reviewing",
+		"task_id": resolved,
+	})
+
+	go func(taskID, title, description, runDiff string) {
+		result, reviewErr := reviewer.Review(taskID, title, description, runDiff)
+		if reviewErr != nil {
+			s.hub.Broadcast(Event{
+				Type: "ai-review.failed",
+				Data: map[string]string{
+					"task_id": taskID,
+					"error":   reviewErr.Error(),
+				},
+			})
+			return
+		}
+		s.hub.Broadcast(Event{
+			Type: "ai-review.completed",
+			Data: result,
+		})
+	}(resolved, tk.Title, tk.Description, diff)
 }
 
 func (s *Server) handleListTaskReviews(w http.ResponseWriter, r *http.Request, id string) {

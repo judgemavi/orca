@@ -142,6 +142,11 @@ export const api = {
         ...(model ? { model } : {}),
       },
     ),
+  aiReview: (id: string, tool?: string, model?: string) =>
+    post<{ status: string; task_id: string }>(`/tasks/${id}/ai-review`, {
+      ...(tool ? { tool } : {}),
+      ...(model ? { model } : {}),
+    }),
   requestPlanChanges: (
     id: string,
     feedback: string,

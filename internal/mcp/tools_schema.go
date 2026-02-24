@@ -320,6 +320,28 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
+			Name:        "ai_review",
+			Description: "Run automated AI code review on a task's diff. Task must be in 'review' status. Returns approval status and feedback. Does NOT change task status - the orchestrator decides next action.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Task ID (or prefix) to review",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool override (optional, defaults to review phase config)",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model override (optional)",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
 			Name:        "tasks_request_plan_changes",
 			Description: "Request changes to a pending task's plan, recording feedback and regenerating the plan.",
 			InputSchema: map[string]interface{}{

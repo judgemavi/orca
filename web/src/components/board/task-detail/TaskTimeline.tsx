@@ -10,6 +10,7 @@ interface Props {
   task: Task
   planInteractions: Interaction[]
   runInteractions: Interaction[]
+  reviewInteractions: Interaction[]
   mergeInteractions: Interaction[]
   planReviews: TaskReview[]
   runReviews: TaskReview[]
@@ -19,6 +20,12 @@ interface Props {
   feedback: string
   approving: boolean
   requesting: boolean
+  aiReviewExpanded: boolean
+  aiReviewing: boolean
+  aiReviewTool: string
+  aiReviewModel: string
+  aiReviewModels: Array<{ id: string; name: string }>
+  aiReviewModelsFetching: boolean
   rerunning: boolean
   reviewActionError: string | null
   mergeProgress: string | null
@@ -60,6 +67,11 @@ interface Props {
   onFeedbackChange: (value: string) => void
   onApprove: () => void
   onRequestChanges: (interactionId?: string, tool?: string, model?: string) => void
+  onAIReview: () => void
+  onAIReviewToolChange: (value: string) => void
+  onAIReviewModelChange: (value: string) => void
+  onExpandAIReview: () => void
+  onCancelAIReview: () => void
   onRerun: () => void
   onMerge: () => void
   onAutoResolve: () => void
@@ -113,6 +125,7 @@ export function TaskTimeline({
   task,
   planInteractions,
   runInteractions,
+  reviewInteractions,
   mergeInteractions,
   planReviews,
   runReviews,
@@ -122,6 +135,12 @@ export function TaskTimeline({
   feedback,
   approving,
   requesting,
+  aiReviewExpanded,
+  aiReviewing,
+  aiReviewTool,
+  aiReviewModel,
+  aiReviewModels,
+  aiReviewModelsFetching,
   rerunning,
   reviewActionError,
   mergeProgress,
@@ -163,6 +182,11 @@ export function TaskTimeline({
   onFeedbackChange,
   onApprove,
   onRequestChanges,
+  onAIReview,
+  onAIReviewToolChange,
+  onAIReviewModelChange,
+  onExpandAIReview,
+  onCancelAIReview,
   onRerun,
   onMerge,
   onAutoResolve,
@@ -241,11 +265,18 @@ export function TaskTimeline({
           runModelsFetching={runModelsFetching}
           runPending={runPending}
           runInteractions={runInteractions}
+          reviewInteractions={reviewInteractions}
           interactionsLoading={interactionsLoading}
           activeLogId={activeLogId}
           feedback={feedback}
           approving={approving}
           requesting={requesting}
+          aiReviewExpanded={aiReviewExpanded}
+          aiReviewing={aiReviewing}
+          aiReviewTool={aiReviewTool}
+          aiReviewModel={aiReviewModel}
+          aiReviewModels={aiReviewModels}
+          aiReviewModelsFetching={aiReviewModelsFetching}
           rerunning={rerunning}
           reviewActionError={reviewActionError}
           reviews={runReviews}
@@ -259,6 +290,11 @@ export function TaskTimeline({
           onFeedbackChange={onFeedbackChange}
           onApprove={onApprove}
           onRequestChanges={onRequestChanges}
+          onAIReview={onAIReview}
+          onAIReviewToolChange={onAIReviewToolChange}
+          onAIReviewModelChange={onAIReviewModelChange}
+          onExpandAIReview={onExpandAIReview}
+          onCancelAIReview={onCancelAIReview}
           onRun={onRun}
           onRerun={onRerun}
           onRunToolChange={onRunToolChange}

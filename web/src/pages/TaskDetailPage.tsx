@@ -89,6 +89,7 @@ function TaskDetailContent({
     setShowManualResolve,
     planInteractions,
     runInteractions,
+    reviewInteractions,
     mergeInteractions,
     interactionsLoading,
     planReviews,
@@ -97,6 +98,12 @@ function TaskDetailContent({
     setFeedback,
     approving,
     requesting,
+    aiReviewTool,
+    aiReviewModel,
+    aiReviewModels,
+    aiReviewModelsFetching,
+    aiReviewing,
+    aiReviewExpanded,
     rerunning,
     reviewActionError,
     plan,
@@ -136,6 +143,9 @@ function TaskDetailContent({
     setRerunModel,
     setMergeTool,
     setMergeModel,
+    setAIReviewTool,
+    setAIReviewModel,
+    setAIReviewExpanded,
     handleDelete,
     handleMerge,
     handleRun,
@@ -145,6 +155,7 @@ function TaskDetailContent({
     handleApprove,
     handleRequestChanges,
     handleRerun,
+    handleAIReview,
   } = useTaskDetail({
     task,
     tools,
@@ -242,6 +253,7 @@ function TaskDetailContent({
                   task={task}
                   planInteractions={planInteractions}
                   runInteractions={runInteractions}
+                  reviewInteractions={reviewInteractions}
                   mergeInteractions={mergeInteractions}
                   planReviews={planReviews}
                   runReviews={runReviews}
@@ -251,6 +263,12 @@ function TaskDetailContent({
                   feedback={feedback}
                   approving={approving}
                   requesting={requesting}
+                  aiReviewExpanded={aiReviewExpanded}
+                  aiReviewing={aiReviewing}
+                  aiReviewTool={aiReviewTool}
+                  aiReviewModel={aiReviewModel}
+                  aiReviewModels={aiReviewModels}
+                  aiReviewModelsFetching={aiReviewModelsFetching}
                   rerunning={rerunning}
                   reviewActionError={reviewActionError}
                   mergeProgress={mergeProgress}
@@ -302,6 +320,13 @@ function TaskDetailContent({
                   onRequestChanges={(interactionId, tool, model) => {
                     void handleRequestChanges(interactionId, tool, model)
                   }}
+                  onAIReview={() => {
+                    void handleAIReview()
+                  }}
+                  onAIReviewToolChange={setAIReviewTool}
+                  onAIReviewModelChange={setAIReviewModel}
+                  onExpandAIReview={() => setAIReviewExpanded(true)}
+                  onCancelAIReview={() => setAIReviewExpanded(false)}
                   onRerun={() => {
                     void handleRerun()
                   }}

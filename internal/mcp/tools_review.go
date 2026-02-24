@@ -10,6 +10,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
+	"github.com/jasjeetmavi/orca/internal/review"
 )
 
 func (s *Server) HandleTasksApproveTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -235,4 +236,65 @@ func (s *Server) HandleTasksReviewsTool(argsRaw json.RawMessage) (interface{}, e
 	}
 
 	return s.taskStore.ListReviews(taskID)
+}
+
+func (s *Server) HandleAIReviewTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		TaskID string `json:"task_id"`
+		Tool   string `json:"tool"`
+		Model  string `json:"model"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("ai_review: %w", err)
+	}
+	if strings.TrimSpace(args.TaskID) == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.taskStore.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != "review" {
+		return nil, fmt.Errorf("task must be in review status, got %q", t.Status)
+	}
+
+	toolName, d, err := s.config.ResolveToolForPhase("review", args.Tool)
+	if err != nil {
+		return nil, err
+	}
+	model := s.config.ResolveModelForPhase("review", args.Model, d)
+
+	interactionStore := interaction.NewStore(s.db, ".orca/interactions")
+	runInteractions, err := interactionStore.ListByPhase(taskID, "run")
+	if err != nil {
+		return nil, fmt.Errorf("list run interactions: %w", err)
+	}
+	var diff string
+	for i := len(runInteractions) - 1; i >= 0; i-- {
+		if runInteractions[i].Status == "completed" && runInteractions[i].Diff != "" {
+			diff = runInteractions[i].Diff
+			break
+		}
+	}
+	if diff == "" {
+		return nil, fmt.Errorf("no completed run interaction with diff found")
+	}
+
+	reviewer := review.New(toolName, d, model, 10*time.Minute, s.repoDir, interactionStore)
+	result, err := reviewer.Review(taskID, t.Title, t.Description, diff)
+	if err != nil {
+		return nil, fmt.Errorf("review failed: %w", err)
+	}
+
+	return map[string]interface{}{
+		"task_id":  taskID,
+		"approved": result.Approved,
+		"feedback": result.Feedback,
+		"tool":     result.Tool,
+	}, nil
 }
