@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -23,8 +22,6 @@ func (r *Registry) runTaskAdd(cmd *cobra.Command, args []string) error {
 	description, _ := cmd.Flags().GetString("description")
 	parentID, _ := cmd.Flags().GetString("parent")
 	dependsOn, _ := cmd.Flags().GetStringSlice("depends-on")
-	toolName, _ := cmd.Flags().GetString("tool")
-	modelName, _ := cmd.Flags().GetString("model")
 
 	for i, dep := range dependsOn {
 		resolved, err := resolveTaskID(store, dep)
@@ -34,14 +31,9 @@ func (r *Registry) runTaskAdd(cmd *cobra.Command, args []string) error {
 		dependsOn[i] = resolved
 	}
 
-	t, err := store.Create(title, description, parentID, toolName)
+	t, err := store.Create(title, description, parentID)
 	if err != nil {
 		return fmt.Errorf("create task: %w", err)
-	}
-	if modelName != "" {
-		if err := store.Update(t.ID, map[string]interface{}{"model": modelName}); err != nil {
-			return fmt.Errorf("set model: %w", err)
-		}
 	}
 
 	for _, depID := range dependsOn {
@@ -51,12 +43,6 @@ func (r *Registry) runTaskAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Created task %s: %s\n", short(t.ID), title)
-	if toolName != "" {
-		fmt.Printf("  tool: %s\n", toolName)
-	}
-	if modelName != "" {
-		fmt.Printf("  model: %s\n", modelName)
-	}
 	if len(dependsOn) > 0 {
 		shortened := make([]string, len(dependsOn))
 		for i, d := range dependsOn {
@@ -85,22 +71,12 @@ func (r *Registry) runTaskList(cmd *cobra.Command, args []string) error {
 
 	for _, t := range tasks {
 		line := fmt.Sprintf("%s %s  %s", statusIcon(t.Status), short(t.ID), t.Title)
-		var extras []string
 		if len(t.DependsOn) > 0 {
 			shortened := make([]string, len(t.DependsOn))
 			for i, d := range t.DependsOn {
 				shortened[i] = short(d)
 			}
-			extras = append(extras, "depends on: "+strings.Join(shortened, ", "))
-		}
-		if t.AssignedTool != "" {
-			extras = append(extras, "tool: "+t.AssignedTool)
-		}
-		if t.Model != "" {
-			extras = append(extras, "model: "+t.Model)
-		}
-		if len(extras) > 0 {
-			line += "      " + strings.Join(extras, "  ")
+			line += "      depends on: " + strings.Join(shortened, ", ")
 		}
 		fmt.Println(line)
 	}
@@ -108,11 +84,10 @@ func (r *Registry) runTaskList(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
-	db, cfg, _, err := r.loadRuntimeOrErr()
+	db, store, err := r.openStoreOrErr()
 	if err != nil {
 		return err
 	}
-	store := task.NewStore(db)
 	defer db.Close()
 
 	var id string
@@ -124,6 +99,7 @@ func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
 	fields := make(map[string]interface{})
 	if cmd.Flags().Changed("title") {
 		v, _ := cmd.Flags().GetString("title")
@@ -133,86 +109,18 @@ func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 		v, _ := cmd.Flags().GetString("description")
 		fields["description"] = v
 	}
-	if cmd.Flags().Changed("prompt") {
-		v, _ := cmd.Flags().GetString("prompt")
-		fields["prompt"] = v
+	if cmd.Flags().Changed("plan") {
+		v, _ := cmd.Flags().GetString("plan")
+		fields["plan"] = v
 	}
 	if cmd.Flags().Changed("status") {
 		v, _ := cmd.Flags().GetString("status")
 		fields["status"] = v
 	}
-	if cmd.Flags().Changed("tool") {
-		v, _ := cmd.Flags().GetString("tool")
-		fields["assigned_tool"] = v
-	}
-	if cmd.Flags().Changed("model") {
-		v, _ := cmd.Flags().GetString("model")
-		fields["model"] = v
-	}
 	if len(fields) == 0 {
-		t, err := store.Get(id)
-		if err != nil {
-			return fmt.Errorf("get task: %w", err)
-		}
-
-		title := t.Title
-		description := t.Description
-		toolName := t.AssignedTool
-		modelName := t.Model
-
-		toolNames := make([]string, 0, len(cfg.Tools))
-		for name := range cfg.Tools {
-			toolNames = append(toolNames, name)
-		}
-		sort.Strings(toolNames)
-
-		toolOpts := []huh.Option[string]{huh.NewOption("(none)", "")}
-		for _, name := range toolNames {
-			toolOpts = append(toolOpts, huh.NewOption(name, name))
-		}
-
-		if err := huh.NewForm(huh.NewGroup(
-			huh.NewInput().Title("Title").Value(&title),
-			huh.NewText().Title("Description").Value(&description),
-			huh.NewSelect[string]().Title("Tool").Options(toolOpts...).Value(&toolName),
-		)).Run(); err != nil {
-			return err
-		}
-
-		if toolName != "" {
-			if tc, ok := cfg.Tools[toolName]; ok && len(tc.Models) > 0 {
-				modelOpts := []huh.Option[string]{huh.NewOption("(tool default)", "")}
-				for _, m := range tc.Models {
-					modelOpts = append(modelOpts, huh.NewOption(m, m))
-				}
-				if err := huh.NewSelect[string]().
-					Title("Model").
-					Options(modelOpts...).
-					Value(&modelName).
-					Run(); err != nil {
-					return err
-				}
-			}
-		}
-
-		if title != t.Title {
-			fields["title"] = title
-		}
-		if description != t.Description {
-			fields["description"] = description
-		}
-		if toolName != t.AssignedTool {
-			fields["assigned_tool"] = toolName
-		}
-		if modelName != t.Model {
-			fields["model"] = modelName
-		}
-
-		if len(fields) == 0 {
-			fmt.Println("No changes.")
-			return nil
-		}
+		return fmt.Errorf("no fields provided (use --title, --description, --plan, or --status)")
 	}
+
 	if err := store.Update(id, fields); err != nil {
 		return fmt.Errorf("update task: %w", err)
 	}
@@ -261,7 +169,6 @@ func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 	if err := store.Delete(id); err != nil {
 		return fmt.Errorf("delete task: %w", err)
 	}
-	// Best-effort worktree cleanup.
 	if _, statErr := os.Stat(filepath.Join(cfg.Project.WorktreeDir, "task-"+id)); statErr == nil {
 		if rmErr := executor.Worktrees().Remove(id); rmErr != nil {
 			warnf("cleanup worktree for %s: %v", short(id), rmErr)
@@ -296,16 +203,6 @@ func (r *Registry) runTaskShow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Title: %s\n", t.Title)
 	fmt.Printf("Description: %s\n", t.Description)
 	fmt.Printf("Status: %s\n", t.Status)
-	if t.AssignedTool != "" {
-		fmt.Printf("Tool: %s\n", t.AssignedTool)
-	} else {
-		fmt.Println("Tool: (none)")
-	}
-	if t.Model != "" {
-		fmt.Printf("Model: %s\n", t.Model)
-	} else {
-		fmt.Println("Model: (none)")
-	}
 
 	if len(t.DependsOn) == 0 {
 		fmt.Println("Dependencies: (none)")

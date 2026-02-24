@@ -61,11 +61,10 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 		repoDir, _ := os.Getwd()
 		ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
 		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (config.ToolConfig, error) {
-			t, err := store.Get(taskID)
-			if err != nil {
+			if _, err := store.Get(taskID); err != nil {
 				return config.ToolConfig{}, err
 			}
-			_, tc, err := cfg.ResolveToolForPhase(t, "merge", "")
+			_, tc, err := cfg.ResolveToolForPhase("merge", "")
 			if err != nil {
 				return config.ToolConfig{}, err
 			}

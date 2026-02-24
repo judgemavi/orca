@@ -2,7 +2,6 @@
 package task
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -12,30 +11,16 @@ import (
 )
 
 type Task struct {
-	ID           string          `json:"id"`
-	Title        string          `json:"title"`
-	Description  string          `json:"description"`
-	Prompt       string          `json:"prompt,omitempty"`
-	Model        string          `json:"model,omitempty"`
-	PhaseConfig  *PhaseConfigMap `json:"phase_config,omitempty"`
-	Plan         string          `json:"plan,omitempty"`
-	SessionID    string          `json:"session_id,omitempty"`
-	ParentID     string          `json:"parent_id,omitempty"`
-	Status       string          `json:"status"`
-	AssignedTool string          `json:"assigned_tool,omitempty"`
-	DependsOn    []string        `json:"depends_on"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-}
-
-type PhaseOverride struct {
-	Tool  string `json:"tool,omitempty"`
-	Model string `json:"model,omitempty"`
-}
-
-type PhaseConfigMap struct {
-	UseDefaults bool                     `json:"use_defaults"`
-	Phases      map[string]PhaseOverride `json:"phases,omitempty"` // keys: "plan", "run", "review"
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Plan        string    `json:"plan,omitempty"`
+	SessionID   string    `json:"session_id,omitempty"`
+	ParentID    string    `json:"parent_id,omitempty"`
+	Status      string    `json:"status"`
+	DependsOn   []string  `json:"depends_on"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type TaskReview struct {
@@ -55,7 +40,7 @@ func NewStore(db *state.DB) *Store {
 	return &Store{db: db}
 }
 
-func (s *Store) Create(title, description, parentID, assignedTool string) (*Task, error) {
+func (s *Store) Create(title, description, parentID string) (*Task, error) {
 	id := uuid.New().String()
 	now := time.Now().UTC()
 
@@ -64,35 +49,29 @@ func (s *Store) Create(title, description, parentID, assignedTool string) (*Task
 		parent = &parentID
 	}
 
-	var tool *string
-	if assignedTool != "" {
-		tool = &assignedTool
-	}
-
 	_, err := s.db.Exec(
-		`INSERT INTO tasks (id, title, description, parent_id, assigned_tool, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
-		id, title, description, parent, tool, now, now,
+		`INSERT INTO tasks (id, title, description, parent_id, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+		id, title, description, parent, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create task: %w", err)
 	}
 
 	return &Task{
-		ID:           id,
-		Title:        title,
-		Description:  description,
-		ParentID:     parentID,
-		AssignedTool: assignedTool,
-		Status:       "pending",
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:          id,
+		Title:       title,
+		Description: description,
+		ParentID:    parentID,
+		Status:      "pending",
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}, nil
 }
 
 func (s *Store) Get(id string) (*Task, error) {
 	t, err := s.scanTask(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, created_at, updated_at
+		`SELECT id, title, description, plan, session_id, parent_id, status, created_at, updated_at
 		 FROM tasks WHERE id = ?`, id,
 	)
 	if err != nil {
@@ -109,14 +88,14 @@ func (s *Store) Get(id string) (*Task, error) {
 
 func (s *Store) List() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, created_at, updated_at
+		`SELECT id, title, description, plan, session_id, parent_id, status, created_at, updated_at
 		 FROM tasks ORDER BY created_at`,
 	)
 }
 
 func (s *Store) ListByStatus(status string) ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, created_at, updated_at
+		`SELECT id, title, description, plan, session_id, parent_id, status, created_at, updated_at
 		 FROM tasks WHERE status = ? ORDER BY created_at`, status,
 	)
 }
@@ -139,9 +118,6 @@ func (s *Store) ListByParent(parentID string) ([]*Task, error) {
 func (s *Store) Update(id string, fields map[string]interface{}) error {
 	if len(fields) == 0 {
 		return nil
-	}
-	if err := normalizePhaseConfigField(fields); err != nil {
-		return err
 	}
 
 	setClauses := make([]string, 0, len(fields)+1)
@@ -245,29 +221,4 @@ func (s *Store) ResolveID(prefix string) (string, error) {
 	default:
 		return "", fmt.Errorf("ambiguous prefix %q matches %d tasks", prefix, len(ids))
 	}
-}
-
-func normalizePhaseConfigField(fields map[string]interface{}) error {
-	v, ok := fields["phase_config"]
-	if !ok || v == nil {
-		return nil
-	}
-
-	var data []byte
-	var err error
-	switch pc := v.(type) {
-	case PhaseConfigMap:
-		data, err = json.Marshal(pc)
-	case *PhaseConfigMap:
-		data, err = json.Marshal(pc)
-	case map[string]interface{}:
-		data, err = json.Marshal(pc)
-	default:
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("marshal phase_config: %w", err)
-	}
-	fields["phase_config"] = string(data)
-	return nil
 }

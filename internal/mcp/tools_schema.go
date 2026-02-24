@@ -110,14 +110,6 @@ func (s *Server) toolDefinitions() []toolDef {
 						"type":        "string",
 						"description": "Detailed description",
 					},
-					"assigned_tool": map[string]interface{}{
-						"type":        "string",
-						"description": "Tool to use (e.g. claude, codex)",
-					},
-					"model": map[string]interface{}{
-						"type":        "string",
-						"description": "Model to use for this task (must be valid for the assigned tool)",
-					},
 					"depends_on": map[string]interface{}{
 						"type": "array",
 						"items": map[string]interface{}{
@@ -131,7 +123,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "tasks_update",
-			Description: "Update a task's title, description, status, or assigned tool.",
+			Description: "Update a task's title, description, status, or plan.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -141,17 +133,7 @@ func (s *Server) toolDefinitions() []toolDef {
 						"type": "string",
 					},
 					"status": map[string]interface{}{"type": "string"},
-					"assigned_tool": map[string]interface{}{
-						"type": "string",
-					},
-					"model": map[string]interface{}{
-						"type":        "string",
-						"description": "Model to use for this task",
-					},
-					"prompt": map[string]interface{}{
-						"type":        "string",
-						"description": "Custom prompt for the task",
-					},
+					"plan":   map[string]interface{}{"type": "string"},
 				},
 				"required": []string{"task_id"},
 			},
@@ -326,9 +308,8 @@ func (s *Server) toolDefinitions() []toolDef {
 			Name:        "budget_status",
 			Description: "Get current total cost, budget, remaining budget, and per-tool breakdown.",
 			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-				},
+				"type":       "object",
+				"properties": map[string]interface{}{},
 			},
 		},
 		{

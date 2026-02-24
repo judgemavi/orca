@@ -2,7 +2,6 @@ export interface Task {
   id: string
   title: string
   description: string
-  prompt: string
   parent_id: string | null
   status:
     | 'pending'
@@ -11,10 +10,7 @@ export interface Task {
     | 'approved'
     | 'merged'
     | 'failed'
-  assigned_tool: string | null
   depends_on: string[]
-  model: string | null
-  phase_config: PhaseConfigMap | null
   plan: string | null
   created_at: string
   updated_at: string
@@ -32,11 +28,6 @@ export interface TaskReview {
 export interface PhaseOverride {
   tool?: string
   model?: string
-}
-
-export interface PhaseConfigMap {
-  use_defaults: boolean
-  phases?: Record<string, PhaseOverride>
 }
 
 export interface Config {
@@ -92,6 +83,18 @@ export interface TaskResult {
   stderr: string
   duration_ms: number
   worktree_path: string
+}
+
+export interface Artifact {
+  id: string
+  task_id: string
+  run_id: string | null
+  diff: string
+  stdout: string
+  stderr: string
+  exit_code: number
+  duration_ms: number
+  created_at: string
 }
 
 export interface ProposedTask {

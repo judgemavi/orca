@@ -3,20 +3,12 @@ import { useForm } from '@tanstack/react-form'
 export interface CreateTaskFormValues {
   title: string
   description: string
-  useDefaults: boolean
-  phases: Record<'plan' | 'run' | 'review', { tool: string; model: string }>
   dependencies: string[]
 }
 
 export const createTaskFormDefaults: CreateTaskFormValues = {
   title: '',
   description: '',
-  useDefaults: true,
-  phases: {
-    plan: { tool: '', model: '' },
-    run: { tool: '', model: '' },
-    review: { tool: '', model: '' },
-  },
   dependencies: [],
 }
 

@@ -71,7 +71,7 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 
 	createdIDs := make([]string, len(tasks))
 	for i, t := range tasks {
-		created, err := s.taskStore.Create(t.Title, t.Description, "", t.SuggestedTool)
+		created, err := s.taskStore.Create(t.Title, t.Description, "")
 		if err != nil {
 			return nil, fmt.Errorf("create task %d: %w", i+1, err)
 		}
@@ -116,25 +116,9 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 		return nil, err
 	}
 
-	toolName := args.Tool
-	if toolName == "" {
-		toolName = t.AssignedTool
-	}
-	if toolName == "" {
-		toolName = s.config.Defaults.Tool
-	}
-	if toolName == "" {
-		for name := range s.config.Tools {
-			toolName = name
-			break
-		}
-	}
-	if toolName == "" {
-		return nil, fmt.Errorf("no tools configured")
-	}
-	toolCfg, ok := s.config.Tools[toolName]
-	if !ok {
-		return nil, fmt.Errorf("tool %q not found in config", toolName)
+	_, toolCfg, err := s.config.ResolveToolForPhase("plan", args.Tool)
+	if err != nil {
+		return nil, err
 	}
 
 	generator := planpkg.New(toolCfg, s.repoDir)
@@ -186,25 +170,9 @@ func (s *Server) HandleTasksPlanEvaluateTool(argsRaw json.RawMessage) (interface
 		return nil, err
 	}
 
-	toolName := args.Tool
-	if toolName == "" {
-		toolName = t.AssignedTool
-	}
-	if toolName == "" {
-		toolName = s.config.Defaults.Tool
-	}
-	if toolName == "" {
-		for name := range s.config.Tools {
-			toolName = name
-			break
-		}
-	}
-	if toolName == "" {
-		return nil, fmt.Errorf("no tools configured")
-	}
-	toolCfg, ok := s.config.Tools[toolName]
-	if !ok {
-		return nil, fmt.Errorf("tool %q not found in config", toolName)
+	_, toolCfg, err := s.config.ResolveToolForPhase("explore", args.Tool)
+	if err != nil {
+		return nil, err
 	}
 
 	evaluator := evaluate.New(toolCfg, s.repoDir)

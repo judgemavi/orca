@@ -19,8 +19,6 @@ func RegisterTask(root *cobra.Command, r *Registry) {
 	addCmd.Flags().String("description", "", "Task description")
 	addCmd.Flags().String("parent", "", "Parent task ID")
 	addCmd.Flags().StringSlice("depends-on", nil, "Task IDs this task depends on")
-	addCmd.Flags().String("tool", "", "Assigned tool")
-	addCmd.Flags().String("model", "", "Assigned model")
 	taskCmd.AddCommand(addCmd)
 
 	taskCmd.AddCommand(&cobra.Command{Use: "list", Short: "List tasks", RunE: r.runTaskList})
@@ -28,10 +26,8 @@ func RegisterTask(root *cobra.Command, r *Registry) {
 	editCmd := &cobra.Command{Use: "edit [id]", Short: "Edit a task", Args: cobra.MaximumNArgs(1), RunE: r.runTaskEdit}
 	editCmd.Flags().String("title", "", "New title")
 	editCmd.Flags().String("description", "", "New description")
-	editCmd.Flags().String("prompt", "", "New prompt")
+	editCmd.Flags().String("plan", "", "New implementation plan")
 	editCmd.Flags().String("status", "", "New status")
-	editCmd.Flags().String("tool", "", "Assigned tool")
-	editCmd.Flags().String("model", "", "Assigned model")
 	taskCmd.AddCommand(editCmd)
 
 	deleteCmd := &cobra.Command{Use: "delete [task-id]", Short: "Delete a task", Args: cobra.MaximumNArgs(1), RunE: r.runTaskDelete}

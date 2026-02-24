@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,13 +11,9 @@ import (
 )
 
 type createTaskReq struct {
-	Title        string               `json:"title"`
-	Description  string               `json:"description"`
-	ParentID     string               `json:"parent_id"`
-	Tool         string               `json:"tool"`
-	AssignedTool string               `json:"assigned_tool"`
-	Model        string               `json:"model"`
-	PhaseConfig  *task.PhaseConfigMap `json:"phase_config,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	ParentID    string `json:"parent_id"`
 }
 
 // ========== Task CRUD ==========
@@ -65,33 +60,11 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "title required", http.StatusBadRequest)
 		return
 	}
-	toolName := strings.TrimSpace(req.Tool)
-	if toolName == "" {
-		toolName = strings.TrimSpace(req.AssignedTool)
-	}
-
 	store := s.taskStore
-	t, err := store.Create(req.Title, req.Description, req.ParentID, toolName)
+	t, err := store.Create(req.Title, req.Description, req.ParentID)
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
-	}
-	if req.Model != "" {
-		if err := store.Update(t.ID, map[string]interface{}{"model": req.Model}); err != nil {
-			jsonError(w, err, http.StatusInternalServerError)
-			return
-		}
-	}
-	if req.PhaseConfig != nil {
-		data, err := json.Marshal(req.PhaseConfig)
-		if err != nil {
-			jsonError(w, err, http.StatusInternalServerError)
-			return
-		}
-		if err := store.Update(t.ID, map[string]interface{}{"phase_config": string(data)}); err != nil {
-			jsonError(w, err, http.StatusInternalServerError)
-			return
-		}
 	}
 	t, err = store.Get(t.ID)
 	if err != nil {
@@ -117,15 +90,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	fields := make(map[string]interface{})
-	for _, key := range []string{"title", "description", "prompt", "status", "assigned_tool", "model", "phase_config"} {
+	for _, key := range []string{"title", "description", "status", "plan"} {
 		if v, ok := body[key]; ok {
 			fields[key] = v
-		}
-	}
-	if v, ok := fields["phase_config"]; ok && v != nil {
-		data, err := json.Marshal(v)
-		if err == nil {
-			fields["phase_config"] = string(data)
 		}
 	}
 	if len(fields) == 0 {

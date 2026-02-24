@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { Task } from '../../types'
 import { StatusIcon } from '../common/StatusBadge'
-import { ToolChip } from '../common/ToolChip'
 import { api } from '../../api'
 
 interface Props {
@@ -62,7 +61,6 @@ export function TaskBoard({ refreshKey }: Props) {
                   <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                     {task.title}
                   </span>
-                  {task.assigned_tool && <ToolChip tool={task.assigned_tool} />}
                 </div>
               ))}
             </div>

@@ -98,7 +98,7 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	toolName, toolCfg, err := s.cfg.ResolveToolForPhase(tk, "plan", req.Tool)
+	toolName, toolCfg, err := s.cfg.ResolveToolForPhase("plan", req.Tool)
 	if err != nil {
 		if strings.TrimSpace(req.Tool) != "" {
 			jsonError(w, err, http.StatusBadRequest)
@@ -210,27 +210,13 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	toolName := strings.TrimSpace(req.Tool)
-	if toolName == "" {
-		toolName = strings.TrimSpace(tk.AssignedTool)
-	}
-	if toolName == "" {
-		toolName = strings.TrimSpace(s.cfg.Defaults.Tool)
-	}
-	if toolName == "" {
-		for name := range s.cfg.Tools {
-			toolName = name
-			break
+	_, toolCfg, err := s.cfg.ResolveToolForPhase("explore", req.Tool)
+	if err != nil {
+		if strings.TrimSpace(req.Tool) != "" {
+			jsonError(w, err, http.StatusBadRequest)
+		} else {
+			jsonError(w, err, http.StatusInternalServerError)
 		}
-	}
-	if toolName == "" {
-		jsonError(w, "no tools configured", http.StatusInternalServerError)
-		return
-	}
-
-	toolCfg, ok := s.cfg.Tools[toolName]
-	if !ok {
-		jsonError(w, fmt.Sprintf("tool %q not found in config", toolName), http.StatusInternalServerError)
 		return
 	}
 

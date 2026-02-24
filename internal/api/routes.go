@@ -156,6 +156,16 @@ func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.handleListTaskReviews(w, r, taskID)
+		case "artifacts":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.handleListTaskArtifacts(w, r, taskID)
 		case "plan":
 			if len(parts) == 2 {
 				switch r.Method {

@@ -145,13 +145,11 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 }
 
 func (s *Server) resolveToolConfigForTask(taskID string) (config.ToolConfig, error) {
-	store := s.taskStore
-	t, err := store.Get(taskID)
-	if err != nil {
+	if _, err := s.taskStore.Get(taskID); err != nil {
 		return config.ToolConfig{}, err
 	}
 
-	_, toolCfg, err := s.cfg.ResolveToolForPhase(t, "merge", "")
+	_, toolCfg, err := s.cfg.ResolveToolForPhase("merge", "")
 	if err != nil {
 		return config.ToolConfig{}, err
 	}

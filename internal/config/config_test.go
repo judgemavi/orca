@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasjeetmavi/orca/internal/task"
 	"gopkg.in/yaml.v3"
 )
 
@@ -865,25 +864,16 @@ func TestResolveToolForPhase_Priority(t *testing.T) {
 			},
 		},
 	}
-	tk := &task.Task{
-		AssignedTool: "claude",
-		Model:        "claude-allowed",
-		PhaseConfig: &task.PhaseConfigMap{
-			Phases: map[string]task.PhaseOverride{
-				"plan": {Tool: "codex", Model: "codex-allowed"},
-			},
-		},
-	}
 
-	name, tc, err := cfg.ResolveToolForPhase(tk, "plan", "")
+	name, tc, err := cfg.ResolveToolForPhase("plan", "")
 	if err != nil {
 		t.Fatalf("ResolveToolForPhase: %v", err)
 	}
-	if name != "codex" {
-		t.Fatalf("tool=%q, want codex", name)
+	if name != "claude" {
+		t.Fatalf("tool=%q, want claude", name)
 	}
-	if tc.Model != "codex-allowed" {
-		t.Fatalf("model=%q, want codex-allowed", tc.Model)
+	if tc.Model != "claude-default" {
+		t.Fatalf("model=%q, want claude-default", tc.Model)
 	}
 }
 
@@ -900,24 +890,16 @@ func TestResolveToolForPhase_Override(t *testing.T) {
 			},
 		},
 	}
-	tk := &task.Task{
-		Model: "claude-allowed",
-		PhaseConfig: &task.PhaseConfigMap{
-			Phases: map[string]task.PhaseOverride{
-				"plan": {Tool: "codex", Model: "codex-allowed"},
-			},
-		},
-	}
 
-	name, tc, err := cfg.ResolveToolForPhase(tk, "plan", "claude")
+	name, tc, err := cfg.ResolveToolForPhase("plan", "claude")
 	if err != nil {
 		t.Fatalf("ResolveToolForPhase: %v", err)
 	}
 	if name != "claude" {
 		t.Fatalf("tool=%q, want claude", name)
 	}
-	if tc.Model != "claude-allowed" {
-		t.Fatalf("model=%q, want claude-allowed", tc.Model)
+	if tc.Model != "claude-default" {
+		t.Fatalf("model=%q, want claude-default", tc.Model)
 	}
 }
 

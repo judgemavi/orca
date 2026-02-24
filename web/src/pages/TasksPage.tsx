@@ -1,23 +1,18 @@
-import type { WSEvent } from '../../types'
-import { api } from '../../api'
-import { CreateTaskModal } from './CreateTaskModal'
-import { TaskDetailModal } from './task-detail/TaskDetailModal'
-import { ReviewPanel } from './ReviewPanel'
-import { Toast } from '../common/Toast'
-import { TasksToolbar } from './TasksToolbar'
-import { TasksTable } from './TasksTable'
-import { useTasksState } from './useTasksState'
+import { useNavigate } from '@tanstack/react-router'
+import { api } from '../api'
+import { ReviewPanel } from '../components/board/ReviewPanel'
+import { CreateTaskModal } from '../components/board/CreateTaskModal'
+import { TasksTable } from '../components/board/TasksTable'
+import { TasksToolbar } from '../components/board/TasksToolbar'
+import { useTasksState } from '../components/board/useTasksState'
+import { Toast } from '../components/common/Toast'
 
-interface Props {
-  lastWSEvent: WSEvent | null
-}
-
-export function TasksView({ lastWSEvent }: Props) {
+export function TasksPage() {
+  const navigate = useNavigate()
   const {
     actionLoading,
     showCreate,
     setShowCreate,
-    setSelectedTaskId,
     showReview,
     setShowReview,
     toastError,
@@ -27,8 +22,6 @@ export function TasksView({ lastWSEvent }: Props) {
     loading,
     reviewTasks,
     approvedTasks,
-    selectedTask,
-    tools,
     isRunning,
     invalidateBoard,
     runTasks,
@@ -62,15 +55,7 @@ export function TasksView({ lastWSEvent }: Props) {
           cleanupRunning={cleanupRunning}
           exploring={exploring}
           onRun={() => {
-            const selectedReadyTaskId =
-              selectedTask &&
-              (selectedTask.status === 'pending' ||
-                selectedTask.status === 'failed')
-                ? selectedTask.id
-                : undefined
-            void runTasks(
-              selectedReadyTaskId ? [selectedReadyTaskId] : undefined,
-            )
+            void runTasks()
           }}
           onToggleReview={() => setShowReview((v) => !v)}
           onMerge={() => {
@@ -86,17 +71,16 @@ export function TasksView({ lastWSEvent }: Props) {
           onCreateTask={() => setShowCreate(true)}
         />
 
-        <TasksTable
-          tasks={tasks}
-          onSelectTask={(taskId) => setSelectedTaskId(taskId)}
-        />
+        <TasksTable tasks={tasks} />
       </div>
 
       {showReview && (
         <ReviewPanel
           reviewTasks={reviewTasks}
           approvedTasks={approvedTasks}
-          onSelectTask={(taskId) => setSelectedTaskId(taskId)}
+          onSelectTask={(taskId) => {
+            void navigate({ to: '/tasks/$taskId', params: { taskId } })
+          }}
           onClose={() => setShowReview(false)}
           onMerge={() => {
             void (async () => {
@@ -119,24 +103,6 @@ export function TasksView({ lastWSEvent }: Props) {
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false)
-            void invalidateBoard()
-          }}
-        />
-      )}
-
-      {selectedTask && configData && (
-        <TaskDetailModal
-          task={selectedTask}
-          tools={tools}
-          config={configData}
-          lastWSEvent={lastWSEvent}
-          isOperationRunning={isRunning}
-          onClose={() => setSelectedTaskId(null)}
-          onSaved={() => {
-            void invalidateBoard()
-          }}
-          onDeleted={() => {
-            setSelectedTaskId(null)
             void invalidateBoard()
           }}
         />

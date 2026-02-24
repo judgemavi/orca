@@ -74,6 +74,8 @@ interface Props {
   feedback: string
   approving: boolean
   requesting: boolean
+  rerunning?: boolean
+  readOnly?: boolean
   reviewActionError: string | null
   reviews: Array<{
     id: string
@@ -85,6 +87,7 @@ interface Props {
   onFeedbackChange: (value: string) => void
   onApprove: () => void
   onRequestChanges: () => void
+  onRerun: () => void
 }
 
 export function TaskReviewSection({
@@ -94,12 +97,15 @@ export function TaskReviewSection({
   feedback,
   approving,
   requesting,
+  rerunning = false,
+  readOnly = false,
   reviewActionError,
   reviews,
   onToggleDiff,
   onFeedbackChange,
   onApprove,
   onRequestChanges,
+  onRerun,
 }: Props) {
   return (
     <>
@@ -117,13 +123,15 @@ export function TaskReviewSection({
                 </span>
               ))}
             </div>
-            <button
-              className="whitespace-nowrap rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
-              onClick={onToggleDiff}
-              type="button"
-            >
-              {showDiff ? 'Hide' : 'Show diff'}
-            </button>
+            {!readOnly && (
+              <button
+                className="whitespace-nowrap rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+                onClick={onToggleDiff}
+                type="button"
+              >
+                {showDiff ? 'Hide' : 'Show diff'}
+              </button>
+            )}
           </div>
           {showDiff && (
             <DiffViewer
@@ -139,10 +147,10 @@ export function TaskReviewSection({
         </div>
       )}
 
-      {['review', 'approved', 'merged'].includes(task.status) &&
+      {['review', 'failed', 'approved', 'merged'].includes(task.status) &&
         reviews.length > 0 && <ReviewHistorySection reviews={reviews} />}
 
-      {task.status === 'review' && (
+      {task.status === 'review' && !readOnly && (
         <div className="flex flex-col gap-2.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
           <div className="text-xs font-semibold uppercase tracking-[0.06em] text-amber-300">
             Review Actions
@@ -196,6 +204,17 @@ export function TaskReviewSection({
           {reviewActionError && (
             <div className="text-xs text-[var(--status-failed)]">{reviewActionError}</div>
           )}
+        </div>
+      )}
+
+      {task.status === 'failed' && !readOnly && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 p-3">
+          <div className="text-xs text-[var(--text-primary)]">
+            Execution failed. Re-run this task to generate a new execution artifact.
+          </div>
+          <ActionButton variant="primary" onClick={onRerun} disabled={rerunning}>
+            {rerunning ? 'Re-running…' : 'Re-run'}
+          </ActionButton>
         </div>
       )}
     </>

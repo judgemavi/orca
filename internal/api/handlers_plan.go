@@ -129,7 +129,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		sessionID = "default"
 	}
 
-	_, toolCfg, err := s.cfg.ResolveToolForPhase(nil, "plan", req.Tool)
+	_, toolCfg, err := s.cfg.ResolveToolForPhase("plan", req.Tool)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if req.Tool != "" {
@@ -290,7 +290,7 @@ func (s *Server) createTasksFromProposed(tasks []decompose.ProposedTask) ([]stri
 	store := s.taskStore
 	createdIDs := make([]string, len(tasks))
 	for i, t := range tasks {
-		created, err := store.Create(t.Title, t.Description, "", t.SuggestedTool)
+		created, err := store.Create(t.Title, t.Description, "")
 		if err != nil {
 			return nil, fmt.Errorf("create task %d: %w", i+1, err)
 		}

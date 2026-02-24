@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { Config, Task, ReviewArtifact, WSEvent } from '../../../types'
+import type { Artifact, Task, ReviewArtifact, WSEvent } from '../../../types'
 import { api } from '../../../api'
 import { useTaskForm } from '../../../hooks/forms/useTaskForm'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
@@ -9,16 +9,10 @@ import {
   useSavePlanMutation,
   useTaskPlanQuery,
 } from '../../../hooks/queries/usePlan'
-import {
-  buildTaskPhaseValues,
-  shouldUseDefaults,
-  toPhaseOverride,
-} from './taskDetailUtils'
 
 export interface TaskDetailProps {
   task: Task
   tools: string[]
-  config: Config
   lastWSEvent?: WSEvent | null
   isOperationRunning: (type: string, targetId?: string) => boolean
   onClose: () => void
@@ -29,7 +23,6 @@ export interface TaskDetailProps {
 export function useTaskDetail({
   task,
   tools,
-  config,
   lastWSEvent,
   isOperationRunning,
   onClose,
@@ -47,10 +40,11 @@ export function useTaskDetail({
   const [approving, setApproving] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [requesting, setRequesting] = useState(false)
+  const [rerunning, setRerunning] = useState(false)
   const [reviewActionError, setReviewActionError] = useState<string | null>(
     null,
   )
-  const isEditable = task.status === 'pending' || task.status === 'failed'
+  const isEditable = task.status === 'pending'
   const isDeletable = task.status !== 'running' && task.status !== 'merged'
 
   const [plan, setPlan] = useState<string | null>(task.plan ?? null)
@@ -58,39 +52,20 @@ export function useTaskDetail({
   const [planEditing, setPlanEditing] = useState(false)
   const [planGenerating, setPlanGenerating] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
-  const [generateTool, setGenerateTool] = useState(task.assigned_tool ?? '')
-  const [generateModel, setGenerateModel] = useState(task.model ?? '')
+  const [generateTool, setGenerateTool] = useState('')
+  const [generateModel, setGenerateModel] = useState('')
 
   const form = useTaskForm(
     {
       title: task.title,
       description: task.description ?? '',
-      useDefaults: shouldUseDefaults(task),
-      phases: buildTaskPhaseValues(task, config),
     },
     async (values) => {
       setSaving(true)
       try {
-        const runPhase = values.phases.run
-        const compatTool = runPhase.tool || config.defaults?.tool || ''
-        const compatModel = runPhase.model || config.defaults?.model || ''
-        const phaseConfig = values.useDefaults
-          ? { use_defaults: true }
-          : {
-              use_defaults: false,
-              phases: {
-                plan: toPhaseOverride(values.phases.plan),
-                run: toPhaseOverride(values.phases.run),
-                review: toPhaseOverride(values.phases.review),
-              },
-            }
-
         await api.updateTask(task.id, {
           title: values.title.trim(),
           description: values.description.trim(),
-          assigned_tool: compatTool || undefined,
-          model: compatModel || undefined,
-          phase_config: phaseConfig,
         } as any)
         onSaved()
       } catch (err: any) {
@@ -109,7 +84,19 @@ export function useTaskDetail({
   const { data: reviewsData } = useQuery({
     queryKey: ['task-reviews', task.id],
     queryFn: () => api.getTaskReviews(task.id),
-    enabled: ['review', 'approved', 'merged'].includes(task.status),
+    enabled: ['review', 'failed', 'approved', 'merged'].includes(task.status),
+  })
+  const artifactsQuery = useQuery({
+    queryKey: ['task-artifacts', task.id],
+    queryFn: () => api.getTaskArtifacts(task.id),
+    enabled: task.status !== 'pending',
+    refetchInterval: task.status === 'running' ? 2000 : false,
+  })
+  const taskLogsQuery = useQuery({
+    queryKey: ['task-logs', task.id],
+    queryFn: () => api.getTaskLogs(task.id, 2000),
+    enabled: task.status === 'running',
+    refetchInterval: task.status === 'running' ? 1500 : false,
   })
   const reviews = useMemo(
     () =>
@@ -119,10 +106,28 @@ export function useTaskDetail({
       ),
     [reviewsData?.reviews],
   )
+  const artifacts = useMemo<Artifact[]>(
+    () =>
+      [...(artifactsQuery.data?.artifacts ?? [])].sort(
+        (a, b) =>
+          Date.parse(b.created_at || '') - Date.parse(a.created_at || ''),
+      ),
+    [artifactsQuery.data?.artifacts],
+  )
+  const logs = taskLogsQuery.data ?? []
 
   const artifact = useMemo<ReviewArtifact | null>(() => {
-    return null
-  }, [])
+    const latest = artifacts[0]
+    if (!latest?.diff) return null
+    return {
+      task_id: task.id,
+      title: task.title,
+      status: task.status,
+      diff: latest.diff,
+      files: [],
+      duration_ms: latest.duration_ms,
+    }
+  }, [artifacts, task.id, task.status, task.title])
 
   const generationModels = generateTool
     ? (generateModelsQuery.data?.[generateTool] ?? [])
@@ -132,20 +137,19 @@ export function useTaskDetail({
     form.reset({
       title: task.title,
       description: task.description ?? '',
-      useDefaults: shouldUseDefaults(task),
-      phases: buildTaskPhaseValues(task, config),
     })
     setPlan(task.plan ?? null)
     setPlanDraft('')
     setPlanEditing(false)
     setPlanError(null)
-    setGenerateTool(task.assigned_tool ?? '')
-    setGenerateModel(task.model ?? '')
+    setGenerateTool('')
+    setGenerateModel('')
     setApproving(false)
     setFeedback('')
     setRequesting(false)
+    setRerunning(false)
     setReviewActionError(null)
-  }, [task, form, config])
+  }, [task, form])
 
   useEffect(() => {
     if (taskPlanQuery.data === undefined) return
@@ -347,6 +351,19 @@ export function useTaskDetail({
     }
   }
 
+  const handleRerun = async () => {
+    setRerunning(true)
+    setReviewActionError(null)
+    try {
+      await api.runTasks([task.id])
+      onSaved()
+    } catch (err: any) {
+      setReviewActionError(err?.message ?? 'Re-run failed')
+    } finally {
+      setRerunning(false)
+    }
+  }
+
   const hasPlan = Boolean(plan)
   const planLoading = taskPlanQuery.isLoading
   const planSaving = savePlanMutation.isPending
@@ -371,6 +388,10 @@ export function useTaskDetail({
 
     // review
     artifact,
+    artifacts,
+    logs,
+    logsLoading: taskLogsQuery.isLoading || taskLogsQuery.isFetching,
+    artifactsLoading: artifactsQuery.isLoading || artifactsQuery.isFetching,
     reviews,
     showDiff,
     setShowDiff,
@@ -378,6 +399,7 @@ export function useTaskDetail({
     setFeedback,
     approving,
     requesting,
+    rerunning,
     reviewActionError,
 
     // plan
@@ -408,5 +430,12 @@ export function useTaskDetail({
     handleSavePlan,
     handleApprove,
     handleRequestChanges,
+    handleRerun,
+    refetchArtifacts: () => {
+      void artifactsQuery.refetch()
+    },
+    refetchLogs: () => {
+      void taskLogsQuery.refetch()
+    },
   }
 }

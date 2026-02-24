@@ -194,14 +194,10 @@ CREATE TABLE IF NOT EXISTS tasks (
 	id            TEXT PRIMARY KEY,
 	title         TEXT NOT NULL,
 	description   TEXT,
-	prompt        TEXT,
-	model         TEXT,
-	phase_config  TEXT,
 	plan          TEXT,
 	session_id    TEXT,
 	parent_id     TEXT REFERENCES tasks(id),
 	status        TEXT NOT NULL DEFAULT 'pending',
-	assigned_tool TEXT,
 	created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );

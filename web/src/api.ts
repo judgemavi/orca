@@ -8,6 +8,7 @@ import type {
   Config,
   MonitorAlert,
   WorktreeStatus,
+  Artifact,
 } from './types'
 
 const BASE = '/api/v1'
@@ -105,6 +106,8 @@ export const api = {
     }),
   getTaskReviews: (id: string) =>
     request<{ reviews: TaskReview[] }>(`/tasks/${id}/reviews`),
+  getTaskArtifacts: (id: string) =>
+    request<{ artifacts: Artifact[] }>(`/tasks/${id}/artifacts`),
   approveTask: (id: string) => post<Task>(`/tasks/${id}/approve`, {}),
   requestChanges: (id: string, feedback: string) =>
     post<{ status: string; task_id: string }>(

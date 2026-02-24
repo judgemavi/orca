@@ -4,6 +4,7 @@ import { ActionButton } from '../../common/ActionButton'
 
 interface Props {
   isEditable: boolean
+  readOnly?: boolean
   hasPlan: boolean
   plan: string | null
   planDraft: string
@@ -31,6 +32,7 @@ interface Props {
 
 export function TaskPlanSection({
   isEditable,
+  readOnly = false,
   hasPlan,
   plan,
   planDraft,
@@ -55,11 +57,13 @@ export function TaskPlanSection({
   onGenerateModelChange,
   onGeneratePlan,
 }: Props) {
+  const canEdit = isEditable && !readOnly
+
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-[var(--text-secondary)]">Plan</span>
-        {isEditable && (
+        {canEdit && (
           <div className="flex gap-2">
             {hasPlan && !planEditing && (
               <ActionButton variant="default" onClick={onStartEdit}>
@@ -79,7 +83,7 @@ export function TaskPlanSection({
         )}
       </div>
 
-      {isEditable && (
+      {canEdit && (
         <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_1fr_auto]">
           <select
             className={controlClass}
@@ -125,13 +129,13 @@ export function TaskPlanSection({
         <div className="text-xs text-[var(--text-secondary)]">No plan saved yet.</div>
       )}
 
-      {!planLoading && hasPlan && !planEditing && (
+      {!planLoading && hasPlan && (!planEditing || !canEdit) && (
         <div className="prose prose-invert prose-sm max-w-none max-h-[300px] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5 text-xs text-[var(--text-primary)]">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan ?? ''}</ReactMarkdown>
         </div>
       )}
 
-      {!planLoading && hasPlan && planEditing && isEditable && (
+      {!planLoading && hasPlan && planEditing && canEdit && (
         <>
           <textarea
             className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5 font-mono text-xs leading-[1.45] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"

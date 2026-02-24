@@ -75,7 +75,7 @@ func (s *Store) UpdateDependencies(taskID string, deps []string) error {
 // the dependent task needs the dep's code in the integration branch.
 func (s *Store) GetReady() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT t.id, t.title, t.description, t.prompt, t.model, t.phase_config, t.plan, t.session_id, t.parent_id, t.status, t.assigned_tool, t.created_at, t.updated_at
+		`SELECT t.id, t.title, t.description, t.plan, t.session_id, t.parent_id, t.status, t.created_at, t.updated_at
 		 FROM tasks t
 		 WHERE t.status = 'pending'
 		   AND NOT EXISTS (

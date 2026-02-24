@@ -5,7 +5,6 @@ import { useCreateTaskForm } from '../../hooks/forms/useCreateTaskForm'
 import { useCreateTask, useTasksQuery } from '../../hooks/queries/useTasks'
 import type { Config } from '../../types'
 import { ActionButton } from '../common/ActionButton'
-import { PhaseConfigFields } from './PhaseConfigFields'
 
 interface Props {
   config: Config
@@ -16,36 +15,10 @@ interface Props {
 const controlClass =
   'w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-2 text-[13px] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent)]'
 
-type PhaseValues = Record<'plan' | 'run' | 'review', { tool: string; model: string }>
-
-function buildDefaultPhaseValues(config: Config): PhaseValues {
-  const tool = config.defaults?.tool ?? ''
-  const model = config.defaults?.model ?? ''
-  return {
-    plan: { tool, model },
-    run: { tool, model },
-    review: { tool, model },
-  }
-}
-
-function toPhaseOverride(value: { tool: string; model: string }) {
-  const patch: { tool?: string; model?: string } = {}
-  if (value.tool) patch.tool = value.tool
-  if (value.model) patch.model = value.model
-  return patch
-}
-
-export function CreateTaskModal({ config, onClose, onCreated }: Props) {
+export function CreateTaskModal({ config: _config, onClose, onCreated }: Props) {
   const createTaskMutation = useCreateTask()
   const tasksQuery = useTasksQuery()
   const [error, setError] = useState('')
-  const toolOptions = useMemo(
-    () =>
-      Object.keys(config.tools)
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b)),
-    [config.tools],
-  )
 
   const dependencyTasks = useMemo(
     () =>
@@ -55,51 +28,24 @@ export function CreateTaskModal({ config, onClose, onCreated }: Props) {
     [tasksQuery.data?.tasks],
   )
 
-  const form = useCreateTaskForm(
-    {
-      useDefaults: true,
-      phases: buildDefaultPhaseValues(config),
-    },
-    async (values) => {
-      setError('')
-      const runPhase = values.phases.run
-      const compatTool = values.useDefaults
-        ? (config.defaults?.tool ?? '')
-        : (runPhase.tool || config.defaults?.tool || '')
-      const compatModel = values.useDefaults
-        ? (config.defaults?.model ?? '')
-        : (runPhase.model || config.defaults?.model || '')
+  const form = useCreateTaskForm({}, async (values) => {
+    setError('')
 
-      const phaseConfig = values.useDefaults
-        ? { use_defaults: true }
-        : {
-            use_defaults: false,
-            phases: {
-              plan: toPhaseOverride(values.phases.plan),
-              run: toPhaseOverride(values.phases.run),
-              review: toPhaseOverride(values.phases.review),
-            },
-          }
+    const created = await createTaskMutation.mutateAsync({
+      title: values.title.trim(),
+      description: values.description.trim(),
+    } as any)
 
-      const created = await createTaskMutation.mutateAsync({
-        title: values.title.trim(),
-        description: values.description.trim(),
-        assigned_tool: compatTool || undefined,
-        model: compatModel || undefined,
-        phase_config: phaseConfig,
-      } as any)
-
-      const taskId = (created as any).id ?? (created as any).task?.id
-      if (taskId) {
-        await Promise.all(
-          values.dependencies.map((depId) =>
-            api.addDependency(taskId, depId).catch(() => {}),
-          ),
-        )
-      }
-      onCreated()
-    },
-  )
+    const taskId = (created as any).id ?? (created as any).task?.id
+    if (taskId) {
+      await Promise.all(
+        values.dependencies.map((depId) =>
+          api.addDependency(taskId, depId).catch(() => {}),
+        ),
+      )
+    }
+    onCreated()
+  })
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -159,48 +105,6 @@ export function CreateTaskModal({ config, onClose, onCreated }: Props) {
                   rows={3}
                 />
               </label>
-            )}
-          </form.Field>
-
-          <form.Field name="useDefaults">
-            {(field) => (
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-                  <input
-                    type="checkbox"
-                    checked={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => {
-                      const checked = e.target.checked
-                      field.handleChange(checked)
-                      if (!checked) {
-                        form.setFieldValue('phases', buildDefaultPhaseValues(config))
-                      }
-                    }}
-                  />
-                  Use configured defaults
-                </label>
-
-                {field.state.value ? (
-                  <p className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2 text-xs text-[var(--text-secondary)]">
-                    Using configured defaults
-                  </p>
-                ) : (
-                  <form.Field name="phases">
-                    {(phaseField) => (
-                      <PhaseConfigFields
-                        tools={toolOptions}
-                        config={config}
-                        phases={phaseField.state.value}
-                        onChange={(nextPhases) =>
-                          phaseField.handleChange(nextPhases as any)
-                        }
-                        controlClass={controlClass}
-                      />
-                    )}
-                  </form.Field>
-                )}
-              </div>
             )}
           </form.Field>
 

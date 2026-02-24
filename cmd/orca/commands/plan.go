@@ -87,7 +87,7 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 
 	createdIDs := make([]string, len(tasks))
 	for i, t := range tasks {
-		created, err := store.Create(t.Title, t.Description, "", t.SuggestedTool)
+		created, err := store.Create(t.Title, t.Description, "")
 		if err != nil {
 			return fmt.Errorf("create task %d: %w", i+1, err)
 		}

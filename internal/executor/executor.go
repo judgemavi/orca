@@ -207,7 +207,7 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string) ([]taskI
 			return nil, createdTaskIDs, fmt.Errorf("get task %s: %w", taskID, err)
 		}
 
-		toolName, toolCfg, err := e.resolveTaskToolConfig(t, "run")
+		toolName, toolCfg, err := e.resolveTaskToolConfig("run")
 		if err != nil {
 			return nil, createdTaskIDs, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 		}
@@ -219,10 +219,7 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string) ([]taskI
 		}
 		createdTaskIDs = append(createdTaskIDs, taskID)
 
-		prompt := t.Prompt
-		if prompt == "" {
-			prompt = t.Title + "\n\n" + t.Description
-		}
+		prompt := t.Title + "\n\n" + t.Description
 		if t.Plan != "" {
 			prompt = "## Implementation Plan\n\n" + t.Plan + "\n\n---\n\n## Task\n\n" + prompt
 		}
@@ -291,7 +288,7 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 		return fmt.Errorf("get task %s: %w", taskID, err)
 	}
 
-	toolName, toolCfg, err := e.resolveTaskToolConfig(t, "run")
+	toolName, toolCfg, err := e.resolveTaskToolConfig("run")
 	if err != nil {
 		return fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 	}
@@ -314,10 +311,7 @@ func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
 		contextPrefix = "## Codebase Context\n\n" + cctx + "\n\n---\n\n"
 	}
 
-	prompt := t.Prompt
-	if prompt == "" {
-		prompt = t.Title + "\n\n" + t.Description
-	}
+	prompt := t.Title + "\n\n" + t.Description
 	if t.Plan != "" {
 		prompt = "## Implementation Plan\n\n" + t.Plan + "\n\n---\n\n## Task\n\n" + prompt
 	}
@@ -494,6 +488,6 @@ func (e *Executor) CleanupTasks(taskIDs []string) error {
 	return firstErr
 }
 
-func (e *Executor) resolveTaskToolConfig(t *task.Task, phase string) (string, config.ToolConfig, error) {
-	return e.config.ResolveToolForPhase(t, phase, "")
+func (e *Executor) resolveTaskToolConfig(phase string) (string, config.ToolConfig, error) {
+	return e.config.ResolveToolForPhase(phase, "")
 }

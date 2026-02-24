@@ -17,7 +17,7 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 	}
 
 	assertMigrationVersions(t, db.DB, len(migrations))
-	assertTaskColumns(t, db.DB, "model", "plan", "session_id", "phase_config")
+	assertTaskColumns(t, db.DB, "plan", "session_id")
 	assertArtifactColumns(t, db.DB, "quality_json")
 	assertDBVersion(t, db, 0)
 
@@ -32,7 +32,7 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	assertMigrationVersions(t, db.DB, len(migrations))
-	assertTaskColumns(t, db.DB, "model", "plan", "session_id", "phase_config")
+	assertTaskColumns(t, db.DB, "plan", "session_id")
 	assertArtifactColumns(t, db.DB, "quality_json")
 	assertDBVersion(t, db, 0)
 }
@@ -59,7 +59,7 @@ func TestOpenMigratesLegacyUnversionedDB(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	assertMigrationVersions(t, db.DB, len(migrations))
-	assertTaskColumns(t, db.DB, "model", "plan", "session_id", "phase_config")
+	assertTaskColumns(t, db.DB, "plan", "session_id")
 	assertArtifactColumns(t, db.DB, "quality_json")
 	assertDBVersion(t, db, 0)
 }
@@ -160,14 +160,10 @@ CREATE TABLE IF NOT EXISTS tasks (
 	id            TEXT PRIMARY KEY,
 	title         TEXT NOT NULL,
 	description   TEXT,
-	prompt        TEXT,
-	model         TEXT,
-	phase_config  TEXT,
 	plan          TEXT,
 	session_id    TEXT,
 	parent_id     TEXT REFERENCES tasks(id),
 	status        TEXT NOT NULL DEFAULT 'pending',
-	assigned_tool TEXT,
 	created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );

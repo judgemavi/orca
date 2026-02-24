@@ -3,15 +3,26 @@ import {
   useEffect,
   useState,
 } from 'react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { Outlet } from '@tanstack/react-router'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ConsolePanel } from './components/console/ConsolePanel'
-import { TasksView } from './components/board/TasksView'
 import { OperationsIndicator } from './components/common/OperationsIndicator'
 import { useWSQueryBridge } from './lib/wsQueryBridge'
 import { api } from './api'
+import { queryClient } from './lib/queryClient'
+import { WSContext } from './context/ws'
 import type { WSEvent } from './types'
 
 export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppLayout />
+    </QueryClientProvider>
+  )
+}
+
+function AppLayout() {
   const [lastWSEvent, setLastWSEvent] = useState<WSEvent | null>(null)
   const [orchestratorId, setOrchestratorId] = useState<string | null>(null)
 
@@ -39,21 +50,23 @@ export default function App() {
   useWebSocket(onWSEvent)
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-700 bg-slate-900 px-4">
-        <span className="px-3.5 py-1.5 text-sm font-medium text-slate-100">
-          Orca
-</span>
-        <div className="ml-auto">
-          <OperationsIndicator />
-        </div>
-      </header>
+    <WSContext.Provider value={lastWSEvent}>
+      <div className="flex h-screen flex-col overflow-hidden">
+        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-700 bg-slate-900 px-4">
+          <span className="px-3.5 py-1.5 text-sm font-medium text-slate-100">
+            Orca
+          </span>
+          <div className="ml-auto">
+            <OperationsIndicator />
+          </div>
+        </header>
 
-      <main className="flex flex-1 overflow-hidden pb-10.5">
-        <TasksView lastWSEvent={lastWSEvent} />
-      </main>
+        <main className="flex flex-1 overflow-hidden pb-10.5">
+          <Outlet />
+        </main>
 
-      <ConsolePanel lastWSEvent={lastWSEvent} orchestratorId={orchestratorId} />
-    </div>
+        <ConsolePanel lastWSEvent={lastWSEvent} orchestratorId={orchestratorId} />
+      </div>
+    </WSContext.Provider>
   )
 }

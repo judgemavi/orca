@@ -1,6 +1,5 @@
 import type { Task } from '../../types'
 import { StatusIcon } from '../common/StatusBadge'
-import { ToolChip } from '../common/ToolChip'
 import { ActionButton } from '../common/ActionButton'
 
 interface Props {
@@ -37,9 +36,6 @@ export function TaskList({ data, onAction }: Props) {
               Title
             </th>
             <th className="border-b border-slate-700 px-2 py-1.5 text-left text-[11px] uppercase text-slate-400">
-              Tool
-            </th>
-            <th className="border-b border-slate-700 px-2 py-1.5 text-left text-[11px] uppercase text-slate-400">
               Deps
             </th>
           </tr>
@@ -55,9 +51,6 @@ export function TaskList({ data, onAction }: Props) {
               </td>
               <td className="border-b border-slate-700 px-2 py-2 align-middle">
                 {task.title}
-              </td>
-              <td className="border-b border-slate-700 px-2 py-2 align-middle">
-                {task.assigned_tool && <ToolChip tool={task.assigned_tool} />}
               </td>
               <td className="border-b border-slate-700 px-2 py-2 align-middle font-mono text-xs text-slate-400">
                 {(task.depends_on ?? []).map((d) => d.slice(0, 8)).join(', ')}

@@ -31,11 +31,9 @@ func (s *Server) HandleTasksListTool(argsRaw json.RawMessage) (interface{}, erro
 
 func (s *Server) HandleTasksCreateTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		Title        string   `json:"title"`
-		Description  string   `json:"description"`
-		AssignedTool string   `json:"assigned_tool"`
-		Model        string   `json:"model"`
-		DependsOn    []string `json:"depends_on"`
+		Title       string   `json:"title"`
+		Description string   `json:"description"`
+		DependsOn   []string `json:"depends_on"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("tasks_create: %w", err)
@@ -44,7 +42,7 @@ func (s *Server) HandleTasksCreateTool(argsRaw json.RawMessage) (interface{}, er
 		return nil, fmt.Errorf("title is required")
 	}
 
-	t, err := s.taskStore.Create(args.Title, args.Description, "", args.AssignedTool)
+	t, err := s.taskStore.Create(args.Title, args.Description, "")
 	if err != nil {
 		return nil, err
 	}
@@ -61,12 +59,6 @@ func (s *Server) HandleTasksCreateTool(argsRaw json.RawMessage) (interface{}, er
 		}
 	}
 
-	if args.Model != "" {
-		if err := s.taskStore.Update(t.ID, map[string]interface{}{"model": args.Model}); err != nil {
-			return nil, fmt.Errorf("set model: %w", err)
-		}
-	}
-
 	created, err := s.taskStore.Get(t.ID)
 	if err != nil {
 		return nil, err
@@ -76,13 +68,11 @@ func (s *Server) HandleTasksCreateTool(argsRaw json.RawMessage) (interface{}, er
 
 func (s *Server) HandleTasksUpdateTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		TaskID       string  `json:"task_id"`
-		Title        *string `json:"title"`
-		Description  *string `json:"description"`
-		Status       *string `json:"status"`
-		AssignedTool *string `json:"assigned_tool"`
-		Model        *string `json:"model"`
-		Prompt       *string `json:"prompt"`
+		TaskID      string  `json:"task_id"`
+		Title       *string `json:"title"`
+		Description *string `json:"description"`
+		Status      *string `json:"status"`
+		Plan        *string `json:"plan"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("tasks_update: %w", err)
@@ -106,14 +96,8 @@ func (s *Server) HandleTasksUpdateTool(argsRaw json.RawMessage) (interface{}, er
 	if args.Status != nil {
 		fields["status"] = *args.Status
 	}
-	if args.AssignedTool != nil {
-		fields["assigned_tool"] = *args.AssignedTool
-	}
-	if args.Model != nil {
-		fields["model"] = *args.Model
-	}
-	if args.Prompt != nil {
-		fields["prompt"] = *args.Prompt
+	if args.Plan != nil {
+		fields["plan"] = *args.Plan
 	}
 
 	if len(fields) > 0 {

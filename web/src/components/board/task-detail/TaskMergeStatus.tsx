@@ -6,6 +6,8 @@ interface Props {
   merging: boolean
   showManualResolve: boolean
   conflictWorktreePath: string
+  readOnly?: boolean
+  onMerge?: () => void
   onAutoResolve: () => void
   onShowManualResolve: () => void
 }
@@ -16,11 +18,27 @@ export function TaskMergeStatus({
   merging,
   showManualResolve,
   conflictWorktreePath,
+  readOnly = false,
+  onMerge,
   onAutoResolve,
   onShowManualResolve,
 }: Props) {
   return (
     <>
+      {readOnly && !mergeProgress && !conflictError && (
+        <div className="text-xs text-[var(--text-secondary)]">
+          Merge details are read-only for completed tasks.
+        </div>
+      )}
+
+      {!readOnly && onMerge && (
+        <div className="flex items-center justify-end">
+          <ActionButton variant="primary" onClick={onMerge} disabled={merging}>
+            {merging ? 'Merging…' : conflictError ? 'Retry Merge' : 'Merge'}
+          </ActionButton>
+        </div>
+      )}
+
       {mergeProgress && (
         <div className="flex flex-col gap-2 rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-3">
           <div className="text-xs leading-5 text-[#8a1f1f]">
@@ -34,7 +52,7 @@ export function TaskMergeStatus({
           <div className="text-xs leading-5 text-[#8a1f1f]">
             Merge conflict: {conflictError}
           </div>
-          <div className="flex gap-2">
+          {!readOnly && <div className="flex gap-2">
             <ActionButton
               variant="primary"
               onClick={onAutoResolve}
@@ -48,7 +66,7 @@ export function TaskMergeStatus({
             >
               Manual resolve
             </ActionButton>
-          </div>
+          </div>}
           {showManualResolve && (
             <div className="flex flex-col gap-1.5 text-xs text-[var(--text-secondary)]">
               {conflictWorktreePath && (

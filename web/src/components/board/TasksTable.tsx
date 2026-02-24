@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import type { Task } from '../../types'
 
-type SortKey = 'status' | 'title' | 'tool' | 'created' | 'updated'
+type SortKey = 'status' | 'title' | 'created' | 'updated'
 type SortDirection = 'asc' | 'desc'
 
 interface Props {
   tasks: Task[]
-  onSelectTask: (taskId: string) => void
 }
 
 const STATUS_PRIORITY: Record<Task['status'], number> = {
@@ -77,7 +77,8 @@ function SortableHeader({
   )
 }
 
-export function TasksTable({ tasks, onSelectTask }: Props) {
+export function TasksTable({ tasks }: Props) {
+  const navigate = useNavigate()
   const [filter, setFilter] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('status')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -100,10 +101,6 @@ export function TasksTable({ tasks, onSelectTask }: Props) {
 
       if (sortKey === 'title') {
         result = a.title.localeCompare(b.title)
-      }
-
-      if (sortKey === 'tool') {
-        result = (a.assigned_tool ?? '').localeCompare(b.assigned_tool ?? '')
       }
 
       if (sortKey === 'created') {
@@ -166,14 +163,6 @@ export function TasksTable({ tasks, onSelectTask }: Props) {
               </th>
               <th className="px-3 py-2 text-left">
                 <SortableHeader
-                  label="Tool"
-                  active={sortKey === 'tool'}
-                  direction={sortDirection}
-                  onClick={() => onSortChange('tool')}
-                />
-              </th>
-              <th className="px-3 py-2 text-left">
-                <SortableHeader
                   label="Created"
                   active={sortKey === 'created'}
                   direction={sortDirection}
@@ -195,7 +184,9 @@ export function TasksTable({ tasks, onSelectTask }: Props) {
               <tr
                 key={task.id}
                 className="cursor-pointer border-b border-border/70 transition hover:bg-[var(--bg-secondary)]"
-                onClick={() => onSelectTask(task.id)}
+                onClick={() => {
+                  void navigate({ to: '/tasks/$taskId', params: { taskId: task.id } })
+                }}
               >
                 <td className="px-3 py-2">
                   <span
@@ -207,7 +198,6 @@ export function TasksTable({ tasks, onSelectTask }: Props) {
                 <td className="max-w-[36rem] truncate px-3 py-2 text-[var(--text-primary)]">
                   {task.title}
                 </td>
-                <td className="px-3 py-2 text-[var(--text-secondary)]">{task.assigned_tool ?? '-'}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-[var(--text-secondary)]">
                   {formatRelativeTime(task.created_at)}
                 </td>
@@ -218,7 +208,7 @@ export function TasksTable({ tasks, onSelectTask }: Props) {
             ))}
             {filteredAndSortedTasks.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-sm text-[var(--text-secondary)]">
+                <td colSpan={4} className="px-3 py-8 text-center text-sm text-[var(--text-secondary)]">
                   No tasks match the current filter.
                 </td>
               </tr>

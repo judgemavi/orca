@@ -42,7 +42,7 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	toolOverride, _ := cmd.Flags().GetString("tool")
 	modelOverride, _ := cmd.Flags().GetString("model")
 
-	toolName, toolCfg, err := cfg.ResolveToolForPhase(t, "plan", toolOverride)
+	toolName, toolCfg, err := cfg.ResolveToolForPhase("plan", toolOverride)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
 	modelOverride, _ := cmd.Flags().GetString("model")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
-	toolName, toolCfg, err := cfg.ResolveToolForPhase(t, "explore", toolOverride)
+	toolName, toolCfg, err := cfg.ResolveToolForPhase("explore", toolOverride)
 	if err != nil {
 		return err
 	}

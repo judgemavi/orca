@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import type { Task } from '../../types'
 import { StatusIcon } from '../common/StatusBadge'
-import { ToolChip } from '../common/ToolChip'
 import { ActionButton } from '../common/ActionButton'
 
 interface Props {
@@ -23,7 +22,6 @@ export function TaskCard({ data, onAction }: Props) {
       <div className="flex items-center gap-2">
         <StatusIcon status={task.status} />
         <span className="flex-1 text-sm font-semibold">{task.title}</span>
-        {task.assigned_tool && <ToolChip tool={task.assigned_tool} />}
       </div>
       <div
         className={`cursor-pointer text-[13px] leading-6 text-slate-400 ${expanded ? '' : 'line-clamp-2'}`}

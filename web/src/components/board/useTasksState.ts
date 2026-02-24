@@ -12,7 +12,6 @@ import { useOperationsQuery } from '../../hooks/queries/useOperations'
 export function useTasksState() {
   const [actionLoading, setActionLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [showReview, setShowReview] = useState(false)
   const [toastError, setToastError] = useState<string | null>(null)
 
@@ -56,18 +55,8 @@ export function useTasksState() {
 
   const tools = useMemo(() => {
     const fromConfig = Object.keys(modelsByTool)
-    const fromAssignedTools = tasks
-      .map((t) => t.assigned_tool)
-      .filter((t): t is string => Boolean(t))
-    const fromPhaseConfig = tasks.flatMap((task) =>
-      Object.values(task.phase_config?.phases ?? {})
-        .map((phase) => phase.tool)
-        .filter((tool): tool is string => Boolean(tool)),
-    )
-    return Array.from(
-      new Set([...fromConfig, ...fromAssignedTools, ...fromPhaseConfig]),
-    ).sort((a, b) => a.localeCompare(b))
-  }, [modelsByTool, tasks])
+    return Array.from(new Set(fromConfig)).sort((a, b) => a.localeCompare(b))
+  }, [modelsByTool])
 
   const showError = useCallback((message: string) => {
     setToastError(message)
@@ -80,11 +69,6 @@ export function useTasksState() {
       queryClient.invalidateQueries({ queryKey: ['status'] }),
     ])
   }, [queryClient])
-
-  const selectedTask = useMemo(
-    () => tasks.find((task) => task.id === selectedTaskId) ?? null,
-    [tasks, selectedTaskId],
-  )
 
   const runAction = async (fn: () => Promise<unknown>) => {
     setActionLoading(true)
@@ -118,8 +102,6 @@ export function useTasksState() {
     actionLoading,
     showCreate,
     setShowCreate,
-    selectedTaskId,
-    setSelectedTaskId,
     showReview,
     setShowReview,
     toastError,
@@ -131,7 +113,6 @@ export function useTasksState() {
 
     reviewTasks,
     approvedTasks,
-    selectedTask,
     tools,
     isRunning,
 

@@ -3,19 +3,11 @@ import { useForm } from '@tanstack/react-form'
 export interface TaskFormValues {
   title: string
   description: string
-  useDefaults: boolean
-  phases: Record<'plan' | 'run' | 'review', { tool: string; model: string }>
 }
 
 export const taskFormDefaults: TaskFormValues = {
   title: '',
   description: '',
-  useDefaults: true,
-  phases: {
-    plan: { tool: '', model: '' },
-    run: { tool: '', model: '' },
-    review: { tool: '', model: '' },
-  },
 }
 
 function validate(values: TaskFormValues) {

@@ -139,7 +139,7 @@ export function ConsolePanel({ lastWSEvent, orchestratorId }: Props) {
           nextTabs.push({
             taskId: task.id,
             title: task.title,
-            tool: task.assigned_tool ?? 'worker',
+            tool: 'worker',
             status,
             lines: [],
             hydrated: false,
