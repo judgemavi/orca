@@ -5,13 +5,12 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/cost"
 	"github.com/jasjeetmavi/orca/internal/explore"
-	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // ========== Status ==========
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	tasks, _ := store.List()
 
 	counts := map[string]int{}

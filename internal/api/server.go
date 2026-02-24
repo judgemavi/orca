@@ -30,6 +30,7 @@ type Server struct {
 	cfg        *config.Config
 	planner    *sprint.Planner
 	executor   *sprint.Executor
+	taskStore  *task.Store
 	ops        *ops.Store
 	repoDir    string
 	hub        *Hub
@@ -184,6 +185,7 @@ func NewServerWithHub(db *state.DB, cfg *config.Config, planner *sprint.Planner,
 		cfg:        cfg,
 		planner:    planner,
 		executor:   executor,
+		taskStore:  taskStore,
 		ops:        opsStore,
 		repoDir:    repoDir,
 		hub:        hub,

@@ -35,7 +35,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	resolved, err := store.ResolveID(id)
 	if err != nil {
 		jsonError(w, err, 404)
@@ -168,7 +168,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 }
 
 func (s *Server) resolveToolConfigForTask(taskID string) (config.ToolConfig, error) {
-	store := task.NewStore(s.db)
+	store := s.taskStore
 	t, err := store.Get(taskID)
 	if err != nil {
 		return config.ToolConfig{}, err
@@ -264,7 +264,7 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		}()
 
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
-		store := task.NewStore(s.db)
+		store := s.taskStore
 		merged := make([]string, 0, len(ids))
 		failed := make([]string, 0)
 
