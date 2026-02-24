@@ -12,13 +12,13 @@ import (
 )
 
 func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		Goal       string `json:"goal"`
 		Tool       string `json:"tool"`
 		AutoCreate *bool  `json:"auto_create"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("breakdown args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("breakdown: %w", err)
 	}
 	if strings.TrimSpace(args.Goal) == "" {
 		return nil, fmt.Errorf("goal is required")
@@ -94,14 +94,14 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 }
 
 func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
 		Tool   string `json:"tool"`
 		Model  string `json:"model"`
 		Save   *bool  `json:"save"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_plan_generate args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_plan_generate: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
@@ -165,13 +165,13 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 }
 
 func (s *Server) HandleTasksPlanEvaluateTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
 		Tool   string `json:"tool"`
 		Model  string `json:"model"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_plan_evaluate args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_plan_evaluate: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")

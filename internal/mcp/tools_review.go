@@ -11,11 +11,11 @@ import (
 )
 
 func (s *Server) HandleReviewGetTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		SprintID string `json:"sprint_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("review_get args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("review_get: %w", err)
 	}
 	if strings.TrimSpace(args.SprintID) == "" {
 		return nil, fmt.Errorf("sprint_id is required")
@@ -72,11 +72,11 @@ func (s *Server) HandleReviewGetTool(argsRaw json.RawMessage) (interface{}, erro
 }
 
 func (s *Server) HandleReviewSprintTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		SprintID string `json:"sprint_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("review_sprint args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("review_sprint: %w", err)
 	}
 	if strings.TrimSpace(args.SprintID) == "" {
 		return nil, fmt.Errorf("sprint_id is required")
@@ -136,11 +136,11 @@ func (s *Server) HandleReviewSprintTool(argsRaw json.RawMessage) (interface{}, e
 }
 
 func (s *Server) HandleTasksApproveTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_approve args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_approve: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
@@ -171,12 +171,12 @@ func (s *Server) HandleTasksApproveTool(argsRaw json.RawMessage) (interface{}, e
 }
 
 func (s *Server) HandleTasksRequestChangesTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID   string `json:"task_id"`
 		Feedback string `json:"feedback"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_request_changes args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_request_changes: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")

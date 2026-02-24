@@ -7,11 +7,11 @@ import (
 )
 
 func (s *Server) HandleTasksListTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_list args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_list: %w", err)
 	}
 
 	if args.Status != "" {
@@ -30,15 +30,15 @@ func (s *Server) HandleTasksListTool(argsRaw json.RawMessage) (interface{}, erro
 }
 
 func (s *Server) HandleTasksCreateTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		Title        string   `json:"title"`
 		Description  string   `json:"description"`
 		AssignedTool string   `json:"assigned_tool"`
 		Model        string   `json:"model"`
 		DependsOn    []string `json:"depends_on"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_create args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_create: %w", err)
 	}
 	if strings.TrimSpace(args.Title) == "" {
 		return nil, fmt.Errorf("title is required")
@@ -75,7 +75,7 @@ func (s *Server) HandleTasksCreateTool(argsRaw json.RawMessage) (interface{}, er
 }
 
 func (s *Server) HandleTasksUpdateTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID       string  `json:"task_id"`
 		Title        *string `json:"title"`
 		Description  *string `json:"description"`
@@ -83,9 +83,9 @@ func (s *Server) HandleTasksUpdateTool(argsRaw json.RawMessage) (interface{}, er
 		AssignedTool *string `json:"assigned_tool"`
 		Model        *string `json:"model"`
 		Prompt       *string `json:"prompt"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_update args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_update: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
@@ -130,11 +130,11 @@ func (s *Server) HandleTasksUpdateTool(argsRaw json.RawMessage) (interface{}, er
 }
 
 func (s *Server) HandleTasksGetTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_get args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_get: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
@@ -151,11 +151,11 @@ func (s *Server) HandleTasksGetTool(argsRaw json.RawMessage) (interface{}, error
 }
 
 func (s *Server) HandleTasksDeleteTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_delete args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_delete: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
@@ -180,11 +180,11 @@ func (s *Server) HandleTasksDeleteTool(argsRaw json.RawMessage) (interface{}, er
 }
 
 func (s *Server) HandleTasksReopenTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_reopen args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_reopen: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
@@ -207,12 +207,12 @@ func (s *Server) HandleTasksReopenTool(argsRaw json.RawMessage) (interface{}, er
 }
 
 func (s *Server) HandleTasksAddDependencyTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID    string `json:"task_id"`
 		DependsOn string `json:"depends_on"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_add_dependency args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_add_dependency: %w", err)
 	}
 	taskID, err := s.store.ResolveID(args.TaskID)
 	if err != nil {

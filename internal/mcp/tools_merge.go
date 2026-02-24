@@ -63,11 +63,11 @@ func (s *Server) HandleMergeTool(_ json.RawMessage) (interface{}, error) {
 }
 
 func (s *Server) HandleTasksMergeTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("tasks_merge args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_merge: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")

@@ -7,11 +7,11 @@ import (
 )
 
 func (s *Server) HandleSprintPlanTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		MaxTasks int `json:"max_tasks"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("sprint_plan args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("sprint_plan: %w", err)
 	}
 	maxTasks := args.MaxTasks
 	if maxTasks <= 0 {
@@ -29,11 +29,11 @@ func (s *Server) HandleSprintPlanTool(argsRaw json.RawMessage) (interface{}, err
 }
 
 func (s *Server) HandleSprintAssignTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskIDs []string `json:"task_ids"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("sprint_assign args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("sprint_assign: %w", err)
 	}
 	if len(args.TaskIDs) == 0 {
 		return nil, fmt.Errorf("task_ids is required")
@@ -75,11 +75,11 @@ func (s *Server) HandleSprintAssignTool(argsRaw json.RawMessage) (interface{}, e
 }
 
 func (s *Server) HandleSprintUnassignTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		TaskIDs []string `json:"task_ids"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("sprint_unassign args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("sprint_unassign: %w", err)
 	}
 	if len(args.TaskIDs) == 0 {
 		return nil, fmt.Errorf("task_ids is required")
@@ -118,11 +118,11 @@ func (s *Server) HandleSprintUnassignTool(argsRaw json.RawMessage) (interface{},
 }
 
 func (s *Server) HandleSprintStartTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		SprintID string `json:"sprint_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("sprint_start args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("sprint_start: %w", err)
 	}
 	if strings.TrimSpace(args.SprintID) == "" {
 		return nil, fmt.Errorf("sprint_id is required")
@@ -214,11 +214,11 @@ func (s *Server) HandleProjectStatusTool(_ json.RawMessage) (interface{}, error)
 }
 
 func (s *Server) HandleSprintCancelTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		SprintID string `json:"sprint_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("sprint_cancel args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("sprint_cancel: %w", err)
 	}
 	if strings.TrimSpace(args.SprintID) == "" {
 		return nil, fmt.Errorf("sprint_id is required")
@@ -237,11 +237,11 @@ func (s *Server) HandleSprintCancelTool(argsRaw json.RawMessage) (interface{}, e
 }
 
 func (s *Server) HandleSprintResetTool(argsRaw json.RawMessage) (interface{}, error) {
-	var args struct {
+	args, err := parseArgs[struct {
 		SprintID string `json:"sprint_id"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return nil, fmt.Errorf("sprint_reset args: %w", err)
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("sprint_reset: %w", err)
 	}
 	if strings.TrimSpace(args.SprintID) == "" {
 		return nil, fmt.Errorf("sprint_id is required")
