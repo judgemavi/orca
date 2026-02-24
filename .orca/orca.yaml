@@ -99,7 +99,7 @@ orchestrator:
   phases:
     explore:
       tool: claude
-      model: gpt-5.3-codex
+      model: claude-sonnet-4-6
     merge:
       tool: codex
       model: gpt-5.3-codex

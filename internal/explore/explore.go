@@ -55,7 +55,8 @@ func (e *Explorer) Run() (string, error) {
 	}
 
 	if result.ExitCode != 0 {
-		return "", fmt.Errorf("explorer exited %d: %s", result.ExitCode, result.Stderr)
+		return "", fmt.Errorf("explorer exited %d: stderr=%s stdout=%s",
+			result.ExitCode, truncate(result.Stderr, 500), truncate(result.Stdout, 500))
 	}
 
 	// Extract text based on the tool's configured output mode.
@@ -134,6 +135,14 @@ func ContextAge(repoDir string) time.Duration {
 		return 0
 	}
 	return time.Since(info.ModTime())
+}
+
+// truncate returns s cut to maxLen, appending "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // hashFileTree returns a sha256 hex digest of `git ls-files` output in repoDir.
