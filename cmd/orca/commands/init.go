@@ -95,7 +95,8 @@ func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {
 	dbPath := filepath.Join(orcaDir, "state.db")
 
 	var existingCfg *config.Config
-	if _, err := os.Stat(orcaDir); err == nil {
+	if loaded, loadErr := loadConfigFromDBPath(dbPath); loadErr == nil && loaded != nil {
+		existingCfg = loaded
 		fmt.Println("Orca already initialized. Run 'orca config' to view settings.")
 		reinit := yes
 		if !yes {
@@ -106,21 +107,10 @@ func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {
 		if !reinit {
 			return nil, false, nil
 		}
-		if loaded, loadErr := loadConfigFromDBPath(dbPath); loadErr == nil {
-			existingCfg = loaded
-		}
 	}
 
 	if _, err := os.Stat(filepath.Join(cwd, ".git")); os.IsNotExist(err) {
-		initRepo := yes
-		if !yes {
-			if err := huh.NewConfirm().Title("No git repository found").Description("Orca requires a git repo. Initialize one?").Affirmative("Yes").Negative("No").Value(&initRepo).Run(); err != nil {
-				return nil, false, err
-			}
-		}
-		if !initRepo {
-			return nil, false, fmt.Errorf("orca init requires a git repository")
-		}
+		fmt.Println("Initializing git repository...")
 		gitInit := exec.Command("git", "init")
 		gitInit.Dir = cwd
 		if err := gitInit.Run(); err != nil {
@@ -492,6 +482,7 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 	return nil
 }
 
+// loadConfigFromDBPath returns the persisted config, or nil if no config row exists.
 func loadConfigFromDBPath(dbPath string) (*config.Config, error) {
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil, err
@@ -501,6 +492,9 @@ func loadConfigFromDBPath(dbPath string) (*config.Config, error) {
 		return nil, err
 	}
 	defer db.Close()
+	if !config.ExistsInDB(db.DB) {
+		return nil, nil
+	}
 	return config.LoadFromDB(db.DB)
 }
 

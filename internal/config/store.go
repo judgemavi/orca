@@ -9,6 +9,13 @@ import (
 
 const configKey = "config"
 
+// ExistsInDB returns true if a config row has been persisted.
+func ExistsInDB(db *sql.DB) bool {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM config WHERE key = ?`, configKey).Scan(&n)
+	return err == nil && n > 0
+}
+
 // LoadFromDB reads config from the config table. If no config row exists, defaults are returned.
 func LoadFromDB(db *sql.DB) (*Config, error) {
 	cfg, err := Default()
