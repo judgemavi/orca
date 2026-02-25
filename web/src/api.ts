@@ -220,11 +220,6 @@ export const api = {
       body: JSON.stringify(opts ?? {}),
     })
   },
-  getTaskLogs: async (taskId: string, tail?: number): Promise<string[]> => {
-    const q = typeof tail === 'number' && tail > 0 ? `?tail=${tail}` : ''
-    const data = await request<{ lines: string[] }>(`/tasks/${taskId}/logs${q}`)
-    return data.lines ?? []
-  },
   reopenTask: async (taskId: string): Promise<void> => {
     await request(`/tasks/${taskId}/reopen`, { method: 'POST' })
   },

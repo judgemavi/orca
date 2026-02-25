@@ -73,7 +73,7 @@ function AppLayout() {
           <Outlet />
         </main>
 
-        <ConsolePanel lastWSEvent={lastWSEvent} orchestratorId={orchestratorId} />
+        <ConsolePanel orchestratorId={orchestratorId} />
       </div>
     </WSContext.Provider>
   )

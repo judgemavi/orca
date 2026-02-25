@@ -292,10 +292,3 @@ export interface WSEvent {
   timestamp: string
   data: Record<string, unknown>
 }
-
-export interface WorkerOutputEvent {
-  task_id: string
-  stream: 'stdout' | 'stderr'
-  line: string
-  ts: string
-}
