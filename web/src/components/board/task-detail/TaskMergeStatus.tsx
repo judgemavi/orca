@@ -1,3 +1,4 @@
+import * as Collapsible from '@radix-ui/react-collapsible'
 import { useEffect, useState } from 'react'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
@@ -57,7 +58,6 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
     }
   }
   const onAutoResolve = () => onMerge('auto')
-  const onShowManualResolve = () => setShowManualResolve(true)
   const onMergeToolChange = (t: string) => {
     setMergeTool(t)
     setMergeModel('')
@@ -187,21 +187,23 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
                       Auto-resolve
                     </ActionButton>
                   </div>
-                  <ActionButton variant="default" onClick={onShowManualResolve}>
-                    Manual resolve
-                  </ActionButton>
-                </div>
-              )}
-              {showManualResolve && (
-                <div className="flex flex-col gap-1.5 text-xs text-[var(--text-secondary)]">
-                  {conflictWorktreePath && (
-                    <div className="font-mono text-[11px] text-[var(--text-primary)]">
-                      Worktree: <code>{conflictWorktreePath}</code>
-                    </div>
-                  )}
-                  <div>
-                    Resolve conflicts in the worktree, commit the fixes, then click Retry Merge.
-                  </div>
+                  <Collapsible.Root open={showManualResolve} onOpenChange={setShowManualResolve}>
+                    <Collapsible.Trigger asChild>
+                      <ActionButton variant="default">Manual resolve</ActionButton>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div className="mt-2 flex flex-col gap-1.5 text-xs text-[var(--text-secondary)]">
+                        {conflictWorktreePath && (
+                          <div className="font-mono text-[11px] text-[var(--text-primary)]">
+                            Worktree: <code>{conflictWorktreePath}</code>
+                          </div>
+                        )}
+                        <div>
+                          Resolve conflicts in the worktree, commit the fixes, then click Retry Merge.
+                        </div>
+                      </div>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
                 </div>
               )}
             </div>

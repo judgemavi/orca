@@ -1,3 +1,4 @@
+import * as Collapsible from '@radix-ui/react-collapsible'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
@@ -200,15 +201,16 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                 onToggleLog={(id) => setActiveLogId(activeLogId === id ? null : id)}
               >
                 {item.status === 'completed' && item.diff && (
-                  <>
-                    <button
-                      type="button"
-                      className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                      onClick={() => toggleDiff(item.id)}
-                    >
-                      {expandedDiffs.has(item.id) ? '▾ Hide diff' : '▸ Show diff'}
-                    </button>
-                    {expandedDiffs.has(item.id) && (
+                  <Collapsible.Root open={expandedDiffs.has(item.id)} onOpenChange={() => toggleDiff(item.id)}>
+                    <Collapsible.Trigger asChild>
+                      <button
+                        type="button"
+                        className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      >
+                        {expandedDiffs.has(item.id) ? '▾ Hide diff' : '▸ Show diff'}
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
                       <DiffViewer
                         data={{
                           task_id: task.id,
@@ -218,8 +220,8 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                           actions: [],
                         }}
                       />
-                    )}
-                  </>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
                 )}
 
                 {runReviewInteractions.length > 0 && (

@@ -6,7 +6,7 @@ import { ReviewPanel } from '../components/board/ReviewPanel'
 import { CreateTaskModal } from '../components/board/CreateTaskModal'
 import { TasksTable } from '../components/board/TasksTable'
 import { TasksToolbar } from '../components/board/TasksToolbar'
-import { Toast } from '../components/common/Toast'
+import { toast } from 'sonner'
 import { useConfigQuery } from '../hooks/queries/useConfig'
 import { useModelsQuery } from '../hooks/queries/useModels'
 import { useOperationsQuery } from '../hooks/queries/useOperations'
@@ -26,7 +26,6 @@ export function TasksPage() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [showReview, setShowReview] = useState(false)
-  const [toastError, setToastError] = useState<string | null>(null)
 
   const tasks = tasksQuery.data?.tasks ?? []
   const operations = operationsQuery.data?.operations ?? []
@@ -75,7 +74,7 @@ export function TasksPage() {
       await runTasksMutation.mutateAsync(taskIds)
       await invalidateBoard()
     } catch (err: any) {
-      setToastError(err?.message ?? 'Run failed')
+      toast.error(err?.message ?? 'Run failed')
     }
   }
 
@@ -116,7 +115,7 @@ export function TasksPage() {
                 await api.merge()
                 await invalidateBoard()
               } catch (err: any) {
-                setToastError(err?.message ?? 'Merge failed')
+                toast.error(err?.message ?? 'Merge failed')
               }
             })()
           }}
@@ -141,7 +140,7 @@ export function TasksPage() {
                 setShowReview(false)
                 await invalidateBoard()
               } catch (err: any) {
-                setToastError(err?.message ?? 'Merge failed')
+                toast.error(err?.message ?? 'Merge failed')
               }
             })()
           }}
@@ -160,11 +159,6 @@ export function TasksPage() {
         />
       )}
 
-      <Toast
-        message={toastError}
-        type="error"
-        onClose={() => setToastError(null)}
-      />
     </div>
   )
 }

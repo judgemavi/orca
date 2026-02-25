@@ -1,3 +1,4 @@
+import * as Collapsible from '@radix-ui/react-collapsible'
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -341,24 +342,25 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                 }
               >
                 {item.status === 'completed' && item.diff && (
-                  <>
-                    <button
-                      type="button"
-                      className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                      onClick={() => togglePlan(item.id)}
-                    >
-                      {expandedPlans.has(item.id)
-                        ? '▾ Hide plan'
-                        : '▸ Show plan'}
-                    </button>
-                    {expandedPlans.has(item.id) && (
+                  <Collapsible.Root open={expandedPlans.has(item.id)} onOpenChange={() => togglePlan(item.id)}>
+                    <Collapsible.Trigger asChild>
+                      <button
+                        type="button"
+                        className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      >
+                        {expandedPlans.has(item.id)
+                          ? '▾ Hide plan'
+                          : '▸ Show plan'}
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
                       <div className="prose prose-invert prose-sm max-w-none max-h-[300px] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5 text-xs text-[var(--text-primary)]">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {item.diff}
                         </ReactMarkdown>
                       </div>
-                    )}
-                  </>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
                 )}
 
                 {item.status === 'completed' && itemReviews.length > 0 && (

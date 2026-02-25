@@ -6,6 +6,7 @@ import {
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, Link } from '@tanstack/react-router'
 import { Settings } from 'lucide-react'
+import { Toaster } from 'sonner'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ConsolePanel } from './components/console/ConsolePanel'
 import { OperationsIndicator } from './components/common/OperationsIndicator'
@@ -74,6 +75,7 @@ function AppLayout() {
         </main>
 
         <ConsolePanel orchestratorId={orchestratorId} />
+        <Toaster theme="dark" position="bottom-center" richColors />
       </div>
     </WSContext.Provider>
   )

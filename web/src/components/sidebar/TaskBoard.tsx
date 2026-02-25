@@ -1,3 +1,4 @@
+import * as Collapsible from '@radix-ui/react-collapsible'
 import { useState, useEffect } from 'react'
 import type { Task } from '../../types'
 import { StatusIcon } from '../common/StatusBadge'
@@ -39,37 +40,40 @@ export function TaskBoard({ refreshKey }: Props) {
   }, {})
 
   return (
-    <div className="flex flex-col">
-      <button
-        className="flex cursor-pointer items-center gap-1.5 bg-transparent py-2 text-xs font-semibold uppercase tracking-[0.05em] text-slate-400"
-        onClick={() => setExpanded(!expanded)}
-        type="button"
-      >
-        <span className="text-[8px]">{expanded ? '\u25BC' : '\u25B6'}</span>
-        Tasks ({tasks.length})
-      </button>
-      {expanded && loaded && (
-        <div className="flex flex-col gap-0.5">
-          {Object.entries(grouped).map(([status, items]) => (
-            <div key={status}>
-              {items.map((task) => (
-                <div
-                  key={task.id}
-                  className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-black/10"
-                >
-                  <StatusIcon status={task.status} />
-                  <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                    {task.title}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
-          {tasks.length === 0 && (
-            <div className="px-2 py-2 text-xs text-slate-400">No tasks</div>
-          )}
-        </div>
-      )}
-    </div>
+    <Collapsible.Root open={expanded} onOpenChange={setExpanded} className="flex flex-col">
+      <Collapsible.Trigger asChild>
+        <button
+          className="flex cursor-pointer items-center gap-1.5 bg-transparent py-2 text-xs font-semibold uppercase tracking-[0.05em] text-slate-400"
+          type="button"
+        >
+          <span className="text-[8px]">{expanded ? '\u25BC' : '\u25B6'}</span>
+          Tasks ({tasks.length})
+        </button>
+      </Collapsible.Trigger>
+      <Collapsible.Content>
+        {loaded && (
+          <div className="flex flex-col gap-0.5">
+            {Object.entries(grouped).map(([status, items]) => (
+              <div key={status}>
+                {items.map((task) => (
+                  <div
+                    key={task.id}
+                    className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-black/10"
+                  >
+                    <StatusIcon status={task.status} />
+                    <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                      {task.title}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {tasks.length === 0 && (
+              <div className="px-2 py-2 text-xs text-slate-400">No tasks</div>
+            )}
+          </div>
+        )}
+      </Collapsible.Content>
+    </Collapsible.Root>
   )
 }
