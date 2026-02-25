@@ -3,15 +3,15 @@ import { useMemo, useState } from 'react'
 import { api } from '../api'
 import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel'
 import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar'
-import { TaskTimeline } from '../components/board/task-detail/TaskTimeline'
-import { useTaskDetail } from '../components/board/task-detail/useTaskDetail'
+import { TaskTimeline as TaskTimelineBase } from '../components/board/task-detail/TaskTimeline'
 import { useTasksState } from '../components/board/useTasksState'
 import { StatusBadge } from '../components/common/StatusBadge'
+import {
+  TaskDetailProvider,
+  useTaskDetailContext,
+} from '../context/TaskDetailContext'
 import { useLastWSEvent } from '../context/ws'
 import type { Config, Task } from '../types'
-
-const controlClass =
-  'w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-2 text-[13px] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent)]'
 
 export function TaskDetailPage() {
   const { taskId } = useParams({ from: '/tasks/$taskId' })
@@ -77,110 +77,9 @@ function TaskDetailContent({
 }) {
   const navigate = useNavigate()
   const lastWSEvent = useLastWSEvent()
-  const [activeLogId, setActiveLogId] = useState<string | null>(null)
   const [selectedDependencyId, setSelectedDependencyId] = useState('')
   const [addingDependency, setAddingDependency] = useState(false)
   const [dependencyError, setDependencyError] = useState<string | null>(null)
-
-  const {
-    form,
-    saving,
-    isEditable,
-    isDeletable,
-    deleting,
-    merging,
-    mergeProgress,
-    conflictError,
-    conflictWorktreePath,
-    showManualResolve,
-    setShowManualResolve,
-    planInteractions,
-    runInteractions,
-    reviewInteractions,
-    mergeInteractions,
-    interactionsLoading,
-    planReviews,
-    runReviews,
-    feedback,
-    setFeedback,
-    approving,
-    requesting,
-    aiReviewTool,
-    aiReviewModel,
-    aiReviewModels,
-    aiReviewModelsFetching,
-    aiReviewing,
-    aiReviewExpanded,
-    aiReviewPrompt,
-    rerunning,
-    reviewActionError,
-    plan,
-    planGenerating,
-    planLoading,
-    planError,
-    approvingPlan,
-    requestingPlanChanges,
-    planFeedback,
-    planReviewExpanded,
-    taskEvaluation,
-    evaluatingTask,
-    hasPlan,
-    generateTool,
-    generateModel,
-    generationModels,
-    generateModelsFetching,
-    generatePlanPending,
-    runTool,
-    runModel,
-    runModels,
-    runModelsFetching,
-    runPending,
-    rerunTool,
-    rerunModel,
-    rerunModels,
-    rerunModelsFetching,
-    mergeTool,
-    mergeModel,
-    mergeModels,
-    mergeModelsFetching,
-    setPlanFeedback,
-    setPlanReviewExpanded,
-    setGenerateTool,
-    setGenerateModel,
-    setRunTool,
-    setRunModel,
-    setRerunTool,
-    setRerunModel,
-    setMergeTool,
-    setMergeModel,
-    setAIReviewTool,
-    setAIReviewModel,
-    setAIReviewExpanded,
-    setAIReviewPrompt,
-    handleDelete,
-    handleMerge,
-    handleRun,
-    handleGeneratePlan,
-    handleEvaluateTask,
-    handleApprovePlan,
-    handleRequestPlanChanges,
-    handleApprove,
-    handleRequestChanges,
-    handleRerun,
-    handleAIReview,
-  } = useTaskDetail({
-    task,
-    tools,
-    lastWSEvent,
-    isOperationRunning: isRunning,
-    onSaved: () => {
-      void invalidateBoard()
-    },
-    onDeleted: () => {
-      void navigate({ to: '/' })
-      void invalidateBoard()
-    },
-  })
 
   const tasksById = useMemo(
     () => new Map(tasks.map((item) => [item.id, item])),
@@ -194,7 +93,7 @@ function TaskDetailContent({
             candidate.id !== task.id && !(task.depends_on ?? []).includes(candidate.id),
         )
         .sort((a, b) => a.title.localeCompare(b.title)),
-    [task.depends_on, task.id, tasks],  // depends_on may be null from backend
+    [task.depends_on, task.id, tasks],
   )
 
   const handleAddDependency = async () => {
@@ -216,316 +115,266 @@ function TaskDetailContent({
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-4 py-4">
-        <div className="mb-3 flex items-center justify-between">
-          <Link
-            to="/"
-            className="rounded border border-border px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
-          >
-            ← Back to tasks
-          </Link>
-          <div className="flex items-center gap-2.5">
-            <StatusBadge status={task.status} />
-            <span className="font-mono text-[11px] text-[var(--text-secondary)]">
-              {task.id.slice(0, 8)}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)]">
-          <div className="flex flex-1 flex-col gap-3.5 p-5">
-            <form
-              id="task-edit-form"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void form.handleSubmit()
-              }}
+    <TaskDetailProvider
+      task={task}
+      config={configData}
+      tools={tools}
+      lastWSEvent={lastWSEvent}
+      isOperationRunning={isRunning}
+      onSaved={() => {
+        void invalidateBoard()
+      }}
+      onDeleted={() => {
+        void navigate({ to: '/' })
+        void invalidateBoard()
+      }}
+    >
+      <div className="flex flex-1 overflow-hidden">
+        <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-4 py-4">
+          <div className="mb-3 flex items-center justify-between">
+            <Link
+              to="/"
+              className="rounded border border-border px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
             >
-              <div className="flex flex-col gap-3.5">
-                <form.Field name="title">
-                  {(field) => (
-                    <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-                      Title
-                      {isEditable ? (
-                        <input
-                          className={controlClass}
-                          value={field.state.value}
-                          onBlur={field.handleBlur}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                        />
-                      ) : (
-                        <div className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
-                          {field.state.value || task.title}
-                        </div>
-                      )}
-                    </label>
-                  )}
-                </form.Field>
-
-                <form.Field name="description">
-                  {(field) => (
-                    <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-                      Description
-                      {isEditable ? (
-                        <textarea
-                          className={controlClass}
-                          value={field.state.value}
-                          onBlur={field.handleBlur}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          rows={4}
-                          placeholder="No description"
-                        />
-                      ) : (
-                        <div className="min-h-[80px] whitespace-pre-wrap rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
-                          {field.state.value || 'No description'}
-                        </div>
-                      )}
-                    </label>
-                  )}
-                </form.Field>
-
-                <div className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-                  Dependencies
-                  {(task.depends_on ?? []).length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {(task.depends_on ?? []).map((depId) => {
-                        const depTask = tasksById.get(depId)
-                        return (
-                          <span
-                            key={depId}
-                            className="inline-flex items-center gap-1.5 rounded border border-[var(--border)] bg-[var(--bg-sidebar)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]"
-                          >
-                            <span className="max-w-[280px] truncate text-[var(--text-primary)]">
-                              {depTask?.title || 'Unknown task'}
-                            </span>
-                            <span className="font-mono">{depId.slice(0, 8)}</span>
-                          </span>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-[12px] font-normal text-[var(--text-secondary)]">
-                      No dependencies
-                    </p>
-                  )}
-
-                  {isEditable && (
-                    <div className="mt-1 flex flex-col gap-1.5">
-                      {dependencyChoices.length > 0 ? (
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <select
-                            className={controlClass}
-                            value={selectedDependencyId}
-                            onChange={(e) => {
-                              setSelectedDependencyId(e.target.value)
-                              if (dependencyError) setDependencyError(null)
-                            }}
-                            disabled={addingDependency}
-                          >
-                            <option value="">Select task dependency...</option>
-                            {dependencyChoices.map((choice) => (
-                              <option key={choice.id} value={choice.id}>
-                                {choice.title} ({choice.id.slice(0, 8)})
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            className="rounded-md border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => {
-                              void handleAddDependency()
-                            }}
-                            disabled={addingDependency || !selectedDependencyId}
-                          >
-                            {addingDependency ? 'Adding…' : 'Add Dependency'}
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="text-[12px] font-normal text-[var(--text-secondary)]">
-                          No available tasks to add.
-                        </p>
-                      )}
-                      {dependencyError && (
-                        <p className="text-[12px] font-normal text-[var(--status-failed)]">
-                          {dependencyError}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </form>
-
-            <div className="flex min-h-[420px] flex-col gap-4 lg:flex-row">
-              <div
-                className={[
-                  'min-h-0 w-full transition-all duration-200',
-                  activeLogId ? 'lg:w-3/5' : 'lg:w-full',
-                ].join(' ')}
-              >
-                <TaskTimeline
-                  task={task}
-                  planInteractions={planInteractions}
-                  runInteractions={runInteractions}
-                  reviewInteractions={reviewInteractions}
-                  mergeInteractions={mergeInteractions}
-                  planReviews={planReviews}
-                  runReviews={runReviews}
-                  interactionsLoading={interactionsLoading}
-                  config={configData}
-                  activeLogId={activeLogId}
-                  feedback={feedback}
-                  approving={approving}
-                  requesting={requesting}
-                  aiReviewExpanded={aiReviewExpanded}
-                  aiReviewing={aiReviewing}
-                  aiReviewTool={aiReviewTool}
-                  aiReviewModel={aiReviewModel}
-                  aiReviewModels={aiReviewModels}
-                  aiReviewModelsFetching={aiReviewModelsFetching}
-                  aiReviewPrompt={aiReviewPrompt}
-                  rerunning={rerunning}
-                  reviewActionError={reviewActionError}
-                  mergeProgress={mergeProgress}
-                  conflictError={conflictError}
-                  merging={merging}
-                  showManualResolve={showManualResolve}
-                  conflictWorktreePath={conflictWorktreePath}
-                  isPlanningEditable={isEditable}
-                  hasPlan={hasPlan}
-                  plan={plan}
-                  planGenerating={planGenerating}
-                  planLoading={planLoading}
-                  planError={planError}
-                  approvingPlan={approvingPlan}
-                  requestingPlanChanges={requestingPlanChanges}
-                  planFeedback={planFeedback}
-                  planReviewExpanded={planReviewExpanded}
-                  taskEvaluation={taskEvaluation}
-                  evaluatingTask={evaluatingTask}
-                  tools={tools}
-                  generateTool={generateTool}
-                  generateModel={generateModel}
-                  generationModels={generationModels}
-                  generateModelsFetching={generateModelsFetching}
-                  generatePlanPending={generatePlanPending}
-                  runTool={runTool}
-                  runModel={runModel}
-                  runModels={runModels}
-                  runModelsFetching={runModelsFetching}
-                  runPending={runPending}
-                  rerunTool={rerunTool}
-                  rerunModel={rerunModel}
-                  rerunModels={rerunModels}
-                  rerunModelsFetching={rerunModelsFetching}
-                  mergeTool={mergeTool}
-                  mergeModel={mergeModel}
-                  mergeModels={mergeModels}
-                  mergeModelsFetching={mergeModelsFetching}
-                  controlClass={controlClass}
-                  onToggleLogPanel={(interactionId) => {
-                    if (activeLogId === interactionId) {
-                      setActiveLogId(null)
-                      return
-                    }
-                    setActiveLogId(interactionId)
-                  }}
-                  onFeedbackChange={setFeedback}
-                  onApprove={() => {
-                    void handleApprove()
-                  }}
-                  onRequestChanges={(interactionId, tool, model) => {
-                    void handleRequestChanges(interactionId, tool, model)
-                  }}
-                  onAIReview={() => {
-                    void handleAIReview()
-                  }}
-                  onAIReviewToolChange={setAIReviewTool}
-                  onAIReviewModelChange={setAIReviewModel}
-                  onAIReviewPromptChange={setAIReviewPrompt}
-                  onExpandAIReview={() => setAIReviewExpanded(true)}
-                  onCancelAIReview={() => setAIReviewExpanded(false)}
-                  onRerun={() => {
-                    void handleRerun()
-                  }}
-                  onMerge={() => {
-                    void handleMerge()
-                  }}
-                  onAutoResolve={() => {
-                    void handleMerge('auto')
-                  }}
-                  onShowManualResolve={() => setShowManualResolve(true)}
-                  onPlanFeedbackChange={setPlanFeedback}
-                  onPlanReviewExpandedChange={setPlanReviewExpanded}
-                  onGenerateToolChange={(nextTool) => {
-                    setGenerateTool(nextTool)
-                    setGenerateModel('')
-                  }}
-                  onGenerateModelChange={setGenerateModel}
-                  onGeneratePlan={() => {
-                    void handleGeneratePlan()
-                  }}
-                  onEvaluateTask={() => {
-                    void handleEvaluateTask()
-                  }}
-                  onApprovePlan={() => {
-                    void handleApprovePlan()
-                  }}
-                  onRequestPlanChanges={(interactionId, feedbackValue, tool, model) => {
-                    void handleRequestPlanChanges(interactionId, feedbackValue, tool, model)
-                  }}
-                  onRun={() => {
-                    void handleRun()
-                  }}
-                  onRunToolChange={(nextTool) => {
-                    setRunTool(nextTool)
-                    setRunModel('')
-                  }}
-                  onRunModelChange={setRunModel}
-                  onRerunToolChange={(nextTool) => {
-                    setRerunTool(nextTool)
-                    setRerunModel('')
-                  }}
-                  onRerunModelChange={setRerunModel}
-                  onMergeToolChange={(nextTool) => {
-                    setMergeTool(nextTool)
-                    setMergeModel('')
-                  }}
-                  onMergeModelChange={setMergeModel}
-                />
-              </div>
-
-              {activeLogId && (
-                <div className="min-h-0 w-full transform transition-all duration-200 ease-out lg:w-2/5">
-                  <InteractionLogPanel
-                    taskId={task.id}
-                    interactionId={activeLogId}
-                    onClose={() => {
-                      setActiveLogId(null)
-                    }}
-                  />
-                </div>
-              )}
+              ← Back to tasks
+            </Link>
+            <div className="flex items-center gap-2.5">
+              <StatusBadge status={task.status} />
+              <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+                {task.id.slice(0, 8)}
+              </span>
             </div>
           </div>
 
-          <TaskActionsBar
-            isEditable={isEditable}
-            isDeletable={isDeletable}
-            deleting={deleting}
-            saving={saving}
-            formId="task-edit-form"
-            form={form}
-            onDelete={() => {
-              void handleDelete()
-            }}
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)]">
+            <div className="flex flex-1 flex-col gap-3.5 p-5">
+              <TaskDetailForm
+                tasksById={tasksById}
+                dependencyChoices={dependencyChoices}
+                selectedDependencyId={selectedDependencyId}
+                setSelectedDependencyId={setSelectedDependencyId}
+                addingDependency={addingDependency}
+                dependencyError={dependencyError}
+                setDependencyError={setDependencyError}
+                handleAddDependency={handleAddDependency}
+              />
+
+              <TaskTimelineLayout />
+            </div>
+
+            <TaskDetailActionsBar
+              onClose={() => {
+                void navigate({ to: '/' })
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    </TaskDetailProvider>
+  )
+}
+
+type TaskDetailFormProps = {
+  tasksById: Map<string, Task>
+  dependencyChoices: Task[]
+  selectedDependencyId: string
+  setSelectedDependencyId: (value: string) => void
+  addingDependency: boolean
+  dependencyError: string | null
+  setDependencyError: (value: string | null) => void
+  handleAddDependency: () => Promise<void>
+}
+
+function TaskDetailForm({
+  tasksById,
+  dependencyChoices,
+  selectedDependencyId,
+  setSelectedDependencyId,
+  addingDependency,
+  dependencyError,
+  setDependencyError,
+  handleAddDependency,
+}: TaskDetailFormProps) {
+  const { form, isEditable, task, controlClass } = useTaskDetailContext()
+
+  return (
+    <form
+      id="task-edit-form"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void form.handleSubmit()
+      }}
+    >
+      <div className="flex flex-col gap-3.5">
+        <form.Field name="title">
+          {(field) => (
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+              Title
+              {isEditable ? (
+                <input
+                  className={controlClass}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              ) : (
+                <div className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
+                  {field.state.value || task.title}
+                </div>
+              )}
+            </label>
+          )}
+        </form.Field>
+
+        <form.Field name="description">
+          {(field) => (
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+              Description
+              {isEditable ? (
+                <textarea
+                  className={controlClass}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  rows={4}
+                  placeholder="No description"
+                />
+              ) : (
+                <div className="min-h-[80px] whitespace-pre-wrap rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
+                  {field.state.value || 'No description'}
+                </div>
+              )}
+            </label>
+          )}
+        </form.Field>
+
+        <div className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+          Dependencies
+          {(task.depends_on ?? []).length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {(task.depends_on ?? []).map((depId) => {
+                const depTask = tasksById.get(depId)
+                return (
+                  <span
+                    key={depId}
+                    className="inline-flex items-center gap-1.5 rounded border border-[var(--border)] bg-[var(--bg-sidebar)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]"
+                  >
+                    <span className="max-w-[280px] truncate text-[var(--text-primary)]">
+                      {depTask?.title || 'Unknown task'}
+                    </span>
+                    <span className="font-mono">{depId.slice(0, 8)}</span>
+                  </span>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-[12px] font-normal text-[var(--text-secondary)]">
+              No dependencies
+            </p>
+          )}
+
+          {isEditable && (
+            <div className="mt-1 flex flex-col gap-1.5">
+              {dependencyChoices.length > 0 ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <select
+                    className={controlClass}
+                    value={selectedDependencyId}
+                    onChange={(e) => {
+                      setSelectedDependencyId(e.target.value)
+                      if (dependencyError) setDependencyError(null)
+                    }}
+                    disabled={addingDependency}
+                  >
+                    <option value="">Select task dependency...</option>
+                    {dependencyChoices.map((choice) => (
+                      <option key={choice.id} value={choice.id}>
+                        {choice.title} ({choice.id.slice(0, 8)})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="rounded-md border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => {
+                      void handleAddDependency()
+                    }}
+                    disabled={addingDependency || !selectedDependencyId}
+                  >
+                    {addingDependency ? 'Adding…' : 'Add Dependency'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[12px] font-normal text-[var(--text-secondary)]">
+                  No available tasks to add.
+                </p>
+              )}
+              {dependencyError && (
+                <p className="text-[12px] font-normal text-[var(--status-failed)]">
+                  {dependencyError}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </form>
+  )
+}
+
+function TaskTimelineLayout() {
+  const { activeLogId, task, setActiveLogId } = useTaskDetailContext()
+
+  return (
+    <div className="flex min-h-[420px] flex-col gap-4 lg:flex-row">
+      <div
+        className={[
+          'min-h-0 w-full transition-all duration-200',
+          activeLogId ? 'lg:w-3/5' : 'lg:w-full',
+        ].join(' ')}
+      >
+        <TaskTimeline />
+      </div>
+
+      {activeLogId && (
+        <div className="min-h-0 w-full transform transition-all duration-200 ease-out lg:w-2/5">
+          <InteractionLogPanel
+            taskId={task.id}
+            interactionId={activeLogId}
             onClose={() => {
-              void navigate({ to: '/' })
+              setActiveLogId(null)
             }}
           />
         </div>
-      </div>
+      )}
     </div>
+  )
+}
+
+function TaskTimeline() {
+  return <TaskTimelineBase />
+}
+
+function TaskDetailActionsBar({ onClose }: { onClose: () => void }) {
+  const {
+    isEditable,
+    isDeletable,
+    deleting,
+    saving,
+    form,
+    handleDelete,
+  } = useTaskDetailContext()
+
+  return (
+    <TaskActionsBar
+      isEditable={isEditable}
+      isDeletable={isDeletable}
+      deleting={deleting}
+      saving={saving}
+      formId="task-edit-form"
+      form={form}
+      onDelete={handleDelete}
+      onClose={onClose}
+    />
   )
 }

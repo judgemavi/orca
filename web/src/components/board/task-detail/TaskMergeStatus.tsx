@@ -1,53 +1,44 @@
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
-import type { Interaction } from '../../../types'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { InteractionEntry } from './InteractionEntry'
 
 interface Props {
-  tools: string[]
-  mergeTool: string
-  mergeModel: string
-  mergeModels: Array<{ id: string; name: string }>
-  mergeModelsFetching: boolean
-  controlClass: string
-  mergeProgress: string | null
-  conflictError: string | null
-  merging: boolean
-  showManualResolve: boolean
-  conflictWorktreePath: string
-  mergeInteractions: Interaction[]
-  activeLogId: string | null
   readOnly?: boolean
-  onToggleLog: (id: string) => void
-  onMerge?: () => void
-  onAutoResolve: () => void
-  onShowManualResolve: () => void
-  onMergeToolChange: (value: string) => void
-  onMergeModelChange: (value: string) => void
 }
 
-export function TaskMergeStatus({
-  tools,
-  mergeTool,
-  mergeModel,
-  mergeModels,
-  mergeModelsFetching,
-  controlClass,
-  mergeProgress,
-  conflictError,
-  merging,
-  showManualResolve,
-  conflictWorktreePath,
-  mergeInteractions,
-  activeLogId,
-  readOnly = false,
-  onToggleLog,
-  onMerge,
-  onAutoResolve,
-  onShowManualResolve,
-  onMergeToolChange,
-  onMergeModelChange,
-}: Props) {
+export function TaskMergeStatus({ readOnly = false }: Props) {
+  const {
+    tools,
+    controlClass,
+    mergeTool,
+    setMergeTool,
+    mergeModel,
+    setMergeModel,
+    mergeModels,
+    mergeModelsFetching,
+    mergeProgress,
+    conflictError,
+    merging,
+    showManualResolve,
+    setShowManualResolve,
+    conflictWorktreePath,
+    mergeInteractions,
+    activeLogId,
+    setActiveLogId,
+    handleMerge,
+  } = useTaskDetailContext()
+
+  const onMerge = () => handleMerge()
+  const onAutoResolve = () => handleMerge('auto')
+  const onShowManualResolve = () => setShowManualResolve(true)
+  const onMergeToolChange = (t: string) => {
+    setMergeTool(t)
+    setMergeModel('')
+  }
+  const onMergeModelChange = setMergeModel
+  const onToggleLog = (id: string) => setActiveLogId(activeLogId === id ? null : id)
+
   const latestFailedMergeId =
     mergeInteractions.find((item) => item.status === 'failed')?.id ?? null
   const latestRunningMergeId =
@@ -61,7 +52,7 @@ export function TaskMergeStatus({
         </div>
       )}
 
-      {!readOnly && onMerge && (
+      {!readOnly && (
         <div className="flex justify-end">
           <ActionButton variant="primary" onClick={onMerge} disabled={merging}>
             {merging ? 'Merging…' : conflictError ? 'Retry Merge' : 'Merge'}

@@ -1,92 +1,73 @@
+import { useMemo, useState } from 'react'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 
-interface Props {
-  interactionId: string
-  feedback: string
-  reviewExpanded: boolean
-  aiReviewExpanded: boolean
-  approving: boolean
-  requesting: boolean
-  aiReviewing: boolean
-  reviewActionError: string | null
-  tools: string[]
-  rerunTool: string
-  rerunModel: string
-  rerunModels: Array<{ id: string; name: string }>
-  rerunModelsFetching: boolean
-  aiReviewTool: string
-  aiReviewModel: string
-  aiReviewModels: Array<{ id: string; name: string }>
-  aiReviewModelsFetching: boolean
-  aiReviewPrompt: string
-  controlClass: string
-  onFeedbackChange: (value: string) => void
-  onExpandRequestChanges: () => void
-  onCancelRequestChanges: () => void
-  onAIReview: () => void
-  onAIReviewToolChange: (value: string) => void
-  onAIReviewModelChange: (value: string) => void
-  onAIReviewPromptChange: (value: string) => void
-  onExpandAIReview: () => void
-  onCancelAIReview: () => void
-  onApprove: () => void
-  onRequestChanges: (interactionId?: string, tool?: string, model?: string) => void
-  onRerunToolChange: (value: string) => void
-  onRerunModelChange: (value: string) => void
-}
+export function InlineReviewActions() {
+  const {
+    tools,
+    controlClass,
+    feedback,
+    setFeedback,
+    approving,
+    requesting,
+    aiReviewExpanded,
+    aiReviewing,
+    aiReviewTool,
+    setAIReviewTool,
+    aiReviewModel,
+    setAIReviewModel,
+    aiReviewModels,
+    aiReviewModelsFetching,
+    aiReviewPrompt,
+    setAIReviewPrompt,
+    reviewActionError,
+    rerunTool,
+    setRerunTool,
+    rerunModel,
+    setRerunModel,
+    rerunModels,
+    rerunModelsFetching,
+    runInteractions,
+    handleApprove,
+    handleRequestChanges,
+    handleAIReview,
+    setAIReviewExpanded,
+  } = useTaskDetailContext()
+  const [reviewExpanded, setReviewExpanded] = useState(false)
 
-export function InlineReviewActions({
-  interactionId,
-  feedback,
-  reviewExpanded,
-  aiReviewExpanded,
-  approving,
-  requesting,
-  aiReviewing,
-  reviewActionError,
-  tools,
-  rerunTool,
-  rerunModel,
-  rerunModels,
-  rerunModelsFetching,
-  aiReviewTool,
-  aiReviewModel,
-  aiReviewModels,
-  aiReviewModelsFetching,
-  aiReviewPrompt,
-  controlClass,
-  onFeedbackChange,
-  onExpandRequestChanges,
-  onCancelRequestChanges,
-  onAIReview,
-  onAIReviewToolChange,
-  onAIReviewModelChange,
-  onAIReviewPromptChange,
-  onExpandAIReview,
-  onCancelAIReview,
-  onApprove,
-  onRequestChanges,
-  onRerunToolChange,
-  onRerunModelChange,
-}: Props) {
+  const interactionId = useMemo(
+    () => [...runInteractions].reverse().find((item) => item.status === 'completed')?.id,
+    [runInteractions],
+  )
+
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-center justify-end gap-2">
         {!reviewExpanded && !aiReviewExpanded && (
-          <ActionButton variant="primary" onClick={onApprove} disabled={approving || requesting}>
+          <ActionButton variant="primary" onClick={handleApprove} disabled={approving || requesting}>
             {approving ? 'Approving…' : 'Approve'}
           </ActionButton>
         )}
         {!reviewExpanded && !aiReviewExpanded && (
-          <ActionButton variant="default" onClick={onExpandRequestChanges} disabled={approving || requesting}>
+          <ActionButton
+            variant="default"
+            onClick={() => {
+              setAIReviewExpanded(false)
+              setReviewExpanded(true)
+            }}
+            disabled={approving || requesting}
+          >
             Request Changes
           </ActionButton>
         )}
         {!reviewExpanded && !aiReviewExpanded && (
           <ActionButton
             variant="default"
-            onClick={onExpandAIReview}
+            onClick={() => {
+              setReviewExpanded(false)
+              setAIReviewExpanded(true)
+            }}
             disabled={approving || requesting || aiReviewing}
           >
             {aiReviewing ? 'Reviewing…' : 'AI Review'}
@@ -101,7 +82,7 @@ export function InlineReviewActions({
             className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
             rows={3}
             value={feedback}
-            onChange={(e) => onFeedbackChange(e.target.value)}
+            onChange={(e) => setFeedback(e.target.value)}
             placeholder="Describe what needs to be changed..."
           />
           <ToolModelSelector
@@ -110,8 +91,11 @@ export function InlineReviewActions({
             selectedModel={rerunModel}
             models={rerunModels}
             modelsFetching={rerunModelsFetching}
-            onToolChange={onRerunToolChange}
-            onModelChange={onRerunModelChange}
+            onToolChange={(tool) => {
+              setRerunTool(tool)
+              setRerunModel('')
+            }}
+            onModelChange={setRerunModel}
             controlClass={controlClass}
             toolPlaceholder="- phase/default tool"
             modelPlaceholder="- default model"
@@ -120,13 +104,17 @@ export function InlineReviewActions({
             <ActionButton
               variant="default"
               onClick={() =>
-                onRequestChanges(interactionId, rerunTool || undefined, rerunModel || undefined)
+                handleRequestChanges(interactionId, rerunTool || undefined, rerunModel || undefined)
               }
               disabled={requesting || approving}
             >
               {requesting ? 'Submitting…' : 'Submit Request Changes'}
             </ActionButton>
-            <ActionButton variant="default" onClick={onCancelRequestChanges} disabled={requesting || approving}>
+            <ActionButton
+              variant="default"
+              onClick={() => setReviewExpanded(false)}
+              disabled={requesting || approving}
+            >
               Cancel
             </ActionButton>
           </div>
@@ -139,7 +127,7 @@ export function InlineReviewActions({
             className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
             rows={2}
             value={aiReviewPrompt}
-            onChange={(e) => onAIReviewPromptChange(e.target.value)}
+            onChange={(e) => setAIReviewPrompt(e.target.value)}
             placeholder="Focus on specific areas... (optional)"
           />
           <ToolModelSelector
@@ -148,8 +136,11 @@ export function InlineReviewActions({
             selectedModel={aiReviewModel}
             models={aiReviewModels}
             modelsFetching={aiReviewModelsFetching}
-            onToolChange={onAIReviewToolChange}
-            onModelChange={onAIReviewModelChange}
+            onToolChange={(tool) => {
+              setAIReviewTool(tool)
+              setAIReviewModel('')
+            }}
+            onModelChange={setAIReviewModel}
             controlClass={controlClass}
             toolPlaceholder="- phase/default tool"
             modelPlaceholder="- default model"
@@ -157,14 +148,14 @@ export function InlineReviewActions({
           <div className="flex justify-end gap-2">
             <ActionButton
               variant="default"
-              onClick={onAIReview}
+              onClick={handleAIReview}
               disabled={aiReviewing}
             >
               {aiReviewing ? 'Starting…' : 'Start Review'}
             </ActionButton>
             <ActionButton
               variant="default"
-              onClick={onCancelAIReview}
+              onClick={() => setAIReviewExpanded(false)}
               disabled={aiReviewing}
             >
               Cancel

@@ -432,6 +432,15 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 		return fmt.Errorf("save config: %w", err)
 	}
 
+	// Write .gitignore BEFORE creating the integration branch so the branch
+	// fork point already includes the ignore entry. Without this, checking out
+	// the integration branch (or creating worktrees from it) would lose the
+	// .gitignore change because it was never committed.
+	if err := ensureOrcaIgnored(cwd); err != nil {
+		return err
+	}
+	commitGitignore(cwd)
+
 	branchCmd := exec.Command("git", "branch", integrationBranch)
 	branchCmd.Dir = cwd
 	if err := branchCmd.Run(); err != nil {
@@ -442,10 +451,20 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 		}
 	}
 
-	if err := ensureOrcaIgnored(cwd); err != nil {
-		return err
-	}
 	return nil
+}
+
+// commitGitignore stages and commits .gitignore so the change is part of
+// the branch history before any integration branch is forked from it.
+func commitGitignore(cwd string) {
+	addCmd := exec.Command("git", "add", ".gitignore")
+	addCmd.Dir = cwd
+	if addCmd.Run() != nil {
+		return
+	}
+	commitCmd := exec.Command("git", "commit", "-m", "chore: add .orca/ to .gitignore")
+	commitCmd.Dir = cwd
+	_ = commitCmd.Run()
 }
 
 // loadConfigFromDBPath returns the persisted config, or nil if no config row exists.

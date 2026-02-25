@@ -2,33 +2,25 @@ import { useEffect, useMemo, useState } from 'react'
 import { DiffViewer } from '../../blocks/DiffViewer'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
-import type { AIReviewResult, Interaction, Task, TaskReview } from '../../../types'
+import type { AIReviewResult, Interaction } from '../../../types'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { InteractionEntry } from './InteractionEntry'
 import { InlineReviewActions } from './InlineReviewActions'
 
-function FailedRunActions({
-  tools,
-  rerunTool,
-  rerunModel,
-  rerunModels,
-  rerunModelsFetching,
-  controlClass,
-  rerunning,
-  onRerun,
-  onRerunToolChange,
-  onRerunModelChange,
-}: {
-  tools: string[]
-  rerunTool: string
-  rerunModel: string
-  rerunModels: Array<{ id: string; name: string }>
-  rerunModelsFetching: boolean
-  controlClass: string
-  rerunning: boolean
-  onRerun: () => void
-  onRerunToolChange: (value: string) => void
-  onRerunModelChange: (value: string) => void
-}) {
+function FailedRunActions() {
+  const {
+    tools,
+    rerunTool,
+    setRerunTool,
+    rerunModel,
+    setRerunModel,
+    rerunModels,
+    rerunModelsFetching,
+    controlClass,
+    rerunning,
+    handleRerun,
+  } = useTaskDetailContext()
+
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 p-3">
       <div className="text-xs text-[var(--text-primary)]">
@@ -41,14 +33,17 @@ function FailedRunActions({
           selectedModel={rerunModel}
           models={rerunModels}
           modelsFetching={rerunModelsFetching}
-          onToolChange={onRerunToolChange}
-          onModelChange={onRerunModelChange}
+          onToolChange={(tool) => {
+            setRerunTool(tool)
+            setRerunModel('')
+          }}
+          onModelChange={setRerunModel}
           controlClass={controlClass}
           toolPlaceholder="- phase/default tool"
           modelPlaceholder="- default model"
           className="contents"
         />
-        <ActionButton variant="primary" onClick={onRerun} disabled={rerunning}>
+        <ActionButton variant="primary" onClick={handleRerun} disabled={rerunning}>
           {rerunning ? 'Re-running…' : 'Re-run'}
         </ActionButton>
       </div>
@@ -57,102 +52,56 @@ function FailedRunActions({
 }
 
 interface Props {
-  task: Task
-  tools: string[]
-  runTool: string
-  runModel: string
-  runModels: Array<{ id: string; name: string }>
-  runModelsFetching: boolean
-  runPending: boolean
-  runInteractions: Interaction[]
-  reviewInteractions: Interaction[]
-  interactionsLoading: boolean
-  activeLogId: string | null
-  feedback: string
-  approving: boolean
-  requesting: boolean
-  aiReviewExpanded: boolean
-  aiReviewing: boolean
-  aiReviewTool: string
-  aiReviewModel: string
-  aiReviewModels: Array<{ id: string; name: string }>
-  aiReviewModelsFetching: boolean
-  aiReviewPrompt: string
-  rerunning: boolean
-  reviewActionError: string | null
-  reviews: TaskReview[]
-  rerunTool: string
-  rerunModel: string
-  rerunModels: Array<{ id: string; name: string }>
-  rerunModelsFetching: boolean
-  controlClass: string
   readOnly?: boolean
-  onToggleLog: (id: string) => void
-  onFeedbackChange: (value: string) => void
-  onApprove: () => void
-  onRequestChanges: (interactionId?: string, tool?: string, model?: string) => void
-  onAIReview: () => void
-  onAIReviewToolChange: (value: string) => void
-  onAIReviewModelChange: (value: string) => void
-  onAIReviewPromptChange: (value: string) => void
-  onExpandAIReview: () => void
-  onCancelAIReview: () => void
-  onRun: () => void
-  onRerun: () => void
-  onRunToolChange: (value: string) => void
-  onRunModelChange: (value: string) => void
-  onRerunToolChange: (value: string) => void
-  onRerunModelChange: (value: string) => void
 }
 
-export function TaskExecutionSection({
-  task,
-  tools,
-  runTool,
-  runModel,
-  runModels,
-  runModelsFetching,
-  runPending,
-  runInteractions,
-  reviewInteractions,
-  interactionsLoading,
-  activeLogId,
-  feedback,
-  approving,
-  requesting,
-  aiReviewExpanded,
-  aiReviewing,
-  aiReviewTool,
-  aiReviewModel,
-  aiReviewModels,
-  aiReviewModelsFetching,
-  aiReviewPrompt,
-  rerunning,
-  reviewActionError,
-  reviews,
-  rerunTool,
-  rerunModel,
-  rerunModels,
-  rerunModelsFetching,
-  controlClass,
-  readOnly = false,
-  onToggleLog,
-  onFeedbackChange,
-  onApprove,
-  onRequestChanges,
-  onAIReview,
-  onAIReviewToolChange,
-  onAIReviewModelChange,
-  onAIReviewPromptChange,
-  onExpandAIReview,
-  onCancelAIReview,
-  onRun,
-  onRerun,
-  onRunToolChange,
-  onRunModelChange,
-  onRerunToolChange,
-  onRerunModelChange,
-}: Props) {
+export function TaskExecutionSection({ readOnly = false }: Props) {
+  const {
+    task, tools, controlClass,
+    runTool, setRunTool, runModel, setRunModel,
+    runModels, runModelsFetching, runPending,
+    runInteractions, reviewInteractions, interactionsLoading,
+    activeLogId, setActiveLogId,
+    feedback, setFeedback,
+    approving, requesting,
+    aiReviewExpanded, aiReviewing,
+    aiReviewTool, setAIReviewTool,
+    aiReviewModel, setAIReviewModel,
+    aiReviewModels, aiReviewModelsFetching,
+    aiReviewPrompt, setAIReviewPrompt,
+    rerunning, reviewActionError,
+    runReviews,
+    rerunTool, setRerunTool, rerunModel, setRerunModel,
+    rerunModels, rerunModelsFetching,
+    handleRun, handleRerun, handleApprove, handleRequestChanges,
+    handleAIReview, setAIReviewExpanded,
+  } = useTaskDetailContext()
+  void [
+    feedback,
+    approving,
+    aiReviewExpanded,
+    aiReviewing,
+    aiReviewTool,
+    setAIReviewTool,
+    aiReviewModel,
+    setAIReviewModel,
+    aiReviewModels,
+    aiReviewModelsFetching,
+    aiReviewPrompt,
+    setAIReviewPrompt,
+    rerunning,
+    rerunTool,
+    setRerunTool,
+    rerunModel,
+    setRerunModel,
+    rerunModels,
+    rerunModelsFetching,
+    handleRerun,
+    handleApprove,
+    handleRequestChanges,
+    handleAIReview,
+  ]
+
   const [reviewExpanded, setReviewExpanded] = useState(false)
   const [expandedDiffs, setExpandedDiffs] = useState<Set<string>>(new Set())
   const [dismissedReviews, setDismissedReviews] = useState<Set<string>>(new Set())
@@ -241,14 +190,17 @@ export function TaskExecutionSection({
                 selectedModel={runModel}
                 models={runModels}
                 modelsFetching={runModelsFetching}
-                onToolChange={onRunToolChange}
-                onModelChange={onRunModelChange}
+                onToolChange={(tool) => {
+                  setRunTool(tool)
+                  setRunModel('')
+                }}
+                onModelChange={setRunModel}
                 controlClass={controlClass}
                 toolPlaceholder="- phase/default tool"
                 modelPlaceholder="- default model"
                 className="contents"
               />
-              <ActionButton variant="primary" onClick={onRun} disabled={runPending}>
+              <ActionButton variant="primary" onClick={handleRun} disabled={runPending}>
                 {runPending ? 'Running…' : 'Run'}
               </ActionButton>
             </div>
@@ -266,7 +218,7 @@ export function TaskExecutionSection({
             const isLatestCompleted =
               item.status === 'completed' && item.id === latestCompletedId
             const isLatestFailed = item.status === 'failed' && item.id === latestFailedId
-            const itemReviews = reviews.filter((review) => review.interaction_id === item.id)
+            const itemReviews = runReviews.filter((review) => review.interaction_id === item.id)
             const runReviewInteractions = getReviewsForRun(item.id, item.started_at)
 
             return (
@@ -274,7 +226,7 @@ export function TaskExecutionSection({
                 key={item.id}
                 interaction={item}
                 activeLogId={activeLogId}
-                onToggleLog={onToggleLog}
+                onToggleLog={(id) => setActiveLogId(activeLogId === id ? null : id)}
               >
                 {item.status === 'completed' && item.diff && (
                   <>
@@ -307,7 +259,7 @@ export function TaskExecutionSection({
                         interaction={reviewInteraction}
                         dismissed={dismissedReviews.has(reviewInteraction.id)}
                         activeLogId={activeLogId}
-                        onToggleLog={onToggleLog}
+                        onToggleLog={(id) => setActiveLogId(activeLogId === id ? null : id)}
                       />
                     ))}
                   </div>
@@ -356,9 +308,9 @@ export function TaskExecutionSection({
                         <ActionButton
                           variant="primary"
                           onClick={() => {
-                            onFeedbackChange(activeAISuggestion.feedback)
+                            setFeedback(activeAISuggestion.feedback)
                             setReviewExpanded(true)
-                            onCancelAIReview()
+                            setAIReviewExpanded(false)
                           }}
                           disabled={requesting}
                         >
@@ -368,7 +320,7 @@ export function TaskExecutionSection({
                           variant="default"
                           onClick={() => {
                             setDismissedReviews((prev) => new Set([...prev, activeAISuggestion.interactionId]))
-                            onFeedbackChange('')
+                            setFeedback('')
                           }}
                         >
                           Dismiss
@@ -379,61 +331,11 @@ export function TaskExecutionSection({
                       )}
                     </div>
                   ) : (
-                    <InlineReviewActions
-                      interactionId={item.id}
-                      feedback={feedback}
-                      reviewExpanded={reviewExpanded}
-                      aiReviewExpanded={aiReviewExpanded}
-                      approving={approving}
-                      requesting={requesting}
-                      aiReviewing={aiReviewing}
-                      reviewActionError={reviewActionError}
-                      tools={tools}
-                      rerunTool={rerunTool}
-                      rerunModel={rerunModel}
-                      rerunModels={rerunModels}
-                      rerunModelsFetching={rerunModelsFetching}
-                      aiReviewTool={aiReviewTool}
-                      aiReviewModel={aiReviewModel}
-                      aiReviewModels={aiReviewModels}
-                      aiReviewModelsFetching={aiReviewModelsFetching}
-                      aiReviewPrompt={aiReviewPrompt}
-                      controlClass={controlClass}
-                      onFeedbackChange={onFeedbackChange}
-                      onExpandRequestChanges={() => {
-                        setReviewExpanded(true)
-                        onCancelAIReview()
-                      }}
-                      onCancelRequestChanges={() => setReviewExpanded(false)}
-                      onAIReview={onAIReview}
-                      onAIReviewToolChange={onAIReviewToolChange}
-                      onAIReviewModelChange={onAIReviewModelChange}
-                      onAIReviewPromptChange={onAIReviewPromptChange}
-                      onExpandAIReview={() => {
-                        setReviewExpanded(false)
-                        onExpandAIReview()
-                      }}
-                      onCancelAIReview={onCancelAIReview}
-                      onApprove={onApprove}
-                      onRequestChanges={onRequestChanges}
-                      onRerunToolChange={onRerunToolChange}
-                      onRerunModelChange={onRerunModelChange}
-                    />
+                    <InlineReviewActions />
                   ))}
 
                 {isLatestFailed && !readOnly && (
-                  <FailedRunActions
-                    tools={tools}
-                    rerunTool={rerunTool}
-                    rerunModel={rerunModel}
-                    rerunModels={rerunModels}
-                    rerunModelsFetching={rerunModelsFetching}
-                    controlClass={controlClass}
-                    rerunning={rerunning}
-                    onRerun={onRerun}
-                    onRerunToolChange={onRerunToolChange}
-                    onRerunModelChange={onRerunModelChange}
-                  />
+                  <FailedRunActions />
                 )}
               </InteractionEntry>
             )

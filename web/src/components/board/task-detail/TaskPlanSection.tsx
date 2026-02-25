@@ -3,47 +3,11 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
-import type { Interaction, TaskEvaluation, TaskReview } from '../../../types'
 import { InteractionEntry } from './InteractionEntry'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 
 interface Props {
-  canGenerate: boolean
-  canReviewPlan: boolean
   readOnly?: boolean
-  hasPlan: boolean
-  planGenerating: boolean
-  planLoading: boolean
-  planError: string | null
-  approvingPlan: boolean
-  requestingPlanChanges: boolean
-  planFeedback: string
-  planReviewExpanded: boolean
-  taskEvaluation: TaskEvaluation | null
-  evaluatingTask: boolean
-  tools: string[]
-  generateTool: string
-  generateModel: string
-  generationModels: Array<{ id: string; name: string }>
-  generateModelsFetching: boolean
-  generatePlanPending: boolean
-  controlClass: string
-  planInteractions: Interaction[]
-  reviews: TaskReview[]
-  activeLogId: string | null
-  onToggleLog: (id: string) => void
-  onPlanFeedbackChange: (value: string) => void
-  onPlanReviewExpandedChange: (value: boolean) => void
-  onGenerateToolChange: (value: string) => void
-  onGenerateModelChange: (value: string) => void
-  onGeneratePlan: () => void
-  onEvaluateTask: () => void
-  onApprovePlan: () => void
-  onRequestPlanChanges: (
-    interactionId?: string,
-    feedback?: string,
-    tool?: string,
-    model?: string,
-  ) => void
 }
 
 function formatRelativeTime(iso: string): string {
@@ -60,41 +24,42 @@ function formatRelativeTime(iso: string): string {
   return rtf.format(Math.round(deltaSeconds / 86400), 'day')
 }
 
-export function TaskPlanSection({
-  canGenerate,
-  canReviewPlan,
-  readOnly = false,
-  hasPlan,
-  planGenerating,
-  planLoading,
-  planError,
-  approvingPlan,
-  requestingPlanChanges,
-  planFeedback,
-  planReviewExpanded,
-  taskEvaluation,
-  evaluatingTask,
-  tools,
-  generateTool,
-  generateModel,
-  generationModels,
-  generateModelsFetching,
-  generatePlanPending,
-  controlClass,
-  planInteractions,
-  reviews,
-  activeLogId,
-  onToggleLog,
-  onPlanFeedbackChange,
-  onPlanReviewExpandedChange,
-  onGenerateToolChange,
-  onGenerateModelChange,
-  onGeneratePlan,
-  onEvaluateTask,
-  onApprovePlan,
-  onRequestPlanChanges,
-}: Props) {
+export function TaskPlanSection({ readOnly = false }: Props) {
+  const {
+    task,
+    hasPlan,
+    planGenerating,
+    planLoading,
+    planError,
+    approvingPlan,
+    requestingPlanChanges,
+    planFeedback,
+    setPlanFeedback,
+    planReviewExpanded,
+    setPlanReviewExpanded,
+    taskEvaluation,
+    evaluatingTask,
+    tools,
+    generateTool,
+    setGenerateTool,
+    generateModel,
+    setGenerateModel,
+    generationModels,
+    generateModelsFetching,
+    generatePlanPending,
+    controlClass,
+    planInteractions,
+    planReviews,
+    activeLogId,
+    setActiveLogId,
+    handleGeneratePlan,
+    handleEvaluateTask,
+    handleApprovePlan,
+    handleRequestPlanChanges,
+  } = useTaskDetailContext()
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
+  const canGenerate = task.status === 'pending' && !hasPlan
+  const canReviewPlan = task.status === 'pending' && hasPlan
   const hasRunningPlan = planInteractions.some((item) => item.status === 'running')
   const latestCompletedId =
     [...planInteractions].reverse().find((item) => item.status === 'completed')?.id ?? null
@@ -136,8 +101,8 @@ export function TaskPlanSection({
             selectedModel={generateModel}
             models={generationModels}
             modelsFetching={generateModelsFetching}
-            onToolChange={onGenerateToolChange}
-            onModelChange={onGenerateModelChange}
+            onToolChange={setGenerateTool}
+            onModelChange={setGenerateModel}
             controlClass={controlClass}
             modelPlaceholder="- default generation model"
             className="contents"
@@ -145,7 +110,7 @@ export function TaskPlanSection({
           {canGenerate && (
             <ActionButton
               variant="primary"
-              onClick={onGeneratePlan}
+              onClick={handleGeneratePlan}
               disabled={planGenerating || planLoading || generatePlanPending}
             >
               {planGenerating ? 'Generating…' : 'Generate Plan'}
@@ -153,7 +118,7 @@ export function TaskPlanSection({
           )}
           <ActionButton
             variant="default"
-            onClick={onEvaluateTask}
+            onClick={handleEvaluateTask}
             disabled={
               evaluatingTask ||
               planLoading ||
@@ -197,7 +162,7 @@ export function TaskPlanSection({
       {!planLoading && planInteractions.length > 0 && (
         <div className="flex flex-col gap-2">
           {planInteractions.map((item) => {
-            const itemReviews = reviews.filter((review) => review.interaction_id === item.id)
+            const itemReviews = planReviews.filter((review) => review.interaction_id === item.id)
             const isLatestCompleted =
               item.status === 'completed' && item.id === latestCompletedId
             return (
@@ -205,7 +170,7 @@ export function TaskPlanSection({
                 key={item.id}
                 interaction={item}
                 activeLogId={activeLogId}
-                onToggleLog={onToggleLog}
+                onToggleLog={(id) => setActiveLogId(activeLogId === id ? null : id)}
               >
                 {item.status === 'completed' && item.diff && (
                   <>
@@ -257,7 +222,7 @@ export function TaskPlanSection({
                     <div className="flex justify-end gap-2">
                       <ActionButton
                         variant="primary"
-                        onClick={onApprovePlan}
+                        onClick={handleApprovePlan}
                         disabled={approvingPlan || requestingPlanChanges}
                       >
                         {approvingPlan ? 'Approving…' : 'Approve Plan'}
@@ -265,7 +230,7 @@ export function TaskPlanSection({
                       {!planReviewExpanded && (
                         <ActionButton
                           variant="default"
-                          onClick={() => onPlanReviewExpandedChange(true)}
+                          onClick={() => setPlanReviewExpanded(true)}
                           disabled={approvingPlan || requestingPlanChanges}
                         >
                           Request Changes
@@ -278,7 +243,7 @@ export function TaskPlanSection({
                         <textarea
                           className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-2.5 text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                           value={planFeedback}
-                          onChange={(e) => onPlanFeedbackChange(e.target.value)}
+                          onChange={(e) => setPlanFeedback(e.target.value)}
                           rows={4}
                           placeholder="Describe what should change in the plan..."
                         />
@@ -289,8 +254,8 @@ export function TaskPlanSection({
                             selectedModel={generateModel}
                             models={generationModels}
                             modelsFetching={generateModelsFetching}
-                            onToolChange={onGenerateToolChange}
-                            onModelChange={onGenerateModelChange}
+                            onToolChange={setGenerateTool}
+                            onModelChange={setGenerateModel}
                             controlClass={controlClass}
                             modelPlaceholder="- default generation model"
                             className="contents"
@@ -299,7 +264,7 @@ export function TaskPlanSection({
                         <div className="flex justify-end gap-2">
                           <ActionButton
                             variant="default"
-                            onClick={() => onPlanReviewExpandedChange(false)}
+                            onClick={() => setPlanReviewExpanded(false)}
                             disabled={requestingPlanChanges}
                           >
                             Cancel
@@ -307,7 +272,7 @@ export function TaskPlanSection({
                           <ActionButton
                             variant="primary"
                             onClick={() =>
-                              onRequestPlanChanges(
+                              handleRequestPlanChanges(
                                 item.id,
                                 planFeedback,
                                 generateTool || undefined,
