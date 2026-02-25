@@ -274,3 +274,37 @@ func (r *Registry) runTaskReopen(cmd *cobra.Command, args []string) error {
 	}
 	return nil
 }
+
+func (r *Registry) runTaskAddDep(cmd *cobra.Command, args []string) error {
+	db, store, err := r.openStoreOrErr()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	taskID, err := resolveTaskID(store, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve task: %w", err)
+	}
+	dependsOnID, err := resolveTaskID(store, args[1])
+	if err != nil {
+		return fmt.Errorf("resolve dependency: %w", err)
+	}
+
+	taskToUpdate, err := store.Get(taskID)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+	dependencyTask, err := store.Get(dependsOnID)
+	if err != nil {
+		return fmt.Errorf("get dependency: %w", err)
+	}
+
+	if err := store.AddDependency(taskID, dependsOnID); err != nil {
+		return fmt.Errorf("add dependency: %w", err)
+	}
+
+	fmt.Printf("Added dependency: %s %s depends on %s %s\n",
+		short(taskToUpdate.ID), taskToUpdate.Title, short(dependencyTask.ID), dependencyTask.Title)
+	return nil
+}

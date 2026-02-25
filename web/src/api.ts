@@ -142,8 +142,21 @@ export const api = {
         ...(model ? { model } : {}),
       },
     ),
-  aiReview: (id: string, tool?: string, model?: string) =>
+  aiReview: (id: string, tool?: string, model?: string, prompt?: string) =>
     post<{ status: string; task_id: string }>(`/tasks/${id}/ai-review`, {
+      ...(tool ? { tool } : {}),
+      ...(model ? { model } : {}),
+      ...(prompt ? { prompt } : {}),
+    }),
+  evaluateTask: (id: string, tool?: string, model?: string) =>
+    post<{
+      task_id: string
+      evaluation: {
+        should_decompose: boolean
+        complexity: string
+        reasoning: string
+      }
+    }>(`/tasks/${id}/evaluate`, {
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),

@@ -161,8 +161,9 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request, id
 // POST /api/v1/tasks/{id}/ai-review
 func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request, id string) {
 	type aiReviewReq struct {
-		Tool  string `json:"tool"`
-		Model string `json:"model"`
+		Tool   string `json:"tool"`
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
 	}
 	req, ok := decodeJSON[aiReviewReq](w, r, true)
 	if !ok {
@@ -219,8 +220,10 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request, id strin
 		"task_id": resolved,
 	})
 
-	go func(taskID, title, description, runDiff string) {
-		result, reviewErr := reviewer.Review(taskID, title, description, runDiff)
+	userPrompt := strings.TrimSpace(req.Prompt)
+
+	go func(taskID, title, description, runDiff, prompt string) {
+		result, reviewErr := reviewer.Review(taskID, title, description, runDiff, prompt)
 		if reviewErr != nil {
 			s.hub.Broadcast(Event{
 				Type: "ai-review.failed",
@@ -235,7 +238,7 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request, id strin
 			Type: "ai-review.completed",
 			Data: result,
 		})
-	}(resolved, tk.Title, tk.Description, diff)
+	}(resolved, tk.Title, tk.Description, diff, userPrompt)
 }
 
 func (s *Server) handleListTaskReviews(w http.ResponseWriter, r *http.Request, id string) {

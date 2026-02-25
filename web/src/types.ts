@@ -140,6 +140,13 @@ export interface AIReviewResult {
   approved: boolean
   feedback: string
   tool: string
+  prompt?: string
+}
+
+export interface TaskEvaluation {
+  should_decompose: boolean
+  complexity: string
+  reasoning: string
 }
 
 export interface ProjectStatus {

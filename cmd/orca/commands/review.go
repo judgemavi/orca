@@ -16,6 +16,7 @@ func RegisterReview(root *cobra.Command, r *Registry) {
 	}
 	aiCmd.Flags().String("tool", "", "Tool override for review")
 	aiCmd.Flags().String("model", "", "Model override for review")
+	aiCmd.Flags().String("prompt", "", "Custom instructions for the reviewer")
 	reviewCmd.AddCommand(approveCmd, requestChangesCmd, aiCmd)
 	root.AddCommand(reviewCmd)
 }

@@ -3,6 +3,7 @@ package review
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -18,6 +19,7 @@ type ReviewResult struct {
 	Approved bool   `json:"approved"`
 	Feedback string `json:"feedback"`
 	Tool     string `json:"tool"`
+	Prompt   string `json:"prompt,omitempty"`
 }
 
 type ReviewInput struct {
@@ -49,8 +51,12 @@ type reviewResponse struct {
 	Feedback string `json:"feedback"`
 }
 
-func (r *Reviewer) Review(taskID, title, description, diff string) (*ReviewResult, error) {
-	prompt := fmt.Sprintf(prompts.Review, title, description, diff)
+func (r *Reviewer) Review(taskID, title, description, diff, userPrompt string) (*ReviewResult, error) {
+	instructions := "No additional instructions."
+	if userPrompt != "" {
+		instructions = userPrompt
+	}
+	prompt := fmt.Sprintf(prompts.Review, title, description, diff, instructions)
 
 	adapter := worker.NewAdapter(r.driver, r.model, r.timeout)
 
@@ -93,6 +99,16 @@ func (r *Reviewer) Review(taskID, title, description, diff string) (*ReviewResul
 		exitCode = result.ExitCode
 		stderr = result.Stderr
 	}
+	// Parse result before finishing interaction so we can store quality_json.
+	var reviewResult *ReviewResult
+	var parseErr error
+	if err == nil && exitCode == 0 {
+		var resp reviewResponse
+		if parseErr = llm.ExtractJSON(stdout, &resp); parseErr == nil {
+			reviewResult = &ReviewResult{TaskID: taskID, Approved: resp.Approved, Feedback: resp.Feedback, Tool: r.toolName, Prompt: userPrompt}
+		}
+	}
+
 	if writer != nil {
 		status := "completed"
 		opts := []interaction.FinishOption{}
@@ -105,6 +121,12 @@ func (r *Reviewer) Review(taskID, title, description, diff string) (*ReviewResul
 		} else if exitCode != 0 {
 			status = "failed"
 			opts = append(opts, interaction.WithError(fmt.Sprintf("reviewer exited %d: %s", exitCode, stderr)))
+		} else if parseErr != nil {
+			status = "failed"
+			opts = append(opts, interaction.WithError(fmt.Sprintf("parse review JSON: %v", parseErr)))
+		} else if reviewResult != nil {
+			qualityBytes, _ := json.Marshal(reviewResult)
+			opts = append(opts, interaction.WithQuality(string(qualityBytes)))
 		}
 		_ = r.interactions.Finish(writer.ID(), status, opts...)
 		_ = writer.Close()
@@ -115,21 +137,17 @@ func (r *Reviewer) Review(taskID, title, description, diff string) (*ReviewResul
 	if exitCode != 0 {
 		return nil, fmt.Errorf("reviewer exited %d: %s", exitCode, stderr)
 	}
-
-	output := stdout
-
-	var resp reviewResponse
-	if err := llm.ExtractJSON(output, &resp); err != nil {
-		return nil, fmt.Errorf("parse review JSON: %w\nraw output:\n%s", err, output)
+	if parseErr != nil {
+		return nil, fmt.Errorf("parse review JSON: %w\nraw output:\n%s", parseErr, stdout)
 	}
 
-	return &ReviewResult{TaskID: taskID, Approved: resp.Approved, Feedback: resp.Feedback, Tool: r.toolName}, nil
+	return reviewResult, nil
 }
 
 func (r *Reviewer) ReviewBatch(tasks []ReviewInput) ([]ReviewResult, error) {
 	results := make([]ReviewResult, 0, len(tasks))
 	for _, t := range tasks {
-		res, err := r.Review(t.TaskID, t.Title, t.Description, t.Diff)
+		res, err := r.Review(t.TaskID, t.Title, t.Description, t.Diff, "")
 		if err != nil {
 			results = append(results, ReviewResult{TaskID: t.TaskID, Approved: false, Feedback: fmt.Sprintf("review error: %v", err), Tool: r.toolName})
 			continue

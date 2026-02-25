@@ -17,6 +17,9 @@ Check for:
 - Test coverage: are new code paths tested? any missing edge cases?
 - Leftover debug code: fmt.Println, console.log, TODO/FIXME/HACK comments, commented-out code
 
+## Additional Instructions
+%s
+
 Respond with ONLY a JSON object (no markdown fences, no surrounding text):
 {"approved": true, "feedback": "Brief summary of what looks good"}
 

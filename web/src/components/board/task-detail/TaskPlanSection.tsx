@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
-import type { Interaction, TaskReview } from '../../../types'
+import type { Interaction, TaskEvaluation, TaskReview } from '../../../types'
 import { InteractionEntry } from './InteractionEntry'
 
 interface Props {
@@ -18,6 +18,8 @@ interface Props {
   requestingPlanChanges: boolean
   planFeedback: string
   planReviewExpanded: boolean
+  taskEvaluation: TaskEvaluation | null
+  evaluatingTask: boolean
   tools: string[]
   generateTool: string
   generateModel: string
@@ -34,6 +36,7 @@ interface Props {
   onGenerateToolChange: (value: string) => void
   onGenerateModelChange: (value: string) => void
   onGeneratePlan: () => void
+  onEvaluateTask: () => void
   onApprovePlan: () => void
   onRequestPlanChanges: (
     interactionId?: string,
@@ -69,6 +72,8 @@ export function TaskPlanSection({
   requestingPlanChanges,
   planFeedback,
   planReviewExpanded,
+  taskEvaluation,
+  evaluatingTask,
   tools,
   generateTool,
   generateModel,
@@ -85,6 +90,7 @@ export function TaskPlanSection({
   onGenerateToolChange,
   onGenerateModelChange,
   onGeneratePlan,
+  onEvaluateTask,
   onApprovePlan,
   onRequestPlanChanges,
 }: Props) {
@@ -115,8 +121,15 @@ export function TaskPlanSection({
 
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
-      {!hasPlan && canGenerate && !readOnly && (
-        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_1fr_auto]">
+      {!readOnly && (
+        <div
+          className={[
+            'grid grid-cols-1 items-center gap-2',
+            canGenerate
+              ? 'sm:grid-cols-[1fr_1fr_auto_auto]'
+              : 'sm:grid-cols-[1fr_1fr_auto]',
+          ].join(' ')}
+        >
           <ToolModelSelector
             tools={tools}
             selectedTool={generateTool}
@@ -129,13 +142,46 @@ export function TaskPlanSection({
             modelPlaceholder="- default generation model"
             className="contents"
           />
+          {canGenerate && (
+            <ActionButton
+              variant="primary"
+              onClick={onGeneratePlan}
+              disabled={planGenerating || planLoading || generatePlanPending}
+            >
+              {planGenerating ? 'Generating…' : 'Generate Plan'}
+            </ActionButton>
+          )}
           <ActionButton
-            variant="primary"
-            onClick={onGeneratePlan}
-            disabled={planGenerating || planLoading || generatePlanPending}
+            variant="default"
+            onClick={onEvaluateTask}
+            disabled={
+              evaluatingTask ||
+              planLoading ||
+              planGenerating ||
+              generatePlanPending
+            }
           >
-            {planGenerating ? 'Generating…' : 'Generate'}
+            {evaluatingTask ? 'Evaluating…' : 'Evaluate'}
           </ActionButton>
+        </div>
+      )}
+
+      {taskEvaluation && (
+        <div className="flex flex-col gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5">
+          <div className="text-xs text-[var(--text-primary)]">
+            Complexity:{' '}
+            <span className="font-medium">{taskEvaluation.complexity}</span>
+          </div>
+          <div className="text-xs text-[var(--text-primary)]">
+            Should decompose:{' '}
+            <span className="font-medium">
+              {taskEvaluation.should_decompose ? 'Yes' : 'No'}
+            </span>
+          </div>
+          <div className="text-xs text-[var(--text-secondary)]">Reasoning</div>
+          <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
+            {taskEvaluation.reasoning}
+          </div>
         </div>
       )}
 

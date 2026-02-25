@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { Task, WSEvent } from '../../../types'
+import type { Task, TaskEvaluation, WSEvent } from '../../../types'
 import { api } from '../../../api'
 import { useTaskForm } from '../../../hooks/forms/useTaskForm'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
@@ -59,6 +59,8 @@ export function useTaskDetail({
   const [requestingPlanChanges, setRequestingPlanChanges] = useState(false)
   const [planFeedback, setPlanFeedback] = useState('')
   const [planReviewExpanded, setPlanReviewExpanded] = useState(false)
+  const [taskEvaluation, setTaskEvaluation] = useState<TaskEvaluation | null>(null)
+  const [evaluatingTask, setEvaluatingTask] = useState(false)
   const [generateTool, setGenerateTool] = useState('')
   const [generateModel, setGenerateModel] = useState('')
   const [runTool, setRunTool] = useState('')
@@ -72,6 +74,7 @@ export function useTaskDetail({
   const [aiReviewModel, setAIReviewModel] = useState('')
   const [aiReviewing, setAIReviewing] = useState(false)
   const [aiReviewExpanded, setAIReviewExpanded] = useState(false)
+  const [aiReviewPrompt, setAIReviewPrompt] = useState('')
 
   const form = useTaskForm(
     {
@@ -103,11 +106,12 @@ export function useTaskDetail({
   const savePlanMutation = useSavePlanMutation()
   const generatePlanMutation = useGeneratePlanMutation()
 
-  const { data: reviewsData } = useQuery({
+  const reviewsQuery = useQuery({
     queryKey: ['task-reviews', task.id],
     queryFn: () => api.getTaskReviews(task.id),
     enabled: Boolean(task.id),
   })
+  const reviewsData = reviewsQuery.data
   const interactionsQuery = useInteractionsQuery(task.id)
   const reviews = useMemo(
     () =>
@@ -192,6 +196,8 @@ export function useTaskDetail({
     setRequestingPlanChanges(false)
     setPlanFeedback('')
     setPlanReviewExpanded(false)
+    setTaskEvaluation(null)
+    setEvaluatingTask(false)
     setGenerateTool('')
     setGenerateModel('')
     setRunTool('')
@@ -205,6 +211,7 @@ export function useTaskDetail({
     setAIReviewModel('')
     setAIReviewing(false)
     setAIReviewExpanded(false)
+    setAIReviewPrompt('')
     setApproving(false)
     setFeedback('')
     setRequesting(false)
@@ -270,6 +277,7 @@ export function useTaskDetail({
       onSavedRef.current()
     } else if (lastWSEvent.type === 'task.updated') {
       const status = String((lastWSEvent.data as any)?.status ?? '')
+      reviewsQuery.refetch()
       if (
         status === 'merged' ||
         status === 'approved' ||
@@ -422,6 +430,23 @@ export function useTaskDetail({
     }
   }
 
+  const handleEvaluateTask = async () => {
+    setEvaluatingTask(true)
+    setPlanError(null)
+    try {
+      const response = await api.evaluateTask(
+        task.id,
+        generateTool || undefined,
+        generateModel || undefined,
+      )
+      setTaskEvaluation(response.evaluation)
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'Evaluate failed')
+    } finally {
+      setEvaluatingTask(false)
+    }
+  }
+
   const handleRequestPlanChanges = async (
     interactionId?: string,
     feedbackText?: string,
@@ -515,6 +540,7 @@ export function useTaskDetail({
         task.id,
         aiReviewTool || undefined,
         aiReviewModel || undefined,
+        aiReviewPrompt.trim() || undefined,
       )
     } catch (err: any) {
       setAIReviewing(false)
@@ -568,6 +594,7 @@ export function useTaskDetail({
     aiReviewModelsFetching: aiReviewModelsQuery.isFetching,
     aiReviewing,
     aiReviewExpanded,
+    aiReviewPrompt,
 
     // plan
     plan,
@@ -581,6 +608,8 @@ export function useTaskDetail({
     requestingPlanChanges,
     planFeedback,
     planReviewExpanded,
+    taskEvaluation,
+    evaluatingTask,
     hasPlan,
     tools,
     generateTool,
@@ -616,12 +645,14 @@ export function useTaskDetail({
     setAIReviewTool,
     setAIReviewModel,
     setAIReviewExpanded,
+    setAIReviewPrompt,
 
     // handlers
     handleDelete,
     handleMerge,
     handleRun,
     handleGeneratePlan,
+    handleEvaluateTask,
     handleSavePlan,
     handleApprovePlan,
     handleRequestPlanChanges,

@@ -264,6 +264,7 @@ func (r *Registry) runReviewAI(cmd *cobra.Command, args []string) error {
 
 	toolFlag, _ := cmd.Flags().GetString("tool")
 	modelFlag, _ := cmd.Flags().GetString("model")
+	promptFlag, _ := cmd.Flags().GetString("prompt")
 
 	toolName, d, err := cfg.ResolveToolForPhase("review", strings.TrimSpace(toolFlag))
 	if err != nil {
@@ -290,7 +291,7 @@ func (r *Registry) runReviewAI(cmd *cobra.Command, args []string) error {
 
 	repoDir, _ := os.Getwd()
 	reviewer := review.New(toolName, d, model, 10*time.Minute, repoDir, interactions)
-	result, err := reviewer.Review(taskID, tk.Title, tk.Description, diff)
+	result, err := reviewer.Review(taskID, tk.Title, tk.Description, diff, strings.TrimSpace(promptFlag))
 	if err != nil {
 		return fmt.Errorf("run ai review for task %s: %w", short(taskID), err)
 	}

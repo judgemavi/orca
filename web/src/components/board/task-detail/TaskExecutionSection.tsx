@@ -1,24 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { DiffViewer } from '../../blocks/DiffViewer'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import type { AIReviewResult, Interaction, Task, TaskReview } from '../../../types'
 import { InteractionEntry } from './InteractionEntry'
 import { InlineReviewActions } from './InlineReviewActions'
-
-function formatRelativeTime(iso: string): string {
-  const timestamp = Date.parse(iso)
-  if (!Number.isFinite(timestamp)) return 'just now'
-  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000)
-  const absDeltaSeconds = Math.abs(deltaSeconds)
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
-  if (absDeltaSeconds < 60) return rtf.format(deltaSeconds, 'second')
-  if (absDeltaSeconds < 3600)
-    return rtf.format(Math.round(deltaSeconds / 60), 'minute')
-  if (absDeltaSeconds < 86400)
-    return rtf.format(Math.round(deltaSeconds / 3600), 'hour')
-  return rtf.format(Math.round(deltaSeconds / 86400), 'day')
-}
 
 function FailedRunActions({
   tools,
@@ -91,6 +77,7 @@ interface Props {
   aiReviewModel: string
   aiReviewModels: Array<{ id: string; name: string }>
   aiReviewModelsFetching: boolean
+  aiReviewPrompt: string
   rerunning: boolean
   reviewActionError: string | null
   reviews: TaskReview[]
@@ -107,6 +94,7 @@ interface Props {
   onAIReview: () => void
   onAIReviewToolChange: (value: string) => void
   onAIReviewModelChange: (value: string) => void
+  onAIReviewPromptChange: (value: string) => void
   onExpandAIReview: () => void
   onCancelAIReview: () => void
   onRun: () => void
@@ -138,6 +126,7 @@ export function TaskExecutionSection({
   aiReviewModel,
   aiReviewModels,
   aiReviewModelsFetching,
+  aiReviewPrompt,
   rerunning,
   reviewActionError,
   reviews,
@@ -154,6 +143,7 @@ export function TaskExecutionSection({
   onAIReview,
   onAIReviewToolChange,
   onAIReviewModelChange,
+  onAIReviewPromptChange,
   onExpandAIReview,
   onCancelAIReview,
   onRun,
@@ -165,6 +155,7 @@ export function TaskExecutionSection({
 }: Props) {
   const [reviewExpanded, setReviewExpanded] = useState(false)
   const [expandedDiffs, setExpandedDiffs] = useState<Set<string>>(new Set())
+  const [dismissedReviews, setDismissedReviews] = useState<Set<string>>(new Set())
   const hasRunningExecution = runInteractions.some((item) => item.status === 'running')
   const latestCompletedId =
     [...runInteractions].reverse().find((item) => item.status === 'completed')?.id ?? null
@@ -194,6 +185,45 @@ export function TaskExecutionSection({
       return next
     })
   }
+
+  function getReviewsForRun(runId: string, runStartedAt: string): Interaction[] {
+    const runIndex = runInteractions.findIndex((run) => run.id === runId)
+    const nextRunStartedAt =
+      runIndex < runInteractions.length - 1 ? runInteractions[runIndex + 1].started_at : null
+
+    return reviewInteractions.filter((reviewInteraction) => {
+      const reviewStart = Date.parse(reviewInteraction.started_at)
+      const runStart = Date.parse(runStartedAt)
+      if (!Number.isFinite(reviewStart) || !Number.isFinite(runStart)) return false
+      if (reviewStart < runStart) return false
+      if (nextRunStartedAt && reviewStart >= Date.parse(nextRunStartedAt)) return false
+      return true
+    })
+  }
+
+  // Detect latest non-approved AI review for the latest completed run
+  const activeAISuggestion = useMemo(() => {
+    if (!latestCompletedId) return null
+    const latestCompleted = runInteractions.find((i) => i.id === latestCompletedId)
+    if (!latestCompleted) return null
+
+    const revs = getReviewsForRun(latestCompletedId, latestCompleted.started_at)
+    for (let i = revs.length - 1; i >= 0; i--) {
+      const ri = revs[i]
+      if (ri.status !== 'completed' || !ri.quality_json) continue
+      if (dismissedReviews.has(ri.id)) return null
+      try {
+        const result: AIReviewResult = JSON.parse(ri.quality_json)
+        if (!result.approved) {
+          return { interactionId: ri.id, feedback: result.feedback }
+        }
+      } catch {
+        // ignore
+      }
+      return null
+    }
+    return null
+  }, [latestCompletedId, runInteractions, reviewInteractions, dismissedReviews])
 
   return (
     <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
@@ -237,6 +267,7 @@ export function TaskExecutionSection({
               item.status === 'completed' && item.id === latestCompletedId
             const isLatestFailed = item.status === 'failed' && item.id === latestFailedId
             const itemReviews = reviews.filter((review) => review.interaction_id === item.id)
+            const runReviewInteractions = getReviewsForRun(item.id, item.started_at)
 
             return (
               <InteractionEntry
@@ -268,49 +299,127 @@ export function TaskExecutionSection({
                   </>
                 )}
 
+                {runReviewInteractions.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    {runReviewInteractions.map((reviewInteraction) => (
+                      <AIReviewResultCard
+                        key={reviewInteraction.id}
+                        interaction={reviewInteraction}
+                        dismissed={dismissedReviews.has(reviewInteraction.id)}
+                        activeLogId={activeLogId}
+                        onToggleLog={onToggleLog}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {item.status === 'completed' && itemReviews.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    {itemReviews.map((review) => (
+                      <div
+                        key={review.id}
+                        className={[
+                          'rounded-md border p-2.5',
+                          review.status === 'pending'
+                            ? 'border-amber-500/40 bg-amber-500/10'
+                            : 'border-emerald-500/35 bg-emerald-500/10',
+                        ].join(' ')}
+                      >
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+                            Request Changes
+                          </span>
+                          <span
+                            className={[
+                              'text-[10px] font-semibold uppercase',
+                              review.status === 'pending' ? 'text-amber-400' : 'text-emerald-400',
+                            ].join(' ')}
+                          >
+                            {review.status === 'pending' ? 'Pending' : 'Addressed'}
+                          </span>
+                        </div>
+                        <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
+                          {review.feedback}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {isLatestCompleted &&
                   task.status === 'review' &&
                   !readOnly &&
-                  !hasRunningExecution && (
-                  <InlineReviewActions
-                    interactionId={item.id}
-                    feedback={feedback}
-                    reviewExpanded={reviewExpanded}
-                    aiReviewExpanded={aiReviewExpanded}
-                    approving={approving}
-                    requesting={requesting}
-                    aiReviewing={aiReviewing}
-                    reviewActionError={reviewActionError}
-                    tools={tools}
-                    rerunTool={rerunTool}
-                    rerunModel={rerunModel}
-                    rerunModels={rerunModels}
-                    rerunModelsFetching={rerunModelsFetching}
-                    aiReviewTool={aiReviewTool}
-                    aiReviewModel={aiReviewModel}
-                    aiReviewModels={aiReviewModels}
-                    aiReviewModelsFetching={aiReviewModelsFetching}
-                    controlClass={controlClass}
-                    onFeedbackChange={onFeedbackChange}
-                    onExpandRequestChanges={() => {
-                      setReviewExpanded(true)
-                      onCancelAIReview()
-                    }}
-                    onCancelRequestChanges={() => setReviewExpanded(false)}
-                    onAIReview={onAIReview}
-                    onAIReviewToolChange={onAIReviewToolChange}
-                    onAIReviewModelChange={onAIReviewModelChange}
-                    onExpandAIReview={() => {
-                      setReviewExpanded(false)
-                      onExpandAIReview()
-                    }}
-                    onCancelAIReview={onCancelAIReview}
-                    onApprove={onApprove}
-                    onRequestChanges={onRequestChanges}
-                    onRerunToolChange={onRerunToolChange}
-                    onRerunModelChange={onRerunModelChange}
-                  />
-                )}
+                  !hasRunningExecution &&
+                  (activeAISuggestion && !reviewExpanded ? (
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <ActionButton
+                          variant="primary"
+                          onClick={() => {
+                            onFeedbackChange(activeAISuggestion.feedback)
+                            setReviewExpanded(true)
+                            onCancelAIReview()
+                          }}
+                          disabled={requesting}
+                        >
+                          Request Changes
+                        </ActionButton>
+                        <ActionButton
+                          variant="default"
+                          onClick={() => {
+                            setDismissedReviews((prev) => new Set([...prev, activeAISuggestion.interactionId]))
+                            onFeedbackChange('')
+                          }}
+                        >
+                          Dismiss
+                        </ActionButton>
+                      </div>
+                      {reviewActionError && (
+                        <div className="text-xs text-[var(--status-failed)]">{reviewActionError}</div>
+                      )}
+                    </div>
+                  ) : (
+                    <InlineReviewActions
+                      interactionId={item.id}
+                      feedback={feedback}
+                      reviewExpanded={reviewExpanded}
+                      aiReviewExpanded={aiReviewExpanded}
+                      approving={approving}
+                      requesting={requesting}
+                      aiReviewing={aiReviewing}
+                      reviewActionError={reviewActionError}
+                      tools={tools}
+                      rerunTool={rerunTool}
+                      rerunModel={rerunModel}
+                      rerunModels={rerunModels}
+                      rerunModelsFetching={rerunModelsFetching}
+                      aiReviewTool={aiReviewTool}
+                      aiReviewModel={aiReviewModel}
+                      aiReviewModels={aiReviewModels}
+                      aiReviewModelsFetching={aiReviewModelsFetching}
+                      aiReviewPrompt={aiReviewPrompt}
+                      controlClass={controlClass}
+                      onFeedbackChange={onFeedbackChange}
+                      onExpandRequestChanges={() => {
+                        setReviewExpanded(true)
+                        onCancelAIReview()
+                      }}
+                      onCancelRequestChanges={() => setReviewExpanded(false)}
+                      onAIReview={onAIReview}
+                      onAIReviewToolChange={onAIReviewToolChange}
+                      onAIReviewModelChange={onAIReviewModelChange}
+                      onAIReviewPromptChange={onAIReviewPromptChange}
+                      onExpandAIReview={() => {
+                        setReviewExpanded(false)
+                        onExpandAIReview()
+                      }}
+                      onCancelAIReview={onCancelAIReview}
+                      onApprove={onApprove}
+                      onRequestChanges={onRequestChanges}
+                      onRerunToolChange={onRerunToolChange}
+                      onRerunModelChange={onRerunModelChange}
+                    />
+                  ))}
 
                 {isLatestFailed && !readOnly && (
                   <FailedRunActions
@@ -326,70 +435,100 @@ export function TaskExecutionSection({
                     onRerunModelChange={onRerunModelChange}
                   />
                 )}
-
-                {item.status === 'completed' && itemReviews.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
-                    {itemReviews.map((review) => (
-                      <div
-                        key={review.id}
-                        className={[
-                          'rounded-md border p-2.5',
-                          review.status === 'pending'
-                            ? 'border-amber-500/40 bg-amber-500/10'
-                            : 'border-emerald-500/35 bg-emerald-500/10 opacity-80',
-                        ].join(' ')}
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
-                            {review.status}
-                          </span>
-                          <span className="text-[11px] text-[var(--text-secondary)]">
-                            {formatRelativeTime(review.created_at)}
-                          </span>
-                        </div>
-                        <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
-                          {review.feedback}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </InteractionEntry>
             )
           })}
-
-          {reviewInteractions.length > 0 && (
-            <div className="flex flex-col gap-2 mt-2">
-              {reviewInteractions.map((item) => (
-                <InteractionEntry
-                  key={item.id}
-                  interaction={item}
-                  activeLogId={activeLogId}
-                  onToggleLog={onToggleLog}
-                >
-                  {item.status === 'completed' && item.quality_json && (
-                    <AIReviewResultCard qualityJson={item.quality_json} />
-                  )}
-                </InteractionEntry>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>
   )
 }
 
-function AIReviewResultCard({ qualityJson }: { qualityJson: string }) {
+function AIReviewResultCard({
+  interaction: ri,
+  dismissed,
+  activeLogId,
+  onToggleLog,
+}: {
+  interaction: Interaction
+  dismissed?: boolean
+  activeLogId?: string | null
+  onToggleLog?: (id: string) => void
+}) {
+  const logButton = onToggleLog ? (
+    <button
+      type="button"
+      className={[
+        'ml-auto text-[10px]',
+        activeLogId === ri.id
+          ? 'text-[var(--accent)]'
+          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+      ].join(' ')}
+      onClick={() => onToggleLog(ri.id)}
+    >
+      log
+    </button>
+  ) : null
+  if (ri.status === 'running') {
+    return (
+      <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+            AI Review
+          </span>
+          <span className="text-[10px] font-semibold uppercase text-[var(--text-secondary)]">
+            Running…
+          </span>
+          {ri.tool && (
+            <span className="text-[10px] text-[var(--text-secondary)]">{ri.tool}</span>
+          )}
+          {logButton}
+        </div>
+      </div>
+    )
+  }
+
+  if (ri.status === 'failed') {
+    return (
+      <div className="rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 p-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+            AI Review
+          </span>
+          <span className="text-[10px] font-semibold uppercase text-[var(--status-failed)]">
+            Failed
+          </span>
+          {logButton}
+        </div>
+        {ri.error && (
+          <div className="mt-1 whitespace-pre-wrap text-xs text-[var(--text-primary)]">
+            {ri.error}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (!ri.quality_json) return null
+
   try {
-    const result: AIReviewResult = JSON.parse(qualityJson)
+    const result: AIReviewResult = JSON.parse(ri.quality_json)
+    const costLabel = [
+      ri.tool,
+      ri.estimated_cost > 0 ? `$${ri.estimated_cost.toFixed(2)}` : null,
+    ].filter(Boolean).join(' · ')
+
+    const isDismissed = dismissed && !result.approved
+
     return (
       <div
         className={[
           'rounded-md border p-2.5',
-          result.approved
-            ? 'border-emerald-500/35 bg-emerald-500/10'
-            : 'border-amber-500/40 bg-amber-500/10',
+          isDismissed
+            ? 'border-[var(--border)] bg-[var(--bg-primary)] opacity-60'
+            : result.approved
+              ? 'border-emerald-500/35 bg-emerald-500/10'
+              : 'border-amber-500/40 bg-amber-500/10',
         ].join(' ')}
       >
         <div className="mb-1 flex items-center gap-2">
@@ -399,12 +538,23 @@ function AIReviewResultCard({ qualityJson }: { qualityJson: string }) {
           <span
             className={[
               'text-[10px] font-semibold uppercase',
-              result.approved ? 'text-emerald-400' : 'text-amber-400',
+              isDismissed
+                ? 'text-[var(--text-secondary)]'
+                : result.approved ? 'text-emerald-400' : 'text-amber-400',
             ].join(' ')}
           >
-            {result.approved ? 'Approved' : 'Changes Suggested'}
+            {isDismissed ? 'Dismissed' : result.approved ? 'Approved' : 'Changes Suggested'}
           </span>
+          {costLabel && (
+            <span className="text-[10px] text-[var(--text-secondary)]">{costLabel}</span>
+          )}
+          {logButton}
         </div>
+        {result.prompt && (
+          <div className="mb-1.5 rounded border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-[11px] italic text-[var(--text-secondary)]">
+            {result.prompt}
+          </div>
+        )}
         <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
           {result.feedback}
         </div>

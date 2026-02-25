@@ -243,6 +243,7 @@ func (s *Server) HandleAIReviewTool(argsRaw json.RawMessage) (interface{}, error
 		TaskID string `json:"task_id"`
 		Tool   string `json:"tool"`
 		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("ai_review: %w", err)
@@ -286,7 +287,8 @@ func (s *Server) HandleAIReviewTool(argsRaw json.RawMessage) (interface{}, error
 	}
 
 	reviewer := review.New(toolName, d, model, 10*time.Minute, s.repoDir, interactionStore)
-	result, err := reviewer.Review(taskID, t.Title, t.Description, diff)
+	userPrompt := strings.TrimSpace(args.Prompt)
+	result, err := reviewer.Review(taskID, t.Title, t.Description, diff, userPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("review failed: %w", err)
 	}

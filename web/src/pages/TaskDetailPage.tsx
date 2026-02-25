@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { api } from '../api'
 import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel'
 import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar'
 import { TaskTimeline } from '../components/board/task-detail/TaskTimeline'
@@ -50,6 +51,7 @@ export function TaskDetailPage() {
   return (
     <TaskDetailContent
       task={task}
+      tasks={tasks}
       configData={configData}
       tools={tools}
       isRunning={isRunning}
@@ -60,12 +62,14 @@ export function TaskDetailPage() {
 
 function TaskDetailContent({
   task,
+  tasks,
   configData,
   tools,
   isRunning,
   invalidateBoard,
 }: {
   task: Task
+  tasks: Task[]
   configData: Config
   tools: string[]
   isRunning: (type: string, targetId?: string) => boolean
@@ -74,6 +78,9 @@ function TaskDetailContent({
   const navigate = useNavigate()
   const lastWSEvent = useLastWSEvent()
   const [activeLogId, setActiveLogId] = useState<string | null>(null)
+  const [selectedDependencyId, setSelectedDependencyId] = useState('')
+  const [addingDependency, setAddingDependency] = useState(false)
+  const [dependencyError, setDependencyError] = useState<string | null>(null)
 
   const {
     form,
@@ -104,6 +111,7 @@ function TaskDetailContent({
     aiReviewModelsFetching,
     aiReviewing,
     aiReviewExpanded,
+    aiReviewPrompt,
     rerunning,
     reviewActionError,
     plan,
@@ -114,6 +122,8 @@ function TaskDetailContent({
     requestingPlanChanges,
     planFeedback,
     planReviewExpanded,
+    taskEvaluation,
+    evaluatingTask,
     hasPlan,
     generateTool,
     generateModel,
@@ -146,10 +156,12 @@ function TaskDetailContent({
     setAIReviewTool,
     setAIReviewModel,
     setAIReviewExpanded,
+    setAIReviewPrompt,
     handleDelete,
     handleMerge,
     handleRun,
     handleGeneratePlan,
+    handleEvaluateTask,
     handleApprovePlan,
     handleRequestPlanChanges,
     handleApprove,
@@ -169,6 +181,39 @@ function TaskDetailContent({
       void invalidateBoard()
     },
   })
+
+  const tasksById = useMemo(
+    () => new Map(tasks.map((item) => [item.id, item])),
+    [tasks],
+  )
+  const dependencyChoices = useMemo(
+    () =>
+      tasks
+        .filter(
+          (candidate) =>
+            candidate.id !== task.id && !(task.depends_on ?? []).includes(candidate.id),
+        )
+        .sort((a, b) => a.title.localeCompare(b.title)),
+    [task.depends_on, task.id, tasks],  // depends_on may be null from backend
+  )
+
+  const handleAddDependency = async () => {
+    if (!selectedDependencyId) {
+      setDependencyError('Select a task to add as a dependency.')
+      return
+    }
+    setDependencyError(null)
+    setAddingDependency(true)
+    try {
+      await api.addDependency(task.id, selectedDependencyId)
+      setSelectedDependencyId('')
+      await invalidateBoard()
+    } catch (err: any) {
+      setDependencyError(err?.message ?? 'Failed to add dependency')
+    } finally {
+      setAddingDependency(false)
+    }
+  }
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -239,6 +284,76 @@ function TaskDetailContent({
                     </label>
                   )}
                 </form.Field>
+
+                <div className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+                  Dependencies
+                  {(task.depends_on ?? []).length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(task.depends_on ?? []).map((depId) => {
+                        const depTask = tasksById.get(depId)
+                        return (
+                          <span
+                            key={depId}
+                            className="inline-flex items-center gap-1.5 rounded border border-[var(--border)] bg-[var(--bg-sidebar)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]"
+                          >
+                            <span className="max-w-[280px] truncate text-[var(--text-primary)]">
+                              {depTask?.title || 'Unknown task'}
+                            </span>
+                            <span className="font-mono">{depId.slice(0, 8)}</span>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[12px] font-normal text-[var(--text-secondary)]">
+                      No dependencies
+                    </p>
+                  )}
+
+                  {isEditable && (
+                    <div className="mt-1 flex flex-col gap-1.5">
+                      {dependencyChoices.length > 0 ? (
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <select
+                            className={controlClass}
+                            value={selectedDependencyId}
+                            onChange={(e) => {
+                              setSelectedDependencyId(e.target.value)
+                              if (dependencyError) setDependencyError(null)
+                            }}
+                            disabled={addingDependency}
+                          >
+                            <option value="">Select task dependency...</option>
+                            {dependencyChoices.map((choice) => (
+                              <option key={choice.id} value={choice.id}>
+                                {choice.title} ({choice.id.slice(0, 8)})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="rounded-md border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => {
+                              void handleAddDependency()
+                            }}
+                            disabled={addingDependency || !selectedDependencyId}
+                          >
+                            {addingDependency ? 'Adding…' : 'Add Dependency'}
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-[12px] font-normal text-[var(--text-secondary)]">
+                          No available tasks to add.
+                        </p>
+                      )}
+                      {dependencyError && (
+                        <p className="text-[12px] font-normal text-[var(--status-failed)]">
+                          {dependencyError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </form>
 
@@ -269,6 +384,7 @@ function TaskDetailContent({
                   aiReviewModel={aiReviewModel}
                   aiReviewModels={aiReviewModels}
                   aiReviewModelsFetching={aiReviewModelsFetching}
+                  aiReviewPrompt={aiReviewPrompt}
                   rerunning={rerunning}
                   reviewActionError={reviewActionError}
                   mergeProgress={mergeProgress}
@@ -286,6 +402,8 @@ function TaskDetailContent({
                   requestingPlanChanges={requestingPlanChanges}
                   planFeedback={planFeedback}
                   planReviewExpanded={planReviewExpanded}
+                  taskEvaluation={taskEvaluation}
+                  evaluatingTask={evaluatingTask}
                   tools={tools}
                   generateTool={generateTool}
                   generateModel={generateModel}
@@ -325,6 +443,7 @@ function TaskDetailContent({
                   }}
                   onAIReviewToolChange={setAIReviewTool}
                   onAIReviewModelChange={setAIReviewModel}
+                  onAIReviewPromptChange={setAIReviewPrompt}
                   onExpandAIReview={() => setAIReviewExpanded(true)}
                   onCancelAIReview={() => setAIReviewExpanded(false)}
                   onRerun={() => {
@@ -346,6 +465,9 @@ function TaskDetailContent({
                   onGenerateModelChange={setGenerateModel}
                   onGeneratePlan={() => {
                     void handleGeneratePlan()
+                  }}
+                  onEvaluateTask={() => {
+                    void handleEvaluateTask()
                   }}
                   onApprovePlan={() => {
                     void handleApprovePlan()

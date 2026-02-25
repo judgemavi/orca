@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/logging"
+	"github.com/jasjeetmavi/orca/internal/model"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
@@ -38,6 +40,31 @@ func (s *Server) HandleConfigGetTool(argsRaw json.RawMessage) (interface{}, erro
 		return nil, fmt.Errorf("config_get: %w", err)
 	}
 	return s.config, nil
+}
+
+func (s *Server) HandleModelsListTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		Tool string `json:"tool"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("models_list: %w", err)
+	}
+	if s.config == nil {
+		return nil, fmt.Errorf("models listing not configured")
+	}
+
+	requestedTool := strings.TrimSpace(args.Tool)
+	if requestedTool != "" {
+		d, ok := driver.Get(requestedTool)
+		if !ok {
+			return nil, fmt.Errorf("tool %q not found", requestedTool)
+		}
+		return map[string][]model.Model{
+			requestedTool: model.FromDriver(requestedTool, d),
+		}, nil
+	}
+
+	return model.AllFromConfig(s.config), nil
 }
 
 func (s *Server) HandleConfigUpdateTool(argsRaw json.RawMessage) (interface{}, error) {

@@ -2,7 +2,13 @@ import { TaskExecutionSection } from './TaskExecutionSection'
 import { TaskMergeStatus } from './TaskMergeStatus'
 import { TaskPlanSection } from './TaskPlanSection'
 import { TimelinePhase } from './TimelinePhase'
-import type { Config, Interaction, Task, TaskReview } from '../../../types'
+import type {
+  Config,
+  Interaction,
+  Task,
+  TaskEvaluation,
+  TaskReview,
+} from '../../../types'
 
 type PhaseState = 'disabled' | 'active' | 'completed'
 
@@ -26,6 +32,7 @@ interface Props {
   aiReviewModel: string
   aiReviewModels: Array<{ id: string; name: string }>
   aiReviewModelsFetching: boolean
+  aiReviewPrompt: string
   rerunning: boolean
   reviewActionError: string | null
   mergeProgress: string | null
@@ -43,6 +50,8 @@ interface Props {
   requestingPlanChanges: boolean
   planFeedback: string
   planReviewExpanded: boolean
+  taskEvaluation: TaskEvaluation | null
+  evaluatingTask: boolean
   tools: string[]
   generateTool: string
   generateModel: string
@@ -70,6 +79,7 @@ interface Props {
   onAIReview: () => void
   onAIReviewToolChange: (value: string) => void
   onAIReviewModelChange: (value: string) => void
+  onAIReviewPromptChange: (value: string) => void
   onExpandAIReview: () => void
   onCancelAIReview: () => void
   onRerun: () => void
@@ -81,6 +91,7 @@ interface Props {
   onGenerateToolChange: (value: string) => void
   onGenerateModelChange: (value: string) => void
   onGeneratePlan: () => void
+  onEvaluateTask: () => void
   onApprovePlan: () => void
   onRequestPlanChanges: (
     interactionId?: string,
@@ -141,6 +152,7 @@ export function TaskTimeline({
   aiReviewModel,
   aiReviewModels,
   aiReviewModelsFetching,
+  aiReviewPrompt,
   rerunning,
   reviewActionError,
   mergeProgress,
@@ -158,6 +170,8 @@ export function TaskTimeline({
   requestingPlanChanges,
   planFeedback,
   planReviewExpanded,
+  taskEvaluation,
+  evaluatingTask,
   tools,
   generateTool,
   generateModel,
@@ -185,6 +199,7 @@ export function TaskTimeline({
   onAIReview,
   onAIReviewToolChange,
   onAIReviewModelChange,
+  onAIReviewPromptChange,
   onExpandAIReview,
   onCancelAIReview,
   onRerun,
@@ -196,6 +211,7 @@ export function TaskTimeline({
   onGenerateToolChange,
   onGenerateModelChange,
   onGeneratePlan,
+  onEvaluateTask,
   onApprovePlan,
   onRequestPlanChanges,
   onRun,
@@ -234,6 +250,8 @@ export function TaskTimeline({
           requestingPlanChanges={requestingPlanChanges}
           planFeedback={planFeedback}
           planReviewExpanded={planReviewExpanded}
+          taskEvaluation={taskEvaluation}
+          evaluatingTask={evaluatingTask}
           tools={tools}
           generateTool={generateTool}
           generateModel={generateModel}
@@ -250,6 +268,7 @@ export function TaskTimeline({
           onGenerateToolChange={onGenerateToolChange}
           onGenerateModelChange={onGenerateModelChange}
           onGeneratePlan={onGeneratePlan}
+          onEvaluateTask={onEvaluateTask}
           onApprovePlan={onApprovePlan}
           onRequestPlanChanges={onRequestPlanChanges}
         />
@@ -277,6 +296,7 @@ export function TaskTimeline({
           aiReviewModel={aiReviewModel}
           aiReviewModels={aiReviewModels}
           aiReviewModelsFetching={aiReviewModelsFetching}
+          aiReviewPrompt={aiReviewPrompt}
           rerunning={rerunning}
           reviewActionError={reviewActionError}
           reviews={runReviews}
@@ -293,6 +313,7 @@ export function TaskTimeline({
           onAIReview={onAIReview}
           onAIReviewToolChange={onAIReviewToolChange}
           onAIReviewModelChange={onAIReviewModelChange}
+          onAIReviewPromptChange={onAIReviewPromptChange}
           onExpandAIReview={onExpandAIReview}
           onCancelAIReview={onCancelAIReview}
           onRun={onRun}

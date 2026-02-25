@@ -76,6 +76,13 @@ func RegisterTask(root *cobra.Command, r *Registry) {
 
 	taskCmd.AddCommand(&cobra.Command{Use: "show [task-id]", Short: "Show full task details", Args: cobra.MaximumNArgs(1), RunE: r.runTaskShow})
 	taskCmd.AddCommand(&cobra.Command{Use: "reopen [task-id...]", Short: "Move failed tasks back to pending", Args: cobra.ArbitraryArgs, RunE: r.runTaskReopen})
+	addDepCmd := &cobra.Command{
+		Use:   "add-dep <task-id> <depends-on-id>",
+		Short: "Add a dependency to a task",
+		Args:  cobra.ExactArgs(2),
+		RunE:  r.runTaskAddDep,
+	}
+	taskCmd.AddCommand(addDepCmd)
 	reviewsCmd := &cobra.Command{
 		Use:   "reviews [task-id]",
 		Short: "List reviews for a task",

@@ -19,6 +19,7 @@ interface Props {
   aiReviewModel: string
   aiReviewModels: Array<{ id: string; name: string }>
   aiReviewModelsFetching: boolean
+  aiReviewPrompt: string
   controlClass: string
   onFeedbackChange: (value: string) => void
   onExpandRequestChanges: () => void
@@ -26,6 +27,7 @@ interface Props {
   onAIReview: () => void
   onAIReviewToolChange: (value: string) => void
   onAIReviewModelChange: (value: string) => void
+  onAIReviewPromptChange: (value: string) => void
   onExpandAIReview: () => void
   onCancelAIReview: () => void
   onApprove: () => void
@@ -52,6 +54,7 @@ export function InlineReviewActions({
   aiReviewModel,
   aiReviewModels,
   aiReviewModelsFetching,
+  aiReviewPrompt,
   controlClass,
   onFeedbackChange,
   onExpandRequestChanges,
@@ -59,6 +62,7 @@ export function InlineReviewActions({
   onAIReview,
   onAIReviewToolChange,
   onAIReviewModelChange,
+  onAIReviewPromptChange,
   onExpandAIReview,
   onCancelAIReview,
   onApprove,
@@ -69,9 +73,11 @@ export function InlineReviewActions({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <ActionButton variant="primary" onClick={onApprove} disabled={approving || requesting}>
-          {approving ? 'Approving…' : 'Approve'}
-        </ActionButton>
+        {!reviewExpanded && !aiReviewExpanded && (
+          <ActionButton variant="primary" onClick={onApprove} disabled={approving || requesting}>
+            {approving ? 'Approving…' : 'Approve'}
+          </ActionButton>
+        )}
         {!reviewExpanded && !aiReviewExpanded && (
           <ActionButton variant="default" onClick={onExpandRequestChanges} disabled={approving || requesting}>
             Request Changes
@@ -129,6 +135,13 @@ export function InlineReviewActions({
 
       {aiReviewExpanded && (
         <div className="flex flex-col gap-2">
+          <textarea
+            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+            rows={2}
+            value={aiReviewPrompt}
+            onChange={(e) => onAIReviewPromptChange(e.target.value)}
+            placeholder="Focus on specific areas... (optional)"
+          />
           <ToolModelSelector
             tools={tools}
             selectedTool={aiReviewTool}

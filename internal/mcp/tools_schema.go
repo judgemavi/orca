@@ -257,6 +257,19 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
+			Name:        "models_list",
+			Description: "List available LLM models for configured tools. Optionally filter by a specific tool name.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Filter models by tool name (optional)",
+					},
+				},
+			},
+		},
+		{
 			Name:        "config_update",
 			Description: "Apply a partial JSON patch to configuration and persist it.",
 			InputSchema: map[string]interface{}{
@@ -336,6 +349,10 @@ func (s *Server) toolDefinitions() []toolDef {
 					"model": map[string]interface{}{
 						"type":        "string",
 						"description": "Model override (optional)",
+					},
+					"prompt": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional custom instructions for the reviewer",
 					},
 				},
 				"required": []string{"task_id"},
