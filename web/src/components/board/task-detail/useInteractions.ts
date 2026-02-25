@@ -1,10 +1,27 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import { api } from '../../../api'
+import type { Interaction } from '../../../types'
 
-export function useInteractionsQuery(taskId: string) {
+type InteractionsQueryKey = ['task-interactions', string]
+type InteractionsSelect<TSelected> = Pick<
+  UseQueryOptions<Interaction[], Error, TSelected, InteractionsQueryKey>,
+  'select'
+>
+
+export function selectByPhase(phase: string) {
+  return (interactions: Interaction[]) =>
+    [...interactions]
+      .filter((i) => i.phase === phase)
+      .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))
+}
+
+export function useInteractionsQuery<TSelected = Interaction[]>(
+  taskId: string,
+  options?: InteractionsSelect<TSelected>,
+) {
   return useQuery({
-    queryKey: ['task-interactions', taskId],
+    queryKey: ['task-interactions', taskId] as const,
     queryFn: async () => {
       const data = await api.listInteractions(taskId)
       return data.interactions ?? []
@@ -12,6 +29,7 @@ export function useInteractionsQuery(taskId: string) {
     enabled: Boolean(taskId),
     staleTime: 0,
     refetchOnMount: 'always',
+    ...options,
   })
 }
 

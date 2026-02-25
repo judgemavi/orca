@@ -1,45 +1,116 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext'
+import { useModelsQuery } from '../../../hooks/queries/useModels'
+import {
+  useAIReviewMutation,
+  useApproveTaskMutation,
+  useRequestChangesMutation,
+} from '../../../hooks/queries/useTaskMutations'
+import { controlClass } from '../../../lib/constants'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
-import { useTaskDetailContext } from '../../../context/TaskDetailContext'
+import { selectByPhase, useInteractionsQuery } from './useInteractions'
 
-export function InlineReviewActions() {
-  const {
-    tools,
-    controlClass,
-    feedback,
-    setFeedback,
-    approving,
-    requesting,
-    aiReviewExpanded,
-    aiReviewing,
-    aiReviewTool,
-    setAIReviewTool,
-    aiReviewModel,
-    setAIReviewModel,
-    aiReviewModels,
-    aiReviewModelsFetching,
-    aiReviewPrompt,
-    setAIReviewPrompt,
-    reviewActionError,
-    rerunTool,
-    setRerunTool,
-    rerunModel,
-    setRerunModel,
-    rerunModels,
-    rerunModelsFetching,
-    runInteractions,
-    handleApprove,
-    handleRequestChanges,
-    handleAIReview,
-    setAIReviewExpanded,
-  } = useTaskDetailContext()
+type Props = {
+  forceReviewExpanded?: boolean
+  prefillFeedback?: string
+}
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback
+}
+
+export function InlineReviewActions({
+  forceReviewExpanded = false,
+  prefillFeedback = '',
+}: Props) {
+  const { task, tools, activeLogId, onSaved } = useTaskDetailContext()
+  void activeLogId
+
+  const approveMutation = useApproveTaskMutation()
+  const requestChangesMutation = useRequestChangesMutation()
+  const aiReviewMutation = useAIReviewMutation()
+  const runInteractions = useInteractionsQuery(task.id, {
+    select: selectByPhase('run'),
+  })
+
+  const [feedback, setFeedback] = useState('')
   const [reviewExpanded, setReviewExpanded] = useState(false)
+  const [aiReviewExpanded, setAIReviewExpanded] = useState(false)
+  const [aiReviewPrompt, setAIReviewPrompt] = useState('')
+  const [rerunTool, setRerunTool] = useState('')
+  const [rerunModel, setRerunModel] = useState('')
+  const [aiReviewTool, setAIReviewTool] = useState('')
+  const [aiReviewModel, setAIReviewModel] = useState('')
+  const [reviewActionError, setReviewActionError] = useState<string | null>(null)
+
+  const rerunModelsQuery = useModelsQuery(rerunTool || undefined)
+  const aiReviewModelsQuery = useModelsQuery(aiReviewTool || undefined)
+
+  const rerunModels = rerunTool ? (rerunModelsQuery.data?.[rerunTool] ?? []) : []
+  const aiReviewModels = aiReviewTool ? (aiReviewModelsQuery.data?.[aiReviewTool] ?? []) : []
+
+  const approving = approveMutation.isPending
+  const requesting = requestChangesMutation.isPending
+  const aiReviewing = aiReviewMutation.isPending
 
   const interactionId = useMemo(
-    () => [...runInteractions].reverse().find((item) => item.status === 'completed')?.id,
-    [runInteractions],
+    () => [...(runInteractions.data ?? [])].reverse().find((item) => item.status === 'completed')?.id,
+    [runInteractions.data],
   )
+
+  useEffect(() => {
+    if (!forceReviewExpanded) return
+    setAIReviewExpanded(false)
+    setReviewExpanded(true)
+    setFeedback((prev) => prev || prefillFeedback)
+  }, [forceReviewExpanded, prefillFeedback])
+
+  const handleApprove = async () => {
+    setReviewActionError(null)
+    try {
+      await approveMutation.mutateAsync(task.id)
+      onSaved()
+    } catch (err: unknown) {
+      setReviewActionError(getErrorMessage(err, 'Approve failed'))
+    }
+  }
+
+  const handleRequestChanges = async () => {
+    const trimmedFeedback = feedback.trim()
+    if (!trimmedFeedback) {
+      setReviewActionError('Feedback is required')
+      return
+    }
+
+    setReviewActionError(null)
+    try {
+      await requestChangesMutation.mutateAsync({
+        id: task.id,
+        feedback: trimmedFeedback,
+        interactionId,
+        tool: rerunTool || undefined,
+        model: rerunModel || undefined,
+      })
+      onSaved()
+    } catch (err: unknown) {
+      setReviewActionError(getErrorMessage(err, 'Request changes failed'))
+    }
+  }
+
+  const handleAIReview = async () => {
+    setReviewActionError(null)
+    try {
+      await aiReviewMutation.mutateAsync({
+        taskId: task.id,
+        tool: aiReviewTool || undefined,
+        model: aiReviewModel || undefined,
+        prompt: aiReviewPrompt.trim() || undefined,
+      })
+    } catch (err: unknown) {
+      setReviewActionError(getErrorMessage(err, 'AI review failed'))
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -90,7 +161,7 @@ export function InlineReviewActions() {
             selectedTool={rerunTool}
             selectedModel={rerunModel}
             models={rerunModels}
-            modelsFetching={rerunModelsFetching}
+            modelsFetching={rerunModelsQuery.isFetching}
             onToolChange={(tool) => {
               setRerunTool(tool)
               setRerunModel('')
@@ -103,9 +174,7 @@ export function InlineReviewActions() {
           <div className="flex justify-end gap-2">
             <ActionButton
               variant="default"
-              onClick={() =>
-                handleRequestChanges(interactionId, rerunTool || undefined, rerunModel || undefined)
-              }
+              onClick={handleRequestChanges}
               disabled={requesting || approving}
             >
               {requesting ? 'Submitting…' : 'Submit Request Changes'}
@@ -135,7 +204,7 @@ export function InlineReviewActions() {
             selectedTool={aiReviewTool}
             selectedModel={aiReviewModel}
             models={aiReviewModels}
-            modelsFetching={aiReviewModelsFetching}
+            modelsFetching={aiReviewModelsQuery.isFetching}
             onToolChange={(tool) => {
               setAIReviewTool(tool)
               setAIReviewModel('')
@@ -146,11 +215,7 @@ export function InlineReviewActions() {
             modelPlaceholder="- default model"
           />
           <div className="flex justify-end gap-2">
-            <ActionButton
-              variant="default"
-              onClick={handleAIReview}
-              disabled={aiReviewing}
-            >
+            <ActionButton variant="default" onClick={handleAIReview} disabled={aiReviewing}>
               {aiReviewing ? 'Starting…' : 'Start Review'}
             </ActionButton>
             <ActionButton
@@ -164,9 +229,7 @@ export function InlineReviewActions() {
         </div>
       )}
 
-      {reviewActionError && (
-        <div className="text-xs text-[var(--status-failed)]">{reviewActionError}</div>
-      )}
+      {reviewActionError && <div className="text-xs text-[var(--status-failed)]">{reviewActionError}</div>}
     </div>
   )
 }

@@ -22,6 +22,9 @@ export async function invalidateQueriesForWSEvent(
       taskId
         ? queryClient.invalidateQueries({ queryKey: ['task', taskId] })
         : Promise.resolve(),
+      taskId
+        ? queryClient.invalidateQueries({ queryKey: ['task-reviews', taskId] })
+        : Promise.resolve(),
     ])
     return
   }
@@ -42,6 +45,24 @@ export async function invalidateQueriesForWSEvent(
       queryClient.invalidateQueries({ queryKey: ['tasks'] }),
       taskId
         ? queryClient.invalidateQueries({ queryKey: ['taskPlan', taskId] })
+        : Promise.resolve(),
+    ])
+    return
+  }
+
+  if (event.type === 'plan.generating' || event.type === 'plan.failed') {
+    await queryClient.invalidateQueries({ queryKey: ['operations'] })
+    return
+  }
+
+  if (event.type.startsWith('ai-review.')) {
+    const taskId = readString(event.data, 'task_id')
+    await Promise.all([
+      taskId
+        ? queryClient.invalidateQueries({ queryKey: ['task-interactions', taskId] })
+        : Promise.resolve(),
+      taskId
+        ? queryClient.invalidateQueries({ queryKey: ['task-reviews', taskId] })
         : Promise.resolve(),
     ])
     return

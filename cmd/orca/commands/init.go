@@ -122,6 +122,11 @@ func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {
 	headCheck.Dir = cwd
 	if err := headCheck.Run(); err != nil {
 		fmt.Println("Git repo has no commits. Creating initial commit...")
+		// Ensure .orca/ is gitignored BEFORE staging so `git add -A`
+		// doesn't pick up orca.log or other runtime files.
+		if err := ensureOrcaIgnored(cwd); err != nil {
+			return nil, false, err
+		}
 		addCmd := exec.Command("git", "add", "-A")
 		addCmd.Dir = cwd
 		if err := addCmd.Run(); err != nil {
@@ -456,12 +461,21 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 
 // commitGitignore stages and commits .gitignore so the change is part of
 // the branch history before any integration branch is forked from it.
+// It also removes any .orca/ files from the index — .gitignore only
+// prevents untracked files from being added; already-tracked files must
+// be explicitly removed.
 func commitGitignore(cwd string) {
 	addCmd := exec.Command("git", "add", ".gitignore")
 	addCmd.Dir = cwd
 	if addCmd.Run() != nil {
 		return
 	}
+	// Untrack .orca/ if it crept into the index (error is expected when
+	// nothing is tracked — just ignore it).
+	rmCmd := exec.Command("git", "rm", "-r", "--cached", "--quiet", ".orca/")
+	rmCmd.Dir = cwd
+	_ = rmCmd.Run()
+
 	commitCmd := exec.Command("git", "commit", "-m", "chore: add .orca/ to .gitignore")
 	commitCmd.Dir = cwd
 	_ = commitCmd.Run()

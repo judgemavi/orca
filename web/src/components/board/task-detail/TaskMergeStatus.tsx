@@ -1,6 +1,12 @@
+import { useEffect, useState } from 'react'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
+import { useLastWSEvent } from '../../../context/ws'
+import { controlClass } from '../../../lib/constants'
+import { useModelsQuery } from '../../../hooks/queries/useModels'
+import { useMergeTaskMutation } from '../../../hooks/queries/useTaskMutations'
+import { selectByPhase, useInteractionsQuery } from './useInteractions'
 import { InteractionEntry } from './InteractionEntry'
 
 interface Props {
@@ -8,29 +14,49 @@ interface Props {
 }
 
 export function TaskMergeStatus({ readOnly = false }: Props) {
-  const {
-    tools,
-    controlClass,
-    mergeTool,
-    setMergeTool,
-    mergeModel,
-    setMergeModel,
-    mergeModels,
-    mergeModelsFetching,
-    mergeProgress,
-    conflictError,
-    merging,
-    showManualResolve,
-    setShowManualResolve,
-    conflictWorktreePath,
-    mergeInteractions,
-    activeLogId,
-    setActiveLogId,
-    handleMerge,
-  } = useTaskDetailContext()
+  const { task, tools, activeLogId, setActiveLogId, isOperationRunning, onSaved } =
+    useTaskDetailContext()
+  const lastWSEvent = useLastWSEvent()
+  const mergeTaskMutation = useMergeTaskMutation()
+  const mergeInteractionsQuery = useInteractionsQuery(task.id, {
+    select: selectByPhase('merge'),
+  })
 
-  const onMerge = () => handleMerge()
-  const onAutoResolve = () => handleMerge('auto')
+  const [mergeTool, setMergeTool] = useState('')
+  const [mergeModel, setMergeModel] = useState('')
+  const [mergeProgress, setMergeProgress] = useState<string | null>(null)
+  const [conflictError, setConflictError] = useState<string | null>(null)
+  const [conflictWorktreePath, setConflictWorktreePath] = useState('')
+  const [showManualResolve, setShowManualResolve] = useState(false)
+
+  const mergeModelsQuery = useModelsQuery(mergeTool || undefined)
+  const mergeInteractions = mergeInteractionsQuery.data ?? []
+  const merging = isOperationRunning('merge', task.id) || mergeTaskMutation.isPending
+  const mergeModels = mergeTool ? (mergeModelsQuery.data?.[mergeTool] ?? []) : []
+  const mergeModelsFetching = mergeModelsQuery.isFetching
+
+  const onMerge = async (mode?: string) => {
+    if (!mode) {
+      setConflictError(null)
+      setConflictWorktreePath('')
+      setShowManualResolve(false)
+      setMergeProgress('Merge started...')
+    } else {
+      setMergeProgress('Auto-resolve queued...')
+    }
+    try {
+      await mergeTaskMutation.mutateAsync({
+        taskId: task.id,
+        mode,
+        tool: mergeTool || undefined,
+        model: mergeModel || undefined,
+      })
+    } catch (err: any) {
+      setMergeProgress(null)
+      alert(err?.message ?? 'Merge failed')
+    }
+  }
+  const onAutoResolve = () => onMerge('auto')
   const onShowManualResolve = () => setShowManualResolve(true)
   const onMergeToolChange = (t: string) => {
     setMergeTool(t)
@@ -38,6 +64,61 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
   }
   const onMergeModelChange = setMergeModel
   const onToggleLog = (id: string) => setActiveLogId(activeLogId === id ? null : id)
+
+  useEffect(() => {
+    if (!lastWSEvent) return
+    const evtTaskId = (lastWSEvent.data as any)?.task_id ?? (lastWSEvent.data as any)?.id
+    if (evtTaskId !== task.id) return
+
+    if (lastWSEvent.type === 'merge.started') {
+      setMergeProgress('Merge started...')
+      setConflictError(null)
+      setConflictWorktreePath('')
+      setShowManualResolve(false)
+    } else if (lastWSEvent.type === 'merge.progress') {
+      setMergeProgress(String((lastWSEvent.data as any)?.message ?? 'Resolving...'))
+    } else if (lastWSEvent.type === 'merge.completed') {
+      setMergeProgress(null)
+      setConflictError(null)
+      onSaved()
+    } else if (lastWSEvent.type === 'merge.failed') {
+      setMergeProgress(null)
+      const isConflict = Boolean((lastWSEvent.data as any)?.conflict)
+      const errMsg = String((lastWSEvent.data as any)?.error ?? 'Merge failed')
+      if (isConflict) {
+        setConflictError(errMsg)
+        setConflictWorktreePath(String((lastWSEvent.data as any)?.worktree_path ?? ''))
+      } else {
+        setConflictError(null)
+        setConflictWorktreePath('')
+        alert(errMsg)
+      }
+    } else if (lastWSEvent.type === 'task.updated') {
+      const status = String((lastWSEvent.data as any)?.status ?? '')
+      if (status === 'merged' || status === 'approved' || status === 'failed') {
+        setMergeProgress(null)
+      }
+    }
+  }, [lastWSEvent, task.id, onSaved])
+
+  useEffect(() => {
+    setMergeProgress(null)
+    setConflictError(null)
+    setConflictWorktreePath('')
+    setShowManualResolve(false)
+    setMergeTool('')
+    setMergeModel('')
+  }, [task.id])
+
+  useEffect(() => {
+    if (task.status !== 'merged') return
+    setMergeProgress(null)
+    setConflictError(null)
+    setConflictWorktreePath('')
+    setShowManualResolve(false)
+    setMergeTool('')
+    setMergeModel('')
+  }, [task.status])
 
   const latestFailedMergeId =
     mergeInteractions.find((item) => item.status === 'failed')?.id ?? null
@@ -54,7 +135,7 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
 
       {!readOnly && (
         <div className="flex justify-end">
-          <ActionButton variant="primary" onClick={onMerge} disabled={merging}>
+          <ActionButton variant="primary" onClick={() => void onMerge()} disabled={merging}>
             {merging ? 'Merging…' : conflictError ? 'Retry Merge' : 'Merge'}
           </ActionButton>
         </div>
@@ -98,7 +179,11 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
                       modelPlaceholder="- default model"
                       className="contents"
                     />
-                    <ActionButton variant="primary" onClick={onAutoResolve} disabled={merging}>
+                    <ActionButton
+                      variant="primary"
+                      onClick={() => void onAutoResolve()}
+                      disabled={merging}
+                    >
                       Auto-resolve
                     </ActionButton>
                   </div>

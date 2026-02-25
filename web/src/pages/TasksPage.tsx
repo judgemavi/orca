@@ -1,31 +1,83 @@
+import { useCallback, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { api } from '../api'
 import { ReviewPanel } from '../components/board/ReviewPanel'
 import { CreateTaskModal } from '../components/board/CreateTaskModal'
 import { TasksTable } from '../components/board/TasksTable'
 import { TasksToolbar } from '../components/board/TasksToolbar'
-import { useTasksState } from '../components/board/useTasksState'
 import { Toast } from '../components/common/Toast'
+import { useConfigQuery } from '../hooks/queries/useConfig'
+import { useModelsQuery } from '../hooks/queries/useModels'
+import { useOperationsQuery } from '../hooks/queries/useOperations'
+import {
+  useRunTasksMutation,
+  useTasksQuery,
+} from '../hooks/queries/useTasks'
 
 export function TasksPage() {
   const navigate = useNavigate()
-  const {
-    actionLoading,
-    showCreate,
-    setShowCreate,
-    showReview,
-    setShowReview,
-    toastError,
-    setToastError,
-    tasks,
-    configData,
-    loading,
-    reviewTasks,
-    approvedTasks,
-    isRunning,
-    invalidateBoard,
-    runTasks,
-  } = useTasksState()
+  const queryClient = useQueryClient()
+  const tasksQuery = useTasksQuery()
+  const configQuery = useConfigQuery()
+  const allModelsQuery = useModelsQuery()
+  const operationsQuery = useOperationsQuery()
+  const runTasksMutation = useRunTasksMutation()
+
+  const [showCreate, setShowCreate] = useState(false)
+  const [showReview, setShowReview] = useState(false)
+  const [toastError, setToastError] = useState<string | null>(null)
+
+  const tasks = tasksQuery.data?.tasks ?? []
+  const operations = operationsQuery.data?.operations ?? []
+  const loading = tasksQuery.isLoading || configQuery.isLoading
+  const configData = configQuery.data
+
+  void allModelsQuery.data
+
+  const runningOperations = useMemo(
+    () => operations.filter((op) => op.status === 'running'),
+    [operations],
+  )
+
+  const isRunning = useCallback(
+    (type: string, targetId?: string) =>
+      runningOperations.some(
+        (op) =>
+          op.type === type &&
+          (targetId === undefined ||
+            targetId === '' ||
+            op.target_id === targetId),
+      ),
+    [runningOperations],
+  )
+
+  const reviewTasks = useMemo(
+    () => tasks.filter((t) => t.status === 'review' || t.status === 'failed'),
+    [tasks],
+  )
+
+  const approvedTasks = useMemo(
+    () => tasks.filter((t) => t.status === 'approved'),
+    [tasks],
+  )
+
+  const invalidateBoard = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      queryClient.invalidateQueries({ queryKey: ['operations'] }),
+      queryClient.invalidateQueries({ queryKey: ['status'] }),
+    ])
+  }, [queryClient])
+
+  const runTasks = async (taskIds?: string[]) => {
+    try {
+      await runTasksMutation.mutateAsync(taskIds)
+      await invalidateBoard()
+    } catch (err: any) {
+      setToastError(err?.message ?? 'Run failed')
+    }
+  }
 
   if (loading) {
     return (
@@ -45,7 +97,7 @@ export function TasksPage() {
     <div className="flex flex-1 overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TasksToolbar
-          actionLoading={actionLoading}
+          actionLoading={runTasksMutation.isPending}
           runPending={runPending}
           mergePending={merging}
           reviewOpen={showReview}

@@ -1,10 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import { InteractionEntry } from './InteractionEntry'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
+import { controlClass } from '../../../lib/constants'
+import {
+  useTaskPlanQuery,
+  useGeneratePlanMutation,
+  useSavePlanMutation,
+} from '../../../hooks/queries/usePlan'
+import {
+  useApprovePlanMutation,
+  useEvaluateTaskMutation,
+  useRequestPlanChangesMutation,
+} from '../../../hooks/queries/useTaskMutations'
+import { useModelsQuery } from '../../../hooks/queries/useModels'
+import { useInteractionsQuery, selectByPhase } from './useInteractions'
+import { useTaskReviewsQuery } from '../../../hooks/queries/useReviews'
+import { useLastWSEvent } from '../../../context/ws'
+import type { TaskEvaluation } from '../../../types'
 
 interface Props {
   readOnly?: boolean
@@ -27,42 +43,182 @@ function formatRelativeTime(iso: string): string {
 export function TaskPlanSection({ readOnly = false }: Props) {
   const {
     task,
-    hasPlan,
-    planGenerating,
-    planLoading,
-    planError,
-    approvingPlan,
-    requestingPlanChanges,
-    planFeedback,
-    setPlanFeedback,
-    planReviewExpanded,
-    setPlanReviewExpanded,
-    taskEvaluation,
-    evaluatingTask,
     tools,
-    generateTool,
-    setGenerateTool,
-    generateModel,
-    setGenerateModel,
-    generationModels,
-    generateModelsFetching,
-    generatePlanPending,
-    controlClass,
-    planInteractions,
-    planReviews,
     activeLogId,
     setActiveLogId,
-    handleGeneratePlan,
-    handleEvaluateTask,
-    handleApprovePlan,
-    handleRequestPlanChanges,
+    isOperationRunning,
+    onSaved,
   } = useTaskDetailContext()
+  const lastWSEvent = useLastWSEvent()
+
+  const taskPlanQuery = useTaskPlanQuery(task.id)
+  const generatePlanMutation = useGeneratePlanMutation()
+  const savePlanMutation = useSavePlanMutation()
+  const approvePlanMutation = useApprovePlanMutation()
+  const requestPlanChangesMutation = useRequestPlanChangesMutation()
+  const evaluateTaskMutation = useEvaluateTaskMutation()
+
+  const [planDraft, setPlanDraft] = useState('')
+  const [planEditing, setPlanEditing] = useState(false)
+  const [planFeedback, setPlanFeedback] = useState('')
+  const [planReviewExpanded, setPlanReviewExpanded] = useState(false)
+  const [taskEvaluation, setTaskEvaluation] = useState<TaskEvaluation | null>(
+    null,
+  )
+  const [generateTool, setGenerateTool] = useState('')
+  const [generateModel, setGenerateModel] = useState('')
+  const [planError, setPlanError] = useState<string | null>(null)
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
+
+  const generateModelsQuery = useModelsQuery(generateTool || undefined)
+  const planInteractionsQuery = useInteractionsQuery(task.id, {
+    select: selectByPhase('plan'),
+  })
+  const reviewsQuery = useTaskReviewsQuery(task.id)
+
+  const planGenerating = isOperationRunning('plan_generate', task.id)
+  const hasPlan = Boolean(taskPlanQuery.data?.trim())
+  const planLoading = taskPlanQuery.isLoading
+  const generatePlanPending = generatePlanMutation.isPending
+  const evaluatingTask = evaluateTaskMutation.isPending
+  const approvingPlan = approvePlanMutation.isPending
+  const requestingPlanChanges = requestPlanChangesMutation.isPending
+  const generateModelsFetching = generateModelsQuery.isFetching
+  const generationModels = generateTool
+    ? (generateModelsQuery.data?.[generateTool] ?? [])
+    : []
+  const planInteractions = planInteractionsQuery.data ?? []
+  const planReviews = useMemo(() => {
+    const reviews = reviewsQuery.data?.reviews ?? []
+    const interactionIds = new Set(planInteractions.map((item) => item.id))
+    return reviews.filter(
+      (review) =>
+        Boolean(review.interaction_id) &&
+        interactionIds.has(String(review.interaction_id)),
+    )
+  }, [reviewsQuery.data?.reviews, planInteractions])
+
+  useEffect(() => {
+    setPlanDraft('')
+    setPlanEditing(false)
+    setPlanFeedback('')
+    setPlanReviewExpanded(false)
+    setTaskEvaluation(null)
+    setGenerateTool('')
+    setGenerateModel('')
+    setPlanError(null)
+    setExpandedPlans(new Set())
+  }, [task.id])
+
+  useEffect(() => {
+    if (taskPlanQuery.data === undefined || planEditing) return
+    setPlanDraft(taskPlanQuery.data)
+  }, [taskPlanQuery.data, planEditing])
+
+  useEffect(() => {
+    if (!lastWSEvent) return
+    const evtTaskId =
+      (lastWSEvent.data as any)?.task_id ?? (lastWSEvent.data as any)?.id
+    if (evtTaskId !== task.id) return
+    if (lastWSEvent.type === 'plan.failed') {
+      setPlanError(
+        String((lastWSEvent.data as any)?.error ?? 'Failed to generate plan'),
+      )
+    }
+  }, [lastWSEvent, task.id])
+
+  const handleGeneratePlan = async () => {
+    setPlanError(null)
+    try {
+      await generatePlanMutation.mutateAsync({
+        taskId: task.id,
+        tool: generateTool || undefined,
+        model: generateModel || undefined,
+      })
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'Failed to generate plan')
+    }
+  }
+
+  const handleApprovePlan = async () => {
+    setPlanError(null)
+    try {
+      await approvePlanMutation.mutateAsync(task.id)
+      setPlanReviewExpanded(false)
+      onSaved()
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'Approve plan failed')
+    }
+  }
+
+  const handleRequestPlanChanges = async (
+    interactionId?: string,
+    feedbackText?: string,
+    tool?: string,
+    model?: string,
+  ) => {
+    const trimmedFeedback = (feedbackText ?? planFeedback).trim()
+    if (!trimmedFeedback) {
+      setPlanError('Feedback is required')
+      return
+    }
+    const trimmedInteractionID = (interactionId ?? '').trim()
+    if (!trimmedInteractionID) {
+      setPlanError('Interaction ID is required')
+      return
+    }
+
+    setPlanError(null)
+    try {
+      await requestPlanChangesMutation.mutateAsync({
+        id: task.id,
+        feedback: trimmedFeedback,
+        interactionId: trimmedInteractionID,
+        tool: tool || generateTool || undefined,
+        model: model || generateModel || undefined,
+      })
+      setPlanReviewExpanded(false)
+      setPlanFeedback('')
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'Request plan changes failed')
+    }
+  }
+
+  const handleEvaluateTask = async () => {
+    setPlanError(null)
+    try {
+      const response = await evaluateTaskMutation.mutateAsync({
+        taskId: task.id,
+        tool: generateTool || undefined,
+        model: generateModel || undefined,
+      })
+      setTaskEvaluation(response.evaluation)
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'Evaluate failed')
+    }
+  }
+
+  const handleSavePlan = async () => {
+    setPlanError(null)
+    try {
+      await savePlanMutation.mutateAsync({ taskId: task.id, plan: planDraft })
+      setPlanEditing(false)
+      onSaved()
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'Failed to save plan')
+    }
+  }
+
+  void handleSavePlan
+
   const canGenerate = task.status === 'pending' && !hasPlan
   const canReviewPlan = task.status === 'pending' && hasPlan
-  const hasRunningPlan = planInteractions.some((item) => item.status === 'running')
+  const hasRunningPlan = planInteractions.some(
+    (item) => item.status === 'running',
+  )
   const latestCompletedId =
-    [...planInteractions].reverse().find((item) => item.status === 'completed')?.id ?? null
+    [...planInteractions].reverse().find((item) => item.status === 'completed')
+      ?.id ?? null
 
   useEffect(() => {
     if (latestCompletedId) {
@@ -150,19 +306,29 @@ export function TaskPlanSection({ readOnly = false }: Props) {
         </div>
       )}
 
-      {planLoading && <div className="text-xs text-[var(--text-secondary)]">Loading plan...</div>}
+      {planLoading && (
+        <div className="text-xs text-[var(--text-secondary)]">
+          Loading plan...
+        </div>
+      )}
       {!planLoading && !hasPlan && planInteractions.length === 0 && (
-        <div className="text-xs text-[var(--text-secondary)]">No plan saved yet.</div>
+        <div className="text-xs text-[var(--text-secondary)]">
+          No plan saved yet.
+        </div>
       )}
 
       {!planLoading && hasPlan && planInteractions.length === 0 && (
-        <div className="text-xs text-[var(--text-secondary)]">No planning interactions yet.</div>
+        <div className="text-xs text-[var(--text-secondary)]">
+          No planning interactions yet.
+        </div>
       )}
 
       {!planLoading && planInteractions.length > 0 && (
         <div className="flex flex-col gap-2">
           {planInteractions.map((item) => {
-            const itemReviews = planReviews.filter((review) => review.interaction_id === item.id)
+            const itemReviews = planReviews.filter(
+              (review) => review.interaction_id === item.id,
+            )
             const isLatestCompleted =
               item.status === 'completed' && item.id === latestCompletedId
             return (
@@ -170,7 +336,9 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                 key={item.id}
                 interaction={item}
                 activeLogId={activeLogId}
-                onToggleLog={(id) => setActiveLogId(activeLogId === id ? null : id)}
+                onToggleLog={(id) =>
+                  setActiveLogId(activeLogId === id ? null : id)
+                }
               >
                 {item.status === 'completed' && item.diff && (
                   <>
@@ -179,11 +347,15 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                       className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                       onClick={() => togglePlan(item.id)}
                     >
-                      {expandedPlans.has(item.id) ? '▾ Hide plan' : '▸ Show plan'}
+                      {expandedPlans.has(item.id)
+                        ? '▾ Hide plan'
+                        : '▸ Show plan'}
                     </button>
                     {expandedPlans.has(item.id) && (
                       <div className="prose prose-invert prose-sm max-w-none max-h-[300px] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5 text-xs text-[var(--text-primary)]">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.diff}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {item.diff}
+                        </ReactMarkdown>
                       </div>
                     )}
                   </>
@@ -217,84 +389,93 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                   </div>
                 )}
 
-                {isLatestCompleted && canReviewPlan && !readOnly && !hasRunningPlan && (
-                  <div className="flex flex-col gap-2.5">
-                    <div className="flex justify-end gap-2">
-                      <ActionButton
-                        variant="primary"
-                        onClick={handleApprovePlan}
-                        disabled={approvingPlan || requestingPlanChanges}
-                      >
-                        {approvingPlan ? 'Approving…' : 'Approve Plan'}
-                      </ActionButton>
-                      {!planReviewExpanded && (
+                {isLatestCompleted &&
+                  canReviewPlan &&
+                  !readOnly &&
+                  !hasRunningPlan && (
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex justify-end gap-2">
                         <ActionButton
-                          variant="default"
-                          onClick={() => setPlanReviewExpanded(true)}
+                          variant="primary"
+                          onClick={handleApprovePlan}
                           disabled={approvingPlan || requestingPlanChanges}
                         >
-                          Request Changes
+                          {approvingPlan ? 'Approving…' : 'Approve Plan'}
                         </ActionButton>
-                      )}
-                    </div>
-
-                    {planReviewExpanded && (
-                      <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5">
-                        <textarea
-                          className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-2.5 text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                          value={planFeedback}
-                          onChange={(e) => setPlanFeedback(e.target.value)}
-                          rows={4}
-                          placeholder="Describe what should change in the plan..."
-                        />
-                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_1fr]">
-                          <ToolModelSelector
-                            tools={tools}
-                            selectedTool={generateTool}
-                            selectedModel={generateModel}
-                            models={generationModels}
-                            modelsFetching={generateModelsFetching}
-                            onToolChange={setGenerateTool}
-                            onModelChange={setGenerateModel}
-                            controlClass={controlClass}
-                            modelPlaceholder="- default generation model"
-                            className="contents"
-                          />
-                        </div>
-                        <div className="flex justify-end gap-2">
+                        {!planReviewExpanded && (
                           <ActionButton
                             variant="default"
-                            onClick={() => setPlanReviewExpanded(false)}
-                            disabled={requestingPlanChanges}
+                            onClick={() => setPlanReviewExpanded(true)}
+                            disabled={approvingPlan || requestingPlanChanges}
                           >
-                            Cancel
+                            Request Changes
                           </ActionButton>
-                          <ActionButton
-                            variant="primary"
-                            onClick={() =>
-                              handleRequestPlanChanges(
-                                item.id,
-                                planFeedback,
-                                generateTool || undefined,
-                                generateModel || undefined,
-                              )
-                            }
-                            disabled={requestingPlanChanges || planGenerating || generatePlanPending}
-                          >
-                            {requestingPlanChanges ? 'Submitting…' : 'Submit'}
-                          </ActionButton>
-                        </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      {planReviewExpanded && (
+                        <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5">
+                          <textarea
+                            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-2.5 text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                            value={planFeedback}
+                            onChange={(e) => setPlanFeedback(e.target.value)}
+                            rows={4}
+                            placeholder="Describe what should change in the plan..."
+                          />
+                          <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_1fr]">
+                            <ToolModelSelector
+                              tools={tools}
+                              selectedTool={generateTool}
+                              selectedModel={generateModel}
+                              models={generationModels}
+                              modelsFetching={generateModelsFetching}
+                              onToolChange={setGenerateTool}
+                              onModelChange={setGenerateModel}
+                              controlClass={controlClass}
+                              modelPlaceholder="- default generation model"
+                              className="contents"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <ActionButton
+                              variant="default"
+                              onClick={() => setPlanReviewExpanded(false)}
+                              disabled={requestingPlanChanges}
+                            >
+                              Cancel
+                            </ActionButton>
+                            <ActionButton
+                              variant="primary"
+                              onClick={() =>
+                                handleRequestPlanChanges(
+                                  item.id,
+                                  planFeedback,
+                                  generateTool || undefined,
+                                  generateModel || undefined,
+                                )
+                              }
+                              disabled={
+                                requestingPlanChanges ||
+                                planGenerating ||
+                                generatePlanPending
+                              }
+                            >
+                              {requestingPlanChanges ? 'Submitting…' : 'Submit'}
+                            </ActionButton>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
               </InteractionEntry>
             )
           })}
         </div>
       )}
 
-      {planError && <div className="text-xs text-[var(--status-failed)]">{planError}</div>}
+      {planError && (
+        <div className="text-xs text-[var(--status-failed)]">{planError}</div>
+      )}
     </div>
   )
 }

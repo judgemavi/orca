@@ -1,28 +1,56 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel'
 import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar'
-import { TaskTimeline as TaskTimelineBase } from '../components/board/task-detail/TaskTimeline'
-import { useTasksState } from '../components/board/useTasksState'
+import { TaskTimeline } from '../components/board/task-detail/TaskTimeline'
 import { StatusBadge } from '../components/common/StatusBadge'
 import {
   TaskDetailProvider,
   useTaskDetailContext,
 } from '../context/TaskDetailContext'
-import { useLastWSEvent } from '../context/ws'
-import type { Config, Task } from '../types'
+import { useTaskForm } from '../hooks/forms/useTaskForm'
+import { useConfigQuery } from '../hooks/queries/useConfig'
+import { useModelsQuery } from '../hooks/queries/useModels'
+import { useOperationsQuery } from '../hooks/queries/useOperations'
+import { useDeleteTask, useTasksQuery, useUpdateTask } from '../hooks/queries/useTasks'
+import { controlClass } from '../lib/constants'
+import type { Config, Operation, Task } from '../types'
 
 export function TaskDetailPage() {
   const { taskId } = useParams({ from: '/tasks/$taskId' })
-  const {
-    tasks,
-    configData,
-    loading,
-    tools,
-    isRunning,
-    invalidateBoard,
-  } = useTasksState()
+  const tasksQuery = useTasksQuery()
+  const configQuery = useConfigQuery()
+  const allModelsQuery = useModelsQuery()
+  const operationsQuery = useOperationsQuery()
+
+  const tasks = tasksQuery.data?.tasks ?? []
+  const configData = configQuery.data
+  const operations = operationsQuery.data?.operations ?? []
+  const modelsByTool = allModelsQuery.data ?? {}
+  const loading =
+    tasksQuery.isLoading || configQuery.isLoading || allModelsQuery.isLoading
+  const tools = useMemo(() => {
+    const fromConfig = Object.keys(modelsByTool)
+    return Array.from(new Set(fromConfig)).sort((a, b) => a.localeCompare(b))
+  }, [modelsByTool])
+  const runningOperations = useMemo(
+    () => operations.filter((op) => op.status === 'running'),
+    [operations],
+  )
+  const isRunning = useCallback(
+    (type: string, targetId?: string) => {
+      return runningOperations.some(
+        (op) =>
+          op.type === type &&
+          (targetId === undefined ||
+            targetId === '' ||
+            op.target_id === targetId),
+      )
+    },
+    [runningOperations],
+  )
 
   const task = tasks.find((item) => item.id === taskId)
 
@@ -54,8 +82,8 @@ export function TaskDetailPage() {
       tasks={tasks}
       configData={configData}
       tools={tools}
+      operations={operations}
       isRunning={isRunning}
-      invalidateBoard={invalidateBoard}
     />
   )
 }
@@ -65,21 +93,89 @@ function TaskDetailContent({
   tasks,
   configData,
   tools,
+  operations,
   isRunning,
-  invalidateBoard,
 }: {
   task: Task
   tasks: Task[]
   configData: Config
   tools: string[]
+  operations: Operation[]
   isRunning: (type: string, targetId?: string) => boolean
-  invalidateBoard: () => Promise<void>
 }) {
   const navigate = useNavigate()
-  const lastWSEvent = useLastWSEvent()
+  const queryClient = useQueryClient()
+  const updateTaskMutation = useUpdateTask()
+  const deleteMutation = useDeleteTask()
+  const [saving, setSaving] = useState(false)
   const [selectedDependencyId, setSelectedDependencyId] = useState('')
   const [addingDependency, setAddingDependency] = useState(false)
   const [dependencyError, setDependencyError] = useState<string | null>(null)
+
+  const runningOperations = useMemo(
+    () => operations.filter((op) => op.status === 'running'),
+    [operations],
+  )
+  const isOperationRunning = useCallback(
+    (type: string, targetId?: string) => {
+      if (runningOperations.length === 0) return isRunning(type, targetId)
+      return runningOperations.some(
+        (op) =>
+          op.type === type &&
+          (targetId === undefined ||
+            targetId === '' ||
+            op.target_id === targetId),
+      )
+    },
+    [isRunning, runningOperations],
+  )
+  const invalidateBoard = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      queryClient.invalidateQueries({ queryKey: ['operations'] }),
+      queryClient.invalidateQueries({ queryKey: ['status'] }),
+    ])
+  }, [queryClient])
+  const onSaved = useCallback(() => {
+    void invalidateBoard()
+  }, [invalidateBoard])
+  const onDeleted = useCallback(() => {
+    void navigate({ to: '/' })
+    void invalidateBoard()
+  }, [invalidateBoard, navigate])
+
+  const form = useTaskForm(
+    {
+      title: task.title,
+      description: task.description ?? '',
+    },
+    async (values) => {
+      setSaving(true)
+      try {
+        await updateTaskMutation.mutateAsync({
+          id: task.id,
+          data: {
+            title: values.title.trim(),
+            description: values.description.trim(),
+          },
+        })
+        onSaved()
+      } catch (err: any) {
+        alert(err?.message ?? 'Save failed')
+      } finally {
+        setSaving(false)
+      }
+    },
+  )
+
+  useEffect(() => {
+    form.reset({
+      title: task.title,
+      description: task.description ?? '',
+    })
+  }, [task.id, task.title, task.description, form])
+
+  const isEditable = task.status === 'pending'
 
   const tasksById = useMemo(
     () => new Map(tasks.map((item) => [item.id, item])),
@@ -114,20 +210,22 @@ function TaskDetailContent({
     }
   }
 
+  const handleDelete = async () => {
+    try {
+      await deleteMutation.mutateAsync(task.id)
+      onDeleted()
+    } catch (err: any) {
+      alert(err?.message ?? 'Delete failed')
+    }
+  }
+
   return (
     <TaskDetailProvider
       task={task}
       config={configData}
       tools={tools}
-      lastWSEvent={lastWSEvent}
-      isOperationRunning={isRunning}
-      onSaved={() => {
-        void invalidateBoard()
-      }}
-      onDeleted={() => {
-        void navigate({ to: '/' })
-        void invalidateBoard()
-      }}
+      isOperationRunning={isOperationRunning}
+      onSaved={onSaved}
     >
       <div className="flex flex-1 overflow-hidden">
         <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-4 py-4">
@@ -149,6 +247,9 @@ function TaskDetailContent({
           <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)]">
             <div className="flex flex-1 flex-col gap-3.5 p-5">
               <TaskDetailForm
+                form={form}
+                isEditable={isEditable}
+                task={task}
                 tasksById={tasksById}
                 dependencyChoices={dependencyChoices}
                 selectedDependencyId={selectedDependencyId}
@@ -162,7 +263,16 @@ function TaskDetailContent({
               <TaskTimelineLayout />
             </div>
 
-            <TaskDetailActionsBar
+            <TaskActionsBar
+              isEditable={task.status === 'pending'}
+              isDeletable={task.status !== 'running' && task.status !== 'merged'}
+              deleting={deleteMutation.isPending}
+              saving={saving}
+              formId="task-edit-form"
+              form={form}
+              onDelete={() => {
+                void handleDelete()
+              }}
               onClose={() => {
                 void navigate({ to: '/' })
               }}
@@ -175,6 +285,9 @@ function TaskDetailContent({
 }
 
 type TaskDetailFormProps = {
+  form: ReturnType<typeof useTaskForm>
+  isEditable: boolean
+  task: Task
   tasksById: Map<string, Task>
   dependencyChoices: Task[]
   selectedDependencyId: string
@@ -186,6 +299,9 @@ type TaskDetailFormProps = {
 }
 
 function TaskDetailForm({
+  form,
+  isEditable,
+  task,
   tasksById,
   dependencyChoices,
   selectedDependencyId,
@@ -195,8 +311,6 @@ function TaskDetailForm({
   setDependencyError,
   handleAddDependency,
 }: TaskDetailFormProps) {
-  const { form, isEditable, task, controlClass } = useTaskDetailContext()
-
   return (
     <form
       id="task-edit-form"
@@ -348,33 +462,5 @@ function TaskTimelineLayout() {
         </div>
       )}
     </div>
-  )
-}
-
-function TaskTimeline() {
-  return <TaskTimelineBase />
-}
-
-function TaskDetailActionsBar({ onClose }: { onClose: () => void }) {
-  const {
-    isEditable,
-    isDeletable,
-    deleting,
-    saving,
-    form,
-    handleDelete,
-  } = useTaskDetailContext()
-
-  return (
-    <TaskActionsBar
-      isEditable={isEditable}
-      isDeletable={isDeletable}
-      deleting={deleting}
-      saving={saving}
-      formId="task-edit-form"
-      form={form}
-      onDelete={handleDelete}
-      onClose={onClose}
-    />
   )
 }
