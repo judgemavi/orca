@@ -1,8 +1,8 @@
 import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-export type TimelinePhaseState = 'disabled' | 'active' | 'completed'
-export type TimelinePhaseId = 'planning' | 'execution' | 'merge'
+type TimelinePhaseState = 'disabled' | 'active' | 'completed'
+type TimelinePhaseId = 'planning' | 'execution' | 'merge'
 
 const PHASE_LABELS: Record<TimelinePhaseId, string> = {
   planning: 'Planning',

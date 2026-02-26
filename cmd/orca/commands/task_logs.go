@@ -196,9 +196,8 @@ func printTaskInteractionContent(
 			return fmt.Errorf("get interaction: %w", getErr)
 		}
 		if current.Status == "completed" || current.Status == "failed" {
-			finalChunk, finalOffset, finalErr := readInteractionDelta(current.LogPath, offset)
+			finalChunk, _, finalErr := readInteractionDelta(current.LogPath, offset)
 			if finalErr == nil {
-				offset = finalOffset
 				if finalChunk != "" {
 					if raw {
 						fmt.Print(finalChunk)

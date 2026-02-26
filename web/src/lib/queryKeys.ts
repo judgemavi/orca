@@ -3,7 +3,7 @@ export const queryKeys = {
   config: ['config'] as const,
   sessions: ['sessions'] as const,
   status: ['status'] as const,
-  operations: (filters?: Record<string, string | undefined>) =>
+  operations: (filters?: { target_id?: string; type?: string }) =>
     ['operations', filters ?? {}] as const,
   models: (tool?: string) => ['models', tool ?? null] as const,
   taskPlan: (taskId: string) => ['taskPlan', taskId] as const,

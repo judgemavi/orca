@@ -5,42 +5,41 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 // ========== Task Operations ==========
 
-func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	store := s.taskStore
-	resolved, ok := resolveTaskID(w, store, id)
-	if !ok {
-		return
-	}
 
-	type depReq struct {
-		DependsOn string `json:"depends_on"`
-	}
-	req, ok := decodeJSON[depReq](w, r, false)
-	if !ok {
-		return
-	}
+	s.withTask(func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
+		type depReq struct {
+			DependsOn string `json:"depends_on"`
+		}
+		req, ok := decodeJSON[depReq](w, r, false)
+		if !ok {
+			return
+		}
 
-	depResolved, ok := resolveTaskID(w, store, req.DependsOn)
-	if !ok {
-		return
-	}
+		store := s.taskStore
+		depResolved, ok := resolveTaskID(w, store, req.DependsOn)
+		if !ok {
+			return
+		}
 
-	if err := store.AddDependency(resolved, depResolved); err != nil {
-		jsonError(w, err, http.StatusInternalServerError)
-		return
-	}
-	if t, err := store.Get(resolved); err == nil {
-		s.hub.Broadcast(Event{Type: "task.updated", Data: t})
-	}
-	jsonOK(w, map[string]string{"task_id": resolved, "depends_on": depResolved})
+		if err := store.AddDependency(tk.ID, depResolved); err != nil {
+			jsonError(w, err, http.StatusInternalServerError)
+			return
+		}
+		if updated, err := store.Get(tk.ID); err == nil {
+			s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
+		}
+		jsonOK(w, map[string]string{"task_id": tk.ID, "depends_on": depResolved})
+	})(w, r)
 }
 
 func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {

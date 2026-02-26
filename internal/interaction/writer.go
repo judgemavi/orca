@@ -16,12 +16,6 @@ func (w *Writer) ID() string {
 	return w.id
 }
 
-func (w *Writer) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.file.Write(p)
-}
-
 func (w *Writer) WriteString(s string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

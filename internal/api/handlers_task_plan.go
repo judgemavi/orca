@@ -13,7 +13,8 @@ import (
 
 // ========== Task Plans ==========
 
-func (s *Server) handleGetTaskPlan(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleGetTaskPlan(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
@@ -34,7 +35,8 @@ func (s *Server) handleGetTaskPlan(w http.ResponseWriter, r *http.Request, id st
 	jsonOK(w, map[string]string{"plan": content})
 }
 
-func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodPut) {
 		return
 	}
@@ -61,7 +63,8 @@ func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request, id st
 	jsonOK(w, map[string]string{"plan": req.Plan})
 }
 
-func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
@@ -88,7 +91,8 @@ func (s *Server) handleGenerateTaskPlan(w http.ResponseWriter, r *http.Request, 
 }
 
 // POST /api/v1/tasks/{id}/request-plan-changes
-func (s *Server) handleRequestPlanChanges(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleRequestPlanChanges(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
@@ -242,7 +246,8 @@ func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteracti
 }
 
 // POST /api/v1/tasks/{id}/evaluate
-func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	type evalReq struct {
 		Tool  string `json:"tool"`
 		Model string `json:"model"`

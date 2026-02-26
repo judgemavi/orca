@@ -14,7 +14,8 @@ import (
 	"github.com/jasjeetmavi/orca/internal/interaction"
 )
 
-func (s *Server) handleListInteractions(w http.ResponseWriter, r *http.Request, taskID string) {
+func (s *Server) handleListInteractions(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
@@ -46,7 +47,9 @@ func (s *Server) handleListInteractions(w http.ResponseWriter, r *http.Request, 
 	jsonOK(w, map[string]interface{}{"interactions": filtered})
 }
 
-func (s *Server) handleGetInteraction(w http.ResponseWriter, r *http.Request, taskID, logID string) {
+func (s *Server) handleGetInteraction(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	logID := r.PathValue("interactionID")
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
@@ -84,7 +87,9 @@ func (s *Server) handleGetInteraction(w http.ResponseWriter, r *http.Request, ta
 	})
 }
 
-func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request, taskID, logID string) {
+func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	logID := r.PathValue("interactionID")
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
@@ -162,9 +167,8 @@ func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		if current.Status == "completed" || current.Status == "failed" {
-			finalDelta, finalOffset, err := readInteractionDelta(current.LogPath, offset)
+			finalDelta, _, err := readInteractionDelta(current.LogPath, offset)
 			if err == nil && finalDelta != "" {
-				offset = finalOffset
 				if drv == nil {
 					drv, _ = driver.Get(current.Tool)
 				}

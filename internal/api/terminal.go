@@ -19,7 +19,7 @@ type terminalControlMessage struct {
 }
 
 func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
-	sessionID := extractPathParam(r.URL.Path, "/api/v1/terminal/")
+	sessionID := r.PathValue("sessionID")
 	if sessionID == "" {
 		http.Error(w, "missing session id", http.StatusBadRequest)
 		return

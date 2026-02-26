@@ -10,6 +10,8 @@ import (
 	"github.com/jasjeetmavi/orca/internal/task"
 )
 
+type taskHandlerFunc func(w http.ResponseWriter, r *http.Request, tk *task.Task)
+
 // decodeJSON decodes the request body into T.
 // Returns the decoded value and true on success.
 // On failure, writes a 400 JSON error and returns zero, false.
@@ -41,6 +43,38 @@ func resolveTaskID(w http.ResponseWriter, store *task.Store, id string) (string,
 		return "", false
 	}
 	return resolved, true
+}
+
+func (s *Server) withTask(fn taskHandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resolved, ok := resolveTaskID(w, s.taskStore, r.PathValue("id"))
+		if !ok {
+			return
+		}
+
+		tk, err := s.taskStore.Get(resolved)
+		if err != nil {
+			jsonError(w, err, http.StatusNotFound)
+			return
+		}
+
+		fn(w, r, tk)
+	}
+}
+
+func (s *Server) withTaskValidation(validationErr string, allowedStatuses []string, fn taskHandlerFunc) http.HandlerFunc {
+	allowed := make(map[string]struct{}, len(allowedStatuses))
+	for _, status := range allowedStatuses {
+		allowed[status] = struct{}{}
+	}
+
+	return s.withTask(func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
+		if _, ok := allowed[tk.Status]; !ok {
+			jsonError(w, validationErr, http.StatusBadRequest)
+			return
+		}
+		fn(w, r, tk)
+	})
 }
 
 func (s *Server) runAsyncHandler(w http.ResponseWriter, eventPrefix string, responseData interface{}, fn func()) {

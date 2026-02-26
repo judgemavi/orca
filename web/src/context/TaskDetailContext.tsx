@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 import type { Config, Task } from '../types'
 
-export type TaskDetailContextValue = {
+type TaskDetailContextValue = {
   task: Task
   config: Config
   tools: string[]
@@ -10,7 +10,7 @@ export type TaskDetailContextValue = {
   isOperationRunning: (type: string, targetId?: string) => boolean
 }
 
-export const TaskDetailContext = createContext<TaskDetailContextValue | null>(
+const TaskDetailContext = createContext<TaskDetailContextValue | null>(
   null,
 )
 

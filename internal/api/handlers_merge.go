@@ -16,7 +16,7 @@ import (
 // ========== Merge ==========
 
 // POST /api/v1/tasks/{id}/merge
-func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
@@ -31,90 +31,77 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
-	store := s.taskStore
-	resolved, ok := resolveTaskID(w, store, id)
-	if !ok {
-		return
-	}
-	var err error
+	s.withTaskValidation("only approved tasks can be merged", []string{"approved"}, func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
+		store := s.taskStore
 
-	tk, err := store.Get(resolved)
-	if err != nil {
-		jsonError(w, err, http.StatusNotFound)
-		return
-	}
-	if tk.Status != "approved" {
-		jsonError(w, "only approved tasks can be merged", http.StatusBadRequest)
-		return
-	}
-
-	// Check that all dependencies are merged first.
-	for _, depID := range tk.DependsOn {
-		dep, err := store.Get(depID)
-		if err != nil {
-			jsonError(w, fmt.Sprintf("failed to check dependency %s: %v", depID[:8], err), http.StatusInternalServerError)
-			return
-		}
-		if dep.Status != "merged" {
-			jsonError(w, fmt.Sprintf("dependency %q (%s) must be merged first", dep.Title, dep.ID[:8]), http.StatusBadRequest)
-			return
-		}
-	}
-
-	ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
-	mode := strings.TrimSpace(req.Mode)
-	s.runAsyncHandler(w, "merge", map[string]string{"status": "merging"}, func() {
-		taskID := resolved
-
-		s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
-			"task_id": taskID,
-			"mode":    mode,
-		}})
-
-		var mergeErr error
-		if mode == "auto" {
-			ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (string, driver.Driver, string, time.Duration, error) {
-				return s.resolveToolConfigForTask(id, req.Tool, req.Model)
-			})
-			s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]string{
-				"task_id": taskID,
-				"message": "Auto-resolving conflicts...",
-			}})
-			mergeErr = ig.MergeWithRerun(taskID)
-		} else {
-			mergeErr = ig.MergeAndValidate(taskID)
-		}
-		if mergeErr != nil {
-			failData := map[string]interface{}{
-				"task_id": taskID,
-				"error":   mergeErr.Error(),
+		// Check that all dependencies are merged first.
+		for _, depID := range tk.DependsOn {
+			dep, err := store.Get(depID)
+			if err != nil {
+				jsonError(w, fmt.Sprintf("failed to check dependency %s: %v", depID[:8], err), http.StatusInternalServerError)
+				return
 			}
-			if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
-				failData["conflict"] = true
-				failData["worktree_path"] = worktree.ResolveTaskDir(s.cfg.Project.WorktreeDir, taskID)
+			if dep.Status != "merged" {
+				jsonError(w, fmt.Sprintf("dependency %q (%s) must be merged first", dep.Title, dep.ID[:8]), http.StatusBadRequest)
+				return
 			}
-			s.hub.Broadcast(Event{Type: "merge.failed", Data: failData})
-			return
 		}
 
-		if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
-			s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
+		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
+		mode := strings.TrimSpace(req.Mode)
+		s.runAsyncHandler(w, "merge", map[string]string{"status": "merging"}, func() {
+			taskID := tk.ID
+
+			s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
 				"task_id": taskID,
-				"error":   err.Error(),
+				"mode":    mode,
 			}})
-			return
-		}
-		if err := s.executor.Worktrees().Remove(taskID); err != nil {
-			slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
-		}
 
-		updated, getErr := store.Get(taskID)
-		if getErr != nil {
-			updated = &task.Task{ID: taskID, Status: "merged"}
-		}
-		s.hub.Broadcast(Event{Type: "merge.completed", Data: updated})
-		s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
-	})
+			var mergeErr error
+			if mode == "auto" {
+				ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (string, driver.Driver, string, time.Duration, error) {
+					return s.resolveToolConfigForTask(id, req.Tool, req.Model)
+				})
+				s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]string{
+					"task_id": taskID,
+					"message": "Auto-resolving conflicts...",
+				}})
+				mergeErr = ig.MergeWithRerun(taskID)
+			} else {
+				mergeErr = ig.MergeAndValidate(taskID)
+			}
+			if mergeErr != nil {
+				failData := map[string]interface{}{
+					"task_id": taskID,
+					"error":   mergeErr.Error(),
+				}
+				if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
+					failData["conflict"] = true
+					failData["worktree_path"] = worktree.ResolveTaskDir(s.cfg.Project.WorktreeDir, taskID)
+				}
+				s.hub.Broadcast(Event{Type: "merge.failed", Data: failData})
+				return
+			}
+
+			if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
+				s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
+					"task_id": taskID,
+					"error":   err.Error(),
+				}})
+				return
+			}
+			if err := s.executor.Worktrees().Remove(taskID); err != nil {
+				slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
+			}
+
+			updated, getErr := store.Get(taskID)
+			if getErr != nil {
+				updated = &task.Task{ID: taskID, Status: "merged"}
+			}
+			s.hub.Broadcast(Event{Type: "merge.completed", Data: updated})
+			s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
+		})
+	})(w, r)
 }
 
 func (s *Server) resolveToolConfigForTask(taskID string, toolOverride string, modelOverride string) (string, driver.Driver, string, time.Duration, error) {

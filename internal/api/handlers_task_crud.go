@@ -37,7 +37,8 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]interface{}{"tasks": tasks})
 }
 
-func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	store := s.taskStore
 	resolved, ok := resolveTaskID(w, store, id)
 	if !ok {
@@ -77,7 +78,8 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 201, map[string]interface{}{"data": t})
 }
 
-func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	store := s.taskStore
 	resolved, ok := resolveTaskID(w, store, id)
 	if !ok {
@@ -139,7 +141,8 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 	jsonOK(w, t)
 }
 
-func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	store := s.taskStore
 	resolved, ok := resolveTaskID(w, store, id)
 	if !ok {

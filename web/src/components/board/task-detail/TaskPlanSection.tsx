@@ -17,7 +17,7 @@ import { useModelsQuery } from '../../../hooks/queries/useModels'
 import { useInteractionsQuery, selectByPhase } from './useInteractions'
 import { useTaskReviewsQuery } from '../../../hooks/queries/useReviews'
 import { useWebSocket } from '../../../hooks/useWebSocket'
-import type { TaskEvaluation } from '../../../types'
+import { isKnownWSEvent, type TaskEvaluation } from '../../../types'
 
 interface Props {
   readOnly?: boolean
@@ -121,13 +121,10 @@ export function TaskPlanSection({ readOnly = false }: Props) {
   useWebSocket(
     useCallback(
       (evt) => {
-        const evtTaskId =
-          (evt.data as any)?.task_id ?? (evt.data as any)?.id
-        if (evtTaskId !== task.id) return
+        if (!isKnownWSEvent(evt)) return
         if (evt.type === 'plan.failed') {
-          setPlanError(
-            String((evt.data as any)?.error ?? 'Failed to generate plan'),
-          )
+          if (evt.data.task_id !== task.id) return
+          setPlanError(evt.data.error || 'Failed to generate plan')
         }
       },
       [task.id],

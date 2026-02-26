@@ -10,6 +10,7 @@ import { api } from '../../../api'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
 import { selectByPhase, useInteractionsQuery } from './useInteractions'
 import { InteractionEntry } from './InteractionEntry'
+import { isKnownWSEvent } from '../../../types'
 
 interface Props {
   readOnly?: boolean
@@ -80,8 +81,18 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
   useWebSocket(
     useCallback(
       (evt) => {
-        const evtTaskId =
-          (evt.data as any)?.task_id ?? (evt.data as any)?.id
+        if (!isKnownWSEvent(evt)) return
+
+        let evtTaskId: string | undefined
+        if (evt.type === 'merge.started' || evt.type === 'merge.failed') {
+          evtTaskId = evt.data.task_id
+        } else if (evt.type === 'merge.progress') {
+          evtTaskId = evt.data.task_id
+        } else if (evt.type === 'merge.completed') {
+          evtTaskId = 'id' in evt.data ? evt.data.id : undefined
+        } else if (evt.type === 'task.updated') {
+          evtTaskId = evt.data.id
+        }
         if (evtTaskId !== task.id) return
 
         if (evt.type === 'merge.started') {
@@ -90,28 +101,24 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
           setConflictWorktreePath('')
           setShowManualResolve(false)
         } else if (evt.type === 'merge.progress') {
-          setMergeProgress(
-            String((evt.data as any)?.message ?? 'Resolving...'),
-          )
+          setMergeProgress(evt.data.message ?? 'Resolving...')
         } else if (evt.type === 'merge.completed') {
           setMergeProgress(null)
           setConflictError(null)
         } else if (evt.type === 'merge.failed') {
           setMergeProgress(null)
-          const isConflict = Boolean((evt.data as any)?.conflict)
-          const errMsg = String((evt.data as any)?.error ?? 'Merge failed')
+          const isConflict = Boolean(evt.data.conflict)
+          const errMsg = evt.data.error
           if (isConflict) {
             setConflictError(errMsg)
-            setConflictWorktreePath(
-              String((evt.data as any)?.worktree_path ?? ''),
-            )
+            setConflictWorktreePath(evt.data.worktree_path ?? '')
           } else {
             setConflictError(null)
             setConflictWorktreePath('')
             alert(errMsg)
           }
         } else if (evt.type === 'task.updated') {
-          const status = String((evt.data as any)?.status ?? '')
+          const status = 'status' in evt.data ? evt.data.status : ''
           if (status === 'merged' || status === 'approved' || status === 'failed') {
             setMergeProgress(null)
           }

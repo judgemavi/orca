@@ -5,6 +5,7 @@ import { Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { handleWSEvent } from '../lib/wsQueryBridge'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { isKnownWSEvent } from '../types'
 import { OperationsIndicator } from '../components/common/OperationsIndicator'
 import { ConsolePanel } from '../components/console/ConsolePanel'
 import { api } from '../api'
@@ -61,16 +62,17 @@ const RootLayout = () => {
   useWebSocket(
     useCallback((event: Parameters<typeof handleWSEvent>[1]) => {
       handleWSEvent(queryClient, event)
+      if (!isKnownWSEvent(event)) return
 
       if (
         event.type === 'session.created' &&
-        String(event.data.type) === 'orchestrator'
+        event.data.type === 'orchestrator'
       ) {
-        setOrchestratorId(String(event.data.id ?? ''))
+        setOrchestratorId(event.data.id)
       }
       if (
         event.type === 'session.exited' &&
-        String(event.data.type) === 'orchestrator'
+        event.data.type === 'orchestrator'
       ) {
         setOrchestratorId(null)
       }

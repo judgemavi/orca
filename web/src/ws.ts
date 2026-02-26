@@ -19,7 +19,26 @@ function connect() {
   ws = new WebSocket(getURL())
 
   ws.onmessage = (e) => {
-    const event: WSEvent = JSON.parse(e.data)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(e.data)
+    } catch {
+      return
+    }
+    if (!parsed || typeof parsed !== 'object') return
+
+    const eventObj = parsed as Record<string, unknown>
+    const type = typeof eventObj.type === 'string' ? eventObj.type : ''
+    if (!type) return
+
+    const event: WSEvent = {
+      type,
+      timestamp: typeof eventObj.timestamp === 'string' ? eventObj.timestamp : '',
+      data:
+        eventObj.data && typeof eventObj.data === 'object'
+          ? (eventObj.data as Record<string, unknown>)
+          : {},
+    }
     listeners.forEach((fn) => fn(event))
   }
 
