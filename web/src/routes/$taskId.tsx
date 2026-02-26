@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { api } from '../api'
 import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel'
+import { TaskInteractionList } from '../components/board/task-detail/TaskInteractionList'
 import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar'
-import { TaskTimeline } from '../components/board/task-detail/TaskTimeline'
 import { StatusBadge } from '../components/common/StatusBadge'
 import {
   TaskDetailProvider,
@@ -39,6 +39,7 @@ type TaskDetailFormProps = {
   addingDependency: boolean
   dependencyError: string | null
   setDependencyError: (value: string | null) => void
+  saving: boolean
   handleAddDependency: () => Promise<void>
 }
 
@@ -233,6 +234,16 @@ function TaskDetailContent({
             >
               ← Back to tasks
             </Link>
+            {task.status !== 'running' && task.status !== 'merged' && (
+              <button
+                type="button"
+                className="rounded border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
+                onClick={() => void handleDelete()}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-elevated">
@@ -240,6 +251,7 @@ function TaskDetailContent({
               <TaskDetailForm
                 form={form}
                 isEditable={isEditable}
+                saving={saving}
                 task={task}
                 tasksById={tasksById}
                 dependencyChoices={dependencyChoices}
@@ -255,17 +267,6 @@ function TaskDetailContent({
             <TaskTimelineLayout />
 
             <TaskActionsBar
-              isEditable={task.status === 'pending'}
-              isDeletable={
-                task.status !== 'running' && task.status !== 'merged'
-              }
-              deleting={deleteMutation.isPending}
-              saving={saving}
-              formId="task-edit-form"
-              form={form}
-              onDelete={() => {
-                void handleDelete()
-              }}
               onClose={() => {
                 void navigate({ to: '/' })
               }}
@@ -280,6 +281,7 @@ function TaskDetailContent({
 function TaskDetailForm({
   form,
   isEditable,
+  saving,
   task,
   tasksById,
   dependencyChoices,
@@ -473,6 +475,21 @@ function TaskDetailForm({
                 </div>
               )}
             </div>
+            {isEditable && (
+              <form.Subscribe selector={(state) => state.isDirty}>
+                {(isDirty) => (
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+                      disabled={saving || !isDirty}
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                )}
+              </form.Subscribe>
+            )}
           </div>
         </Collapsible.Content>
       </Collapsible.Root>
@@ -485,7 +502,10 @@ function TaskTimelineLayout() {
 
   return (
     <div className="min-h-0 flex-1 p-4">
-      <TaskTimeline>
+      <div className="flex min-h-0 flex-1 gap-4">
+        <div className="min-h-0 flex-1 overflow-auto">
+          <TaskInteractionList taskId={task.id} />
+        </div>
         {activeLogId && (
           <div className="min-h-0 w-2/5 shrink-0">
             <InteractionLogPanel
@@ -497,7 +517,7 @@ function TaskTimelineLayout() {
             />
           </div>
         )}
-      </TaskTimeline>
+      </div>
     </div>
   )
 }

@@ -248,6 +248,10 @@ func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteracti
 // POST /api/v1/tasks/{id}/evaluate
 func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+
 	type evalReq struct {
 		Tool  string `json:"tool"`
 		Model string `json:"model"`
@@ -270,6 +274,14 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if running, runErr := s.interactions.IsRunning(&resolved, "evaluate"); runErr != nil {
+		jsonError(w, runErr, http.StatusInternalServerError)
+		return
+	} else if running {
+		jsonError(w, "evaluation already in progress", http.StatusConflict)
+		return
+	}
+
 	toolName, d, err := s.cfg.ResolveToolForPhase("explore", req.Tool)
 	if err != nil {
 		if strings.TrimSpace(req.Tool) != "" {
@@ -281,17 +293,40 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	modelOverride := s.cfg.ResolveModelForPhase("explore", strings.TrimSpace(req.Model), d)
-	evaluator := evaluate.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
-
-	var result *evaluate.EvaluationResult
-	result, err = evaluator.Evaluate(resolved, tk.Title, tk.Description)
-	if err != nil {
-		jsonError(w, fmt.Sprintf("evaluate plan: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	jsonOK(w, map[string]interface{}{
-		"task_id":    resolved,
-		"evaluation": result,
+	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
+		"data": map[string]string{
+			"task_id": resolved,
+			"status":  "started",
+		},
 	})
+
+	s.hub.Broadcast(Event{
+		Type: "evaluate.started",
+		Data: map[string]string{
+			"task_id": resolved,
+		},
+	})
+
+	go func(taskID, title, description string) {
+		evaluator := evaluate.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
+		result, evalErr := evaluator.Evaluate(taskID, title, description)
+		if evalErr != nil {
+			s.hub.Broadcast(Event{
+				Type: "evaluate.failed",
+				Data: map[string]string{
+					"task_id": taskID,
+					"error":   fmt.Sprintf("evaluate plan: %v", evalErr),
+				},
+			})
+			return
+		}
+
+		s.hub.Broadcast(Event{
+			Type: "evaluate.completed",
+			Data: map[string]interface{}{
+				"task_id":    taskID,
+				"evaluation": result,
+			},
+		})
+	}(resolved, tk.Title, tk.Description)
 }

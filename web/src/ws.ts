@@ -5,7 +5,7 @@ import type { WSEvent } from './types'
 type Listener = (event: WSEvent) => void
 
 let ws: WebSocket | null = null
-let listeners = new Set<Listener>()
+const listeners = new Set<Listener>()
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 function getURL() {

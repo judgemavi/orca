@@ -43,6 +43,7 @@ var deletableStatuses = map[string]bool{
 	"review":   true,
 	"approved": true,
 	"failed":   true,
+	"stopped":  true,
 }
 
 func NewStore(db *state.DB) *Store {

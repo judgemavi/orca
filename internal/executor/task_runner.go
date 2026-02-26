@@ -2,7 +2,7 @@ package executor
 
 // task_runner.go runs a single task via pipe or PTY mode.
 //
-// Called by: collectResult (batch) and RunSingleWithOpts (single re-run)
+// Called by: collectResult (batch) and runSingleWithOpts (single run/resume)
 // Key flow: runTask → streamPipe|streamPTY → collect diff + artifacts
 
 import (
@@ -83,9 +83,9 @@ func (e *Executor) streamPipe(ctx context.Context, info taskInfo, outputCh chan<
 	result.InputTokens = res.InputTokens
 	result.OutputTokens = res.OutputTokens
 	result.TotalCost = res.TotalCost
+	e.storeSessionID(info.taskID, res.SessionID)
 	if res.ExitCode == 0 {
 		result.Status = "review"
-		e.storeSessionID(info.taskID, res.SessionID)
 	}
 	return result
 }
@@ -205,6 +205,7 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	result.InputTokens = totalCost.InputTokens
 	result.OutputTokens = totalCost.OutputTokens
 	result.TotalCost = totalCost.TotalCost
+	defer e.storeSessionID(info.taskID, sessionID)
 
 	if streamErr != nil {
 		slog.Warn("stream PTY failed", "task_id", info.taskID, "err", streamErr)
@@ -215,7 +216,7 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 		return result
 	}
 	if runCtx.Err() == context.Canceled {
-		result.Stderr = "orca: process cancelled"
+		result.Stderr = "orca: process stopped"
 		return result
 	}
 
@@ -242,7 +243,6 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 
 	if result.ExitCode == 0 {
 		result.Status = "review"
-		e.storeSessionID(info.taskID, sessionID)
 	}
 	return result
 }

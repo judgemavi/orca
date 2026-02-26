@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -220,6 +221,85 @@ func (r *Registry) runTaskShow(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Println(t.Plan)
 	}
+	return nil
+}
+
+func (r *Registry) runTaskStop(cmd *cobra.Command, args []string) error {
+	db, _, exec, err := r.loadRuntimeOrErr()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	store := task.NewStore(db)
+
+	var id string
+	if len(args) > 0 {
+		id, err = resolveTaskID(store, args[0])
+	} else {
+		id, err = pickTask(store, "Running task", statusFilter("running"))
+	}
+	if err != nil {
+		return err
+	}
+
+	tk, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task %s: %w", short(id), err)
+	}
+	if tk.Status != "running" {
+		return fmt.Errorf("task %s is %q, only running tasks can be stopped", short(id), tk.Status)
+	}
+
+	if err := exec.StopTask(id); err != nil {
+		return fmt.Errorf("stop task %s: %w", short(id), err)
+	}
+	if err := store.Update(id, map[string]interface{}{"status": "stopped"}); err != nil {
+		return fmt.Errorf("set task %s stopped: %w", short(id), err)
+	}
+	fmt.Printf("Stopped task %s\n", short(id))
+	return nil
+}
+
+func (r *Registry) runTaskResume(cmd *cobra.Command, args []string) error {
+	db, _, exec, err := r.loadRuntimeOrErr()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	store := task.NewStore(db)
+
+	var id string
+	if len(args) > 0 {
+		id, err = resolveTaskID(store, args[0])
+	} else {
+		id, err = pickTask(store, "Stopped task", statusFilter("stopped"))
+	}
+	if err != nil {
+		return err
+	}
+
+	tk, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task %s: %w", short(id), err)
+	}
+	if tk.Status != "stopped" {
+		return fmt.Errorf("task %s is %q, only stopped tasks can be resumed", short(id), tk.Status)
+	}
+	if tk.SessionID == "" {
+		return fmt.Errorf("task %s cannot resume without session_id", short(id))
+	}
+
+	done := make(chan struct{})
+	go renderSpinner("Resuming task "+short(id), done)
+	result, err := exec.ResumeTask(id)
+	close(done)
+	if err != nil {
+		return fmt.Errorf("resume task %s: %w", short(id), err)
+	}
+	fmt.Printf("%s %s  %s  (%s)\n", statusIcon(result.Status), short(result.TaskID), tk.Title, result.Duration.Round(time.Second))
+	fmt.Printf("Resumed task %s finished with status: %s\n", short(id), result.Status)
 	return nil
 }
 

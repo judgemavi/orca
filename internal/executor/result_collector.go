@@ -51,7 +51,7 @@ func (e *Executor) collectResult(prepared []taskInfo, baselineSnapshot *quality.
 					ToolName:     info.toolName,
 					Status:       "failed",
 					ExitCode:     -1,
-					Stderr:       "orca: process cancelled",
+					Stderr:       "orca: process stopped",
 					WorktreePath: info.worktreePath,
 				}
 				e.emitDone(info.taskID, -1)

@@ -3,6 +3,7 @@ package evaluate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -95,6 +96,10 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 		exitCode = result.ExitCode
 		stderr = result.Stderr
 	}
+	output := stdout
+	evaluationResult := &EvaluationResult{NeedsBreakdown: false}
+	parseErr := llm.ExtractJSON(output, evaluationResult)
+
 	if writer != nil {
 		status := "completed"
 		opts := []interaction.FinishOption{}
@@ -107,6 +112,12 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 		} else if exitCode != 0 {
 			status = "failed"
 			opts = append(opts, interaction.WithError(fmt.Sprintf("evaluator exited %d: %s", exitCode, stderr)))
+		} else {
+			if parseErr != nil {
+				evaluationResult = &EvaluationResult{NeedsBreakdown: false}
+			}
+			qualityBytes, _ := json.Marshal(evaluationResult)
+			opts = append(opts, interaction.WithQuality(string(qualityBytes)))
 		}
 		_ = e.interactions.Finish(writer.ID(), status, opts...)
 		_ = writer.Close()
@@ -118,13 +129,11 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 		return nil, fmt.Errorf("evaluator exited %d: %s", exitCode, stderr)
 	}
 
-	output := stdout
-	var evaluationResult EvaluationResult
-	if err := llm.ExtractJSON(output, &evaluationResult); err != nil {
+	if parseErr != nil {
 		return &EvaluationResult{NeedsBreakdown: false}, nil
 	}
 
-	return &evaluationResult, nil
+	return evaluationResult, nil
 }
 
 func buildEvaluatePrompt(codebaseContext, title, description string) string {

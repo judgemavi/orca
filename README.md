@@ -9,11 +9,13 @@ Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 1. `explore` — generate/refresh codebase context
 2. `breakdown` — decompose goals into dependency-aware tasks
 3. `tasks plan` / `tasks evaluate` — refine task implementation plans
-4. `run` — execute ready tasks directly (parallel, isolated worktrees)
+4. `start` — execute ready tasks directly (parallel, isolated worktrees)
 5. `review` — approve, request changes, or run AI review
 6. `merge` — merge approved tasks into integration branch
 
 Task flow: `pending → planned → running → review → approved → merged`.
+Stop path: `running → stopped` (via `tasks_stop`); `stopped → running` (resume via `tasks_resume`).
+Failure path: `running → failed`.
 
 ## Features
 
@@ -59,8 +61,8 @@ orca explore
 orca tasks add "Implement user authentication"
 orca breakdown "Add rate limiting and retry safety across API clients"
 
-# Run ready tasks directly
-orca run
+# Start ready tasks directly
+orca start
 
 # Review outcomes
 orca review ai <task-id>                # AI-powered code review
@@ -81,7 +83,7 @@ orca serve
 orca init                    [-y]
 orca explore                 [--tool] [--manual] [--stdin] [--check]
 orca breakdown <goal...>     [--tool] [--auto]
-orca run [task-ids...]       [--no-merge]
+orca start [task-ids...]     [--no-merge]   # alias: orca run
 
 orca tasks / task
   ├── add <title...>         [--description] [--parent] [--depends-on]
@@ -89,7 +91,8 @@ orca tasks / task
   ├── edit [id]              [--title] [--description] [--plan] [--status]
   ├── delete [id]            [-y]
   ├── show [id]
-  ├── reopen [ids...]
+  ├── stop [id]
+  ├── resume [id]
   ├── add-dep <id> <dep-id>
   ├── merge [id]             [--auto]
   ├── plan [id]              [--save] [--edit] [--tool] [--model]
@@ -121,7 +124,7 @@ orca cleanup                 [--dry-run]
 
 `orca mcp` exposes 35 MCP tools for task orchestration:
 
-- **Task lifecycle:** `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
+- **Task lifecycle:** `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_cancel`, `tasks_add_dependency`
 - **Planning:** `breakdown`, `tasks_plan_generate`, `tasks_plan_evaluate`, `tasks_approve_plan`, `tasks_request_plan_changes`
 - **Execution:** `tasks_run`
 - **Review/integration:** `tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`

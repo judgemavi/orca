@@ -19,6 +19,8 @@ For every action:
 
 Primary flow: `pending → planned → running → review → approved → merged`
 
+Stop path: `running → stopped` (via `tasks_cancel`). `stopped → running` (resume/restart via `tasks_run`) or `pending` (via `tasks_reopen`).
+
 Failure path: `running → failed` (can return to `pending` via `tasks_reopen`).
 
 Write task descriptions with enough detail for a worker to execute without extra context.

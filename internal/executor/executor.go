@@ -99,13 +99,14 @@ type Executor struct {
 	// Runtime monitors.
 	monitors []monitor.Monitor
 
-	// Cancel support.
+	// Stop support.
 	cancel   context.CancelFunc
 	runCtx   context.Context
 	mu       sync.Mutex
 	running  map[string]*exec.Cmd
 	sessions map[string]string
-	runID    string // ephemeral, set during RunBatch
+	stopped  map[string]bool // tasks explicitly stopped by user
+	runID    string          // ephemeral, set during RunBatch
 
 	outputHook func(worker.OutputLine)
 	doneHook   func(taskID string, exitCode int)
@@ -188,6 +189,9 @@ func (e *Executor) finalizeRun(results []TaskResult) error {
 	failedCount := 0
 	succeededCount := 0
 	for _, r := range results {
+		if e.wasStopped(r.TaskID) {
+			continue
+		}
 		if err := e.taskStore.Update(r.TaskID, map[string]interface{}{"status": r.Status}); err != nil {
 			slog.Warn("complete task failed", "task_id", r.TaskID, "run_id", e.runID, "err", err)
 		}
@@ -256,6 +260,7 @@ func NewExecutor(db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg 
 		sessionMgr:    mgr,
 		running:       make(map[string]*exec.Cmd),
 		sessions:      make(map[string]string),
+		stopped:       make(map[string]bool),
 		interactions:  opts.Interactions,
 		outputHook:    opts.OutputHook,
 		doneHook:      opts.DoneHook,
@@ -265,6 +270,31 @@ func NewExecutor(db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg 
 
 // Worktrees returns the underlying worktree manager.
 func (e *Executor) Worktrees() *worktree.Manager { return e.worktrees }
+
+// StopTask interrupts a currently running task process.
+func (e *Executor) StopTask(taskID string) error {
+	e.mu.Lock()
+	_, ok := e.running[taskID]
+	if !ok {
+		e.mu.Unlock()
+		return fmt.Errorf("task not running")
+	}
+	e.stopped[taskID] = true
+	e.mu.Unlock()
+	e.killProcess(taskID)
+	return nil
+}
+
+// wasStopped checks and clears the stopped flag for a task.
+func (e *Executor) wasStopped(taskID string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.stopped[taskID] {
+		delete(e.stopped, taskID)
+		return true
+	}
+	return false
+}
 
 // SetMonitorAlertHook sets a callback for runtime monitor alerts.
 func (e *Executor) SetMonitorAlertHook(fn func(alertType, taskID, message string)) {
@@ -339,8 +369,43 @@ func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error
 	return results, nil
 }
 
-// RunSingleWithOpts re-runs a single task with optional tool/model overrides.
-func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts RunOpts) error {
+type resumeRunState struct {
+	reviewID        string
+	feedback        string
+	args            []string
+	resumeSessionID string
+}
+
+func (e *Executor) resolveResumeRunState(taskID, sessionID string, d driver.Driver, model string, requireSession bool) (resumeRunState, error) {
+	reviewID, feedback, err := e.taskStore.GetPendingReview(taskID)
+	if err != nil && err != sql.ErrNoRows {
+		return resumeRunState{}, fmt.Errorf("get pending review for task %s: %w", taskID, err)
+	}
+	if err == sql.ErrNoRows {
+		reviewID = ""
+		feedback = ""
+	}
+
+	if requireSession && sessionID == "" {
+		return resumeRunState{}, fmt.Errorf("task %s cannot resume without session_id", taskID)
+	}
+
+	var args []string
+	resumeSessionID := ""
+	if sessionID != "" {
+		args = d.ResumeArgs(sessionID, feedback, model)
+		resumeSessionID = sessionID
+	}
+
+	return resumeRunState{
+		reviewID:        reviewID,
+		feedback:        feedback,
+		args:            args,
+		resumeSessionID: resumeSessionID,
+	}, nil
+}
+
+func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts RunOpts, requireStopped bool) (*TaskResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -348,12 +413,18 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 
 	t, err := e.taskStore.Get(taskID)
 	if err != nil {
-		return fmt.Errorf("get task %s: %w", taskID, err)
+		return nil, fmt.Errorf("get task %s: %w", taskID, err)
+	}
+	if requireStopped && t.Status != "stopped" {
+		return nil, fmt.Errorf("task %s is %q, only stopped tasks can be resumed", taskID, t.Status)
+	}
+	if requireStopped && t.SessionID == "" {
+		return nil, fmt.Errorf("task %s cannot resume without session_id", taskID)
 	}
 
 	toolName, d, err := e.resolveTaskToolConfig("run", opts.ToolOverride)
 	if err != nil {
-		return fmt.Errorf("resolve tool for task %s: %w", taskID, err)
+		return nil, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 	}
 	model := e.config.ResolveModelForPhase("run", opts.ModelOverride, d)
 	timeout, _ := time.ParseDuration("600s")
@@ -361,11 +432,11 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	wtPath := worktree.ResolveTaskDir(e.config.Project.WorktreeDir, taskID)
 	if _, err := os.Stat(wtPath); err != nil {
 		if !os.IsNotExist(err) {
-			return fmt.Errorf("stat worktree for task %s: %w", taskID, err)
+			return nil, fmt.Errorf("stat worktree for task %s: %w", taskID, err)
 		}
 		createdPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch, t.Title)
 		if err != nil {
-			return fmt.Errorf("create worktree for task %s: %w", taskID, err)
+			return nil, fmt.Errorf("create worktree for task %s: %w", taskID, err)
 		}
 		wtPath = createdPath
 	}
@@ -383,25 +454,17 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		prompt = contextPrefix + prompt
 	}
 
-	reviewID, feedback, err := e.taskStore.GetPendingReview(taskID)
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("get pending review for task %s: %w", taskID, err)
+	resumeState, err := e.resolveResumeRunState(taskID, t.SessionID, d, model, requireStopped)
+	if err != nil {
+		return nil, err
 	}
-	if err == sql.ErrNoRows {
-		reviewID = ""
-		feedback = ""
-	}
-
-	var args []string
-	if t.SessionID != "" {
-		args = d.ResumeArgs(t.SessionID, feedback, model)
-	} else {
-		prompt = strings.TrimSpace(prompt) + "\n\nReviewer feedback: " + feedback
+	if resumeState.resumeSessionID == "" {
+		prompt = strings.TrimSpace(prompt) + "\n\nReviewer feedback: " + resumeState.feedback
 	}
 	prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n" + strings.TrimSpace(prompts.ExecutorStyle) + "\n\n---\n\n" + prompt
 
 	if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
-		return fmt.Errorf("set task running: %w", err)
+		return nil, fmt.Errorf("set task running: %w", err)
 	}
 	if e.broadcastHook != nil {
 		e.broadcastHook(taskID, "running")
@@ -447,9 +510,9 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		worktreePath:    wtPath,
 		prompt:          prompt,
 		model:           model,
-		args:            args,
-		resumeSessionID: t.SessionID,
-		resumeFeedback:  feedback,
+		args:            resumeState.args,
+		resumeSessionID: resumeState.resumeSessionID,
+		resumeFeedback:  resumeState.feedback,
 	}
 
 	result := e.runTask(ctx, info, outputCh)
@@ -457,11 +520,13 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	<-outputDone
 	e.emitDone(taskID, result.ExitCode)
 
-	if err := e.taskStore.Update(taskID, map[string]interface{}{"status": result.Status}); err != nil {
-		slog.Warn("update task status failed", "task_id", taskID, "status", result.Status, "err", err)
-	}
-	if e.broadcastHook != nil {
-		e.broadcastHook(taskID, result.Status)
+	if !e.wasStopped(taskID) {
+		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": result.Status}); err != nil {
+			slog.Warn("update task status failed", "task_id", taskID, "status", result.Status, "err", err)
+		}
+		if e.broadcastHook != nil {
+			e.broadcastHook(taskID, result.Status)
+		}
 	}
 
 	if e.interactions != nil && writer != nil {
@@ -487,11 +552,22 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 			slog.Warn("close interaction failed", "task_id", taskID, "run_id", runID, "err", closeErr)
 		}
 	}
-	if reviewID != "" && result.ExitCode == 0 {
-		if err := e.taskStore.AddressReview(reviewID); err != nil {
-			slog.Warn("address review failed", "review_id", reviewID, "task_id", taskID, "err", err)
+	if resumeState.reviewID != "" && result.ExitCode == 0 {
+		if err := e.taskStore.AddressReview(resumeState.reviewID); err != nil {
+			slog.Warn("address review failed", "review_id", resumeState.reviewID, "task_id", taskID, "err", err)
 		}
 	}
 
-	return nil
+	return &result, nil
+}
+
+// RunSingleWithOpts re-runs a single task with optional tool/model overrides.
+func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts RunOpts) error {
+	_, err := e.runSingleWithOpts(ctx, taskID, opts, false)
+	return err
+}
+
+// ResumeTask resumes a stopped task from its saved session.
+func (e *Executor) ResumeTask(taskID string) (*TaskResult, error) {
+	return e.runSingleWithOpts(context.Background(), taskID, RunOpts{}, true)
 }

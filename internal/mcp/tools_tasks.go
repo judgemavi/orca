@@ -157,12 +157,12 @@ func (s *Server) HandleTasksDeleteTool(argsRaw json.RawMessage) (interface{}, er
 	return map[string]interface{}{"task_id": taskID, "deleted": true}, nil
 }
 
-func (s *Server) HandleTasksReopenTool(argsRaw json.RawMessage) (interface{}, error) {
+func (s *Server) HandleTasksStopTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
 		TaskID string `json:"task_id"`
 	}](argsRaw)
 	if err != nil {
-		return nil, fmt.Errorf("tasks_reopen: %w", err)
+		return nil, fmt.Errorf("tasks_stop: %w", err)
 	}
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
@@ -175,13 +175,58 @@ func (s *Server) HandleTasksReopenTool(argsRaw json.RawMessage) (interface{}, er
 	if err != nil {
 		return nil, err
 	}
-	if t.Status != "failed" {
-		return nil, fmt.Errorf("task %s is %q, only failed tasks can be reopened", taskID, t.Status)
+	if t.Status != "running" {
+		return nil, fmt.Errorf("task %s is %q, only running tasks can be stopped", taskID, t.Status)
 	}
-	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "pending"}); err != nil {
+	if err := s.executor.StopTask(taskID); err != nil {
+		current, getErr := s.taskStore.Get(taskID)
+		if getErr != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"task_id": taskID, "status": current.Status}, nil
+	}
+	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "stopped"}); err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"task_id": taskID, "status": "pending"}, nil
+	return map[string]interface{}{"task_id": taskID, "status": "stopped"}, nil
+}
+
+func (s *Server) HandleTasksResumeTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		TaskID string `json:"task_id"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_resume: %w", err)
+	}
+	if strings.TrimSpace(args.TaskID) == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.taskStore.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != "stopped" {
+		return nil, fmt.Errorf("task %s is %q, only stopped tasks can be resumed", taskID, t.Status)
+	}
+	if strings.TrimSpace(t.SessionID) == "" {
+		return nil, fmt.Errorf("task %s cannot resume without session_id", taskID)
+	}
+	if s.executor == nil {
+		return nil, fmt.Errorf("executor not configured")
+	}
+	result, err := s.executor.ResumeTask(taskID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"task_id": taskID,
+		"status":  result.Status,
+		"result":  result,
+	}, nil
 }
 
 func (s *Server) HandleTasksAddDependencyTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -206,17 +251,17 @@ func (s *Server) HandleTasksAddDependencyTool(argsRaw json.RawMessage) (interfac
 	return map[string]interface{}{"task_id": taskID, "depends_on": depID}, nil
 }
 
-func (s *Server) HandleTasksRunTool(params map[string]interface{}) (interface{}, error) {
-	var taskIDs []string
-	if raw, ok := params["task_ids"]; ok {
-		if arr, ok := raw.([]interface{}); ok {
-			for _, v := range arr {
-				if id, ok := v.(string); ok {
-					taskIDs = append(taskIDs, id)
-				}
-			}
-		}
+func (s *Server) HandleTasksStartTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		TaskIDs []string `json:"task_ids"`
+		Tool    string   `json:"tool"`
+		Model   string   `json:"model"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_start: %w", err)
 	}
+
+	taskIDs := args.TaskIDs
 
 	if len(taskIDs) == 0 {
 		ready, err := s.taskStore.GetReady()
@@ -238,12 +283,9 @@ func (s *Server) HandleTasksRunTool(params map[string]interface{}) (interface{},
 		}
 	}
 
-	toolOverride, _ := params["tool"].(string)
-	modelOverride, _ := params["model"].(string)
-
 	results, err := s.executor.RunBatch(taskIDs, executor.RunOpts{
-		ToolOverride:  toolOverride,
-		ModelOverride: modelOverride,
+		ToolOverride:  args.Tool,
+		ModelOverride: args.Model,
 	})
 	if err != nil {
 		return nil, err

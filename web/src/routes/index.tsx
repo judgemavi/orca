@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../api'
 import { CreateTaskModal } from '../components/board/CreateTaskModal'
@@ -18,12 +17,13 @@ import type { Task } from '../types'
 
 const STATUS_PRIORITY: Record<Task['status'], number> = {
   running: 0,
-  review: 1,
-  failed: 2,
-  planned: 3,
-  pending: 4,
-  approved: 5,
-  merged: 6,
+  stopped: 1,
+  review: 2,
+  failed: 3,
+  planned: 4,
+  pending: 5,
+  approved: 6,
+  merged: 7,
 }
 
 function taskMatchesFilter(task: Task, filter: TaskListFilter) {
@@ -39,13 +39,12 @@ function taskMatchesFilter(task: Task, filter: TaskListFilter) {
 }
 
 export function TasksPage() {
-  const navigate = useNavigate()
   const tasksQuery = useTasksQuery()
   const configQuery = useConfigQuery()
   const allModelsQuery = useModelsQuery()
   const { isRunning } = useRunningOperations()
-  const runTasksMutation = useMutation({
-    mutationFn: (taskIds?: string[]) => api.runTasks(taskIds),
+  const startTasksMutation = useMutation({
+    mutationFn: (taskIds?: string[]) => api.startTasks(taskIds),
   })
 
   const [showCreate, setShowCreate] = useState(false)
@@ -109,11 +108,11 @@ export function TasksPage() {
       })
   }, [tasks, activeFilter, search])
 
-  const runTasks = async (taskIds?: string[]) => {
+  const startTasks = async (taskIds?: string[]) => {
     try {
-      await runTasksMutation.mutateAsync(taskIds)
+      await startTasksMutation.mutateAsync(taskIds)
     } catch (err: any) {
-      toast.error(err?.message ?? 'Run failed')
+      toast.error(err?.message ?? 'Start failed')
     }
   }
 
@@ -125,27 +124,20 @@ export function TasksPage() {
     )
   }
 
-  const runPending = isRunning('run')
+  const startPending = isRunning('run')
   const merging = isRunning('merge')
-  const decomposeRunning = isRunning('decompose')
-  const cleanupRunning = isRunning('cleanup')
-  const exploring = isRunning('explore')
 
   return (
     <div className="flex flex-1 overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TasksToolbar
-          actionLoading={runTasksMutation.isPending}
-          runPending={runPending}
+          actionLoading={startTasksMutation.isPending}
+          startPending={startPending}
           mergePending={merging}
           hasApprovedTasks={approvedTasks.length > 0}
-          decomposeRunning={decomposeRunning}
-          cleanupRunning={cleanupRunning}
-          exploring={exploring}
           activeFilter={activeFilter}
           search={search}
           totalTasks={tasks.length}
-          visibleTasks={visibleTasks.length}
           pendingCount={pendingCount}
           plannedCount={plannedCount}
           runningCount={runningCount}
@@ -153,8 +145,8 @@ export function TasksPage() {
           approvedCount={approvedCount}
           mergedCount={mergedCount}
           failedCount={failedCount}
-          onRun={() => {
-            void runTasks()
+          onStart={() => {
+            void startTasks()
           }}
           onMerge={() => {
             void api.merge().catch((err: any) => {

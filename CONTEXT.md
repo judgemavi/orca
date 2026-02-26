@@ -4,7 +4,7 @@
 
 Orca is a multi-agent CLI orchestrator for AI coding tools (Claude Code, Codex, Aider). It coordinates workers on shared codebases using git worktree isolation and a direct execution pipeline:
 
-`explore → decompose → plan → run → review → merge`
+`explore → decompose → plan → start → review → merge`
 
 Ready tasks run directly via `executor.RunBatch()`.
 
@@ -54,17 +54,19 @@ orca/
 
 ### Pipeline
 
-`Explore → Decompose → Plan → Run → Review → Merge`
+`Explore → Decompose → Plan → Start → Review → Merge`
 
 ### Task Status Flow
 
 `pending → planned → running → review → approved → merged`
 
+Stop path: `running → stopped` (via `tasks_stop`). `stopped → running` uses explicit session resume (`executor.ResumeTask`).
+
 Failure path: `running → failed` (can be reopened to `pending`).
 
 ### Run Semantics
 
-- `orca run` (or `POST /api/v1/tasks/run`) selects ready tasks (or explicit IDs)
+- `orca start` (or `POST /api/v1/tasks/start`, alias: `orca run`) selects ready tasks (or explicit IDs)
 - Executor runs up to `workers.max_parallel`
 - Each task runs in its own worktree branch (`orca/task-{id}`)
 - Interactions are recorded with a `run_id` tracking tokens, cost, and diffs
@@ -100,7 +102,7 @@ Central tracking table replacing the old artifacts/costs model. Each row records
 orca init                    [-y]
 orca explore                 [--tool] [--manual] [--stdin] [--check]
 orca breakdown <goal...>     [--tool] [--auto]
-orca run [task-ids...]       [--no-merge]
+orca start [task-ids...]     [--no-merge]   # alias: orca run
 
 orca tasks / task
   ├── add <title...>         [--description] [--parent] [--depends-on]
@@ -108,7 +110,8 @@ orca tasks / task
   ├── edit [id]              [--title] [--description] [--plan] [--status]
   ├── delete [id]            [-y]
   ├── show [id]
-  ├── reopen [ids...]
+  ├── stop [id]
+  ├── resume [id]
   ├── add-dep <id> <dep-id>
   ├── merge [id]             [--auto]
   ├── plan [id]              [--save] [--edit] [--tool] [--model]
@@ -152,13 +155,13 @@ orca cleanup                 [--dry-run]
 Orca MCP (`orca mcp`) exposes 35 tools for task orchestration.
 
 ### Task Lifecycle
-`tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
+`tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_add_dependency`
 
 ### Planning
 `breakdown`, `tasks_plan_generate`, `tasks_plan_evaluate`, `tasks_approve_plan`, `tasks_request_plan_changes`
 
 ### Execution
-`tasks_run`
+`tasks_start`, `tasks_stop`, `tasks_resume`
 
 ### Review & Integration
 `tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`

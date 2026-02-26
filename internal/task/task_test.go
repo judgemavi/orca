@@ -408,7 +408,7 @@ func TestDeleteBlockedByStatus(t *testing.T) {
 	}
 
 	// Deletable statuses should work.
-	for _, status := range []string{"pending", "review", "approved", "failed"} {
+	for _, status := range []string{"pending", "review", "approved", "failed", "stopped"} {
 		tk, err := store.Create("Task "+status, "", "")
 		if err != nil {
 			t.Fatalf("create %s: %v", status, err)

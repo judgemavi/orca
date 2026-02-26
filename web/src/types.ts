@@ -7,6 +7,7 @@ export interface Task {
     | 'pending'
     | 'planned'
     | 'running'
+    | 'stopped'
     | 'review'
     | 'approved'
     | 'merged'
@@ -103,9 +104,11 @@ export interface AIReviewResult {
 }
 
 export interface TaskEvaluation {
-  should_decompose: boolean
-  complexity: string
+  complexity?: string
+  needs_breakdown: boolean
+  confidence: number
   reasoning: string
+  suggested_subtask_count: number
 }
 
 interface WSEventBase<TType extends string, TData> {
@@ -152,6 +155,12 @@ export type KnownWSEvent =
   | WSEventBase<'plan.generating', { task_id: string }>
   | WSEventBase<'plan.failed', { task_id: string; error: string }>
   | WSEventBase<'plan.completed', { task_id: string; plan: string }>
+  | WSEventBase<'evaluate.started', { task_id: string }>
+  | WSEventBase<
+      'evaluate.completed',
+      { task_id: string; evaluation: TaskEvaluation }
+    >
+  | WSEventBase<'evaluate.failed', { task_id: string; error: string }>
   | WSEventBase<'merge.started', { task_id?: string; mode?: string }>
   | WSEventBase<'merge.progress', MergeProgressEventData>
   | WSEventBase<'merge.failed', MergeFailedEventData>
@@ -208,6 +217,9 @@ const KNOWN_WS_EVENT_TYPES = new Set<KnownWSEventType>([
   'plan.generating',
   'plan.failed',
   'plan.completed',
+  'evaluate.started',
+  'evaluate.completed',
+  'evaluate.failed',
   'merge.started',
   'merge.progress',
   'merge.failed',

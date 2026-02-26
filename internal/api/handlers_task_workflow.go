@@ -199,24 +199,64 @@ func (s *Server) handleListTaskReviews(w http.ResponseWriter, r *http.Request) {
 	})(w, r)
 }
 
-func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleResumeTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	s.withTask(func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
-		store := s.taskStore
-		if tk.Status != "failed" {
-			jsonError(w, fmt.Sprintf("task %s is %q, not %q", tk.ID[:8], tk.Status, "failed"), http.StatusBadRequest)
+		if tk.Status != "stopped" {
+			jsonError(w, fmt.Sprintf("task %s is %q, not %q", tk.ID[:8], tk.Status, "stopped"), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(tk.SessionID) == "" {
+			jsonError(w, fmt.Sprintf("task %s cannot resume without %q", tk.ID[:8], "session_id"), http.StatusBadRequest)
 			return
 		}
 
-		if err := store.Update(tk.ID, map[string]interface{}{"status": "pending"}); err != nil {
+		if _, err := s.executor.ResumeTask(tk.ID); err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 
-		updated, err := store.Get(tk.ID)
+		updated, err := s.taskStore.Get(tk.ID)
+		if err != nil {
+			jsonError(w, err, http.StatusInternalServerError)
+			return
+		}
+
+		s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
+		jsonOK(w, updated)
+	})(w, r)
+}
+
+func (s *Server) handleStopTask(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	s.withTask(func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
+		if tk.Status != "running" {
+			jsonError(w, fmt.Sprintf("task %s is %q, not %q", tk.ID[:8], tk.Status, "running"), http.StatusBadRequest)
+			return
+		}
+
+		if err := s.executor.StopTask(tk.ID); err != nil {
+			current, getErr := s.taskStore.Get(tk.ID)
+			if getErr != nil {
+				jsonError(w, err, http.StatusInternalServerError)
+				return
+			}
+			jsonOK(w, current)
+			return
+		}
+
+		if err := s.taskStore.Update(tk.ID, map[string]interface{}{"status": "stopped"}); err != nil {
+			jsonError(w, err, http.StatusInternalServerError)
+			return
+		}
+
+		updated, err := s.taskStore.Get(tk.ID)
 		if err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return

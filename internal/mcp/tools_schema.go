@@ -83,8 +83,8 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "tasks_run",
-			Description: "Run tasks through the executor. If no task_ids specified, runs all ready tasks.",
+			Name:        "tasks_start",
+			Description: "Start execution of ready tasks",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -169,8 +169,19 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "tasks_reopen",
-			Description: "Move a failed task back to pending status.",
+			Name:        "tasks_stop",
+			Description: "Stop a running task. Task can be resumed later.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_resume",
+			Description: "Resume a stopped task from where it left off using its saved session",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{

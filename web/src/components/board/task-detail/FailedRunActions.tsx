@@ -17,7 +17,7 @@ export function FailedRunActions() {
   const rerunModelsQuery = useModelsQuery(rerunTool || undefined)
   const runTaskMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
-      api.runTasks([args.taskId], args.tool, args.model),
+      api.startTasks([args.taskId], args.tool, args.model),
   })
   const rerunModels = rerunTool
     ? (rerunModelsQuery.data?.[rerunTool] ?? [])

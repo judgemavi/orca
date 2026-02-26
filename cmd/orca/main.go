@@ -138,7 +138,7 @@ func main() {
 	commands.RegisterMisc(root, reg, commands.MiscOptions{MarkSkipRuntimeInit: markSkipRuntimeInit})
 	commands.RegisterExplore(root, reg)
 	commands.RegisterPlan(root, reg)
-	commands.RegisterRun(root, reg)
+	commands.RegisterStart(root, reg)
 	commands.RegisterTask(root, reg)
 	commands.RegisterReview(root, reg)
 	commands.RegisterMerge(root, reg)

@@ -6,7 +6,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/executor"
 )
 
-// POST /api/v1/tasks/run
+// POST /api/v1/tasks/start (legacy alias: /api/v1/tasks/run)
 func (s *Server) handleRunTasks(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return

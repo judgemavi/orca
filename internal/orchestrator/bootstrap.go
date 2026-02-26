@@ -114,6 +114,7 @@ var AllowedTools = []string{
 	"mcp__orca__tasks_create",
 	"mcp__orca__tasks_update",
 	"mcp__orca__tasks_delete",
+	"mcp__orca__tasks_cancel",
 	"mcp__orca__tasks_reopen",
 	"mcp__orca__tasks_add_dependency",
 	// Planning

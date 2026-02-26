@@ -4,6 +4,7 @@ import type { Interaction } from '../../../types'
 
 interface Props {
   interaction: Interaction
+  phase?: string
   activeLogId: string | null
   onToggleLog: (id: string) => void
   collapsible?: boolean
@@ -49,8 +50,19 @@ function summarizeDiff(diff: string | undefined): string | null {
   return `+${added}/-${removed}`
 }
 
+function phaseBadgeTone(phase: string | undefined): string {
+  const normalized = phase?.trim().toLowerCase()
+  if (normalized === 'plan') return 'border-indigo-500/35 bg-indigo-500/15 text-indigo-300'
+  if (normalized === 'run') return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+  if (normalized === 'review') return 'border-amber-500/35 bg-amber-500/15 text-amber-300'
+  if (normalized === 'evaluate') return 'border-cyan-500/35 bg-cyan-500/15 text-cyan-300'
+  if (normalized === 'merge') return 'border-purple-500/35 bg-purple-500/15 text-purple-300'
+  return 'border-slate-500/35 bg-slate-500/15 text-slate-300'
+}
+
 export function InteractionEntry({
   interaction,
+  phase,
   activeLogId,
   onToggleLog,
   collapsible = false,
@@ -61,6 +73,7 @@ export function InteractionEntry({
   children,
 }: Props) {
   const isRunning = interaction.status === 'running'
+  const phaseLabel = phase?.trim()
   const open = collapsible ? alwaysExpanded || expanded : true
   const diffSummary = showDiffSummary ? summarizeDiff(interaction.diff) : null
   const rowClass = [
@@ -99,6 +112,16 @@ export function InteractionEntry({
                 {statusIcon(interaction.status)}
               </span>
               <span className="font-mono">#{interaction.attempt}</span>
+              {phaseLabel && (
+                <span
+                  className={[
+                    'rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em]',
+                    phaseBadgeTone(phaseLabel),
+                  ].join(' ')}
+                >
+                  [{phaseLabel.toUpperCase()}]
+                </span>
+              )}
               <span className="truncate">{interaction.tool || '-'}</span>
               <span className="font-mono">
                 {isRunning ? '-' : formatDuration(interaction.duration_ms)}

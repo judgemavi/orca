@@ -13,6 +13,10 @@ const TONES: Record<string, { badge: string; dot: string }> = {
     badge: 'bg-blue-500/20 text-blue-700',
     dot: 'bg-blue-600',
   },
+  stopped: {
+    badge: 'bg-yellow-500/20 text-yellow-700',
+    dot: 'bg-yellow-600',
+  },
   review: {
     badge: 'bg-amber-500/20 text-amber-700',
     dot: 'bg-amber-600',

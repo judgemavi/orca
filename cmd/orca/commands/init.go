@@ -81,7 +81,7 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("  orca tasks add \"task title\"        Add a task")
 	fmt.Println("  orca tasks list                     View all tasks")
 	fmt.Println("  orca breakdown \"goal\"             Break down a goal into tasks")
-	fmt.Println("  orca run                          Run ready tasks")
+	fmt.Println("  orca start                        Start ready tasks")
 	fmt.Println("  orca review approve <task-id>     Approve reviewed work")
 	fmt.Println("  orca merge                        Merge approved tasks")
 	fmt.Println("  orca status                       Show project overview")

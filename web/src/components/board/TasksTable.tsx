@@ -9,20 +9,33 @@ const STATUS_DOT: Record<Task['status'], string> = {
   pending: 'bg-slate-400',
   planned: 'bg-indigo-400',
   running: 'bg-blue-400',
+  stopped: 'bg-yellow-400',
   review: 'bg-amber-400',
   failed: 'bg-red-400',
   approved: 'bg-emerald-400',
   merged: 'bg-violet-400',
 }
 
-const STATUS_TEXT: Record<Task['status'], string> = {
+const STATUS_TEXT_CLASS: Record<Task['status'], string> = {
   pending: 'text-slate-300',
   planned: 'text-indigo-300',
   running: 'text-blue-300',
+  stopped: 'text-yellow-300',
   review: 'text-amber-300',
   failed: 'text-red-300',
   approved: 'text-emerald-300',
   merged: 'text-violet-300',
+}
+
+const STATUS_TEXT: Record<Task['status'], string> = {
+  pending: 'Pending',
+  planned: 'Planned',
+  running: 'Running',
+  stopped: 'Stopped',
+  review: 'Review',
+  failed: 'Failed',
+  approved: 'Approved',
+  merged: 'Merged',
 }
 
 function formatRelativeTime(iso: string) {
@@ -96,9 +109,9 @@ export function TasksTable({ tasks }: Props) {
                   className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[task.status]}`}
                 />
                 <span
-                  className={`shrink-0 text-[11px] font-medium capitalize ${STATUS_TEXT[task.status]}`}
+                  className={`shrink-0 text-[11px] font-medium ${STATUS_TEXT_CLASS[task.status]}`}
                 >
-                  {task.status}
+                  {STATUS_TEXT[task.status]}
                 </span>
                 <span className="truncate text-sm">{task.title}</span>
               </span>

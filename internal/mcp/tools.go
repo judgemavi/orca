@@ -22,14 +22,16 @@ func (s *Server) dispatchTool(name string, argsRaw json.RawMessage) (interface{}
 
 func (s *Server) toolHandlers() map[string]toolHandler {
 	return map[string]toolHandler{
-		"tasks_list": s.HandleTasksListTool,
-		"task_list":  s.HandleTasksListTool,
+		"tasks_list":  s.HandleTasksListTool,
+		"task_list":   s.HandleTasksListTool,
+		"tasks_start": s.HandleTasksStartTool,
+		"task_start":  s.HandleTasksStartTool,
 		"tasks_run": func(argsRaw json.RawMessage) (interface{}, error) {
 			var params map[string]interface{}
 			if err := json.Unmarshal(argsRaw, &params); err != nil {
 				return nil, fmt.Errorf("tasks_run: parse args: %w", err)
 			}
-			return s.HandleTasksRunTool(params)
+			return s.HandleTasksStartTool(argsRaw)
 		},
 		"tasks_create":               s.HandleTasksCreateTool,
 		"task_create":                s.HandleTasksCreateTool,
@@ -39,8 +41,12 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"task_get":                   s.HandleTasksGetTool,
 		"tasks_delete":               s.HandleTasksDeleteTool,
 		"task_delete":                s.HandleTasksDeleteTool,
-		"tasks_reopen":               s.HandleTasksReopenTool,
-		"task_reopen":                s.HandleTasksReopenTool,
+		"tasks_stop":                 s.HandleTasksStopTool,
+		"task_stop":                  s.HandleTasksStopTool,
+		"tasks_cancel":               s.HandleTasksStopTool,
+		"task_cancel":                s.HandleTasksStopTool,
+		"tasks_resume":               s.HandleTasksResumeTool,
+		"task_resume":                s.HandleTasksResumeTool,
 		"tasks_add_dependency":       s.HandleTasksAddDependencyTool,
 		"task_add_dependency":        s.HandleTasksAddDependencyTool,
 		"breakdown":                  s.HandleBreakdownTool,

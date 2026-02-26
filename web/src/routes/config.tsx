@@ -240,7 +240,6 @@ export function ConfigPage() {
                 ))}
               </select>
             </label>
-
           </div>
 
           <div className="space-y-2">

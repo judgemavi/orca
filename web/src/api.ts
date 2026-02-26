@@ -83,7 +83,7 @@ function del<T = void>(path: string): Promise<T> {
 export const api = {
   listTasks: () => request<{ tasks: Task[] }>('/tasks'),
   createTask: (data: Partial<Task>) => post<{ task: Task }>('/tasks', data),
-  updateTask: (id: string, data: Partial<Task>) =>
+  updateTask: (id: string, data: Partial<Task> & { session_id?: string }) =>
     patch<{ task: Task }>(`/tasks/${id}`, data),
   deleteTask: (id: string) => del(`/tasks/${id}`),
 
@@ -96,12 +96,18 @@ export const api = {
     ),
 
   merge: () => post<{ operation_id: string }>('/merge'),
-  runTasks: (taskIds?: string[], tool?: string, model?: string) =>
-    post<{ operation_id: string; task_ids: string[] }>('/tasks/run', {
+  startTasks: (taskIds?: string[], tool?: string, model?: string) =>
+    post<{ operation_id: string; task_ids: string[] }>('/tasks/start', {
       ...(taskIds ? { task_ids: taskIds } : {}),
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),
+  stopTask: (id: string) => post<{ status: string }>(`/tasks/${id}/stop`),
+  resumeTask: (id: string) => post<{ status: string }>(`/tasks/${id}/resume`),
+  // Backward-compatible aliases for existing call sites.
+  runTasks: (taskIds?: string[], tool?: string, model?: string) =>
+    api.startTasks(taskIds, tool, model),
+  cancelTask: (id: string) => api.stopTask(id),
   mergeTask: (taskId: string, mode?: string, tool?: string, model?: string) =>
     request<{ operation_id: string }>(`/tasks/${taskId}/merge`, {
       method: 'POST',
@@ -146,11 +152,7 @@ export const api = {
   evaluateTask: (id: string, tool?: string, model?: string) =>
     post<{
       task_id: string
-      evaluation: {
-        should_decompose: boolean
-        complexity: string
-        reasoning: string
-      }
+      status: string
     }>(`/tasks/${id}/evaluate`, {
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),

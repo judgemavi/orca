@@ -13,13 +13,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func RegisterRun(root *cobra.Command, r *Registry) {
-	runCmd := &cobra.Command{Use: "run", Short: "Run ready tasks (or specific task IDs)", RunE: r.runRun}
-	runCmd.Flags().Bool("no-merge", false, "Skip auto-merge after success")
-	root.AddCommand(runCmd)
+func RegisterStart(root *cobra.Command, r *Registry) {
+	startCmd := &cobra.Command{
+		Use:     "start",
+		Aliases: []string{"run"},
+		Short:   "Start ready tasks (or specific task IDs)",
+		RunE:    r.runStart,
+	}
+	startCmd.Flags().Bool("no-merge", false, "Skip auto-merge after success")
+	root.AddCommand(startCmd)
 }
 
-func (r *Registry) runRun(cmd *cobra.Command, args []string) error {
+func (r *Registry) runStart(cmd *cobra.Command, args []string) error {
 	db, cfg, exec, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
@@ -65,10 +70,10 @@ func (r *Registry) runRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("Running %d task(s)...\n", len(taskIDs))
+	fmt.Printf("Starting %d task(s)...\n", len(taskIDs))
 	results, err := exec.RunBatch(taskIDs, executor.RunOpts{})
 	if err != nil {
-		return fmt.Errorf("run: %w", err)
+		return fmt.Errorf("start: %w", err)
 	}
 
 	var succeeded, failed int
