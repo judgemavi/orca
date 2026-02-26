@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { TaskExecutionSection } from './TaskExecutionSection'
 import { TaskMergeStatus } from './TaskMergeStatus'
@@ -105,7 +106,7 @@ function connectorClass(state: TimelinePhaseState): string {
   return 'border-t border-dashed border-border-subtle'
 }
 
-export function TaskTimeline() {
+export function TaskTimeline({ children }: { children?: ReactNode }) {
   const { task, config } = useTaskDetailContext()
   const taskPlanQuery = useTaskPlanQuery(task.id)
   const runInteractionsQuery = useInteractionsQuery(task.id, {
@@ -231,13 +232,16 @@ export function TaskTimeline() {
         ))}
       </div>
 
-      <div
-        className={[
-          'transition-all duration-200',
-          contentVisible ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
-        ].join(' ')}
-      >
-        {renderSelectedContent()}
+      <div className="flex min-h-0 flex-1 gap-4">
+        <div
+          className={[
+            'min-h-0 flex-1 overflow-auto transition-all duration-200',
+            contentVisible ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
+          ].join(' ')}
+        >
+          {renderSelectedContent()}
+        </div>
+        {children}
       </div>
     </div>
   )

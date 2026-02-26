@@ -213,8 +213,8 @@ function TaskDetailContent({
             </Link>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-xl bg-surface shadow-elevated">
-            <div className="flex flex-1 flex-col gap-4 p-4">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-elevated">
+            <div className="shrink-0 px-4 pt-4">
               <TaskDetailForm
                 form={form}
                 isEditable={isEditable}
@@ -228,9 +228,9 @@ function TaskDetailContent({
                 setDependencyError={setDependencyError}
                 handleAddDependency={handleAddDependency}
               />
-
-              <TaskTimelineLayout />
             </div>
+
+            <TaskTimelineLayout />
 
             <TaskActionsBar
               isEditable={task.status === 'pending'}
@@ -466,27 +466,20 @@ function TaskTimelineLayout() {
   const { activeLogId, task, setActiveLogId } = useTaskDetailContext()
 
   return (
-    <div className="flex min-h-[420px] flex-col gap-4 lg:flex-row">
-      <div
-        className={[
-          'min-h-0 w-full transition-all duration-200',
-          activeLogId ? 'lg:w-3/5' : 'lg:w-full',
-        ].join(' ')}
-      >
-        <TaskTimeline />
-      </div>
-
-      {activeLogId && (
-        <div className="min-h-0 w-full transform transition-all duration-200 ease-out lg:w-2/5">
-          <InteractionLogPanel
-            taskId={task.id}
-            interactionId={activeLogId}
-            onClose={() => {
-              setActiveLogId(null)
-            }}
-          />
-        </div>
-      )}
+    <div className="min-h-0 flex-1 p-4">
+      <TaskTimeline>
+        {activeLogId && (
+          <div className="min-h-0 w-2/5 shrink-0">
+            <InteractionLogPanel
+              taskId={task.id}
+              interactionId={activeLogId}
+              onClose={() => {
+                setActiveLogId(null)
+              }}
+            />
+          </div>
+        )}
+      </TaskTimeline>
     </div>
   )
 }
