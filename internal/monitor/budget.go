@@ -1,5 +1,7 @@
 package monitor
 
+// budget.go enforces per-task and per-run cost limits by polling spend data.
+
 import (
 	"context"
 	"sync"
@@ -21,6 +23,8 @@ type BudgetEnforcer struct {
 	done    chan struct{}
 	running bool
 }
+
+var _ Monitor = (*BudgetEnforcer)(nil)
 
 // NewBudgetEnforcer creates a new enforcer with sane defaults.
 func NewBudgetEnforcer(interval time.Duration, taskBudget, runBudget float64,
@@ -116,8 +120,6 @@ func (b *BudgetEnforcer) Stop() error {
 
 	return nil
 }
-
-var _ Monitor = (*BudgetEnforcer)(nil)
 
 func (b *BudgetEnforcer) check(taskIDs []string) {
 	total := 0.0

@@ -141,8 +141,11 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build task lookup and collect IDs.
+	taskByID := make(map[string]*task.Task, len(approved))
 	taskIDs := make([]string, 0, len(approved))
 	for _, tk := range approved {
+		taskByID[tk.ID] = tk
 		taskIDs = append(taskIDs, tk.ID)
 	}
 
@@ -151,17 +154,48 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Topo-sort: deps before dependents, input (creation) order as tiebreak.
+	taskIDs = task.TopoSort(taskIDs, func(id string) []string {
+		if tk, ok := taskByID[id]; ok {
+			return tk.DependsOn
+		}
+		return nil
+	})
+
 	s.runAsyncHandler(w, "merge", map[string]string{"status": "merging"}, func() {
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
 		merged := make([]string, 0, len(taskIDs))
 		failed := make([]string, 0)
+		failedSet := make(map[string]bool)
 
 		s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{}})
 
 		for _, taskID := range taskIDs {
+			// Skip if any in-batch dependency failed.
+			if tk, ok := taskByID[taskID]; ok {
+				skipped := false
+				for _, depID := range tk.DependsOn {
+					if failedSet[depID] {
+						failed = append(failed, taskID)
+						failedSet[taskID] = true
+						s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
+							"task_id": taskID,
+							"status":  "skipped",
+							"error":   fmt.Sprintf("dependency %s failed to merge", depID[:8]),
+						}})
+						skipped = true
+						break
+					}
+				}
+				if skipped {
+					continue
+				}
+			}
+
 			err := ig.MergeAndValidate(taskID)
 			if err != nil {
 				failed = append(failed, taskID)
+				failedSet[taskID] = true
 				s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
 					"task_id": taskID,
 					"status":  "failed",

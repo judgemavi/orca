@@ -37,6 +37,14 @@ type Store struct {
 	db *state.DB
 }
 
+var deletableStatuses = map[string]bool{
+	"pending":  true,
+	"planned":  true,
+	"review":   true,
+	"approved": true,
+	"failed":   true,
+}
+
 func NewStore(db *state.DB) *Store {
 	return &Store{db: db}
 }
@@ -131,14 +139,6 @@ func (s *Store) Update(id string, fields map[string]interface{}) error {
 		return fmt.Errorf("task %s not found", id)
 	}
 	return nil
-}
-
-var deletableStatuses = map[string]bool{
-	"pending":  true,
-	"planned":  true,
-	"review":   true,
-	"approved": true,
-	"failed":   true,
 }
 
 func (s *Store) Delete(id string) error {

@@ -17,16 +17,15 @@ interface Props {
 }
 
 export function TaskMergeStatus({ readOnly = false }: Props) {
-  const {
-    task,
-    tools,
-    activeLogId,
-    setActiveLogId,
-    isOperationRunning,
-  } = useTaskDetailContext()
+  const { task, tools, activeLogId, setActiveLogId, isOperationRunning } =
+    useTaskDetailContext()
   const mergeTaskMutation = useMutation({
-    mutationFn: (args: { taskId: string; mode?: string; tool?: string; model?: string }) =>
-      api.mergeTask(args.taskId, args.mode, args.tool, args.model),
+    mutationFn: (args: {
+      taskId: string
+      mode?: string
+      tool?: string
+      model?: string
+    }) => api.mergeTask(args.taskId, args.mode, args.tool, args.model),
   })
   const mergeInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByPhase('merge'),
@@ -119,7 +118,11 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
           }
         } else if (evt.type === 'task.updated') {
           const status = 'status' in evt.data ? evt.data.status : ''
-          if (status === 'merged' || status === 'approved' || status === 'failed') {
+          if (
+            status === 'merged' ||
+            status === 'approved' ||
+            status === 'failed'
+          ) {
             setMergeProgress(null)
           }
         }

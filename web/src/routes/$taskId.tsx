@@ -20,22 +20,47 @@ import { useTasksQuery } from '../hooks/queries/useTasks'
 import { controlClass } from '../lib/constants'
 import type { Config, Task } from '../types'
 
+type TaskDetailContentProps = {
+  task: Task
+  tasks: Task[]
+  configData: Config
+  tools: string[]
+  isRunning: (type: string, targetId?: string) => boolean
+}
+
+type TaskDetailFormProps = {
+  form: ReturnType<typeof useTaskForm>
+  isEditable: boolean
+  task: Task
+  tasksById: Map<string, Task>
+  dependencyChoices: Task[]
+  selectedDependencyId: string
+  setSelectedDependencyId: (value: string) => void
+  addingDependency: boolean
+  dependencyError: string | null
+  setDependencyError: (value: string | null) => void
+  handleAddDependency: () => Promise<void>
+}
+
 function formatRelativeTime(iso: string) {
   const timestamp = Date.parse(iso)
   if (!Number.isFinite(timestamp)) return 'just now'
 
   const deltaSeconds = Math.round((timestamp - Date.now()) / 1000)
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
-  const ranges: Array<{ limit: number; unit: Intl.RelativeTimeFormatUnit; inSeconds: number }> =
-    [
-      { limit: 60, unit: 'second', inSeconds: 1 },
-      { limit: 3600, unit: 'minute', inSeconds: 60 },
-      { limit: 86400, unit: 'hour', inSeconds: 3600 },
-      { limit: 604800, unit: 'day', inSeconds: 86400 },
-      { limit: 2629800, unit: 'week', inSeconds: 604800 },
-      { limit: 31557600, unit: 'month', inSeconds: 2629800 },
-      { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
-    ]
+  const ranges: Array<{
+    limit: number
+    unit: Intl.RelativeTimeFormatUnit
+    inSeconds: number
+  }> = [
+    { limit: 60, unit: 'second', inSeconds: 1 },
+    { limit: 3600, unit: 'minute', inSeconds: 60 },
+    { limit: 86400, unit: 'hour', inSeconds: 3600 },
+    { limit: 604800, unit: 'day', inSeconds: 86400 },
+    { limit: 2629800, unit: 'week', inSeconds: 604800 },
+    { limit: 31557600, unit: 'month', inSeconds: 2629800 },
+    { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
+  ]
 
   for (const range of ranges) {
     if (Math.abs(deltaSeconds) < range.limit) {
@@ -104,18 +129,15 @@ function TaskDetailContent({
   configData,
   tools,
   isRunning,
-}: {
-  task: Task
-  tasks: Task[]
-  configData: Config
-  tools: string[]
-  isRunning: (type: string, targetId?: string) => boolean
-}) {
+}: TaskDetailContentProps) {
   const navigate = useNavigate()
   const updateTaskMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) => api.updateTask(id, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) =>
+      api.updateTask(id, data),
   })
-  const deleteMutation = useMutation({ mutationFn: (id: string) => api.deleteTask(id) })
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteTask(id),
+  })
   const [saving, setSaving] = useState(false)
   const [selectedDependencyId, setSelectedDependencyId] = useState('')
   const [addingDependency, setAddingDependency] = useState(false)
@@ -255,20 +277,6 @@ function TaskDetailContent({
   )
 }
 
-type TaskDetailFormProps = {
-  form: ReturnType<typeof useTaskForm>
-  isEditable: boolean
-  task: Task
-  tasksById: Map<string, Task>
-  dependencyChoices: Task[]
-  selectedDependencyId: string
-  setSelectedDependencyId: (value: string) => void
-  addingDependency: boolean
-  dependencyError: string | null
-  setDependencyError: (value: string | null) => void
-  handleAddDependency: () => Promise<void>
-}
-
 function TaskDetailForm({
   form,
   isEditable,
@@ -312,7 +320,9 @@ function TaskDetailForm({
                 </h1>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-                <span className="font-mono text-[11px]">{task.id.slice(0, 8)}</span>
+                <span className="font-mono text-[11px]">
+                  {task.id.slice(0, 8)}
+                </span>
                 <span>·</span>
                 <span>{dependencyCount} dependencies</span>
                 <span>·</span>
@@ -321,7 +331,9 @@ function TaskDetailForm({
                 </span>
               </div>
               {!isExpanded && description && (
-                <p className="mt-1 line-clamp-2 text-xs text-muted">{description}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-muted">
+                  {description}
+                </p>
               )}
               {!isExpanded && dependencyCount > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
@@ -332,7 +344,9 @@ function TaskDetailForm({
                         key={depId}
                         className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-alt px-1.5 py-0.5 text-[11px]"
                       >
-                        <span className="truncate">{depTask?.title || 'Unknown task'}</span>
+                        <span className="truncate">
+                          {depTask?.title || 'Unknown task'}
+                        </span>
                         <span className="font-mono">{depId.slice(0, 6)}</span>
                       </span>
                     )
@@ -449,9 +463,13 @@ function TaskDetailForm({
                       </button>
                     </div>
                   ) : (
-                    <p className="text-xs font-normal">No available tasks to add.</p>
+                    <p className="text-xs font-normal">
+                      No available tasks to add.
+                    </p>
                   )}
-                  {dependencyError && <p className="text-xs font-normal">{dependencyError}</p>}
+                  {dependencyError && (
+                    <p className="text-xs font-normal">{dependencyError}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -483,6 +501,7 @@ function TaskTimelineLayout() {
     </div>
   )
 }
+
 export const Route = createFileRoute('/$taskId')({
   component: TaskDetailPage,
 })

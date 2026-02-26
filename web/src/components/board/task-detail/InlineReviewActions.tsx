@@ -21,14 +21,32 @@ export function InlineReviewActions({
   const { task, tools, activeLogId } = useTaskDetailContext()
   void activeLogId
 
-  const approveMutation = useMutation({ mutationFn: (taskId: string) => api.approveTask(taskId) })
+  const approveMutation = useMutation({
+    mutationFn: (taskId: string) => api.approveTask(taskId),
+  })
   const requestChangesMutation = useMutation({
-    mutationFn: (args: { id: string; feedback: string; interactionId?: string; tool?: string; model?: string }) =>
-      api.requestChanges(args.id, args.feedback, args.interactionId, args.tool, args.model),
+    mutationFn: (args: {
+      id: string
+      feedback: string
+      interactionId?: string
+      tool?: string
+      model?: string
+    }) =>
+      api.requestChanges(
+        args.id,
+        args.feedback,
+        args.interactionId,
+        args.tool,
+        args.model,
+      ),
   })
   const aiReviewMutation = useMutation({
-    mutationFn: (args: { taskId: string; tool?: string; model?: string; prompt?: string }) =>
-      api.aiReview(args.taskId, args.tool, args.model, args.prompt),
+    mutationFn: (args: {
+      taskId: string
+      tool?: string
+      model?: string
+      prompt?: string
+    }) => api.aiReview(args.taskId, args.tool, args.model, args.prompt),
   })
   const runInteractions = useInteractionsQuery(task.id, {
     select: selectByPhase('run'),

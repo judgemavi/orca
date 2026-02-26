@@ -37,23 +37,32 @@ function formatRelativeTime(iso: string): string {
 }
 
 export function TaskPlanSection({ readOnly = false }: Props) {
-  const {
-    task,
-    tools,
-    activeLogId,
-    setActiveLogId,
-    isOperationRunning,
-  } = useTaskDetailContext()
+  const { task, tools, activeLogId, setActiveLogId, isOperationRunning } =
+    useTaskDetailContext()
   const taskPlanQuery = useTaskPlanQuery(task.id)
   const generatePlanMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
       api.generateTaskPlan(args.taskId, { tool: args.tool, model: args.model }),
   })
   const savePlanMutation = useSavePlanMutation()
-  const approvePlanMutation = useMutation({ mutationFn: (taskId: string) => api.approvePlan(taskId) })
+  const approvePlanMutation = useMutation({
+    mutationFn: (taskId: string) => api.approvePlan(taskId),
+  })
   const requestPlanChangesMutation = useMutation({
-    mutationFn: (args: { id: string; feedback: string; interactionId?: string; tool?: string; model?: string }) =>
-      api.requestPlanChanges(args.id, args.feedback, args.interactionId, args.tool, args.model),
+    mutationFn: (args: {
+      id: string
+      feedback: string
+      interactionId?: string
+      tool?: string
+      model?: string
+    }) =>
+      api.requestPlanChanges(
+        args.id,
+        args.feedback,
+        args.interactionId,
+        args.tool,
+        args.model,
+      ),
   })
   const evaluateTaskMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
@@ -331,7 +340,9 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                 key={item.id}
                 interaction={item}
                 collapsible
-                expanded={item.status === 'running' || expandedInteractions.has(item.id)}
+                expanded={
+                  item.status === 'running' || expandedInteractions.has(item.id)
+                }
                 alwaysExpanded={item.status === 'running'}
                 onExpandedChange={() => toggleInteraction(item.id)}
                 activeLogId={activeLogId}

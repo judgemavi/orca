@@ -1,4 +1,8 @@
-// Package worker spawns CLI tool processes (headless/interactive), captures output, and handles timeouts.
+// Package worker spawns CLI tool processes and captures output.
+//
+// Depends on: driver.Driver, procutil
+// Consumed by: executor
+// Key flow: Adapter.Execute → spawn process → parse NDJSON events → Result
 package worker
 
 import (
@@ -63,46 +67,7 @@ type Adapter struct {
 	OutputChan chan<- OutputLine
 }
 
-// NewAdapter creates an Adapter from a driver and runtime settings.
-func NewAdapter(d driver.Driver, model string, timeout time.Duration) *Adapter {
-	return &Adapter{Driver: d, Timeout: timeout, Model: model}
-}
-
-// NewWorker creates a worker adapter.
-func NewWorker(d driver.Driver, model string, timeout time.Duration) (Worker, error) {
-	if d == nil {
-		return nil, fmt.Errorf("driver is nil")
-	}
-	if timeout <= 0 {
-		return nil, fmt.Errorf("timeout must be > 0")
-	}
-	return NewAdapter(d, model, timeout), nil
-}
-
-// Execute runs the CLI tool headlessly with the given prompt in the specified worktree.
-func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath string) (*Result, error) {
-	if a.Driver == nil {
-		return nil, fmt.Errorf("driver is nil")
-	}
-	if a.Timeout <= 0 {
-		return nil, fmt.Errorf("timeout must be > 0")
-	}
-
-	args := a.Driver.HeadlessArgs(prompt, a.Model)
-	return a.executeWithArgs(ctx, taskID, args, worktreePath)
-}
-
-// ExecuteResume resumes a prior session and applies follow-up feedback.
-func (a *Adapter) ExecuteResume(ctx context.Context, taskID, sessionID, feedback, worktreePath string) (*Result, error) {
-	if a.Driver == nil {
-		return nil, fmt.Errorf("driver is nil")
-	}
-	if a.Timeout <= 0 {
-		return nil, fmt.Errorf("timeout must be > 0")
-	}
-	args := a.Driver.ResumeArgs(sessionID, feedback, a.Model)
-	return a.executeWithArgs(ctx, taskID, args, worktreePath)
-}
+// --- private helpers ---
 
 func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []string, worktreePath string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, a.Timeout)
@@ -277,16 +242,6 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 	return result, nil
 }
 
-// SetCmdCallback sets the pre-start callback.
-func (a *Adapter) SetCmdCallback(cb func(*exec.Cmd)) { a.CmdCallback = cb }
-
-// SetModel sets/overrides the model passed to the CLI.
-func (a *Adapter) SetModel(model string)     { a.Model = model }
-func (a *Adapter) SetTaskTitle(title string) { a.TaskTitle = title }
-
-// SetOutputChan sets the live output stream channel.
-func (a *Adapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }
-
 func filteredEnv() []string {
 	env := make([]string, 0, len(os.Environ()))
 	for _, e := range os.Environ() {
@@ -303,3 +258,56 @@ func newScanner(r io.Reader) *bufio.Scanner {
 	s.Buffer(buf, 10*1024*1024)
 	return s
 }
+
+// --- exported functions/methods ---
+
+// NewAdapter creates an Adapter from a driver and runtime settings.
+func NewAdapter(d driver.Driver, model string, timeout time.Duration) *Adapter {
+	return &Adapter{Driver: d, Timeout: timeout, Model: model}
+}
+
+// NewWorker creates a worker adapter.
+func NewWorker(d driver.Driver, model string, timeout time.Duration) (Worker, error) {
+	if d == nil {
+		return nil, fmt.Errorf("driver is nil")
+	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("timeout must be > 0")
+	}
+	return NewAdapter(d, model, timeout), nil
+}
+
+// Execute runs the CLI tool headlessly with the given prompt in the specified worktree.
+func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath string) (*Result, error) {
+	if a.Driver == nil {
+		return nil, fmt.Errorf("driver is nil")
+	}
+	if a.Timeout <= 0 {
+		return nil, fmt.Errorf("timeout must be > 0")
+	}
+
+	args := a.Driver.HeadlessArgs(prompt, a.Model)
+	return a.executeWithArgs(ctx, taskID, args, worktreePath)
+}
+
+// ExecuteResume resumes a prior session and applies follow-up feedback.
+func (a *Adapter) ExecuteResume(ctx context.Context, taskID, sessionID, feedback, worktreePath string) (*Result, error) {
+	if a.Driver == nil {
+		return nil, fmt.Errorf("driver is nil")
+	}
+	if a.Timeout <= 0 {
+		return nil, fmt.Errorf("timeout must be > 0")
+	}
+	args := a.Driver.ResumeArgs(sessionID, feedback, a.Model)
+	return a.executeWithArgs(ctx, taskID, args, worktreePath)
+}
+
+// SetCmdCallback sets the pre-start callback.
+func (a *Adapter) SetCmdCallback(cb func(*exec.Cmd)) { a.CmdCallback = cb }
+
+// SetModel sets/overrides the model passed to the CLI.
+func (a *Adapter) SetModel(model string)     { a.Model = model }
+func (a *Adapter) SetTaskTitle(title string) { a.TaskTitle = title }
+
+// SetOutputChan sets the live output stream channel.
+func (a *Adapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }

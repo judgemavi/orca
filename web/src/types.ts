@@ -157,14 +157,20 @@ export type KnownWSEvent =
   | WSEventBase<'merge.started', { task_id?: string; mode?: string }>
   | WSEventBase<'merge.progress', MergeProgressEventData>
   | WSEventBase<'merge.failed', MergeFailedEventData>
-  | WSEventBase<'merge.completed', Task | { merged: string[]; failed: string[] }>
+  | WSEventBase<
+      'merge.completed',
+      Task | { merged: string[]; failed: string[] }
+    >
   | WSEventBase<'interaction.started', Interaction | { id: string }>
   | WSEventBase<'interaction.updated', Interaction | { id: string }>
   | WSEventBase<'interaction.completed', Interaction | { id: string }>
   | WSEventBase<'interaction.failed', Interaction | { id: string }>
   | WSEventBase<'session.created', SessionEventData>
   | WSEventBase<'session.exited', SessionEventData>
-  | WSEventBase<'worker.output', { task_id: string; stream: string; line: string; ts: string }>
+  | WSEventBase<
+      'worker.output',
+      { task_id: string; stream: string; line: string; ts: string }
+    >
   | WSEventBase<'worker.done', { task_id: string; exit_code: number }>
   | WSEventBase<'worker.output.end', { task_id: string; ts: string }>
   | WSEventBase<'run.failed', { error: string; task_ids?: string[] }>
@@ -177,7 +183,10 @@ export type KnownWSEvent =
   | WSEventBase<'ai-review.failed', { task_id: string; error: string }>
   | WSEventBase<'ai-review.completed', AIReviewResult>
   | WSEventBase<'decompose.started', { session_id: string }>
-  | WSEventBase<'decompose.failed', { error: string; session_id: string; operation_id?: string }>
+  | WSEventBase<
+      'decompose.failed',
+      { error: string; session_id: string; operation_id?: string }
+    >
   | WSEventBase<
       'decompose.completed',
       { proposed: ProposedTask[]; session_id: string; operation_id?: string }

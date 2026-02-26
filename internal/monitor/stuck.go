@@ -1,5 +1,8 @@
 package monitor
 
+// stuck.go detects no-progress loops and edit-revert cycles by polling
+// worktree diffs on a configurable interval.
+
 import (
 	"context"
 	"crypto/sha256"
@@ -30,6 +33,8 @@ type StuckDetector struct {
 	done    chan struct{}
 	running bool
 }
+
+var _ Monitor = (*StuckDetector)(nil)
 
 // NewStuckDetector creates a new detector.
 func NewStuckDetector(worktreeDir string, interval time.Duration, maxCycles int, onStuck func(string, string), taskIDs []string) *StuckDetector {
@@ -118,8 +123,6 @@ func (d *StuckDetector) Stop() error {
 
 	return nil
 }
-
-var _ Monitor = (*StuckDetector)(nil)
 
 func (d *StuckDetector) poll(taskIDs []string) {
 	for _, taskID := range taskIDs {

@@ -1,13 +1,19 @@
 import { ActionButton } from '../common/ActionButton'
 
-export type TaskListFilter = 'all' | 'pending' | 'running' | 'review' | 'done'
+export type TaskListFilter =
+  | 'all'
+  | 'pending'
+  | 'planned'
+  | 'running'
+  | 'review'
+  | 'approved'
+  | 'merged'
+  | 'failed'
 
 interface Props {
   actionLoading: boolean
   runPending: boolean
   mergePending: boolean
-  reviewOpen: boolean
-  hasReviewTasks: boolean
   hasApprovedTasks: boolean
   decomposeRunning: boolean
   cleanupRunning: boolean
@@ -17,11 +23,13 @@ interface Props {
   totalTasks: number
   visibleTasks: number
   pendingCount: number
+  plannedCount: number
   runningCount: number
   reviewCount: number
-  doneCount: number
+  approvedCount: number
+  mergedCount: number
+  failedCount: number
   onRun: () => void
-  onToggleReview: () => void
   onMerge: () => void
   onCreateTask: () => void
   onFilterChange: (filter: TaskListFilter) => void
@@ -32,8 +40,6 @@ export function TasksToolbar({
   actionLoading,
   runPending,
   mergePending,
-  reviewOpen,
-  hasReviewTasks,
   hasApprovedTasks,
   decomposeRunning,
   cleanupRunning,
@@ -43,24 +49,34 @@ export function TasksToolbar({
   totalTasks,
   visibleTasks,
   pendingCount,
+  plannedCount,
   runningCount,
   reviewCount,
-  doneCount,
+  approvedCount,
+  mergedCount,
+  failedCount,
   onRun,
-  onToggleReview,
   onMerge,
   onCreateTask,
   onFilterChange,
   onSearchChange,
 }: Props) {
-  const doneProgress = totalTasks > 0 ? Math.round((doneCount / totalTasks) * 100) : 0
+  const doneProgress =
+    totalTasks > 0 ? Math.round((mergedCount / totalTasks) * 100) : 0
 
-  const filterTabs: Array<{ key: TaskListFilter; label: string; count: number }> = [
+  const filterTabs: Array<{
+    key: TaskListFilter
+    label: string
+    count: number
+  }> = [
     { key: 'all', label: 'All', count: totalTasks },
     { key: 'pending', label: 'Pending', count: pendingCount },
+    { key: 'planned', label: 'Planned', count: plannedCount },
     { key: 'running', label: 'Running', count: runningCount },
     { key: 'review', label: 'Review', count: reviewCount },
-    { key: 'done', label: 'Done', count: doneCount },
+    { key: 'approved', label: 'Approved', count: approvedCount },
+    { key: 'merged', label: 'Merged', count: mergedCount },
+    { key: 'failed', label: 'Failed', count: failedCount },
   ]
 
   return (
@@ -105,14 +121,6 @@ export function TasksToolbar({
           <ActionButton
             variant="default"
             size="toolbar"
-            onClick={onToggleReview}
-            disabled={!hasReviewTasks}
-          >
-            {reviewOpen ? 'Hide Review' : 'Review'}
-          </ActionButton>
-          <ActionButton
-            variant="default"
-            size="toolbar"
             onClick={onMerge}
             disabled={actionLoading || mergePending || !hasApprovedTasks}
           >
@@ -123,20 +131,22 @@ export function TasksToolbar({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          {filterTabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => onFilterChange(tab.key)}
-              className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
-                activeFilter === tab.key
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-alt text-foreground/70 hover:text-foreground'
-              }`}
-            >
-              {tab.label} {tab.count}
-            </button>
-          ))}
+          {filterTabs
+            .filter((tab) => tab.key === 'all' || tab.count > 0)
+            .map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => onFilterChange(tab.key)}
+                className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
+                  activeFilter === tab.key
+                    ? 'bg-accent text-white'
+                    : 'bg-surface-alt text-foreground/70 hover:text-foreground'
+                }`}
+              >
+                {tab.label} {tab.count}
+              </button>
+            ))}
         </div>
 
         <input

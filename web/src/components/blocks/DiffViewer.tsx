@@ -120,7 +120,8 @@ export function DiffViewer({ data, onAction }: Props) {
                 useDarkTheme={false}
                 styles={{
                   contentText: {
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    fontFamily:
+                      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                     fontSize: '12px',
                   },
                 }}
@@ -138,7 +139,8 @@ export function DiffViewer({ data, onAction }: Props) {
               useDarkTheme={false}
               styles={{
                 contentText: {
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                   fontSize: '12px',
                 },
               }}

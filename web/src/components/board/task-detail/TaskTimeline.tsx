@@ -123,11 +123,15 @@ export function TaskTimeline({ children }: { children?: ReactNode }) {
   const runInteractions = runInteractionsQuery.data ?? []
   const planInteractions = planInteractionsQuery.data ?? []
   const mergeInteractions = mergeInteractionsQuery.data ?? []
-  const hasFailedMerge = mergeInteractions.some((item) => item.status === 'failed')
+  const hasFailedMerge = mergeInteractions.some(
+    (item) => item.status === 'failed',
+  )
   const defaultPhase = defaultPhaseFor(task, hasPlan, hasFailedMerge)
 
-  const [selectedPhase, setSelectedPhase] = useState<TimelinePhaseId>(defaultPhase)
-  const [displayedPhase, setDisplayedPhase] = useState<TimelinePhaseId>(defaultPhase)
+  const [selectedPhase, setSelectedPhase] =
+    useState<TimelinePhaseId>(defaultPhase)
+  const [displayedPhase, setDisplayedPhase] =
+    useState<TimelinePhaseId>(defaultPhase)
   const [contentVisible, setContentVisible] = useState(true)
 
   useEffect(() => {
@@ -202,7 +206,9 @@ export function TaskTimeline({ children }: { children?: ReactNode }) {
     }
 
     if (displayedPhase === 'execution') {
-      return <TaskExecutionSection readOnly={phaseStates.execution !== 'active'} />
+      return (
+        <TaskExecutionSection readOnly={phaseStates.execution !== 'active'} />
+      )
     }
 
     return <TaskMergeStatus readOnly={phaseStates.merge !== 'active'} />
@@ -236,7 +242,9 @@ export function TaskTimeline({ children }: { children?: ReactNode }) {
         <div
           className={[
             'min-h-0 flex-1 overflow-auto transition-all duration-200',
-            contentVisible ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
+            contentVisible
+              ? 'translate-y-0 opacity-100'
+              : 'translate-y-1 opacity-0',
           ].join(' ')}
         >
           {renderSelectedContent()}

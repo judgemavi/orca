@@ -17,17 +17,25 @@ orca/
 ├── cmd/orca/                  # CLI entrypoint and command modules
 ├── internal/
 │   ├── api/                   # HTTP/WebSocket backend
+│   ├── banner/                # ASCII art logo printing
 │   ├── config/                # YAML config and defaults
-│   ├── cost/                  # Token/cost tracking (run-scoped)
 │   ├── decompose/             # Goal -> task breakdown
+│   ├── driver/                # Pluggable AI tool driver interface (Claude, Codex, Aider)
 │   ├── evaluate/              # Task complexity evaluation
 │   ├── executor/              # Direct task batch execution (RunBatch)
-│   ├── explore/               # Codebase context generation
+│   ├── explore/               # Codebase context generation + staleness
 │   ├── integrator/            # Merge + validation
+│   ├── interaction/           # LLM interaction persistence (tokens, cost, diffs, logs)
+│   ├── llm/                   # JSON extraction from LLM output
+│   ├── logging/               # slog config, rotating file writer, log querying
 │   ├── mcp/                   # MCP stdio server tools
+│   ├── merger/                # (reserved)
+│   ├── model/                 # Aggregates available LLM models from drivers
 │   ├── monitor/               # Stuck/conflict/budget runtime monitors
-│   ├── ops/                   # Operation audit log
+│   ├── nullable/              # Generic nil-safe pointer dereference
+│   ├── orchestrator/          # Supervisor agent bootstrap (MCP config, launch args)
 │   ├── plan/                  # Implementation planning
+│   ├── procutil/              # Process/git utilities
 │   ├── pty/                   # Interactive terminal sessions
 │   ├── quality/               # Scope/test/alignment quality gates
 │   ├── review/                # Automated review helpers
@@ -37,7 +45,7 @@ orca/
 │   └── worktree/              # Git worktree lifecycle
 ├── prompts/                   # Prompt templates used by phases/orchestrator
 ├── web/                       # Embedded React dashboard
-└── .orca/                     # Runtime state (config/db/context/worktrees)
+└── .tasks/                    # Task spec files for pending UI work
 ```
 
 ---
@@ -50,7 +58,7 @@ orca/
 
 ### Task Status Flow
 
-`pending → running → review → approved → merged`
+`pending → planned → running → review → approved → merged`
 
 Failure path: `running → failed` (can be reopened to `pending`).
 
@@ -59,37 +67,74 @@ Failure path: `running → failed` (can be reopened to `pending`).
 - `orca run` (or `POST /api/v1/tasks/run`) selects ready tasks (or explicit IDs)
 - Executor runs up to `workers.max_parallel`
 - Each task runs in its own worktree branch (`orca/task-{id}`)
-- Artifacts/costs are recorded with a `run_id`
+- Interactions are recorded with a `run_id` tracking tokens, cost, and diffs
 
 ---
 
 ## Database Schema
 
-SQLite with migrations.
+SQLite with versioned migrations (currently V3). WAL mode + foreign keys enabled.
 
 | Table | Purpose |
 |---|---|
-| `tasks` | Task records |
-| `task_deps` | Task dependency graph |
-| `task_reviews` | Review feedback history |
-| `artifacts` | Execution outputs (`diff`, logs, exit code, quality), includes `run_id` |
-| `costs` | Token/cost tracking, includes `run_id` |
-| `operations` | Async operation audit log |
-| `sessions` | PTY session metadata |
-| `meta` | DB version sentinel for watcher |
+| `tasks` | Task records (id, title, description, plan, status, parent_id, session_id) |
+| `task_deps` | Task dependency graph (task_id, depends_on) |
+| `task_reviews` | Review feedback history, linked to interactions |
+| `task_interactions` | LLM interaction logs: phase, attempt, run_id, tool, model, tokens, cost, diff, quality, duration |
+| `sessions` | PTY session metadata (tool, pid, status, terminal size) |
+| `config` | Key-value runtime config store |
+| `meta` | DB version sentinel for watcher (auto-incremented by triggers) |
+
+### Key: task_interactions
+
+Central tracking table replacing the old artifacts/costs model. Each row records one LLM invocation:
+- **Phases:** plan, run, review, merge
+- **Tracking:** input_tokens, output_tokens, estimated_cost, duration_ms, exit_code
+- **Outputs:** diff, quality_json, error, log_path
 
 ---
 
 ## CLI Surface
 
-Core commands:
+```text
+orca init                    [-y]
+orca explore                 [--tool] [--manual] [--stdin] [--check]
+orca breakdown <goal...>     [--tool] [--auto]
+orca run [task-ids...]       [--no-merge]
 
-- Setup/context: `init`, `explore`, `status`
-- Planning/tasks: `breakdown`, `tasks add/list/show/edit/delete/reopen/plan/evaluate/merge`
-- Execution: `run`, `review approve`, `review request-changes`, `review ai`, `merge`
-- Runtime/ops: `serve`, `mcp`, `orc`, `ops`, `costs`, `cleanup`, `logs`, `models`, `config show`
+orca tasks / task
+  ├── add <title...>         [--description] [--parent] [--depends-on]
+  ├── list
+  ├── edit [id]              [--title] [--description] [--plan] [--status]
+  ├── delete [id]            [-y]
+  ├── show [id]
+  ├── reopen [ids...]
+  ├── add-dep <id> <dep-id>
+  ├── merge [id]             [--auto]
+  ├── plan [id]              [--save] [--edit] [--tool] [--model]
+  ├── approve-plan [id]
+  ├── request-plan-changes [id] [feedback]  [--tool] [--model]
+  ├── evaluate [id]          [--tool] [--model] [--json]
+  ├── reviews [id]
+  └── logs <id>              [--phase] [--attempt] [--raw] [-f] [--json]
 
-Ready tasks execute directly via `executor.RunBatch()`.
+orca review
+  ├── approve [id]
+  ├── request-changes [id] [feedback]  [--tool] [--model]
+  └── ai [id]               [--tool] [--model] [--prompt]
+
+orca merge                   [--dry-run]
+orca serve                   [-p/--port] [--orchestrator]
+orca mcp
+orca orc
+orca status
+orca logs                    [--level] [--task] [--since] [--tail] [-f] [--json]
+orca models [tool]
+orca config show | set <key> <value>
+orca costs                   [--run]
+orca ops                     [--all]
+orca cleanup                 [--dry-run]
+```
 
 ---
 
@@ -97,27 +142,52 @@ Ready tasks execute directly via `executor.RunBatch()`.
 
 - Staleness check (`explore`): hash tracked files to detect context drift.
 - Ready queue: `GetReady()` returns `pending` tasks whose dependencies are `merged`.
-- Run execution: `executor.RunBatch()` transitions tasks to `running`, executes workers in parallel, stores artifacts/costs by `run_id`, then finalizes statuses.
+- Run execution: `executor.RunBatch()` transitions tasks to `running`, executes workers in parallel, stores interactions by `run_id`, then finalizes statuses.
 - Integration ordering: merge approved tasks deterministically to reduce conflicts.
 
 ---
 
 ## MCP Server
 
-Orca MCP (`orca mcp`) exposes task-oriented tools.
+Orca MCP (`orca mcp`) exposes 35 tools for task orchestration.
 
-Key groups:
+### Task Lifecycle
+`tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
 
-- Task lifecycle: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
-- Planning: `breakdown`, `tasks_plan_evaluate`, `tasks_plan_generate`
-- Execution: `tasks_run`
-- Review/integration: `tasks_approve`, `tasks_request_changes`, `ai_review`, `merge`, `tasks_merge`
-- Context/ops: `explore`, `explore_status`, `project_status`, `worktree_*`, `budget_status`, `quality_results`, `log_*`
+### Planning
+`breakdown`, `tasks_plan_generate`, `tasks_plan_evaluate`, `tasks_approve_plan`, `tasks_request_plan_changes`
+
+### Execution
+`tasks_run`
+
+### Review & Integration
+`tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`
+
+### Interactions
+`interactions_list`, `interaction_get`
+
+### Project & Config
+`project_status`, `config_get`, `config_update`, `models_list`
+
+### Context
+`explore`, `explore_status`
+
+### Worktree
+`worktree_cleanup`, `worktree_status`
+
+### Monitoring
+`budget_status`, `quality_results`, `log_event`, `log_query`
 
 ---
 
 ## Frontend Architecture
 
-- React Query for server state
-- WebSocket events for live task/run updates
-- Task table + task detail + terminal views for end-to-end execution visibility
+React 19 + Vite 7 + TanStack Router/Query + Tailwind CSS 4.
+
+- **Task table** — filterable/sortable list with status badges, run/merge toolbar actions
+- **Task detail** — 3-phase visual timeline (planning → execution → merge) with collapsible interaction logs, inline review actions, diff viewer
+- **Terminal** — xterm.js console panel for live CLI sessions
+- **Review** — inline approve/request-changes, AI review result cards
+- **Diff viewer** — file-by-file tabbed diff comparison
+- **Operations indicator** — live status of running operations (plan, run, merge, etc.)
+- **WebSocket bridge** — React Query cache invalidation via 20+ real-time event types

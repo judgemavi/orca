@@ -58,7 +58,9 @@ function getTaskTool(task: Task): string {
     last_tool?: string
     suggested_tool?: string
   }
-  return withTool.tool || withTool.last_tool || withTool.suggested_tool || 'auto'
+  return (
+    withTool.tool || withTool.last_tool || withTool.suggested_tool || 'auto'
+  )
 }
 
 function formatTaskCost(task: Task): string {

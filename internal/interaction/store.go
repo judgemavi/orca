@@ -50,6 +50,158 @@ type Interaction struct {
 	FinishedAt    *time.Time `json:"finished_at,omitempty"`
 }
 
+// FinishOptions for setting result fields on completion.
+type FinishOption func(*finishConfig)
+
+type finishConfig struct {
+	error       *string
+	diff        *string
+	exitCode    *int
+	durationMS  *int
+	qualityJSON *string
+	cost        *costFields
+	runID       *string
+	model       *string
+}
+
+type costFields struct {
+	inputTokens   int64
+	outputTokens  int64
+	estimatedCost float64
+}
+
+func (s *Store) nextAttempt(taskID *string, phase string) (int, error) {
+	var attempt int
+	err := s.db.QueryRow(
+		`SELECT COALESCE(MAX(attempt), 0) + 1
+		 FROM task_interactions
+		 WHERE phase = ?
+		   AND ((task_id IS NULL AND ? IS NULL) OR task_id = ?)`,
+		phase, taskID, taskID,
+	).Scan(&attempt)
+	if err != nil {
+		return 0, fmt.Errorf("resolve attempt: %w", err)
+	}
+	return attempt, nil
+}
+
+func (s *Store) logPath(taskID *string, phase string, attempt int, id string) string {
+	dir := "_project"
+	if taskID != nil && strings.TrimSpace(*taskID) != "" {
+		dir = *taskID
+	}
+	filename := fmt.Sprintf("%s-%d-%s.log", phase, attempt, id)
+	return filepath.ToSlash(filepath.Join(s.baseDir, dir, filename))
+}
+
+func (s *Store) createLogFile(logPath string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return nil, fmt.Errorf("create interaction log directory: %w", err)
+	}
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("create interaction log file: %w", err)
+	}
+	return f, nil
+}
+
+func readInteractions(rows *sql.Rows) ([]Interaction, error) {
+	out := make([]Interaction, 0)
+	for rows.Next() {
+		in, err := scanInteraction(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *in)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func scanInteraction(scan func(dest ...interface{}) error) (*Interaction, error) {
+	var in Interaction
+	var taskID, runID, model, errText, diff, quality sql.NullString
+	var exitCode, durationMS sql.NullInt64
+	var finishedAt sql.NullTime
+	if err := scan(
+		&in.ID,
+		&taskID,
+		&in.Phase,
+		&in.Attempt,
+		&runID,
+		&in.Tool,
+		&model,
+		&in.LogPath,
+		&in.Status,
+		&errText,
+		&diff,
+		&exitCode,
+		&durationMS,
+		&quality,
+		&in.InputTokens,
+		&in.OutputTokens,
+		&in.EstimatedCost,
+		&in.StartedAt,
+		&finishedAt,
+	); err != nil {
+		return nil, err
+	}
+	if taskID.Valid {
+		v := taskID.String
+		in.TaskID = &v
+	}
+	if runID.Valid {
+		v := runID.String
+		in.RunID = &v
+	}
+	if model.Valid {
+		in.Model = model.String
+	}
+	if errText.Valid {
+		in.Error = errText.String
+	}
+	if diff.Valid {
+		in.Diff = diff.String
+	}
+	if exitCode.Valid {
+		v := int(exitCode.Int64)
+		in.ExitCode = &v
+	}
+	if durationMS.Valid {
+		v := int(durationMS.Int64)
+		in.DurationMS = &v
+	}
+	if quality.Valid {
+		in.QualityJSON = quality.String
+	}
+	if finishedAt.Valid {
+		v := finishedAt.Time
+		in.FinishedAt = &v
+	}
+	return &in, nil
+}
+
+func readToolSummaries(rows *sql.Rows) ([]ToolSummary, error) {
+	var summaries []ToolSummary
+	for rows.Next() {
+		var s ToolSummary
+		if err := rows.Scan(&s.Tool, &s.InputTokens, &s.OutputTokens, &s.Cost); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, s)
+	}
+	return summaries, rows.Err()
+}
+
+func nullableString(v string) interface{} {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	return v
+}
+
 func NewStore(db *state.DB, baseDir string) *Store {
 	base := strings.TrimSpace(baseDir)
 	if base == "" {
@@ -155,26 +307,6 @@ func (s *Store) Finish(id, status string, opts ...FinishOption) error {
 		return fmt.Errorf("interaction %s not found", id)
 	}
 	return nil
-}
-
-// FinishOptions for setting result fields on completion.
-type FinishOption func(*finishConfig)
-
-type finishConfig struct {
-	error       *string
-	diff        *string
-	exitCode    *int
-	durationMS  *int
-	qualityJSON *string
-	cost        *costFields
-	runID       *string
-	model       *string
-}
-
-type costFields struct {
-	inputTokens   int64
-	outputTokens  int64
-	estimatedCost float64
 }
 
 func WithError(msg string) FinishOption {
@@ -394,136 +526,4 @@ func (s *Store) MarkStaleAsFailed() error {
 		return fmt.Errorf("mark stale interactions failed: %w", err)
 	}
 	return nil
-}
-
-func (s *Store) nextAttempt(taskID *string, phase string) (int, error) {
-	var attempt int
-	err := s.db.QueryRow(
-		`SELECT COALESCE(MAX(attempt), 0) + 1
-		 FROM task_interactions
-		 WHERE phase = ?
-		   AND ((task_id IS NULL AND ? IS NULL) OR task_id = ?)`,
-		phase, taskID, taskID,
-	).Scan(&attempt)
-	if err != nil {
-		return 0, fmt.Errorf("resolve attempt: %w", err)
-	}
-	return attempt, nil
-}
-
-func (s *Store) logPath(taskID *string, phase string, attempt int, id string) string {
-	dir := "_project"
-	if taskID != nil && strings.TrimSpace(*taskID) != "" {
-		dir = *taskID
-	}
-	filename := fmt.Sprintf("%s-%d-%s.log", phase, attempt, id)
-	return filepath.ToSlash(filepath.Join(s.baseDir, dir, filename))
-}
-
-func (s *Store) createLogFile(logPath string) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
-		return nil, fmt.Errorf("create interaction log directory: %w", err)
-	}
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("create interaction log file: %w", err)
-	}
-	return f, nil
-}
-
-func readInteractions(rows *sql.Rows) ([]Interaction, error) {
-	out := make([]Interaction, 0)
-	for rows.Next() {
-		in, err := scanInteraction(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *in)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func scanInteraction(scan func(dest ...interface{}) error) (*Interaction, error) {
-	var in Interaction
-	var taskID, runID, model, errText, diff, quality sql.NullString
-	var exitCode, durationMS sql.NullInt64
-	var finishedAt sql.NullTime
-	if err := scan(
-		&in.ID,
-		&taskID,
-		&in.Phase,
-		&in.Attempt,
-		&runID,
-		&in.Tool,
-		&model,
-		&in.LogPath,
-		&in.Status,
-		&errText,
-		&diff,
-		&exitCode,
-		&durationMS,
-		&quality,
-		&in.InputTokens,
-		&in.OutputTokens,
-		&in.EstimatedCost,
-		&in.StartedAt,
-		&finishedAt,
-	); err != nil {
-		return nil, err
-	}
-	if taskID.Valid {
-		v := taskID.String
-		in.TaskID = &v
-	}
-	if runID.Valid {
-		v := runID.String
-		in.RunID = &v
-	}
-	if model.Valid {
-		in.Model = model.String
-	}
-	if errText.Valid {
-		in.Error = errText.String
-	}
-	if diff.Valid {
-		in.Diff = diff.String
-	}
-	if exitCode.Valid {
-		v := int(exitCode.Int64)
-		in.ExitCode = &v
-	}
-	if durationMS.Valid {
-		v := int(durationMS.Int64)
-		in.DurationMS = &v
-	}
-	if quality.Valid {
-		in.QualityJSON = quality.String
-	}
-	if finishedAt.Valid {
-		v := finishedAt.Time
-		in.FinishedAt = &v
-	}
-	return &in, nil
-}
-
-func readToolSummaries(rows *sql.Rows) ([]ToolSummary, error) {
-	var summaries []ToolSummary
-	for rows.Next() {
-		var s ToolSummary
-		if err := rows.Scan(&s.Tool, &s.InputTokens, &s.OutputTokens, &s.Cost); err != nil {
-			return nil, err
-		}
-		summaries = append(summaries, s)
-	}
-	return summaries, rows.Err()
-}
-
-func nullableString(v string) interface{} {
-	if strings.TrimSpace(v) == "" {
-		return nil
-	}
-	return v
 }

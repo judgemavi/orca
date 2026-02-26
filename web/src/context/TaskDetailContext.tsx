@@ -10,9 +10,7 @@ type TaskDetailContextValue = {
   isOperationRunning: (type: string, targetId?: string) => boolean
 }
 
-const TaskDetailContext = createContext<TaskDetailContextValue | null>(
-  null,
-)
+const TaskDetailContext = createContext<TaskDetailContextValue | null>(null)
 
 type TaskDetailProviderProps = {
   children: ReactNode

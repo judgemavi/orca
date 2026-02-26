@@ -123,7 +123,9 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                 interaction={item}
                 collapsible
                 showDiffSummary
-                expanded={item.status === 'running' || expandedInteractions.has(item.id)}
+                expanded={
+                  item.status === 'running' || expandedInteractions.has(item.id)
+                }
                 alwaysExpanded={item.status === 'running'}
                 onExpandedChange={() => toggleInteraction(item.id)}
                 activeLogId={activeLogId}

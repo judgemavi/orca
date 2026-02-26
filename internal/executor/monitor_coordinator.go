@@ -1,5 +1,11 @@
 package executor
 
+// monitor_coordinator.go wires up runtime monitors (stuck, conflict, budget)
+// and provides the callback glue between monitor alerts and executor actions.
+//
+// Called by: RunBatch
+// Key flow: startMonitors → [stuck|conflict|budget].Start → callbacks → killProcess
+
 import (
 	"context"
 	"database/sql"

@@ -108,6 +108,7 @@ func ResolveSupervisorTool(cfg *config.Config) (string, driver.Driver, string, e
 }
 
 var AllowedTools = []string{
+	// Task lifecycle
 	"mcp__orca__tasks_list",
 	"mcp__orca__tasks_get",
 	"mcp__orca__tasks_create",
@@ -115,22 +116,38 @@ var AllowedTools = []string{
 	"mcp__orca__tasks_delete",
 	"mcp__orca__tasks_reopen",
 	"mcp__orca__tasks_add_dependency",
-	"mcp__orca__tasks_approve",
-	"mcp__orca__tasks_request_changes",
+	// Planning
 	"mcp__orca__breakdown",
 	"mcp__orca__tasks_plan_evaluate",
-	"mcp__orca__task_plan_generate",
-	"mcp__orca__task_merge",
+	"mcp__orca__tasks_plan_generate",
+	"mcp__orca__tasks_approve_plan",
+	"mcp__orca__tasks_request_plan_changes",
+	// Execution
 	"mcp__orca__tasks_run",
-	"mcp__orca__review_get",
+	// Review
+	"mcp__orca__tasks_approve",
+	"mcp__orca__tasks_request_changes",
+	"mcp__orca__ai_review",
+	"mcp__orca__tasks_reviews",
+	// Integration
 	"mcp__orca__merge",
+	"mcp__orca__tasks_merge",
+	// Interactions
+	"mcp__orca__interactions_list",
+	"mcp__orca__interaction_get",
+	// Exploration
 	"mcp__orca__explore",
 	"mcp__orca__explore_status",
+	// Project & config
+	"mcp__orca__project_status",
+	"mcp__orca__config_get",
+	"mcp__orca__models_list",
+	// Operations
 	"mcp__orca__worktree_cleanup",
 	"mcp__orca__worktree_status",
 	"mcp__orca__budget_status",
 	"mcp__orca__quality_results",
-	"mcp__orca__project_status",
+	// Read-only inspection
 	"Read",
 	"Glob",
 	"Grep",

@@ -42,10 +42,24 @@ export function TaskActionsBar({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
       api.runTasks([args.taskId], args.tool, args.model),
   })
-  const approveMutation = useMutation({ mutationFn: (taskId: string) => api.approveTask(taskId) })
+  const approveMutation = useMutation({
+    mutationFn: (taskId: string) => api.approveTask(taskId),
+  })
   const requestChangesMutation = useMutation({
-    mutationFn: (args: { id: string; feedback: string; interactionId?: string; tool?: string; model?: string }) =>
-      api.requestChanges(args.id, args.feedback, args.interactionId, args.tool, args.model),
+    mutationFn: (args: {
+      id: string
+      feedback: string
+      interactionId?: string
+      tool?: string
+      model?: string
+    }) =>
+      api.requestChanges(
+        args.id,
+        args.feedback,
+        args.interactionId,
+        args.tool,
+        args.model,
+      ),
   })
   const aiReviewMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
@@ -66,15 +80,20 @@ export function TaskActionsBar({
   const optionsRef = useRef<HTMLDivElement | null>(null)
 
   const actionModelsQuery = useModelsQuery(actionTool || undefined)
-  const actionModels = actionTool ? (actionModelsQuery.data?.[actionTool] ?? []) : []
+  const actionModels = actionTool
+    ? (actionModelsQuery.data?.[actionTool] ?? [])
+    : []
   const runInteractions = runInteractionsQuery.data ?? []
 
   const latestCompletedRunId = useMemo(
-    () => [...runInteractions].reverse().find((item) => item.status === 'completed')?.id,
+    () =>
+      [...runInteractions].reverse().find((item) => item.status === 'completed')
+        ?.id,
     [runInteractions],
   )
 
-  const runningInProgress = task.status === 'running' || isOperationRunning('run', task.id)
+  const runningInProgress =
+    task.status === 'running' || isOperationRunning('run', task.id)
   const runningBusy = runningInProgress || runTaskMutation.isPending
 
   useEffect(() => {
@@ -171,7 +190,11 @@ export function TaskActionsBar({
       return (
         <>
           {isDeletable && (
-            <ActionButton variant="danger" onClick={onDelete} disabled={deleting}>
+            <ActionButton
+              variant="danger"
+              onClick={onDelete}
+              disabled={deleting}
+            >
               {deleting ? 'Deleting…' : 'Delete'}
             </ActionButton>
           )}
@@ -195,7 +218,11 @@ export function TaskActionsBar({
 
     if (task.status === 'planned') {
       return (
-        <ActionButton variant="primary" onClick={handleRun} disabled={runningBusy}>
+        <ActionButton
+          variant="primary"
+          onClick={handleRun}
+          disabled={runningBusy}
+        >
           {runningBusy ? 'Running…' : 'Run'}
         </ActionButton>
       )
@@ -229,7 +256,9 @@ export function TaskActionsBar({
               onClick={handleRequestChanges}
               disabled={requestChangesMutation.isPending}
             >
-              {requestChangesMutation.isPending ? 'Submitting…' : 'Submit Request Changes'}
+              {requestChangesMutation.isPending
+                ? 'Submitting…'
+                : 'Submit Request Changes'}
             </ActionButton>
           </>
         )
@@ -240,7 +269,9 @@ export function TaskActionsBar({
           <ActionButton
             variant="primary"
             onClick={handleApprove}
-            disabled={approveMutation.isPending || requestChangesMutation.isPending}
+            disabled={
+              approveMutation.isPending || requestChangesMutation.isPending
+            }
           >
             {approveMutation.isPending ? 'Approving…' : 'Approve'}
           </ActionButton>
@@ -250,7 +281,9 @@ export function TaskActionsBar({
               setRequestChangesExpanded(true)
               setActionError(null)
             }}
-            disabled={approveMutation.isPending || requestChangesMutation.isPending}
+            disabled={
+              approveMutation.isPending || requestChangesMutation.isPending
+            }
           >
             Request Changes
           </ActionButton>
@@ -270,7 +303,9 @@ export function TaskActionsBar({
         <ActionButton
           variant="primary"
           onClick={handleMerge}
-          disabled={mergeTaskMutation.isPending || isOperationRunning('merge', task.id)}
+          disabled={
+            mergeTaskMutation.isPending || isOperationRunning('merge', task.id)
+          }
         >
           {mergeTaskMutation.isPending || isOperationRunning('merge', task.id)
             ? 'Merging…'
@@ -283,11 +318,19 @@ export function TaskActionsBar({
       return (
         <>
           {isDeletable && (
-            <ActionButton variant="danger" onClick={onDelete} disabled={deleting}>
+            <ActionButton
+              variant="danger"
+              onClick={onDelete}
+              disabled={deleting}
+            >
               {deleting ? 'Deleting…' : 'Delete'}
             </ActionButton>
           )}
-          <ActionButton variant="primary" onClick={handleRun} disabled={runningBusy}>
+          <ActionButton
+            variant="primary"
+            onClick={handleRun}
+            disabled={runningBusy}
+          >
             {runningBusy ? 'Re-running…' : 'Re-run'}
           </ActionButton>
         </>
@@ -324,7 +367,10 @@ export function TaskActionsBar({
 
       {actionError && <div className="mb-2 text-xs">{actionError}</div>}
 
-      <div className="flex flex-wrap items-center justify-end gap-2" ref={optionsRef}>
+      <div
+        className="flex flex-wrap items-center justify-end gap-2"
+        ref={optionsRef}
+      >
         {showOptions && (
           <div className="relative">
             <ActionButton

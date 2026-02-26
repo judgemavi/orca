@@ -20,7 +20,9 @@ const RootLayout = () => {
 
   useEffect(() => {
     const stored = localStorage.getItem('theme')
-    setThemePreference(stored === 'light' || stored === 'dark' ? stored : 'system')
+    setThemePreference(
+      stored === 'light' || stored === 'dark' ? stored : 'system',
+    )
   }, [])
 
   useEffect(() => {
@@ -41,11 +43,16 @@ const RootLayout = () => {
   }, [themePreference])
 
   const ThemeIcon =
-    themePreference === 'light' ? Sun : themePreference === 'dark' ? Moon : Monitor
+    themePreference === 'light'
+      ? Sun
+      : themePreference === 'dark'
+        ? Moon
+        : Monitor
 
   const cycleTheme = () => {
     setThemePreference((current) => {
-      const next = current === 'light' ? 'dark' : current === 'dark' ? 'system' : 'light'
+      const next =
+        current === 'light' ? 'dark' : current === 'dark' ? 'system' : 'light'
       if (next === 'system') localStorage.removeItem('theme')
       else localStorage.setItem('theme', next)
       return next

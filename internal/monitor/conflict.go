@@ -1,5 +1,7 @@
 package monitor
 
+// conflict.go detects overlapping file edits across concurrent task worktrees.
+
 import (
 	"context"
 	"fmt"
@@ -26,6 +28,13 @@ type ConflictDetector struct {
 	done    chan struct{}
 	running bool
 }
+
+type conflictGroup struct {
+	taskIDs []string
+	files   []string
+}
+
+var _ Monitor = (*ConflictDetector)(nil)
 
 // NewConflictDetector creates a conflict detector with sane defaults.
 func NewConflictDetector(worktreeDir string, interval time.Duration,
@@ -114,8 +123,6 @@ func (d *ConflictDetector) Stop() error {
 	return nil
 }
 
-var _ Monitor = (*ConflictDetector)(nil)
-
 func (d *ConflictDetector) check(taskIDs []string) {
 	filesToTasks := make(map[string][]string)
 
@@ -169,11 +176,6 @@ func (d *ConflictDetector) check(taskIDs []string) {
 			d.onConflict(taskIDsCopy, filesCopy)
 		}
 	}
-}
-
-type conflictGroup struct {
-	taskIDs []string
-	files   []string
 }
 
 func (d *ConflictDetector) markFired(key string) bool {

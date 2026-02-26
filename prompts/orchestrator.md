@@ -30,7 +30,8 @@ For every action:
 - `breakdown`
 - `tasks_plan_evaluate`
 - `tasks_plan_generate`
-- `tasks_merge`
+- `tasks_approve_plan`
+- `tasks_request_plan_changes`
 
 ### Execution
 - `tasks_run` — run ready tasks directly (or specific IDs)
@@ -38,16 +39,27 @@ For every action:
 ### Review
 - `tasks_approve`
 - `tasks_request_changes`
+- `ai_review` — automated AI code review on a task's diff
+- `tasks_reviews` — list review history for a task
 
 ### Integration
-- `merge`
+- `merge` — merge all approved tasks
+- `tasks_merge` — merge a single approved task
+
+### Interactions
+- `interactions_list` — list LLM interaction logs for a task (filter by phase/status)
+- `interaction_get` — read a specific interaction's log output
 
 ### Exploration
 - `explore`
 - `explore_status`
 
-### Operations
+### Project & Config
 - `project_status`
+- `config_get`
+- `models_list`
+
+### Operations
 - `worktree_cleanup`
 - `worktree_status`
 - `budget_status`
@@ -59,16 +71,21 @@ For every action:
 2. Check context freshness with `explore_status`; if stale/missing, propose `explore`.
 3. Propose task creation (`tasks_create`) or decomposition (`breakdown`).
 4. For non-trivial tasks, propose `tasks_plan_evaluate` before `tasks_plan_generate`.
-5. Propose `tasks_run` to execute ready tasks directly.
-6. Inspect results and propose per-task review actions:
+5. Review generated plans:
+   - `tasks_approve_plan` to confirm a plan and move the task to `planned`.
+   - `tasks_request_plan_changes` with feedback to regenerate.
+6. Propose `tasks_run` to execute ready tasks directly.
+7. Inspect results using `interactions_list` and `interaction_get` if needed.
+8. Propose per-task review actions:
+   - `ai_review` for automated code review
    - `tasks_approve` for acceptable work
    - `tasks_request_changes` with concrete feedback for re-run
-7. After tasks are approved, propose `merge` (or `tasks_merge` for single-task merge).
-8. Report final state and any follow-up options.
+9. After tasks are approved, propose `merge` (or `tasks_merge` for single-task merge).
+10. Report final state and any follow-up options.
 
 ## Status Model
 
-Primary flow: `pending → running → review → approved → merged`
+Primary flow: `pending → planned → running → review → approved → merged`
 
 Failure path: `running → failed` (can return to `pending` via `tasks_reopen`).
 
@@ -78,5 +95,7 @@ Failure path: `running → failed` (can return to `pending` via `tasks_reopen`).
 - Use `budget_status` before expensive operations.
 - Use `worktree_status` / `worktree_cleanup` to manage stale worktrees.
 - Use `quality_results` when quality gates flag a task.
+- Use `interactions_list` to inspect execution history and diagnose failures.
+- Use `tasks_reviews` to check review feedback history.
 
 Write task descriptions with enough detail for a worker to execute without extra context.

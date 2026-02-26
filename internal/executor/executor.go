@@ -1,5 +1,12 @@
 package executor
 
+// Package executor orchestrates parallel task execution: worktree creation,
+// worker spawning, result collection, and artifact storage.
+//
+// Depends on: worker, driver, interaction, monitor, worktree, quality
+// Consumed by: orchestrator, API handlers
+// Key flow: RunBatch → prepareTasks → collectResult → finalizeRun
+
 import (
 	"context"
 	"database/sql"
@@ -111,107 +118,10 @@ type Executor struct {
 	runBaselineSnapshot *quality.Snapshot
 }
 
-// NewExecutor creates an Executor wired to DB, task store, worktree manager,
-// config, and repo directory.
-func NewExecutor(db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg *config.Config, repoDir string, opts ExecutorOptions, sessionMgr ...*pty.SessionManager) *Executor {
-	var mgr *pty.SessionManager
-	if len(sessionMgr) > 0 {
-		mgr = sessionMgr[0]
-	}
-	return &Executor{
-		db:            db,
-		taskStore:     taskStore,
-		worktrees:     wm,
-		config:        cfg,
-		repoDir:       repoDir,
-		sessionMgr:    mgr,
-		running:       make(map[string]*exec.Cmd),
-		sessions:      make(map[string]string),
-		interactions:  opts.Interactions,
-		outputHook:    opts.OutputHook,
-		doneHook:      opts.DoneHook,
-		broadcastHook: opts.BroadcastHook,
-	}
-}
-
-// Worktrees returns the underlying worktree manager.
-func (e *Executor) Worktrees() *worktree.Manager { return e.worktrees }
-
-// SetMonitorAlertHook sets a callback for runtime monitor alerts.
-func (e *Executor) SetMonitorAlertHook(fn func(alertType, taskID, message string)) {
-	e.monitorHook = fn
-}
+// --- private helpers ---
 
 func (e *Executor) budgetAwareEnabled() bool {
 	return e.config.Orchestrator.TaskBudget > 0 || e.config.Orchestrator.CostBudget > 0
-}
-
-// RunBatch executes all tasks in a batch: transitions to running, creates worktrees,
-// runs workers in parallel, collects results, updates task statuses, stores artifacts.
-func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error) {
-	maxParallel := e.config.Workers.MaxParallel
-	if maxParallel <= 0 {
-		maxParallel = 1
-	}
-	if len(taskIDs) > maxParallel {
-		return nil, fmt.Errorf("batch has %d tasks, exceeds workers.max_parallel=%d", len(taskIDs), maxParallel)
-	}
-
-	if err := e.worktrees.EnsureIntegrationBranch(e.config.Project.IntegrationBranch); err != nil {
-		return nil, fmt.Errorf("ensure integration branch: %w", err)
-	}
-
-	for _, id := range taskIDs {
-		t, err := e.taskStore.Get(id)
-		if err != nil {
-			return nil, fmt.Errorf("get task %s: %w", id, err)
-		}
-		if !runnableTaskStatuses[t.Status] {
-			return nil, fmt.Errorf("task %s must be pending or planned to run (current: %s)", id, t.Status)
-		}
-
-		if err := e.taskStore.Update(id, map[string]interface{}{"status": "running"}); err != nil {
-			return nil, fmt.Errorf("set task %s running: %w", id, err)
-		}
-		if e.broadcastHook != nil {
-			e.broadcastHook(id, "running")
-		}
-	}
-
-	runID := uuid.New().String()
-	e.runID = runID
-	ctx, cancel := context.WithCancel(context.Background())
-	e.cancel = cancel
-	e.runCtx = ctx
-	defer func() {
-		e.runCtx = nil
-		e.runID = ""
-	}()
-
-	contextPrefix := ""
-	if cctx := explore.LoadContext(e.repoDir); cctx != "" {
-		contextPrefix = "## Codebase Context\n\n" + cctx + "\n\n---\n\n"
-	}
-
-	prepared, _, err := e.prepareTasks(taskIDs, contextPrefix, opts)
-	if err != nil {
-		e.rollbackPreparation(taskIDs)
-		return nil, err
-	}
-
-	monCancel := e.startMonitors(ctx, taskIDs)
-	defer e.stopMonitors(monCancel)
-
-	baselineSnapshot := e.takeBaselineSnapshot()
-	e.runBaselineSnapshot = baselineSnapshot
-	defer func() { e.runBaselineSnapshot = nil }()
-
-	results := e.collectResult(prepared, baselineSnapshot)
-	e.finishRunInteractions(runID, prepared, results)
-	if err := e.finalizeRun(results); err != nil {
-		return results, err
-	}
-	return results, nil
 }
 
 func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts RunOpts) ([]taskInfo, []string, error) {
@@ -309,6 +219,131 @@ func (e *Executor) emitMonitorAlert(alertType, taskID, message string) {
 	if e.monitorHook != nil {
 		e.monitorHook(alertType, taskID, message)
 	}
+}
+
+// rollbackPreparation cleans up worktrees created during prep and resets task state.
+func (e *Executor) rollbackPreparation(taskIDs []string) {
+	for _, taskID := range taskIDs {
+		if err := e.worktrees.Remove(taskID); err != nil {
+			slog.Warn("rollback remove worktree failed", "task_id", taskID, "err", err)
+		}
+		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "planned"}); err != nil {
+			slog.Warn("rollback reset task failed", "task_id", taskID, "err", err)
+		}
+	}
+}
+
+func (e *Executor) closePreparedWriters(prepared []taskInfo) {
+	for _, info := range prepared {
+		if info.logWriter != nil {
+			_ = info.logWriter.Close()
+		}
+	}
+}
+
+func (e *Executor) resolveTaskToolConfig(phase string, override string) (string, driver.Driver, error) {
+	return e.config.ResolveToolForPhase(phase, override)
+}
+
+// --- exported functions/methods ---
+
+// NewExecutor creates an Executor wired to DB, task store, worktree manager,
+// config, and repo directory.
+func NewExecutor(db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg *config.Config, repoDir string, opts ExecutorOptions, sessionMgr ...*pty.SessionManager) *Executor {
+	var mgr *pty.SessionManager
+	if len(sessionMgr) > 0 {
+		mgr = sessionMgr[0]
+	}
+	return &Executor{
+		db:            db,
+		taskStore:     taskStore,
+		worktrees:     wm,
+		config:        cfg,
+		repoDir:       repoDir,
+		sessionMgr:    mgr,
+		running:       make(map[string]*exec.Cmd),
+		sessions:      make(map[string]string),
+		interactions:  opts.Interactions,
+		outputHook:    opts.OutputHook,
+		doneHook:      opts.DoneHook,
+		broadcastHook: opts.BroadcastHook,
+	}
+}
+
+// Worktrees returns the underlying worktree manager.
+func (e *Executor) Worktrees() *worktree.Manager { return e.worktrees }
+
+// SetMonitorAlertHook sets a callback for runtime monitor alerts.
+func (e *Executor) SetMonitorAlertHook(fn func(alertType, taskID, message string)) {
+	e.monitorHook = fn
+}
+
+// RunBatch executes all tasks in a batch: transitions to running, creates worktrees,
+// runs workers in parallel, collects results, updates task statuses, stores artifacts.
+func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error) {
+	maxParallel := e.config.Workers.MaxParallel
+	if maxParallel <= 0 {
+		maxParallel = 1
+	}
+	if len(taskIDs) > maxParallel {
+		return nil, fmt.Errorf("batch has %d tasks, exceeds workers.max_parallel=%d", len(taskIDs), maxParallel)
+	}
+
+	if err := e.worktrees.EnsureIntegrationBranch(e.config.Project.IntegrationBranch); err != nil {
+		return nil, fmt.Errorf("ensure integration branch: %w", err)
+	}
+
+	for _, id := range taskIDs {
+		t, err := e.taskStore.Get(id)
+		if err != nil {
+			return nil, fmt.Errorf("get task %s: %w", id, err)
+		}
+		if !runnableTaskStatuses[t.Status] {
+			return nil, fmt.Errorf("task %s must be pending or planned to run (current: %s)", id, t.Status)
+		}
+
+		if err := e.taskStore.Update(id, map[string]interface{}{"status": "running"}); err != nil {
+			return nil, fmt.Errorf("set task %s running: %w", id, err)
+		}
+		if e.broadcastHook != nil {
+			e.broadcastHook(id, "running")
+		}
+	}
+
+	runID := uuid.New().String()
+	e.runID = runID
+	ctx, cancel := context.WithCancel(context.Background())
+	e.cancel = cancel
+	e.runCtx = ctx
+	defer func() {
+		e.runCtx = nil
+		e.runID = ""
+	}()
+
+	contextPrefix := ""
+	if cctx := explore.LoadContext(e.repoDir); cctx != "" {
+		contextPrefix = "## Codebase Context\n\n" + cctx + "\n\n---\n\n"
+	}
+
+	prepared, _, err := e.prepareTasks(taskIDs, contextPrefix, opts)
+	if err != nil {
+		e.rollbackPreparation(taskIDs)
+		return nil, err
+	}
+
+	monCancel := e.startMonitors(ctx, taskIDs)
+	defer e.stopMonitors(monCancel)
+
+	baselineSnapshot := e.takeBaselineSnapshot()
+	e.runBaselineSnapshot = baselineSnapshot
+	defer func() { e.runBaselineSnapshot = nil }()
+
+	results := e.collectResult(prepared, baselineSnapshot)
+	e.finishRunInteractions(runID, prepared, results)
+	if err := e.finalizeRun(results); err != nil {
+		return results, err
+	}
+	return results, nil
 }
 
 // RunSingleWithOpts re-runs a single task with optional tool/model overrides.
@@ -469,28 +504,4 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	}
 
 	return nil
-}
-
-// rollbackPreparation cleans up worktrees created during prep and resets task state.
-func (e *Executor) rollbackPreparation(taskIDs []string) {
-	for _, taskID := range taskIDs {
-		if err := e.worktrees.Remove(taskID); err != nil {
-			slog.Warn("rollback remove worktree failed", "task_id", taskID, "err", err)
-		}
-		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "planned"}); err != nil {
-			slog.Warn("rollback reset task failed", "task_id", taskID, "err", err)
-		}
-	}
-}
-
-func (e *Executor) closePreparedWriters(prepared []taskInfo) {
-	for _, info := range prepared {
-		if info.logWriter != nil {
-			_ = info.logWriter.Close()
-		}
-	}
-}
-
-func (e *Executor) resolveTaskToolConfig(phase string, override string) (string, driver.Driver, error) {
-	return e.config.ResolveToolForPhase(phase, override)
 }

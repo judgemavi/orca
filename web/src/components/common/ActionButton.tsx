@@ -28,10 +28,8 @@ export function ActionButton({
   const variants: Record<NonNullable<Props['variant']>, string> = {
     default:
       'border-border-subtle bg-transparent text-foreground hover:bg-surface-alt',
-    primary:
-      'border-accent bg-accent text-white hover:bg-accent/90',
-    danger:
-      'border-danger bg-danger text-white hover:bg-danger/90',
+    primary: 'border-accent bg-accent text-white hover:bg-accent/90',
+    danger: 'border-danger bg-danger text-white hover:bg-danger/90',
   }
   return (
     <button

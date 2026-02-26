@@ -14,6 +14,28 @@ type SectionId =
   | 'quality'
   | 'logging'
 
+type SectionCardProps = {
+  title: string
+  id: SectionId
+  saving?: boolean
+  error?: string | null
+  onSave: () => void
+  children: React.ReactNode
+}
+
+type LabeledInputProps = {
+  label: string
+  value: string
+  onChange: (next: string) => void
+  type?: React.InputHTMLAttributes<HTMLInputElement>['type']
+}
+
+type ToggleProps = {
+  label: string
+  checked: boolean
+  onChange: (next: boolean) => void
+}
+
 const inputClass =
   'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-accent'
 
@@ -436,14 +458,7 @@ function SectionCard({
   error,
   onSave,
   children,
-}: {
-  title: string
-  id: SectionId
-  saving?: boolean
-  error?: string | null
-  onSave: () => void
-  children: React.ReactNode
-}) {
+}: SectionCardProps) {
   return (
     <details className={sectionClass} open>
       <summary className="cursor-pointer list-none border-b px-4 py-3 text-sm font-semibold">
@@ -452,9 +467,7 @@ function SectionCard({
       <div className="space-y-3 p-4">
         {children}
         <div className="flex items-center justify-end gap-3 pt-1">
-          {error ? (
-            <span className="text-xs text-danger">{error}</span>
-          ) : null}
+          {error ? <span className="text-xs text-danger">{error}</span> : null}
           <button
             type="button"
             className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
@@ -475,12 +488,7 @@ function LabeledInput({
   value,
   onChange,
   type = 'text',
-}: {
-  label: string
-  value: string
-  onChange: (next: string) => void
-  type?: React.InputHTMLAttributes<HTMLInputElement>['type']
-}) {
+}: LabeledInputProps) {
   return (
     <label className="flex flex-col gap-1 text-xs">
       {label}
@@ -494,15 +502,7 @@ function LabeledInput({
   )
 }
 
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string
-  checked: boolean
-  onChange: (next: boolean) => void
-}) {
+function Toggle({ label, checked, onChange }: ToggleProps) {
   return (
     <label className="flex items-center gap-2 text-[13px]">
       <input

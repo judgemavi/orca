@@ -1,3 +1,5 @@
+// WebSocket client. Auto-reconnects. Broadcasts KnownWSEvent to listeners.
+
 import type { WSEvent } from './types'
 
 type Listener = (event: WSEvent) => void
@@ -12,7 +14,10 @@ function getURL() {
 }
 
 function connect() {
-  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+  if (
+    ws &&
+    (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)
+  ) {
     return
   }
 
@@ -33,7 +38,8 @@ function connect() {
 
     const event: WSEvent = {
       type,
-      timestamp: typeof eventObj.timestamp === 'string' ? eventObj.timestamp : '',
+      timestamp:
+        typeof eventObj.timestamp === 'string' ? eventObj.timestamp : '',
       data:
         eventObj.data && typeof eventObj.data === 'object'
           ? (eventObj.data as Record<string, unknown>)

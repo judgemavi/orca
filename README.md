@@ -13,17 +13,18 @@ Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 5. `review` — approve, request changes, or run AI review
 6. `merge` — merge approved tasks into integration branch
 
-Task flow: `pending → running → review → approved → merged`.
+Task flow: `pending → planned → running → review → approved → merged`.
 
 ## Features
 
-- Tool-agnostic worker execution
+- Tool-agnostic worker execution via pluggable drivers
 - Git worktree isolation per task branch (`orca/task-{id}`)
+- Plan review loop (`tasks approve-plan` / `tasks request-plan-changes`)
 - Quality gates + review loop (`review request-changes` re-runs task, `review ai` runs automated AI review)
-- Cost tracking per run (`run_id`) and per tool
-- Web UI with live status/events
-- Task table UI (sortable/filterable) with task detail modal + review panel
-- MCP server for agentic orchestration
+- Interaction-based tracking: tokens, cost, diffs, and quality per LLM invocation
+- Web UI with live status/events via WebSocket
+- Task table, 3-phase timeline, diff viewer, inline review, terminal console
+- MCP server for agentic orchestration (35 tools)
 - Single Go binary with embedded web frontend
 
 ## Requirements
@@ -77,49 +78,58 @@ orca serve
 ## CLI Reference
 
 ```text
-orca init
-orca explore [--check|--manual <file>|--stdin|--tool <tool>]
-orca breakdown "goal" [--tool <tool>] [--auto]
+orca init                    [-y]
+orca explore                 [--tool] [--manual] [--stdin] [--check]
+orca breakdown <goal...>     [--tool] [--auto]
+orca run [task-ids...]       [--no-merge]
 
-orca tasks
-orca tasks add "title" [--description ...] [--depends-on ...] [--tool ...] [--model ...]
-orca tasks list
-orca tasks show <id>
-orca tasks edit <id>
-orca tasks delete <id>
-orca tasks reopen <id...>
-orca tasks evaluate <id> [--tool ...] [--model ...] [--json]
-orca tasks plan <id> [--save] [--edit] [--tool ...] [--model ...]
-orca tasks merge <id>
+orca tasks / task
+  ├── add <title...>         [--description] [--parent] [--depends-on]
+  ├── list
+  ├── edit [id]              [--title] [--description] [--plan] [--status]
+  ├── delete [id]            [-y]
+  ├── show [id]
+  ├── reopen [ids...]
+  ├── add-dep <id> <dep-id>
+  ├── merge [id]             [--auto]
+  ├── plan [id]              [--save] [--edit] [--tool] [--model]
+  ├── approve-plan [id]
+  ├── request-plan-changes [id] [feedback]  [--tool] [--model]
+  ├── evaluate [id]          [--tool] [--model] [--json]
+  ├── reviews [id]
+  └── logs <id>              [--phase] [--attempt] [--raw] [-f] [--json]
 
-orca run [task-id...]
-orca run --no-merge
+orca review
+  ├── approve [id]
+  ├── request-changes [id] [feedback]  [--tool] [--model]
+  └── ai [id]               [--tool] [--model] [--prompt]
 
-orca review approve <id>
-orca review request-changes <id> "feedback"
-orca review ai <id> [--tool ...] [--model ...]
-
-orca merge [--dry-run]
-orca status
-orca costs [--run <run-id-prefix>]
-orca ops [--all]
-orca cleanup
-orca logs [--level ... --task ... --since ... --tail ... --follow --json]
-orca models
-orca config show
-orca serve [--port <port>] [--orchestrator]
+orca merge                   [--dry-run]
+orca serve                   [-p/--port] [--orchestrator]
 orca mcp
 orca orc
+orca status
+orca logs                    [--level] [--task] [--since] [--tail] [-f] [--json]
+orca models [tool]
+orca config show | set <key> <value>
+orca costs                   [--run]
+orca ops                     [--all]
+orca cleanup                 [--dry-run]
 ```
 
 ## MCP
 
-`orca mcp` exposes MCP tools for task orchestration, including:
+`orca mcp` exposes 35 MCP tools for task orchestration:
 
-- Task lifecycle: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
-- Planning: `breakdown`, `tasks_plan_evaluate`, `tasks_plan_generate`
-- Execution: `tasks_run`
-- Review/integration: `tasks_approve`, `tasks_request_changes`, `ai_review`, `merge`, `tasks_merge`
+- **Task lifecycle:** `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_add_dependency`
+- **Planning:** `breakdown`, `tasks_plan_generate`, `tasks_plan_evaluate`, `tasks_approve_plan`, `tasks_request_plan_changes`
+- **Execution:** `tasks_run`
+- **Review/integration:** `tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`
+- **Interactions:** `interactions_list`, `interaction_get`
+- **Project/config:** `project_status`, `config_get`, `config_update`, `models_list`
+- **Context:** `explore`, `explore_status`
+- **Worktree:** `worktree_cleanup`, `worktree_status`
+- **Monitoring:** `budget_status`, `quality_results`, `log_event`, `log_query`
 
 ## Project Structure
 
@@ -127,16 +137,25 @@ orca orc
 cmd/orca/           CLI entrypoint + command registration
 internal/
   api/              HTTP/WebSocket API server
-  cost/             Cost tracking and summaries
+  banner/           ASCII art logo
+  config/           YAML config and defaults
   decompose/        Goal -> task decomposition
+  driver/           Pluggable AI tool driver interface
   evaluate/         Task complexity evaluation
   executor/         Batch task execution (RunBatch)
   explore/          Codebase exploration + staleness
   integrator/       Merge and validation
+  interaction/      LLM interaction persistence (tokens, cost, diffs)
+  llm/              JSON extraction from LLM output
+  logging/          Rotating log writer + querying
   mcp/              MCP server tool handlers/schemas
+  model/            LLM model aggregation from drivers
   monitor/          Runtime monitors
-  ops/              Operation tracking
+  nullable/         Nil-safe pointer utils
+  orchestrator/     Supervisor agent bootstrap
   plan/             Implementation plan generation
+  procutil/         Process/git utilities
+  pty/              Interactive terminal sessions
   quality/          Quality gates
   review/           Review flows
   state/            SQLite migrations + watcher

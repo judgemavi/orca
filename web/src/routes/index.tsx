@@ -3,10 +3,12 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../api'
-import { ReviewPanel } from '../components/board/ReviewPanel'
 import { CreateTaskModal } from '../components/board/CreateTaskModal'
 import { TasksTable } from '../components/board/TasksTable'
-import { TasksToolbar, type TaskListFilter } from '../components/board/TasksToolbar'
+import {
+  TasksToolbar,
+  type TaskListFilter,
+} from '../components/board/TasksToolbar'
 import { toast } from 'sonner'
 import { useConfigQuery } from '../hooks/queries/useConfig'
 import { useModelsQuery } from '../hooks/queries/useModels'
@@ -26,10 +28,14 @@ const STATUS_PRIORITY: Record<Task['status'], number> = {
 
 function taskMatchesFilter(task: Task, filter: TaskListFilter) {
   if (filter === 'all') return true
-  if (filter === 'pending') return task.status === 'pending' || task.status === 'planned'
+  if (filter === 'pending') return task.status === 'pending'
+  if (filter === 'planned') return task.status === 'planned'
   if (filter === 'running') return task.status === 'running'
   if (filter === 'review') return task.status === 'review'
-  return task.status === 'approved' || task.status === 'merged' || task.status === 'failed'
+  if (filter === 'approved') return task.status === 'approved'
+  if (filter === 'merged') return task.status === 'merged'
+  if (filter === 'failed') return task.status === 'failed'
+  return true
 }
 
 export function TasksPage() {
@@ -38,10 +44,11 @@ export function TasksPage() {
   const configQuery = useConfigQuery()
   const allModelsQuery = useModelsQuery()
   const { isRunning } = useRunningOperations()
-  const runTasksMutation = useMutation({ mutationFn: (taskIds?: string[]) => api.runTasks(taskIds) })
+  const runTasksMutation = useMutation({
+    mutationFn: (taskIds?: string[]) => api.runTasks(taskIds),
+  })
 
   const [showCreate, setShowCreate] = useState(false)
-  const [showReview, setShowReview] = useState(false)
   const [activeFilter, setActiveFilter] = useState<TaskListFilter>('all')
   const [search, setSearch] = useState('')
 
@@ -51,20 +58,17 @@ export function TasksPage() {
 
   void allModelsQuery.data
 
-  const reviewTasks = useMemo(
-    () => tasks.filter((t) => t.status === 'review' || t.status === 'failed'),
-    [tasks],
-  )
-
   const approvedTasks = useMemo(
     () => tasks.filter((t) => t.status === 'approved'),
     [tasks],
   )
 
   const pendingCount = useMemo(
-    () =>
-      tasks.filter((task) => task.status === 'pending' || task.status === 'planned')
-        .length,
+    () => tasks.filter((task) => task.status === 'pending').length,
+    [tasks],
+  )
+  const plannedCount = useMemo(
+    () => tasks.filter((task) => task.status === 'planned').length,
     [tasks],
   )
   const runningCount = useMemo(
@@ -75,14 +79,16 @@ export function TasksPage() {
     () => tasks.filter((task) => task.status === 'review').length,
     [tasks],
   )
-  const doneCount = useMemo(
-    () =>
-      tasks.filter(
-        (task) =>
-          task.status === 'approved' ||
-          task.status === 'merged' ||
-          task.status === 'failed',
-      ).length,
+  const approvedCount = useMemo(
+    () => tasks.filter((task) => task.status === 'approved').length,
+    [tasks],
+  )
+  const mergedCount = useMemo(
+    () => tasks.filter((task) => task.status === 'merged').length,
+    [tasks],
+  )
+  const failedCount = useMemo(
+    () => tasks.filter((task) => task.status === 'failed').length,
     [tasks],
   )
 
@@ -92,7 +98,9 @@ export function TasksPage() {
     return [...tasks]
       .filter((task) => taskMatchesFilter(task, activeFilter))
       .filter((task) =>
-        normalizedSearch ? task.title.toLowerCase().includes(normalizedSearch) : true,
+        normalizedSearch
+          ? task.title.toLowerCase().includes(normalizedSearch)
+          : true,
       )
       .sort((a, b) => {
         const byStatus = STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status]
@@ -130,8 +138,6 @@ export function TasksPage() {
           actionLoading={runTasksMutation.isPending}
           runPending={runPending}
           mergePending={merging}
-          reviewOpen={showReview}
-          hasReviewTasks={reviewTasks.length > 0}
           hasApprovedTasks={approvedTasks.length > 0}
           decomposeRunning={decomposeRunning}
           cleanupRunning={cleanupRunning}
@@ -141,13 +147,15 @@ export function TasksPage() {
           totalTasks={tasks.length}
           visibleTasks={visibleTasks.length}
           pendingCount={pendingCount}
+          plannedCount={plannedCount}
           runningCount={runningCount}
           reviewCount={reviewCount}
-          doneCount={doneCount}
+          approvedCount={approvedCount}
+          mergedCount={mergedCount}
+          failedCount={failedCount}
           onRun={() => {
             void runTasks()
           }}
-          onToggleReview={() => setShowReview((v) => !v)}
           onMerge={() => {
             void api.merge().catch((err: any) => {
               toast.error(err?.message ?? 'Merge failed')
@@ -175,28 +183,6 @@ export function TasksPage() {
           <TasksTable tasks={visibleTasks} />
         )}
       </div>
-
-      {showReview && (
-        <ReviewPanel
-          reviewTasks={reviewTasks}
-          approvedTasks={approvedTasks}
-          onSelectTask={(taskId) => {
-            void navigate({ to: '/$taskId', params: { taskId } })
-          }}
-          onClose={() => setShowReview(false)}
-          onMerge={() => {
-            void (async () => {
-              try {
-                await api.merge()
-                setShowReview(false)
-              } catch (err: any) {
-                toast.error(err?.message ?? 'Merge failed')
-              }
-            })()
-          }}
-          merging={merging}
-        />
-      )}
 
       {showCreate && configData && (
         <CreateTaskModal

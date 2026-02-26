@@ -1,5 +1,11 @@
 package executor
 
+// result_collector.go fans out task execution across workers, captures output,
+// and assembles TaskResult slices for the caller.
+//
+// Called by: RunBatch
+// Key flow: collectResult → parallel runTask → captureOutput → finishRunInteractions
+
 import (
 	"context"
 	"database/sql"

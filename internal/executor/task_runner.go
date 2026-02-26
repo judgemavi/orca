@@ -1,5 +1,10 @@
 package executor
 
+// task_runner.go runs a single task via pipe or PTY mode.
+//
+// Called by: collectResult (batch) and RunSingleWithOpts (single re-run)
+// Key flow: runTask → streamPipe|streamPTY → collect diff + artifacts
+
 import (
 	"bufio"
 	"bytes"

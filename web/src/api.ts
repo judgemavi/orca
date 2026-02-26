@@ -1,3 +1,5 @@
+// HTTP client for Orca API. All endpoints return typed promises.
+
 import type {
   Task,
   TaskReview,
@@ -30,7 +32,10 @@ function withQuery(
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers ?? {}),
+    },
     ...options,
   })
 
@@ -166,11 +171,13 @@ export const api = {
   getConfig: () => request<Config>('/config'),
   updateConfig: (cfgPatch: Partial<Config>) => put<Config>('/config', cfgPatch),
   listModels: (tool?: string): Promise<Record<string, ModelInfo[]>> =>
-    request<{ tools: Record<string, ModelInfo[]> }>(withQuery('/models', { tool })).then(
-      (data) => data.tools ?? {},
-    ),
+    request<{ tools: Record<string, ModelInfo[]> }>(
+      withQuery('/models', { tool }),
+    ).then((data) => data.tools ?? {}),
   getTaskPlan: (taskId: string): Promise<string> =>
-    request<{ plan: string }>(`/tasks/${taskId}/plan`).then((data) => data.plan ?? ''),
+    request<{ plan: string }>(`/tasks/${taskId}/plan`).then(
+      (data) => data.plan ?? '',
+    ),
   saveTaskPlan: (taskId: string, plan: string): Promise<void> =>
     put<void>(`/tasks/${taskId}/plan`, { plan }),
   generateTaskPlan: (

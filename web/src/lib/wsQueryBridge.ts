@@ -1,15 +1,23 @@
+// Bridges WS events to react-query cache. Keeps UI in sync without polling.
+
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
-import type {
-  WSEvent,
-  Task,
-  Config,
-  Interaction,
-  KnownWSEvent,
-} from '../types'
+import type { WSEvent, Task, Config, Interaction, KnownWSEvent } from '../types'
 import { isKnownWSEvent } from '../types'
 import { queryKeys } from './queryKeys'
 
 type TasksCache = { tasks: Task[] }
+
+const INVALIDATE_EXACT: Record<string, readonly QueryKey[]> = {
+  'session.created': [queryKeys.sessions],
+  'session.exited': [queryKeys.sessions],
+  'plan.generating': [queryKeys.operations()],
+  'plan.failed': [queryKeys.operations()],
+  'merge.started': [queryKeys.operations(), queryKeys.status],
+  'merge.progress': [queryKeys.operations(), queryKeys.status],
+  'merge.failed': [queryKeys.operations(), queryKeys.status],
+}
+
+const SIGNAL_PREFIXES = ['run.', 'decompose.', 'cleanup.', 'explore.']
 
 function getTaskID(data: Record<string, unknown>): string | undefined {
   const taskID = data.task_id
@@ -62,18 +70,6 @@ function upsertInteraction(qc: QueryClient, interaction: Interaction) {
   })
 }
 
-const INVALIDATE_EXACT: Record<string, readonly QueryKey[]> = {
-  'session.created': [queryKeys.sessions],
-  'session.exited': [queryKeys.sessions],
-  'plan.generating': [queryKeys.operations()],
-  'plan.failed': [queryKeys.operations()],
-  'merge.started': [queryKeys.operations(), queryKeys.status],
-  'merge.progress': [queryKeys.operations(), queryKeys.status],
-  'merge.failed': [queryKeys.operations(), queryKeys.status],
-}
-
-const SIGNAL_PREFIXES = ['run.', 'decompose.', 'cleanup.', 'explore.']
-
 function handleKnownEvent(qc: QueryClient, event: KnownWSEvent): boolean {
   switch (event.type) {
     case 'task.created':
@@ -119,7 +115,9 @@ function handleKnownEvent(qc: QueryClient, event: KnownWSEvent): boolean {
 
     case 'ai-review.failed':
     case 'ai-review.completed':
-      void qc.invalidateQueries({ queryKey: queryKeys.taskReviews(event.data.task_id) })
+      void qc.invalidateQueries({
+        queryKey: queryKeys.taskReviews(event.data.task_id),
+      })
       return true
 
     default:
@@ -134,7 +132,9 @@ export function handleWSEvent(qc: QueryClient, event: WSEvent) {
 
   const exactKeys = INVALIDATE_EXACT[event.type]
   if (exactKeys) {
-    void Promise.all(exactKeys.map((key) => qc.invalidateQueries({ queryKey: key })))
+    void Promise.all(
+      exactKeys.map((key) => qc.invalidateQueries({ queryKey: key })),
+    )
     return
   }
 
