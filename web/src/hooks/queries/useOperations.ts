@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api'
 
-export interface OperationsFilters {
+interface OperationsFilters {
   target_id?: string
   type?: string
 }
 
-export const operationsKeys = {
+const operationsKeys = {
   all: ['operations'] as const,
   list: (filters?: OperationsFilters) => ['operations', filters ?? {}] as const,
 }

@@ -38,11 +38,6 @@ func New(toolName string, d driver.Driver, model string, timeout time.Duration, 
 	return &Explorer{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
-func (e *Explorer) WithGoal(goal string) *Explorer {
-	e.goal = goal
-	return e
-}
-
 func (e *Explorer) Run() (string, error) {
 	adapter := worker.NewAdapter(e.driver, e.model, e.timeout)
 

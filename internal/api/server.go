@@ -38,12 +38,6 @@ type Server struct {
 	frontendFS fs.FS
 }
 
-// NewServer creates a Server and starts the WebSocket hub.
-// frontendFS is optional — pass nil to disable static file serving.
-func NewServer(db *state.DB, cfg *config.Config, exec *executor.Executor, repoDir string, frontendFS fs.FS, sessionMgr *pty.SessionManager) *Server {
-	return NewServerWithHub(db, cfg, exec, repoDir, frontendFS, sessionMgr, nil)
-}
-
 // NewServerWithHub creates a Server with an optional pre-created hub.
 // If hub is nil, a new hub is created and started.
 func NewServerWithHub(db *state.DB, cfg *config.Config, exec *executor.Executor, repoDir string, frontendFS fs.FS, sessionMgr *pty.SessionManager, hub *Hub) *Server {

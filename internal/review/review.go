@@ -22,13 +22,6 @@ type ReviewResult struct {
 	Prompt   string `json:"prompt,omitempty"`
 }
 
-type ReviewInput struct {
-	TaskID      string `json:"task_id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Diff        string `json:"diff"`
-}
-
 type Reviewer struct {
 	toolName     string
 	driver       driver.Driver
@@ -142,17 +135,4 @@ func (r *Reviewer) Review(taskID, title, description, diff, userPrompt string) (
 	}
 
 	return reviewResult, nil
-}
-
-func (r *Reviewer) ReviewBatch(tasks []ReviewInput) ([]ReviewResult, error) {
-	results := make([]ReviewResult, 0, len(tasks))
-	for _, t := range tasks {
-		res, err := r.Review(t.TaskID, t.Title, t.Description, t.Diff, "")
-		if err != nil {
-			results = append(results, ReviewResult{TaskID: t.TaskID, Approved: false, Feedback: fmt.Sprintf("review error: %v", err), Tool: r.toolName})
-			continue
-		}
-		results = append(results, *res)
-	}
-	return results, nil
 }

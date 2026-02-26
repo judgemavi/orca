@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -141,14 +140,6 @@ func (e *Executor) Worktrees() *worktree.Manager { return e.worktrees }
 // SetMonitorAlertHook sets a callback for runtime monitor alerts.
 func (e *Executor) SetMonitorAlertHook(fn func(alertType, taskID, message string)) {
 	e.monitorHook = fn
-}
-
-// IsTaskRunning reports whether a task process is currently running.
-func (e *Executor) IsTaskRunning(taskID string) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	_, ok := e.running[taskID]
-	return ok
 }
 
 func (e *Executor) budgetAwareEnabled() bool {
@@ -320,12 +311,6 @@ func (e *Executor) emitMonitorAlert(alertType, taskID, message string) {
 	}
 }
 
-// RunSingle re-runs a single task with review feedback, reusing the existing
-// worktree and resuming the tool session when supported.
-func (e *Executor) RunSingle(ctx context.Context, taskID string) error {
-	return e.RunSingleWithOpts(ctx, taskID, RunOpts{})
-}
-
 // RunSingleWithOpts re-runs a single task with optional tool/model overrides.
 func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts RunOpts) error {
 	if ctx == nil {
@@ -486,59 +471,6 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	return nil
 }
 
-// Cancel stops all running workers.
-func (e *Executor) Cancel() error {
-	if e.cancel != nil {
-		e.cancel()
-	}
-
-	e.mu.Lock()
-	cmds := make(map[string]*exec.Cmd, len(e.running))
-	for k, v := range e.running {
-		cmds[k] = v
-	}
-	e.mu.Unlock()
-
-	e.mu.Lock()
-	sessionIDs := make(map[string]string, len(e.sessions))
-	for taskID, sessionID := range e.sessions {
-		sessionIDs[taskID] = sessionID
-	}
-	e.mu.Unlock()
-
-	for taskID, cmd := range cmds {
-		if e.sessionMgr != nil {
-			if sessionID, ok := sessionIDs[taskID]; ok && sessionID != "" {
-				slog.Info("closing PTY session", "task_id", taskID, "session_id", sessionID)
-				if err := e.sessionMgr.Kill(sessionID); err != nil {
-					slog.Warn("close PTY session failed", "session_id", sessionID, "task_id", taskID, "err", err)
-				}
-				continue
-			}
-		}
-		if cmd.Process != nil {
-			slog.Info("sending SIGINT to task", "task_id", taskID, "pid", cmd.Process.Pid)
-			_ = cmd.Process.Signal(syscall.SIGINT)
-		}
-	}
-
-	time.Sleep(5 * time.Second)
-
-	e.mu.Lock()
-	for taskID, cmd := range e.running {
-		if _, ok := e.sessions[taskID]; ok {
-			continue
-		}
-		if cmd.Process != nil {
-			slog.Warn("force killing task", "task_id", taskID, "pid", cmd.Process.Pid)
-			_ = cmd.Process.Kill()
-		}
-	}
-	e.mu.Unlock()
-
-	return nil
-}
-
 // rollbackPreparation cleans up worktrees created during prep and resets task state.
 func (e *Executor) rollbackPreparation(taskIDs []string) {
 	for _, taskID := range taskIDs {
@@ -557,21 +489,6 @@ func (e *Executor) closePreparedWriters(prepared []taskInfo) {
 			_ = info.logWriter.Close()
 		}
 	}
-}
-
-// CleanupTasks removes worktrees for all tasks in the batch. Logs errors but
-// continues cleanup for remaining tasks. Returns the first error encountered.
-func (e *Executor) CleanupTasks(taskIDs []string) error {
-	var firstErr error
-	for _, taskID := range taskIDs {
-		if err := e.worktrees.Remove(taskID); err != nil {
-			slog.Warn("remove worktree failed", "task_id", taskID, "err", err)
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
-	return firstErr
 }
 
 func (e *Executor) resolveTaskToolConfig(phase string, override string) (string, driver.Driver, error) {

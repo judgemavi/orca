@@ -27,8 +27,8 @@ export function TimelinePhase({ phase, state, headerAction, children }: Props) {
       className={[
         'relative mb-4 border-l pl-6',
         isDisabled
-          ? 'pointer-events-none border-dashed border-[var(--border)] opacity-45'
-          : 'border-[var(--border)]',
+          ? 'pointer-events-none border-dashed opacity-45'
+          : 'border-slate-700',
       ].join(' ')}
       aria-disabled={isDisabled}
     >
@@ -36,10 +36,10 @@ export function TimelinePhase({ phase, state, headerAction, children }: Props) {
         className={[
           'absolute -left-[9px] top-1 flex h-4 w-4 items-center justify-center rounded-full border',
           isActive
-            ? 'animate-pulse border-[var(--accent)] bg-[var(--accent)]'
+            ? 'animate-pulse border-blue-500 bg-blue-500'
             : isCompleted
               ? 'border-emerald-500 bg-emerald-500 text-white'
-              : 'border-[var(--border)] bg-[var(--bg-primary)]',
+              : 'border-slate-700',
         ].join(' ')}
       >
         {isCompleted && <Check size={11} strokeWidth={3} />}
@@ -48,7 +48,7 @@ export function TimelinePhase({ phase, state, headerAction, children }: Props) {
         <div
           className={[
             'text-xs font-semibold uppercase tracking-[0.06em]',
-            isActive ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]',
+            isActive ? 'text-blue-500' : 'text-slate-400',
           ].join(' ')}
         >
           {PHASE_LABELS[phase]}

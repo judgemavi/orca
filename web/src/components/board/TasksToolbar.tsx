@@ -32,13 +32,13 @@ export function TasksToolbar({
   onCreateTask,
 }: Props) {
   return (
-    <div className="flex shrink-0 items-center justify-between border-b border-border bg-[var(--bg-secondary)] px-4 py-2.5">
+    <div className="flex shrink-0 items-center justify-between border-b border-slate-700 px-4 py-2.5">
       <div className="flex items-center gap-2 text-sm">
-        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+        <span className="text-xs font-semibold uppercase tracking-wide">
           Tasks
         </span>
         {(decomposeRunning || cleanupRunning || exploring) && (
-          <span className="text-xs text-accent">
+          <span className="text-xs text-blue-500">
             {decomposeRunning && 'Decomposing... '}
             {cleanupRunning && 'Cleaning... '}
             {exploring && 'Exploring...'}
@@ -47,11 +47,19 @@ export function TasksToolbar({
       </div>
 
       <div className="flex items-center gap-2">
-        <ActionButton variant="primary" onClick={onRun} disabled={actionLoading || runPending}>
+        <ActionButton
+          variant="primary"
+          onClick={onRun}
+          disabled={actionLoading || runPending}
+        >
           {runPending ? 'Running...' : 'Run'}
         </ActionButton>
 
-        <ActionButton variant="default" onClick={onToggleReview} disabled={!hasReviewTasks}>
+        <ActionButton
+          variant="default"
+          onClick={onToggleReview}
+          disabled={!hasReviewTasks}
+        >
           {reviewOpen ? 'Hide Review' : 'Review'}
         </ActionButton>
 

@@ -11,7 +11,9 @@ export type TaskDetailContextValue = {
   onSaved: () => void
 }
 
-export const TaskDetailContext = createContext<TaskDetailContextValue | null>(null)
+export const TaskDetailContext = createContext<TaskDetailContextValue | null>(
+  null,
+)
 
 type TaskDetailProviderProps = {
   children: ReactNode
@@ -52,7 +54,9 @@ export function TaskDetailProvider({
 export function useTaskDetailContext() {
   const context = useContext(TaskDetailContext)
   if (!context) {
-    throw new Error('useTaskDetailContext must be used within TaskDetailProvider')
+    throw new Error(
+      'useTaskDetailContext must be used within TaskDetailProvider',
+    )
   }
   return context
 }

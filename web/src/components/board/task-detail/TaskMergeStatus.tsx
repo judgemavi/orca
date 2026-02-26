@@ -1,9 +1,9 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { useLastWSEvent } from '../../../context/ws'
+import { useWSSubscribe } from '../../../lib/wsEvents'
 import { controlClass } from '../../../lib/constants'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
 import { useMergeTaskMutation } from '../../../hooks/queries/useTaskMutations'
@@ -15,9 +15,14 @@ interface Props {
 }
 
 export function TaskMergeStatus({ readOnly = false }: Props) {
-  const { task, tools, activeLogId, setActiveLogId, isOperationRunning, onSaved } =
-    useTaskDetailContext()
-  const lastWSEvent = useLastWSEvent()
+  const {
+    task,
+    tools,
+    activeLogId,
+    setActiveLogId,
+    isOperationRunning,
+    onSaved,
+  } = useTaskDetailContext()
   const mergeTaskMutation = useMergeTaskMutation()
   const mergeInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByPhase('merge'),
@@ -32,8 +37,11 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
 
   const mergeModelsQuery = useModelsQuery(mergeTool || undefined)
   const mergeInteractions = mergeInteractionsQuery.data ?? []
-  const merging = isOperationRunning('merge', task.id) || mergeTaskMutation.isPending
-  const mergeModels = mergeTool ? (mergeModelsQuery.data?.[mergeTool] ?? []) : []
+  const merging =
+    isOperationRunning('merge', task.id) || mergeTaskMutation.isPending
+  const mergeModels = mergeTool
+    ? (mergeModelsQuery.data?.[mergeTool] ?? [])
+    : []
   const mergeModelsFetching = mergeModelsQuery.isFetching
 
   const onMerge = async (mode?: string) => {
@@ -63,43 +71,53 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
     setMergeModel('')
   }
   const onMergeModelChange = setMergeModel
-  const onToggleLog = (id: string) => setActiveLogId(activeLogId === id ? null : id)
+  const onToggleLog = (id: string) =>
+    setActiveLogId(activeLogId === id ? null : id)
 
-  useEffect(() => {
-    if (!lastWSEvent) return
-    const evtTaskId = (lastWSEvent.data as any)?.task_id ?? (lastWSEvent.data as any)?.id
-    if (evtTaskId !== task.id) return
+  useWSSubscribe(
+    useCallback(
+      (evt) => {
+        const evtTaskId =
+          (evt.data as any)?.task_id ?? (evt.data as any)?.id
+        if (evtTaskId !== task.id) return
 
-    if (lastWSEvent.type === 'merge.started') {
-      setMergeProgress('Merge started...')
-      setConflictError(null)
-      setConflictWorktreePath('')
-      setShowManualResolve(false)
-    } else if (lastWSEvent.type === 'merge.progress') {
-      setMergeProgress(String((lastWSEvent.data as any)?.message ?? 'Resolving...'))
-    } else if (lastWSEvent.type === 'merge.completed') {
-      setMergeProgress(null)
-      setConflictError(null)
-      onSaved()
-    } else if (lastWSEvent.type === 'merge.failed') {
-      setMergeProgress(null)
-      const isConflict = Boolean((lastWSEvent.data as any)?.conflict)
-      const errMsg = String((lastWSEvent.data as any)?.error ?? 'Merge failed')
-      if (isConflict) {
-        setConflictError(errMsg)
-        setConflictWorktreePath(String((lastWSEvent.data as any)?.worktree_path ?? ''))
-      } else {
-        setConflictError(null)
-        setConflictWorktreePath('')
-        alert(errMsg)
-      }
-    } else if (lastWSEvent.type === 'task.updated') {
-      const status = String((lastWSEvent.data as any)?.status ?? '')
-      if (status === 'merged' || status === 'approved' || status === 'failed') {
-        setMergeProgress(null)
-      }
-    }
-  }, [lastWSEvent, task.id, onSaved])
+        if (evt.type === 'merge.started') {
+          setMergeProgress('Merge started...')
+          setConflictError(null)
+          setConflictWorktreePath('')
+          setShowManualResolve(false)
+        } else if (evt.type === 'merge.progress') {
+          setMergeProgress(
+            String((evt.data as any)?.message ?? 'Resolving...'),
+          )
+        } else if (evt.type === 'merge.completed') {
+          setMergeProgress(null)
+          setConflictError(null)
+          onSaved()
+        } else if (evt.type === 'merge.failed') {
+          setMergeProgress(null)
+          const isConflict = Boolean((evt.data as any)?.conflict)
+          const errMsg = String((evt.data as any)?.error ?? 'Merge failed')
+          if (isConflict) {
+            setConflictError(errMsg)
+            setConflictWorktreePath(
+              String((evt.data as any)?.worktree_path ?? ''),
+            )
+          } else {
+            setConflictError(null)
+            setConflictWorktreePath('')
+            alert(errMsg)
+          }
+        } else if (evt.type === 'task.updated') {
+          const status = String((evt.data as any)?.status ?? '')
+          if (status === 'merged' || status === 'approved' || status === 'failed') {
+            setMergeProgress(null)
+          }
+        }
+      },
+      [task.id, onSaved],
+    ),
+  )
 
   useEffect(() => {
     setMergeProgress(null)
@@ -127,22 +145,29 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
 
   return (
     <div className="flex flex-col gap-2.5">
-      {readOnly && !mergeProgress && !conflictError && mergeInteractions.length === 0 && (
-        <div className="text-xs text-[var(--text-secondary)]">
-          Merge details are read-only for completed tasks.
-        </div>
-      )}
+      {readOnly &&
+        !mergeProgress &&
+        !conflictError &&
+        mergeInteractions.length === 0 && (
+          <div className="text-xs">
+            Merge details are read-only for completed tasks.
+          </div>
+        )}
 
       {!readOnly && (
         <div className="flex justify-end">
-          <ActionButton variant="primary" onClick={() => void onMerge()} disabled={merging}>
+          <ActionButton
+            variant="primary"
+            onClick={() => void onMerge()}
+            disabled={merging}
+          >
             {merging ? 'Merging…' : conflictError ? 'Retry Merge' : 'Merge'}
           </ActionButton>
         </div>
       )}
 
       {mergeInteractions.length === 0 && !mergeProgress && !conflictError && (
-        <div className="text-xs text-[var(--text-secondary)]">No merge interactions yet.</div>
+        <div className="text-xs">No merge interactions yet.</div>
       )}
 
       {mergeInteractions.map((item) => (
@@ -152,62 +177,72 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
           activeLogId={activeLogId}
           onToggleLog={onToggleLog}
         >
-          {item.id === latestRunningMergeId && item.status === 'running' && mergeProgress && (
-            <div className="rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-2 text-xs leading-5 text-[#8a1f1f]">
-              {mergeProgress}
-            </div>
-          )}
-
-          {item.id === latestFailedMergeId && item.status === 'failed' && conflictError && (
-            <div className="flex flex-col gap-2 rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-3">
-              <div className="text-xs leading-5 text-[#8a1f1f]">
-                Merge conflict: {conflictError}
+          {item.id === latestRunningMergeId &&
+            item.status === 'running' &&
+            mergeProgress && (
+              <div className="rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-2 text-xs leading-5 text-[#8a1f1f]">
+                {mergeProgress}
               </div>
-              {!readOnly && (
-                <div className="flex flex-col gap-2">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                    <ToolModelSelector
-                      tools={tools}
-                      selectedTool={mergeTool}
-                      selectedModel={mergeModel}
-                      models={mergeModels}
-                      modelsFetching={mergeModelsFetching}
-                      onToolChange={onMergeToolChange}
-                      onModelChange={onMergeModelChange}
-                      controlClass={controlClass}
-                      toolPlaceholder="- resolve tool"
-                      modelPlaceholder="- default model"
-                      className="contents"
-                    />
-                    <ActionButton
-                      variant="primary"
-                      onClick={() => void onAutoResolve()}
-                      disabled={merging}
-                    >
-                      Auto-resolve
-                    </ActionButton>
-                  </div>
-                  <Collapsible.Root open={showManualResolve} onOpenChange={setShowManualResolve}>
-                    <Collapsible.Trigger asChild>
-                      <ActionButton variant="default">Manual resolve</ActionButton>
-                    </Collapsible.Trigger>
-                    <Collapsible.Content>
-                      <div className="mt-2 flex flex-col gap-1.5 text-xs text-[var(--text-secondary)]">
-                        {conflictWorktreePath && (
-                          <div className="font-mono text-[11px] text-[var(--text-primary)]">
-                            Worktree: <code>{conflictWorktreePath}</code>
-                          </div>
-                        )}
-                        <div>
-                          Resolve conflicts in the worktree, commit the fixes, then click Retry Merge.
-                        </div>
-                      </div>
-                    </Collapsible.Content>
-                  </Collapsible.Root>
+            )}
+
+          {item.id === latestFailedMergeId &&
+            item.status === 'failed' &&
+            conflictError && (
+              <div className="flex flex-col gap-2 rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-3">
+                <div className="text-xs leading-5 text-[#8a1f1f]">
+                  Merge conflict: {conflictError}
                 </div>
-              )}
-            </div>
-          )}
+                {!readOnly && (
+                  <div className="flex flex-col gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                      <ToolModelSelector
+                        tools={tools}
+                        selectedTool={mergeTool}
+                        selectedModel={mergeModel}
+                        models={mergeModels}
+                        modelsFetching={mergeModelsFetching}
+                        onToolChange={onMergeToolChange}
+                        onModelChange={onMergeModelChange}
+                        controlClass={controlClass}
+                        toolPlaceholder="- resolve tool"
+                        modelPlaceholder="- default model"
+                        className="contents"
+                      />
+                      <ActionButton
+                        variant="primary"
+                        onClick={() => void onAutoResolve()}
+                        disabled={merging}
+                      >
+                        Auto-resolve
+                      </ActionButton>
+                    </div>
+                    <Collapsible.Root
+                      open={showManualResolve}
+                      onOpenChange={setShowManualResolve}
+                    >
+                      <Collapsible.Trigger asChild>
+                        <ActionButton variant="default">
+                          Manual resolve
+                        </ActionButton>
+                      </Collapsible.Trigger>
+                      <Collapsible.Content>
+                        <div className="mt-2 flex flex-col gap-1.5 text-xs">
+                          {conflictWorktreePath && (
+                            <div className="font-mono text-[11px]">
+                              Worktree: <code>{conflictWorktreePath}</code>
+                            </div>
+                          )}
+                          <div>
+                            Resolve conflicts in the worktree, commit the fixes,
+                            then click Retry Merge.
+                          </div>
+                        </div>
+                      </Collapsible.Content>
+                    </Collapsible.Root>
+                  </div>
+                )}
+              </div>
+            )}
         </InteractionEntry>
       ))}
 

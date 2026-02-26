@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api'
 
-export const modelsKeys = {
+const modelsKeys = {
   byTool: (tool?: string) => ['models', tool ?? null] as const,
 }
 

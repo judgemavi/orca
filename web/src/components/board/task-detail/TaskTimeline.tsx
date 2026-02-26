@@ -22,10 +22,15 @@ function stateFor(
   if (phase === 'execution') {
     if (task.status === 'pending') return 'disabled'
     if (task.status === 'planned') return hasPlan ? 'active' : 'disabled'
-    if (task.status === 'running' || task.status === 'review' || task.status === 'failed') {
+    if (
+      task.status === 'running' ||
+      task.status === 'review' ||
+      task.status === 'failed'
+    ) {
       return 'active'
     }
-    if (task.status === 'approved' || task.status === 'merged') return 'completed'
+    if (task.status === 'approved' || task.status === 'merged')
+      return 'completed'
     return 'disabled'
   }
 
@@ -49,13 +54,11 @@ export function TaskTimeline() {
 
   return (
     <div className="relative pl-8">
-      <div className="absolute left-3 top-0 bottom-0 w-px bg-[var(--border)]" />
+      <div className="absolute left-3 top-0 bottom-0 w-px bg-slate-700" />
 
       <TimelinePhase phase="planning" state={planningState}>
         {!hasDefaultTool && (
-          <div className="mb-2 text-[11px] text-[var(--text-secondary)]">
-            No tool configured.
-          </div>
+          <div className="mb-2 text-[11px]">No tool configured.</div>
         )}
         <TaskPlanSection readOnly={planningState !== 'active'} />
       </TimelinePhase>

@@ -34,7 +34,7 @@ export function InteractionEntry({
   const isRunning = interaction.status === 'running'
 
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5">
+    <div className="rounded-md border p-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-xs">
           <span
@@ -43,23 +43,23 @@ export function InteractionEntry({
               interaction.status === 'completed'
                 ? 'border-emerald-500 text-emerald-500'
                 : interaction.status === 'failed'
-                  ? 'border-[var(--status-failed)] text-[var(--status-failed)]'
-                  : 'animate-pulse border-[var(--accent)] text-[var(--accent)]',
+                  ? 'border-red-400'
+                  : 'animate-pulse border-blue-500 text-blue-500',
             ].join(' ')}
             aria-hidden
           >
             {statusIcon(interaction.status)}
           </span>
-          <span className="font-mono text-[var(--text-primary)]">#{interaction.attempt}</span>
-          <span className="truncate text-[var(--text-secondary)]">{interaction.tool || '-'}</span>
-          <span className="font-mono text-[var(--text-secondary)]">
+          <span className="font-mono">#{interaction.attempt}</span>
+          <span className="truncate">{interaction.tool || '-'}</span>
+          <span className="font-mono">
             {formatDuration(interaction.duration_ms)}
           </span>
-          <span className="font-mono text-[var(--text-secondary)]">
+          <span className="font-mono">
             {formatCost(interaction.estimated_cost)}
           </span>
           {isRunning && (
-            <span className="rounded border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--accent)]">
+            <span className="rounded border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-blue-500">
               running
             </span>
           )}
@@ -70,8 +70,8 @@ export function InteractionEntry({
           className={[
             'rounded border px-2 py-0.5 text-[11px] transition-colors',
             activeLogId === interaction.id
-              ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]'
-              : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+              ? 'border-blue-500 bg-blue-500/15 text-blue-500'
+              : 'border-slate-700 ',
           ].join(' ')}
           onClick={() => onToggleLog(interaction.id)}
         >
@@ -80,7 +80,12 @@ export function InteractionEntry({
       </div>
 
       {children && (
-        <div className={['mt-2.5 flex flex-col gap-2', isRunning ? 'opacity-95' : ''].join(' ')}>
+        <div
+          className={[
+            'mt-2.5 flex flex-col gap-2',
+            isRunning ? 'opacity-95' : '',
+          ].join(' ')}
+        >
           {children}
         </div>
       )}

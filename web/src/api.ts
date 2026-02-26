@@ -133,15 +133,12 @@ export const api = {
     tool?: string,
     model?: string,
   ) =>
-    post<{ status: string; task_id: string }>(
-      `/tasks/${id}/request-changes`,
-      {
-        feedback,
-        ...(interactionId ? { interaction_id: interactionId } : {}),
-        ...(tool ? { tool } : {}),
-        ...(model ? { model } : {}),
-      },
-    ),
+    post<{ status: string; task_id: string }>(`/tasks/${id}/request-changes`, {
+      feedback,
+      ...(interactionId ? { interaction_id: interactionId } : {}),
+      ...(tool ? { tool } : {}),
+      ...(model ? { model } : {}),
+    }),
   aiReview: (id: string, tool?: string, model?: string, prompt?: string) =>
     post<{ status: string; task_id: string }>(`/tasks/${id}/ai-review`, {
       ...(tool ? { tool } : {}),
@@ -167,18 +164,16 @@ export const api = {
     tool?: string,
     model?: string,
   ) =>
-    post<{ status: string }>(
-      `/tasks/${id}/request-plan-changes`,
-      {
-        feedback,
-        ...(interactionId ? { interaction_id: interactionId } : {}),
-        ...(tool ? { tool } : {}),
-        ...(model ? { model } : {}),
-      },
-    ),
+    post<{ status: string }>(`/tasks/${id}/request-plan-changes`, {
+      feedback,
+      ...(interactionId ? { interaction_id: interactionId } : {}),
+      ...(tool ? { tool } : {}),
+      ...(model ? { model } : {}),
+    }),
 
   explore: () => request('/explore', { method: 'POST' }),
-  getMonitorAlerts: () => request<{ alerts: MonitorAlert[] }>('/monitor/alerts'),
+  getMonitorAlerts: () =>
+    request<{ alerts: MonitorAlert[] }>('/monitor/alerts'),
 
   getStatus: () => request<ProjectStatus>('/status'),
   getCosts: () => request('/costs'),

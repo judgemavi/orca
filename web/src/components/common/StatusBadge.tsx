@@ -26,20 +26,3 @@ export function StatusBadge({ status }: { status: Task['status'] | string }) {
     </span>
   )
 }
-
-export function StatusIcon({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    pending: 'bg-slate-400',
-    planned: 'bg-indigo-500',
-    running: 'bg-blue-500 animate-pulse',
-    approved: 'bg-emerald-500',
-    merged: 'bg-emerald-500',
-    failed: 'bg-rose-500',
-  }
-  return (
-    <span
-      className={`inline-flex h-2.5 w-2.5 shrink-0 rounded-full ${colors[status] ?? 'bg-slate-400'}`}
-      title={status}
-    />
-  )
-}

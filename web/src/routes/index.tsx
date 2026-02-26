@@ -1,3 +1,4 @@
+import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
@@ -10,10 +11,7 @@ import { toast } from 'sonner'
 import { useConfigQuery } from '../hooks/queries/useConfig'
 import { useModelsQuery } from '../hooks/queries/useModels'
 import { useOperationsQuery } from '../hooks/queries/useOperations'
-import {
-  useRunTasksMutation,
-  useTasksQuery,
-} from '../hooks/queries/useTasks'
+import { useRunTasksMutation, useTasksQuery } from '../hooks/queries/useTasks'
 
 export function TasksPage() {
   const navigate = useNavigate()
@@ -81,7 +79,7 @@ export function TasksPage() {
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-700 border-t-blue-500" />
       </div>
     )
   }
@@ -130,7 +128,7 @@ export function TasksPage() {
           reviewTasks={reviewTasks}
           approvedTasks={approvedTasks}
           onSelectTask={(taskId) => {
-            void navigate({ to: '/tasks/$taskId', params: { taskId } })
+            void navigate({ to: '/$taskId', params: { taskId } })
           }}
           onClose={() => setShowReview(false)}
           onMerge={() => {
@@ -158,7 +156,10 @@ export function TasksPage() {
           }}
         />
       )}
-
     </div>
   )
 }
+
+export const Route = createFileRoute('/')({
+  component: TasksPage,
+})

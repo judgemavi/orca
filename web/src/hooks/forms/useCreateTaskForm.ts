@@ -1,12 +1,12 @@
 import { useForm } from '@tanstack/react-form'
 
-export interface CreateTaskFormValues {
+interface CreateTaskFormValues {
   title: string
   description: string
   dependencies: string[]
 }
 
-export const createTaskFormDefaults: CreateTaskFormValues = {
+const createTaskFormDefaults: CreateTaskFormValues = {
   title: '',
   description: '',
   dependencies: [],

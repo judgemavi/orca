@@ -71,10 +71,12 @@ function SortableHeader({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      className="inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-wide "
     >
       {label}
-      <span className="text-[10px]">{active ? (direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+      <span className="text-[10px]">
+        {active ? (direction === 'asc' ? '▲' : '▼') : '↕'}
+      </span>
     </button>
   )
 }
@@ -88,7 +90,9 @@ export function TasksTable({ tasks }: Props) {
   const filteredAndSortedTasks = useMemo(() => {
     const normalizedFilter = filter.trim().toLowerCase()
     const filtered = normalizedFilter
-      ? tasks.filter((task) => task.title.toLowerCase().includes(normalizedFilter))
+      ? tasks.filter((task) =>
+          task.title.toLowerCase().includes(normalizedFilter),
+        )
       : tasks
 
     return [...filtered].sort((a, b) => {
@@ -133,20 +137,20 @@ export function TasksTable({ tasks }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="border-b border-border px-4 py-2.5">
+      <div className="border-b border-slate-700 px-4 py-2.5">
         <input
           type="text"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
           placeholder="Filter by title"
-          className="w-full rounded-md border border-border bg-[var(--bg-primary)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none focus:border-accent"
+          className="w-full rounded-md border border-slate-700 px-3 py-1.5 text-sm outline-none focus:border-blue-500"
         />
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
         <table className="min-w-full border-collapse text-[13px]">
-          <thead className="sticky top-0 z-10 bg-[var(--bg-primary)]">
-            <tr className="border-b border-border">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-slate-700">
               <th className="px-3 py-2 text-left">
                 <SortableHeader
                   label="Status"
@@ -185,9 +189,12 @@ export function TasksTable({ tasks }: Props) {
             {filteredAndSortedTasks.map((task) => (
               <tr
                 key={task.id}
-                className="cursor-pointer border-b border-border/70 transition hover:bg-[var(--bg-secondary)]"
+                className="cursor-pointer border-b border-slate-700/70 transition "
                 onClick={() => {
-                  void navigate({ to: '/tasks/$taskId', params: { taskId: task.id } })
+                  void navigate({
+                    to: '/$taskId',
+                    params: { taskId: task.id },
+                  })
                 }}
               >
                 <td className="px-3 py-2">
@@ -197,20 +204,20 @@ export function TasksTable({ tasks }: Props) {
                     {task.status}
                   </span>
                 </td>
-                <td className="max-w-[36rem] truncate px-3 py-2 text-[var(--text-primary)]">
+                <td className="max-w-[36rem] truncate px-3 py-2">
                   {task.title}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-[var(--text-secondary)]">
+                <td className="whitespace-nowrap px-3 py-2">
                   {formatRelativeTime(task.created_at)}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-[var(--text-secondary)]">
+                <td className="whitespace-nowrap px-3 py-2">
                   {formatRelativeTime(task.updated_at)}
                 </td>
               </tr>
             ))}
             {filteredAndSortedTasks.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-8 text-center text-sm text-[var(--text-secondary)]">
+                <td colSpan={4} className="px-3 py-8 text-center text-sm">
                   No tasks match the current filter.
                 </td>
               </tr>

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api'
 import type { Task } from '../../types'
 
-export const tasksKeys = {
+const tasksKeys = {
   all: ['tasks'] as const,
   detail: (id: string) => ['tasks', id] as const,
 }
@@ -11,14 +11,6 @@ export function useTasksQuery() {
   return useQuery({
     queryKey: tasksKeys.all,
     queryFn: () => api.listTasks(),
-  })
-}
-
-export function useTaskQuery(id: string) {
-  return useQuery({
-    queryKey: tasksKeys.detail(id),
-    queryFn: () => api.getTask(id),
-    enabled: Boolean(id),
   })
 }
 

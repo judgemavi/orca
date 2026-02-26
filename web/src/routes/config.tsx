@@ -1,6 +1,6 @@
+import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import { useLastWSEvent } from '../context/ws'
 import { useConfigQuery } from '../hooks/queries/useConfig'
 import { useModelsQuery } from '../hooks/queries/useModels'
 import type { Config } from '../types'
@@ -15,15 +15,13 @@ type SectionId =
   | 'logging'
 
 const inputClass =
-  'w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-2 text-[13px] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent)]'
+  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-blue-500'
 
-const sectionClass =
-  'rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]'
+const sectionClass = 'rounded-lg border'
 
 export function ConfigPage() {
-  const { data, isLoading, refetch } = useConfigQuery()
+  const { data, isLoading } = useConfigQuery()
   const { data: modelsByTool = {} } = useModelsQuery()
-  const lastWSEvent = useLastWSEvent()
   const [draft, setDraft] = useState<Config | null>(null)
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [errors, setErrors] = useState<Record<string, string | null>>({})
@@ -32,21 +30,18 @@ export function ConfigPage() {
     if (data) setDraft(data)
   }, [data])
 
-  useEffect(() => {
-    if (lastWSEvent?.type === 'config.updated') {
-      void refetch()
-    }
-  }, [lastWSEvent, refetch])
-
   const toolOptions = useMemo(() => {
     const configuredTools = draft?.tools ?? []
     const discoveredTools = Object.keys(modelsByTool)
-    return Array.from(new Set([...configuredTools, ...discoveredTools])).sort((a, b) =>
-      a.localeCompare(b),
+    return Array.from(new Set([...configuredTools, ...discoveredTools])).sort(
+      (a, b) => a.localeCompare(b),
     )
   }, [draft, modelsByTool])
 
-  const updateSection = <K extends keyof Config>(section: K, value: Config[K]) => {
+  const updateSection = <K extends keyof Config>(
+    section: K,
+    value: Config[K],
+  ) => {
     setDraft((prev) => (prev ? { ...prev, [section]: value } : prev))
   }
 
@@ -69,7 +64,7 @@ export function ConfigPage() {
   if (isLoading || !draft) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-700 border-t-blue-500" />
       </div>
     )
   }
@@ -109,7 +104,10 @@ export function ConfigPage() {
             label="Worktree dir"
             value={draft.project.worktree_dir}
             onChange={(value) =>
-              updateSection('project', { ...draft.project, worktree_dir: value })
+              updateSection('project', {
+                ...draft.project,
+                worktree_dir: value,
+              })
             }
           />
         </SectionCard>
@@ -121,13 +119,16 @@ export function ConfigPage() {
           error={errors.tools}
           onSave={() => savePatch('tools', { tools: draft.tools })}
         >
-          <label className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
+          <label className="flex flex-col gap-1 text-xs">
             Enabled tools
-            <div className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3 sm:grid-cols-2">
+            <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
               {toolOptions.map((tool) => {
                 const checked = draft.tools.includes(tool)
                 return (
-                  <label key={tool} className="flex items-center gap-2 text-[13px] text-[var(--text-primary)]">
+                  <label
+                    key={tool}
+                    className="flex items-center gap-2 text-[13px]"
+                  >
                     <input
                       type="checkbox"
                       checked={checked}
@@ -170,10 +171,12 @@ export function ConfigPage() {
           id="orchestrator"
           saving={saving.orchestrator}
           error={errors.orchestrator}
-          onSave={() => savePatch('orchestrator', { orchestrator: draft.orchestrator })}
+          onSave={() =>
+            savePatch('orchestrator', { orchestrator: draft.orchestrator })
+          }
         >
           <div className="grid gap-3 sm:grid-cols-4">
-            <label className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
+            <label className="flex flex-col gap-1 text-xs">
               Supervisor tool
               <select
                 className={inputClass}
@@ -195,7 +198,7 @@ export function ConfigPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
+            <label className="flex flex-col gap-1 text-xs">
               Supervisor model
               <select
                 className={inputClass}
@@ -241,55 +244,62 @@ export function ConfigPage() {
           </div>
 
           <div className="space-y-2">
-            <div className="text-xs text-[var(--text-secondary)]">Phase overrides</div>
-            {Object.entries(draft.orchestrator.phases).map(([phase, override]) => {
-              const phaseModels = override.tool ? (modelsByTool[override.tool] ?? []) : []
-              return (
-                <div key={phase} className="grid gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3 sm:grid-cols-[1fr_1fr_1fr]">
-                  <div className="self-center text-[13px] text-[var(--text-primary)]">{phase}</div>
-                  <select
-                    className={inputClass}
-                    value={override.tool}
-                    onChange={(e) =>
-                      updateSection('orchestrator', {
-                        ...draft.orchestrator,
-                        phases: {
-                          ...draft.orchestrator.phases,
-                          [phase]: { tool: e.target.value, model: '' },
-                        },
-                      })
-                    }
+            <div className="text-xs">Phase overrides</div>
+            {Object.entries(draft.orchestrator.phases).map(
+              ([phase, override]) => {
+                const phaseModels = override.tool
+                  ? (modelsByTool[override.tool] ?? [])
+                  : []
+                return (
+                  <div
+                    key={phase}
+                    className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_1fr_1fr]"
                   >
-                    <option value="">Select tool</option>
-                    {toolOptions.map((tool) => (
-                      <option key={tool} value={tool}>
-                        {tool}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className={inputClass}
-                    value={override.model}
-                    onChange={(e) =>
-                      updateSection('orchestrator', {
-                        ...draft.orchestrator,
-                        phases: {
-                          ...draft.orchestrator.phases,
-                          [phase]: { ...override, model: e.target.value },
-                        },
-                      })
-                    }
-                  >
-                    <option value="">Select model</option>
-                    {phaseModels.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )
-            })}
+                    <div className="self-center text-[13px]">{phase}</div>
+                    <select
+                      className={inputClass}
+                      value={override.tool}
+                      onChange={(e) =>
+                        updateSection('orchestrator', {
+                          ...draft.orchestrator,
+                          phases: {
+                            ...draft.orchestrator.phases,
+                            [phase]: { tool: e.target.value, model: '' },
+                          },
+                        })
+                      }
+                    >
+                      <option value="">Select tool</option>
+                      {toolOptions.map((tool) => (
+                        <option key={tool} value={tool}>
+                          {tool}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className={inputClass}
+                      value={override.model}
+                      onChange={(e) =>
+                        updateSection('orchestrator', {
+                          ...draft.orchestrator,
+                          phases: {
+                            ...draft.orchestrator.phases,
+                            [phase]: { ...override, model: e.target.value },
+                          },
+                        })
+                      }
+                    >
+                      <option value="">Select model</option>
+                      {phaseModels.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.id}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )
+              },
+            )}
           </div>
         </SectionCard>
 
@@ -353,14 +363,20 @@ export function ConfigPage() {
             label="Scope check"
             checked={draft.quality.scope_check}
             onChange={(checked) =>
-              updateSection('quality', { ...draft.quality, scope_check: checked })
+              updateSection('quality', {
+                ...draft.quality,
+                scope_check: checked,
+              })
             }
           />
           <Toggle
             label="Test delta"
             checked={draft.quality.test_delta}
             onChange={(checked) =>
-              updateSection('quality', { ...draft.quality, test_delta: checked })
+              updateSection('quality', {
+                ...draft.quality,
+                test_delta: checked,
+              })
             }
           />
         </SectionCard>
@@ -373,7 +389,7 @@ export function ConfigPage() {
           onSave={() => savePatch('logging', { logging: draft.logging })}
         >
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
+            <label className="flex flex-col gap-1 text-xs">
               Level
               <select
                 className={inputClass}
@@ -408,7 +424,6 @@ export function ConfigPage() {
             />
           </div>
         </SectionCard>
-
       </div>
     </div>
   )
@@ -431,16 +446,18 @@ function SectionCard({
 }) {
   return (
     <details className={sectionClass} open>
-      <summary className="cursor-pointer list-none border-b border-[var(--border)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)]">
+      <summary className="cursor-pointer list-none border-b px-4 py-3 text-sm font-semibold">
         {title}
       </summary>
       <div className="space-y-3 p-4">
         {children}
         <div className="flex items-center justify-end gap-3 pt-1">
-          {error ? <span className="text-xs text-[var(--color-danger)]">{error}</span> : null}
+          {error ? (
+            <span className="text-xs text-red-400">{error}</span>
+          ) : null}
           <button
             type="button"
-            className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+            className="rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
             onClick={onSave}
             disabled={saving}
             data-section={id}
@@ -465,7 +482,7 @@ function LabeledInput({
   type?: React.InputHTMLAttributes<HTMLInputElement>['type']
 }) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
+    <label className="flex flex-col gap-1 text-xs">
       {label}
       <input
         className={inputClass}
@@ -487,7 +504,7 @@ function Toggle({
   onChange: (next: boolean) => void
 }) {
   return (
-    <label className="flex items-center gap-2 text-[13px] text-[var(--text-primary)]">
+    <label className="flex items-center gap-2 text-[13px]">
       <input
         type="checkbox"
         checked={checked}
@@ -497,3 +514,7 @@ function Toggle({
     </label>
   )
 }
+
+export const Route = createFileRoute('/config')({
+  component: ConfigPage,
+})

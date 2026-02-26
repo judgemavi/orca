@@ -42,20 +42,29 @@ export function InlineReviewActions({
   const [rerunModel, setRerunModel] = useState('')
   const [aiReviewTool, setAIReviewTool] = useState('')
   const [aiReviewModel, setAIReviewModel] = useState('')
-  const [reviewActionError, setReviewActionError] = useState<string | null>(null)
+  const [reviewActionError, setReviewActionError] = useState<string | null>(
+    null,
+  )
 
   const rerunModelsQuery = useModelsQuery(rerunTool || undefined)
   const aiReviewModelsQuery = useModelsQuery(aiReviewTool || undefined)
 
-  const rerunModels = rerunTool ? (rerunModelsQuery.data?.[rerunTool] ?? []) : []
-  const aiReviewModels = aiReviewTool ? (aiReviewModelsQuery.data?.[aiReviewTool] ?? []) : []
+  const rerunModels = rerunTool
+    ? (rerunModelsQuery.data?.[rerunTool] ?? [])
+    : []
+  const aiReviewModels = aiReviewTool
+    ? (aiReviewModelsQuery.data?.[aiReviewTool] ?? [])
+    : []
 
   const approving = approveMutation.isPending
   const requesting = requestChangesMutation.isPending
   const aiReviewing = aiReviewMutation.isPending
 
   const interactionId = useMemo(
-    () => [...(runInteractions.data ?? [])].reverse().find((item) => item.status === 'completed')?.id,
+    () =>
+      [...(runInteractions.data ?? [])]
+        .reverse()
+        .find((item) => item.status === 'completed')?.id,
     [runInteractions.data],
   )
 
@@ -116,7 +125,11 @@ export function InlineReviewActions({
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-center justify-end gap-2">
         {!reviewExpanded && !aiReviewExpanded && (
-          <ActionButton variant="primary" onClick={handleApprove} disabled={approving || requesting}>
+          <ActionButton
+            variant="primary"
+            onClick={handleApprove}
+            disabled={approving || requesting}
+          >
             {approving ? 'Approving…' : 'Approve'}
           </ActionButton>
         )}
@@ -150,7 +163,7 @@ export function InlineReviewActions({
         <div className="flex flex-col gap-2">
           <textarea
             id="request-changes-feedback"
-            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+            className="w-full resize-y rounded-md border p-2 text-[13px] outline-none focus:border-blue-500"
             rows={3}
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
@@ -193,7 +206,7 @@ export function InlineReviewActions({
       {aiReviewExpanded && (
         <div className="flex flex-col gap-2">
           <textarea
-            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+            className="w-full resize-y rounded-md border p-2 text-[13px] outline-none focus:border-blue-500"
             rows={2}
             value={aiReviewPrompt}
             onChange={(e) => setAIReviewPrompt(e.target.value)}
@@ -215,7 +228,11 @@ export function InlineReviewActions({
             modelPlaceholder="- default model"
           />
           <div className="flex justify-end gap-2">
-            <ActionButton variant="default" onClick={handleAIReview} disabled={aiReviewing}>
+            <ActionButton
+              variant="default"
+              onClick={handleAIReview}
+              disabled={aiReviewing}
+            >
               {aiReviewing ? 'Starting…' : 'Start Review'}
             </ActionButton>
             <ActionButton
@@ -229,7 +246,7 @@ export function InlineReviewActions({
         </div>
       )}
 
-      {reviewActionError && <div className="text-xs text-[var(--status-failed)]">{reviewActionError}</div>}
+      {reviewActionError && <div className="text-xs">{reviewActionError}</div>}
     </div>
   )
 }

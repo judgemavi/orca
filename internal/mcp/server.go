@@ -45,11 +45,6 @@ func NewServer(db *state.DB, taskStore *task.Store, executor *executor.Executor,
 	return &Server{taskStore: taskStore, db: db, executor: executor, config: cfg, repoDir: repoDir}
 }
 
-// SetEventHook configures an optional callback for tool-generated events.
-func (s *Server) SetEventHook(hook func(eventType string, data interface{})) {
-	s.onEvent = hook
-}
-
 // Run reads newline-delimited JSON-RPC requests from stdin and writes responses to stdout.
 func (s *Server) Run() error {
 	scanner := bufio.NewScanner(os.Stdin)

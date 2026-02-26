@@ -1,7 +1,5 @@
-import { useCallback } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
-import { useQueryClient } from '@tanstack/react-query'
-import type { WSEvent } from '../types'
+import type { WSEvent, Task, Config, Interaction } from '../types'
 
 function readString(
   data: Record<string, unknown>,
@@ -11,117 +9,124 @@ function readString(
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
-export async function invalidateQueriesForWSEvent(
-  queryClient: QueryClient,
-  event: WSEvent,
-) {
-  if (event.type === 'task.updated') {
-    const taskId = readString(event.data, 'id')
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['task', taskId] })
-        : Promise.resolve(),
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['task-reviews', taskId] })
-        : Promise.resolve(),
-    ])
+export function handleWSEvent(queryClient: QueryClient, event: WSEvent) {
+  const { type, data } = event
+
+  // --- entity events: setQueryData ---
+
+  if (type === 'task.created') {
+    const task = data as unknown as Task
+    queryClient.setQueryData<{ tasks: Task[] }>(['tasks'], (old) =>
+      old ? { tasks: [...old.tasks, task] } : { tasks: [task] },
+    )
     return
   }
 
-  if (event.type === 'task.deleted') {
-    await queryClient.invalidateQueries({ queryKey: ['tasks'] })
+  if (type === 'task.updated' || type === 'merge.completed') {
+    const task = data as unknown as Task
+    queryClient.setQueryData<{ tasks: Task[] }>(['tasks'], (old) =>
+      old
+        ? { tasks: old.tasks.map((t) => (t.id === task.id ? task : t)) }
+        : old,
+    )
     return
   }
 
-  if (event.type.startsWith('task.')) {
-    await queryClient.invalidateQueries({ queryKey: ['tasks'] })
+  if (type === 'task.deleted') {
+    const taskId = readString(data, 'id')
+    if (taskId) {
+      queryClient.setQueryData<{ tasks: Task[] }>(['tasks'], (old) =>
+        old ? { tasks: old.tasks.filter((t) => t.id !== taskId) } : old,
+      )
+    }
     return
   }
 
-  if (event.type === 'plan.completed') {
-    const taskId = readString(event.data, 'task_id')
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['taskPlan', taskId] })
-        : Promise.resolve(),
-    ])
+  if (type === 'config.updated') {
+    queryClient.setQueryData(['config'], data as unknown as Config)
     return
   }
 
-  if (event.type === 'plan.generating' || event.type === 'plan.failed') {
-    await queryClient.invalidateQueries({ queryKey: ['operations'] })
+  if (type === 'plan.completed') {
+    const taskId = readString(data, 'task_id')
+    const plan = typeof data.plan === 'string' ? data.plan : ''
+    if (taskId) {
+      queryClient.setQueryData(['taskPlan', taskId], plan)
+    }
     return
   }
 
-  if (event.type.startsWith('ai-review.')) {
-    const taskId = readString(event.data, 'task_id')
-    await Promise.all([
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['task-interactions', taskId] })
-        : Promise.resolve(),
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['task-reviews', taskId] })
-        : Promise.resolve(),
-    ])
+  if (type.startsWith('interaction.')) {
+    const taskId = readString(data, 'task_id')
+    if (taskId) {
+      const interaction = data as unknown as Interaction
+      queryClient.setQueryData<{ interactions: Interaction[] }>(
+        ['task-interactions', taskId],
+        (old) => {
+          if (!old) return { interactions: [interaction] }
+          const idx = old.interactions.findIndex(
+            (i) => i.id === interaction.id,
+          )
+          if (idx >= 0) {
+            const next = [...old.interactions]
+            next[idx] = interaction
+            return { interactions: next }
+          }
+          return { interactions: [...old.interactions, interaction] }
+        },
+      )
+    }
     return
   }
 
-  if (event.type.startsWith('interaction.')) {
-    const taskId = readString(event.data, 'task_id')
-    await Promise.all([
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['task-interactions', taskId] })
-        : Promise.resolve(),
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['task-interaction', taskId] })
-        : Promise.resolve(),
-    ])
+  // --- signal-only events: invalidateQueries ---
+
+  if (type.startsWith('ai-review.')) {
+    const taskId = readString(data, 'task_id')
+    if (taskId) {
+      void queryClient.invalidateQueries({
+        queryKey: ['task-interactions', taskId],
+      })
+      void queryClient.invalidateQueries({
+        queryKey: ['task-reviews', taskId],
+      })
+    }
     return
   }
 
-  if (event.type === 'session.created' || event.type === 'session.exited') {
-    await queryClient.invalidateQueries({ queryKey: ['sessions'] })
+  if (type === 'session.created' || type === 'session.exited') {
+    void queryClient.invalidateQueries({ queryKey: ['sessions'] })
     return
   }
 
-  if (event.type === 'config.updated') {
-    await queryClient.invalidateQueries({ queryKey: ['config'] })
+  if (type === 'plan.generating' || type === 'plan.failed') {
+    void queryClient.invalidateQueries({ queryKey: ['operations'] })
     return
   }
 
   if (
-    event.type === 'run.completed' ||
-    event.type === 'run.failed' ||
-    event.type === 'decompose.started' ||
-    event.type === 'decompose.completed' ||
-    event.type === 'decompose.failed' ||
-    event.type === 'merge.started' ||
-    event.type === 'merge.completed' ||
-    event.type === 'merge.failed' ||
-    event.type === 'cleanup.started' ||
-    event.type === 'cleanup.completed' ||
-    event.type === 'cleanup.failed' ||
-    event.type === 'explore.completed' ||
-    event.type === 'explore.failed'
+    type === 'merge.started' ||
+    type === 'merge.progress' ||
+    type === 'merge.failed'
   ) {
-    await Promise.all([
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      queryClient.invalidateQueries({ queryKey: ['operations'] }),
+      queryClient.invalidateQueries({ queryKey: ['status'] }),
+    ])
+    return
+  }
+
+  if (
+    type.startsWith('run.') ||
+    type.startsWith('decompose.') ||
+    type.startsWith('cleanup.') ||
+    type.startsWith('explore.')
+  ) {
+    void Promise.all([
       queryClient.invalidateQueries({ queryKey: ['tasks'] }),
       queryClient.invalidateQueries({ queryKey: ['operations'] }),
       queryClient.invalidateQueries({ queryKey: ['status'] }),
     ])
   }
-}
-
-export function useWSQueryBridge(onEvent?: (event: WSEvent) => void) {
-  const queryClient = useQueryClient()
-
-  return useCallback(
-    (event: WSEvent) => {
-      void invalidateQueriesForWSEvent(queryClient, event)
-      onEvent?.(event)
-    },
-    [onEvent, queryClient],
-  )
 }

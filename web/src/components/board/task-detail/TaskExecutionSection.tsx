@@ -24,8 +24,14 @@ function getErrorMessage(err: unknown, fallback: string): string {
 }
 
 export function TaskExecutionSection({ readOnly = false }: Props) {
-  const { task, tools, activeLogId, setActiveLogId, isOperationRunning, onSaved } =
-    useTaskDetailContext()
+  const {
+    task,
+    tools,
+    activeLogId,
+    setActiveLogId,
+    isOperationRunning,
+    onSaved,
+  } = useTaskDetailContext()
   void isOperationRunning
 
   const runInteractionsQuery = useInteractionsQuery(task.id, {
@@ -41,7 +47,9 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
   const [runModel, setRunModel] = useState('')
   const [reviewExpanded, setReviewExpanded] = useState(false)
   const [expandedDiffs, setExpandedDiffs] = useState<Set<string>>(new Set())
-  const [dismissedReviews, setDismissedReviews] = useState<Set<string>>(new Set())
+  const [dismissedReviews, setDismissedReviews] = useState<Set<string>>(
+    new Set(),
+  )
   const [runError, setRunError] = useState<string | null>(null)
 
   const runModelsQuery = useModelsQuery(runTool || undefined)
@@ -68,11 +76,15 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
   const interactionsLoading =
     runInteractionsQuery.isLoading || reviewInteractionsQuery.isLoading
 
-  const hasRunningExecution = runInteractions.some((item) => item.status === 'running')
+  const hasRunningExecution = runInteractions.some(
+    (item) => item.status === 'running',
+  )
   const latestCompletedId =
-    [...runInteractions].reverse().find((item) => item.status === 'completed')?.id ?? null
+    [...runInteractions].reverse().find((item) => item.status === 'completed')
+      ?.id ?? null
   const latestFailedId =
-    [...runInteractions].reverse().find((item) => item.status === 'failed')?.id ?? null
+    [...runInteractions].reverse().find((item) => item.status === 'failed')
+      ?.id ?? null
 
   useEffect(() => {
     if (latestCompletedId) {
@@ -108,24 +120,33 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
     })
   }
 
-  const getReviewsForRun = useCallback((runId: string, runStartedAt: string): Interaction[] => {
-    const runIndex = runInteractions.findIndex((run) => run.id === runId)
-    const nextRunStartedAt =
-      runIndex < runInteractions.length - 1 ? runInteractions[runIndex + 1].started_at : null
+  const getReviewsForRun = useCallback(
+    (runId: string, runStartedAt: string): Interaction[] => {
+      const runIndex = runInteractions.findIndex((run) => run.id === runId)
+      const nextRunStartedAt =
+        runIndex < runInteractions.length - 1
+          ? runInteractions[runIndex + 1].started_at
+          : null
 
-    return reviewInteractions.filter((reviewInteraction) => {
-      const reviewStart = Date.parse(reviewInteraction.started_at)
-      const runStart = Date.parse(runStartedAt)
-      if (!Number.isFinite(reviewStart) || !Number.isFinite(runStart)) return false
-      if (reviewStart < runStart) return false
-      if (nextRunStartedAt && reviewStart >= Date.parse(nextRunStartedAt)) return false
-      return true
-    })
-  }, [runInteractions, reviewInteractions])
+      return reviewInteractions.filter((reviewInteraction) => {
+        const reviewStart = Date.parse(reviewInteraction.started_at)
+        const runStart = Date.parse(runStartedAt)
+        if (!Number.isFinite(reviewStart) || !Number.isFinite(runStart))
+          return false
+        if (reviewStart < runStart) return false
+        if (nextRunStartedAt && reviewStart >= Date.parse(nextRunStartedAt))
+          return false
+        return true
+      })
+    },
+    [runInteractions, reviewInteractions],
+  )
 
   const activeAISuggestion = useMemo(() => {
     if (!latestCompletedId) return null
-    const latestCompleted = runInteractions.find((i) => i.id === latestCompletedId)
+    const latestCompleted = runInteractions.find(
+      (i) => i.id === latestCompletedId,
+    )
     if (!latestCompleted) return null
 
     const revs = getReviewsForRun(latestCompletedId, latestCompleted.started_at)
@@ -147,9 +168,9 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
   }, [latestCompletedId, runInteractions, dismissedReviews, getReviewsForRun])
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
+    <div className="flex flex-col gap-2.5 rounded-md border p-3">
       {interactionsLoading && (
-        <div className="text-xs text-[var(--text-secondary)]">Loading interactions...</div>
+        <div className="text-xs">Loading interactions...</div>
       )}
 
       {!interactionsLoading && runInteractions.length === 0 && (
@@ -172,42 +193,57 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                 modelPlaceholder="- default model"
                 className="contents"
               />
-              <ActionButton variant="primary" onClick={handleRun} disabled={runPending}>
+              <ActionButton
+                variant="primary"
+                onClick={handleRun}
+                disabled={runPending}
+              >
                 {runPending ? 'Running…' : 'Run'}
               </ActionButton>
             </div>
           ) : (
-            <div className="text-xs text-[var(--text-secondary)]">
+            <div className="text-xs">
               No execution interactions found for this task yet.
             </div>
           )}
-          {runError && <div className="text-xs text-[var(--status-failed)]">{runError}</div>}
+          {runError && <div className="text-xs">{runError}</div>}
         </>
       )}
 
       {!interactionsLoading && runInteractions.length > 0 && (
         <div className="flex flex-col gap-2">
           {runInteractions.map((item) => {
-            const isLatestCompleted = item.status === 'completed' && item.id === latestCompletedId
-            const isLatestFailed = item.status === 'failed' && item.id === latestFailedId
-            const itemReviews = runReviews.filter((review) => review.interaction_id === item.id)
-            const runReviewInteractions = getReviewsForRun(item.id, item.started_at)
+            const isLatestCompleted =
+              item.status === 'completed' && item.id === latestCompletedId
+            const isLatestFailed =
+              item.status === 'failed' && item.id === latestFailedId
+            const itemReviews = runReviews.filter(
+              (review) => review.interaction_id === item.id,
+            )
+            const runReviewInteractions = getReviewsForRun(
+              item.id,
+              item.started_at,
+            )
 
             return (
               <InteractionEntry
                 key={item.id}
                 interaction={item}
                 activeLogId={activeLogId}
-                onToggleLog={(id) => setActiveLogId(activeLogId === id ? null : id)}
+                onToggleLog={(id) =>
+                  setActiveLogId(activeLogId === id ? null : id)
+                }
               >
                 {item.status === 'completed' && item.diff && (
-                  <Collapsible.Root open={expandedDiffs.has(item.id)} onOpenChange={() => toggleDiff(item.id)}>
+                  <Collapsible.Root
+                    open={expandedDiffs.has(item.id)}
+                    onOpenChange={() => toggleDiff(item.id)}
+                  >
                     <Collapsible.Trigger asChild>
-                      <button
-                        type="button"
-                        className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                      >
-                        {expandedDiffs.has(item.id) ? '▾ Hide diff' : '▸ Show diff'}
+                      <button type="button" className="text-xs">
+                        {expandedDiffs.has(item.id)
+                          ? '▾ Hide diff'
+                          : '▸ Show diff'}
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
@@ -232,7 +268,9 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                         interaction={reviewInteraction}
                         dismissed={dismissedReviews.has(reviewInteraction.id)}
                         activeLogId={activeLogId}
-                        onToggleLog={(id) => setActiveLogId(activeLogId === id ? null : id)}
+                        onToggleLog={(id) =>
+                          setActiveLogId(activeLogId === id ? null : id)
+                        }
                       />
                     ))}
                   </div>
@@ -251,19 +289,23 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                         ].join(' ')}
                       >
                         <div className="mb-1 flex items-center gap-2">
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
                             Request Changes
                           </span>
                           <span
                             className={[
                               'text-[10px] font-semibold uppercase',
-                              review.status === 'pending' ? 'text-amber-400' : 'text-emerald-400',
+                              review.status === 'pending'
+                                ? 'text-amber-400'
+                                : 'text-emerald-400',
                             ].join(' ')}
                           >
-                            {review.status === 'pending' ? 'Pending' : 'Addressed'}
+                            {review.status === 'pending'
+                              ? 'Pending'
+                              : 'Addressed'}
                           </span>
                         </div>
-                        <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
+                        <div className="whitespace-pre-wrap text-xs">
                           {review.feedback}
                         </div>
                       </div>
@@ -290,7 +332,11 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                           variant="default"
                           onClick={() => {
                             setDismissedReviews(
-                              (prev) => new Set([...prev, activeAISuggestion.interactionId]),
+                              (prev) =>
+                                new Set([
+                                  ...prev,
+                                  activeAISuggestion.interactionId,
+                                ]),
                             )
                           }}
                         >

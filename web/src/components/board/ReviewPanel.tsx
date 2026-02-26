@@ -20,16 +20,16 @@ export function ReviewPanel({
   merging,
 }: Props) {
   return (
-    <div className="flex w-[480px] shrink-0 flex-col overflow-hidden border-l border-border bg-[var(--bg-primary)]">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+    <div className="flex w-120 shrink-0 flex-col overflow-hidden border-l border-slate-700">
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-700 px-4 py-3">
         <div className="flex items-center gap-2.5">
           <h2 className="text-sm font-semibold">Task Review</h2>
-          <span className="text-xs text-[var(--text-secondary)]">
+          <span className="text-xs">
             {reviewTasks.length} in review/failure
           </span>
         </div>
         <button
-          className="rounded px-1.5 py-1 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+          className="rounded px-1.5 py-1 text-sm "
           onClick={onClose}
           type="button"
         >
@@ -39,14 +39,12 @@ export function ReviewPanel({
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
         {reviewTasks.length === 0 && (
-          <div className="py-6 text-center text-[13px] text-[var(--text-secondary)]">
-            No tasks in review
-          </div>
+          <div className="py-6 text-center text-[13px]">No tasks in review</div>
         )}
         {reviewTasks.map((task) => (
           <button
             key={task.id}
-            className="flex flex-col gap-1 rounded border border-border bg-[var(--bg-secondary)] px-3 py-2 text-left hover:bg-[var(--bg-sidebar)]"
+            className="flex flex-col gap-1 rounded border border-slate-700 px-3 py-2 text-left hover:bg-slate-900"
             onClick={() => onSelectTask(task.id)}
             type="button"
           >
@@ -54,16 +52,15 @@ export function ReviewPanel({
               <StatusBadge status={task.status} />
               <span className="text-[13px] font-medium">{task.title}</span>
             </div>
-            <span className="font-mono text-[10px] text-[var(--text-secondary)]">
-              {task.id.slice(0, 8)}
-            </span>
+            <span className="font-mono text-[10px]">{task.id.slice(0, 8)}</span>
           </button>
         ))}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3">
-        <span className="text-xs text-[var(--text-secondary)]">
-          {approvedTasks.length} approved task{approvedTasks.length !== 1 ? 's' : ''} ready to merge
+      <div className="flex shrink-0 items-center justify-between border-t border-slate-700 px-4 py-3">
+        <span className="text-xs">
+          {approvedTasks.length} approved task
+          {approvedTasks.length !== 1 ? 's' : ''} ready to merge
         </span>
         <ActionButton
           variant="primary"

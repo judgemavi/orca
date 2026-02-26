@@ -18,9 +18,7 @@ export function AIReviewResultCard({
       type="button"
       className={[
         'ml-auto text-[10px]',
-        activeLogId === ri.id
-          ? 'text-[var(--accent)]'
-          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+        activeLogId === ri.id ? 'text-blue-500' : 'text-slate-400',
       ].join(' ')}
       onClick={() => onToggleLog(ri.id)}
     >
@@ -30,17 +28,13 @@ export function AIReviewResultCard({
 
   if (ri.status === 'running') {
     return (
-      <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5">
+      <div className="rounded-md border p-2.5">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
             AI Review
           </span>
-          <span className="text-[10px] font-semibold uppercase text-[var(--text-secondary)]">
-            Running…
-          </span>
-          {ri.tool && (
-            <span className="text-[10px] text-[var(--text-secondary)]">{ri.tool}</span>
-          )}
+          <span className="text-[10px] font-semibold uppercase">Running…</span>
+          {ri.tool && <span className="text-[10px]">{ri.tool}</span>}
           {logButton}
         </div>
       </div>
@@ -49,20 +43,16 @@ export function AIReviewResultCard({
 
   if (ri.status === 'failed') {
     return (
-      <div className="rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 p-2.5">
+      <div className="rounded-md border border-red-400/30 bg-red-400/10 p-2.5">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
             AI Review
           </span>
-          <span className="text-[10px] font-semibold uppercase text-[var(--status-failed)]">
-            Failed
-          </span>
+          <span className="text-[10px] font-semibold uppercase">Failed</span>
           {logButton}
         </div>
         {ri.error && (
-          <div className="mt-1 whitespace-pre-wrap text-xs text-[var(--text-primary)]">
-            {ri.error}
-          </div>
+          <div className="mt-1 whitespace-pre-wrap text-xs">{ri.error}</div>
         )}
       </div>
     )
@@ -86,21 +76,21 @@ export function AIReviewResultCard({
         className={[
           'rounded-md border p-2.5',
           isDismissed
-            ? 'border-[var(--border)] bg-[var(--bg-primary)] opacity-60'
+            ? 'border-slate-700 opacity-60'
             : result.approved
               ? 'border-emerald-500/35 bg-emerald-500/10'
               : 'border-amber-500/40 bg-amber-500/10',
         ].join(' ')}
       >
         <div className="mb-1 flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
             AI Review
           </span>
           <span
             className={[
               'text-[10px] font-semibold uppercase',
               isDismissed
-                ? 'text-[var(--text-secondary)]'
+                ? 'text-slate-400'
                 : result.approved
                   ? 'text-emerald-400'
                   : 'text-amber-400',
@@ -112,19 +102,15 @@ export function AIReviewResultCard({
                 ? 'Approved'
                 : 'Changes Suggested'}
           </span>
-          {costLabel && (
-            <span className="text-[10px] text-[var(--text-secondary)]">{costLabel}</span>
-          )}
+          {costLabel && <span className="text-[10px]">{costLabel}</span>}
           {logButton}
         </div>
         {result.prompt && (
-          <div className="mb-1.5 rounded border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-[11px] italic text-[var(--text-secondary)]">
+          <div className="mb-1.5 rounded border px-2 py-1.5 text-[11px] italic">
             {result.prompt}
           </div>
         )}
-        <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
-          {result.feedback}
-        </div>
+        <div className="whitespace-pre-wrap text-xs">{result.feedback}</div>
       </div>
     )
   } catch {

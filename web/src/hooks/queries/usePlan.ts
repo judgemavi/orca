@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api'
 
-export const planKeys = {
+const planKeys = {
   taskPlan: (taskId: string) => ['taskPlan', taskId] as const,
 }
 

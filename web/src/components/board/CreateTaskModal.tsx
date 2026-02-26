@@ -13,9 +13,13 @@ interface Props {
 }
 
 const controlClass =
-  'w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-2 text-[13px] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent)]'
+  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-blue-500'
 
-export function CreateTaskModal({ config: _config, onClose, onCreated }: Props) {
+export function CreateTaskModal({
+  config: _config,
+  onClose,
+  onCreated,
+}: Props) {
   const createTaskMutation = useCreateTask()
   const tasksQuery = useTasksQuery()
   const [error, setError] = useState('')
@@ -63,11 +67,11 @@ export function CreateTaskModal({ config: _config, onClose, onCreated }: Props) 
         if (!open) onClose()
       }}
     >
-      <DialogContent className="z-[100] m-0! flex max-h-[90vh] w-[480px] max-w-[95vw] flex-col overflow-y-auto rounded-[var(--radius)] border! border-[var(--border)]! bg-[var(--bg-primary)]! text-[var(--text-primary)] p-0! shadow-[0_8px_32px_rgba(0,0,0,0.16)]">
-        <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
+      <DialogContent className="z-100 m-0! flex max-h-[90vh] w-120 max-w-[95vw] flex-col overflow-y-auto rounded-lg border!! p-0! shadow-[0_8px_32px_rgba(0,0,0,0.16)]">
+        <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="text-[15px] font-semibold">New Task</h2>
           <DialogClose
-            className="rounded px-1.5 py-1 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+            className="rounded px-1.5 py-1 text-sm  "
             aria-label="Close"
             type="button"
           >
@@ -78,7 +82,7 @@ export function CreateTaskModal({ config: _config, onClose, onCreated }: Props) 
         <form className="flex flex-col gap-3.5 p-5" onSubmit={handleSubmit}>
           <form.Field name="title">
             {(field) => (
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium">
                 Title *
                 <input
                   className={controlClass}
@@ -94,7 +98,7 @@ export function CreateTaskModal({ config: _config, onClose, onCreated }: Props) 
 
           <form.Field name="description">
             {(field) => (
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium">
                 Description
                 <textarea
                   className={controlClass}
@@ -111,13 +115,13 @@ export function CreateTaskModal({ config: _config, onClose, onCreated }: Props) 
           {dependencyTasks.length > 0 && (
             <form.Field name="dependencies">
               {(field) => (
-                <div className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+                <div className="flex flex-col gap-1.5 text-xs font-medium">
                   Dependencies
-                  <div className="max-h-[140px] overflow-y-auto rounded-md border border-[var(--border)] px-2 py-1.5">
+                  <div className="max-h-[140px] overflow-y-auto rounded-md border px-2 py-1.5">
                     {dependencyTasks.map((task) => (
                       <label
                         key={task.id}
-                        className="flex cursor-pointer items-center gap-2 py-1 hover:text-[var(--text-primary)]"
+                        className="flex cursor-pointer items-center gap-2 py-1 "
                       >
                         <input
                           type="checkbox"
@@ -132,10 +136,10 @@ export function CreateTaskModal({ config: _config, onClose, onCreated }: Props) 
                             )
                           }}
                         />
-                        <span className="flex-1 truncate text-xs text-[var(--text-primary)]">
+                        <span className="flex-1 truncate text-xs">
                           {task.title}
                         </span>
-                        <span className="font-mono text-[10px] text-[var(--text-secondary)]">
+                        <span className="font-mono text-[10px]">
                           {task.id.slice(0, 8)}
                         </span>
                       </label>
@@ -146,9 +150,7 @@ export function CreateTaskModal({ config: _config, onClose, onCreated }: Props) 
             </form.Field>
           )}
 
-          {error && (
-            <p className="text-xs text-[var(--status-failed)]">{error}</p>
-          )}
+          {error && <p className="text-xs">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-1">
             <ActionButton variant="default" onClick={onClose} type="button">

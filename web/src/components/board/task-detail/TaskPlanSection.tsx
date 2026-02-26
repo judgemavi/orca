@@ -1,5 +1,5 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ActionButton } from '../../common/ActionButton'
@@ -20,7 +20,7 @@ import {
 import { useModelsQuery } from '../../../hooks/queries/useModels'
 import { useInteractionsQuery, selectByPhase } from './useInteractions'
 import { useTaskReviewsQuery } from '../../../hooks/queries/useReviews'
-import { useLastWSEvent } from '../../../context/ws'
+import { useWSSubscribe } from '../../../lib/wsEvents'
 import type { TaskEvaluation } from '../../../types'
 
 interface Props {
@@ -50,8 +50,6 @@ export function TaskPlanSection({ readOnly = false }: Props) {
     isOperationRunning,
     onSaved,
   } = useTaskDetailContext()
-  const lastWSEvent = useLastWSEvent()
-
   const taskPlanQuery = useTaskPlanQuery(task.id)
   const generatePlanMutation = useGeneratePlanMutation()
   const savePlanMutation = useSavePlanMutation()
@@ -116,17 +114,21 @@ export function TaskPlanSection({ readOnly = false }: Props) {
     setPlanDraft(taskPlanQuery.data)
   }, [taskPlanQuery.data, planEditing])
 
-  useEffect(() => {
-    if (!lastWSEvent) return
-    const evtTaskId =
-      (lastWSEvent.data as any)?.task_id ?? (lastWSEvent.data as any)?.id
-    if (evtTaskId !== task.id) return
-    if (lastWSEvent.type === 'plan.failed') {
-      setPlanError(
-        String((lastWSEvent.data as any)?.error ?? 'Failed to generate plan'),
-      )
-    }
-  }, [lastWSEvent, task.id])
+  useWSSubscribe(
+    useCallback(
+      (evt) => {
+        const evtTaskId =
+          (evt.data as any)?.task_id ?? (evt.data as any)?.id
+        if (evtTaskId !== task.id) return
+        if (evt.type === 'plan.failed') {
+          setPlanError(
+            String((evt.data as any)?.error ?? 'Failed to generate plan'),
+          )
+        }
+      },
+      [task.id],
+    ),
+  )
 
   const handleGeneratePlan = async () => {
     setPlanError(null)
@@ -242,7 +244,7 @@ export function TaskPlanSection({ readOnly = false }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
+    <div className="flex flex-col gap-2.5 rounded-md border p-3">
       {!readOnly && (
         <div
           className={[
@@ -289,39 +291,31 @@ export function TaskPlanSection({ readOnly = false }: Props) {
       )}
 
       {taskEvaluation && (
-        <div className="flex flex-col gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5">
-          <div className="text-xs text-[var(--text-primary)]">
+        <div className="flex flex-col gap-1.5 rounded-md border p-2.5">
+          <div className="text-xs">
             Complexity:{' '}
             <span className="font-medium">{taskEvaluation.complexity}</span>
           </div>
-          <div className="text-xs text-[var(--text-primary)]">
+          <div className="text-xs">
             Should decompose:{' '}
             <span className="font-medium">
               {taskEvaluation.should_decompose ? 'Yes' : 'No'}
             </span>
           </div>
-          <div className="text-xs text-[var(--text-secondary)]">Reasoning</div>
-          <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
+          <div className="text-xs">Reasoning</div>
+          <div className="whitespace-pre-wrap text-xs">
             {taskEvaluation.reasoning}
           </div>
         </div>
       )}
 
-      {planLoading && (
-        <div className="text-xs text-[var(--text-secondary)]">
-          Loading plan...
-        </div>
-      )}
+      {planLoading && <div className="text-xs">Loading plan...</div>}
       {!planLoading && !hasPlan && planInteractions.length === 0 && (
-        <div className="text-xs text-[var(--text-secondary)]">
-          No plan saved yet.
-        </div>
+        <div className="text-xs">No plan saved yet.</div>
       )}
 
       {!planLoading && hasPlan && planInteractions.length === 0 && (
-        <div className="text-xs text-[var(--text-secondary)]">
-          No planning interactions yet.
-        </div>
+        <div className="text-xs">No planning interactions yet.</div>
       )}
 
       {!planLoading && planInteractions.length > 0 && (
@@ -342,19 +336,19 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                 }
               >
                 {item.status === 'completed' && item.diff && (
-                  <Collapsible.Root open={expandedPlans.has(item.id)} onOpenChange={() => togglePlan(item.id)}>
+                  <Collapsible.Root
+                    open={expandedPlans.has(item.id)}
+                    onOpenChange={() => togglePlan(item.id)}
+                  >
                     <Collapsible.Trigger asChild>
-                      <button
-                        type="button"
-                        className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                      >
+                      <button type="button" className="text-xs ">
                         {expandedPlans.has(item.id)
                           ? '▾ Hide plan'
                           : '▸ Show plan'}
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
-                      <div className="prose prose-invert prose-sm max-w-none max-h-[300px] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5 text-xs text-[var(--text-primary)]">
+                      <div className="prose prose-invert prose-sm max-w-none max-h-[300px] overflow-auto rounded-md border p-2.5 text-xs">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {item.diff}
                         </ReactMarkdown>
@@ -376,14 +370,14 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                         ].join(' ')}
                       >
                         <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-secondary)]">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
                             {review.status}
                           </span>
-                          <span className="text-[11px] text-[var(--text-secondary)]">
+                          <span className="text-[11px]">
                             {formatRelativeTime(review.created_at)}
                           </span>
                         </div>
-                        <div className="whitespace-pre-wrap text-xs text-[var(--text-primary)]">
+                        <div className="whitespace-pre-wrap text-xs">
                           {review.feedback}
                         </div>
                       </div>
@@ -416,9 +410,9 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                       </div>
 
                       {planReviewExpanded && (
-                        <div className="flex flex-col gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-2.5">
+                        <div className="flex flex-col gap-2.5 rounded-md border p-2.5">
                           <textarea
-                            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-2.5 text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                            className="w-full resize-y rounded-md border p-2.5 text-xs outline-none focus:border-blue-500"
                             value={planFeedback}
                             onChange={(e) => setPlanFeedback(e.target.value)}
                             rows={4}
@@ -475,9 +469,7 @@ export function TaskPlanSection({ readOnly = false }: Props) {
         </div>
       )}
 
-      {planError && (
-        <div className="text-xs text-[var(--status-failed)]">{planError}</div>
-      )}
+      {planError && <div className="text-xs">{planError}</div>}
     </div>
   )
 }

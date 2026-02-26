@@ -23,7 +23,7 @@ export function TaskActionsBar({
   onClose,
 }: Props) {
   return (
-    <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
+    <div className="flex items-center justify-between border-t px-5 py-3">
       {isDeletable ? (
         <ActionButton variant="danger" onClick={onDelete} disabled={deleting}>
           {deleting ? 'Deleting…' : 'Delete'}
@@ -38,7 +38,12 @@ export function TaskActionsBar({
         {isEditable && (
           <form.Subscribe selector={(state) => state.isDirty}>
             {(isDirty) => (
-              <ActionButton variant="primary" type="submit" form={formId} disabled={saving || !isDirty}>
+              <ActionButton
+                variant="primary"
+                type="submit"
+                form={formId}
+                disabled={saving || !isDirty}
+              >
                 {saving ? 'Saving…' : 'Save'}
               </ActionButton>
             )}

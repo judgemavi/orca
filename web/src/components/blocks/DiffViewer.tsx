@@ -70,15 +70,23 @@ function splitDiffByFile(raw: string): Record<string, string> {
 export function DiffViewer({ data, onAction }: Props) {
   const filesChanged = data?.files_changed ?? []
   const actions = data?.actions ?? []
-  const diffByFile = useMemo(() => splitDiffByFile(data?.diff ?? ''), [data?.diff])
+  const diffByFile = useMemo(
+    () => splitDiffByFile(data?.diff ?? ''),
+    [data?.diff],
+  )
   const [activeFile, setActiveFile] = useState(filesChanged[0] ?? '')
 
   useEffect(() => {
     setActiveFile(filesChanged[0] ?? '')
   }, [data?.task_id, data?.diff])
 
-  const selectedDiff = activeFile ? (diffByFile[activeFile] ?? data?.diff ?? '') : (data?.diff ?? '')
-  const { oldValue, newValue } = useMemo(() => parseDiff(selectedDiff), [selectedDiff])
+  const selectedDiff = activeFile
+    ? (diffByFile[activeFile] ?? data?.diff ?? '')
+    : (data?.diff ?? '')
+  const { oldValue, newValue } = useMemo(
+    () => parseDiff(selectedDiff),
+    [selectedDiff],
+  )
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-900 p-4">
@@ -98,7 +106,11 @@ export function DiffViewer({ data, onAction }: Props) {
           </Tabs.List>
         )}
         {filesChanged.map((f) => (
-          <Tabs.Content key={f} value={f} forceMount={filesChanged.length <= 1 ? true : undefined}>
+          <Tabs.Content
+            key={f}
+            value={f}
+            forceMount={filesChanged.length <= 1 ? true : undefined}
+          >
             <div className="overflow-hidden rounded-md border border-slate-700">
               <ReactDiffViewer
                 oldValue={oldValue}
@@ -107,7 +119,10 @@ export function DiffViewer({ data, onAction }: Props) {
                 compareMethod={DiffMethod.LINES}
                 useDarkTheme={false}
                 styles={{
-                  contentText: { fontFamily: 'var(--font-mono)', fontSize: '12px' },
+                  contentText: {
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    fontSize: '12px',
+                  },
                 }}
               />
             </div>
@@ -122,7 +137,10 @@ export function DiffViewer({ data, onAction }: Props) {
               compareMethod={DiffMethod.LINES}
               useDarkTheme={false}
               styles={{
-                contentText: { fontFamily: 'var(--font-mono)', fontSize: '12px' },
+                contentText: {
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  fontSize: '12px',
+                },
               }}
             />
           </div>

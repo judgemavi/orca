@@ -1,3 +1,4 @@
+import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -14,12 +15,16 @@ import { useTaskForm } from '../hooks/forms/useTaskForm'
 import { useConfigQuery } from '../hooks/queries/useConfig'
 import { useModelsQuery } from '../hooks/queries/useModels'
 import { useOperationsQuery } from '../hooks/queries/useOperations'
-import { useDeleteTask, useTasksQuery, useUpdateTask } from '../hooks/queries/useTasks'
+import {
+  useDeleteTask,
+  useTasksQuery,
+  useUpdateTask,
+} from '../hooks/queries/useTasks'
 import { controlClass } from '../lib/constants'
 import type { Config, Operation, Task } from '../types'
 
 export function TaskDetailPage() {
-  const { taskId } = useParams({ from: '/tasks/$taskId' })
+  const { taskId } = useParams({ from: '/$taskId' })
   const tasksQuery = useTasksQuery()
   const configQuery = useConfigQuery()
   const allModelsQuery = useModelsQuery()
@@ -57,19 +62,16 @@ export function TaskDetailPage() {
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-700 border-t-blue-500" />
       </div>
     )
   }
 
   if (!task || !configData) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-[var(--text-secondary)]">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm">
         <span>Task not found.</span>
-        <Link
-          to="/"
-          className="rounded border border-border px-3 py-1.5 text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
-        >
+        <Link to="/" className="rounded border border-slate-700 px-3 py-1.5 ">
           Back to tasks
         </Link>
       </div>
@@ -186,7 +188,8 @@ function TaskDetailContent({
       tasks
         .filter(
           (candidate) =>
-            candidate.id !== task.id && !(task.depends_on ?? []).includes(candidate.id),
+            candidate.id !== task.id &&
+            !(task.depends_on ?? []).includes(candidate.id),
         )
         .sort((a, b) => a.title.localeCompare(b.title)),
     [task.depends_on, task.id, tasks],
@@ -232,19 +235,19 @@ function TaskDetailContent({
           <div className="mb-3 flex items-center justify-between">
             <Link
               to="/"
-              className="rounded border border-border px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+              className="rounded border border-slate-700 px-3 py-1.5 text-xs font-medium "
             >
               ← Back to tasks
             </Link>
             <div className="flex items-center gap-2.5">
               <StatusBadge status={task.status} />
-              <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+              <span className="font-mono text-[11px]">
                 {task.id.slice(0, 8)}
               </span>
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)]">
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-lg border">
             <div className="flex flex-1 flex-col gap-3.5 p-5">
               <TaskDetailForm
                 form={form}
@@ -265,7 +268,9 @@ function TaskDetailContent({
 
             <TaskActionsBar
               isEditable={task.status === 'pending'}
-              isDeletable={task.status !== 'running' && task.status !== 'merged'}
+              isDeletable={
+                task.status !== 'running' && task.status !== 'merged'
+              }
               deleting={deleteMutation.isPending}
               saving={saving}
               formId="task-edit-form"
@@ -322,7 +327,7 @@ function TaskDetailForm({
       <div className="flex flex-col gap-3.5">
         <form.Field name="title">
           {(field) => (
-            <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+            <label className="flex flex-col gap-1.5 text-xs font-medium">
               Title
               {isEditable ? (
                 <input
@@ -332,7 +337,7 @@ function TaskDetailForm({
                   onChange={(e) => field.handleChange(e.target.value)}
                 />
               ) : (
-                <div className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
+                <div className="rounded-md border px-2.5 py-2 text-[13px] font-normal">
                   {field.state.value || task.title}
                 </div>
               )}
@@ -342,7 +347,7 @@ function TaskDetailForm({
 
         <form.Field name="description">
           {(field) => (
-            <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+            <label className="flex flex-col gap-1.5 text-xs font-medium">
               Description
               {isEditable ? (
                 <textarea
@@ -354,7 +359,7 @@ function TaskDetailForm({
                   placeholder="No description"
                 />
               ) : (
-                <div className="min-h-[80px] whitespace-pre-wrap rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2.5 py-2 text-[13px] font-normal text-[var(--text-primary)]">
+                <div className="min-h-[80px] whitespace-pre-wrap rounded-md border px-2.5 py-2 text-[13px] font-normal">
                   {field.state.value || 'No description'}
                 </div>
               )}
@@ -362,7 +367,7 @@ function TaskDetailForm({
           )}
         </form.Field>
 
-        <div className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+        <div className="flex flex-col gap-1.5 text-xs font-medium">
           Dependencies
           {(task.depends_on ?? []).length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
@@ -371,9 +376,9 @@ function TaskDetailForm({
                 return (
                   <span
                     key={depId}
-                    className="inline-flex items-center gap-1.5 rounded border border-[var(--border)] bg-[var(--bg-sidebar)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]"
+                    className="inline-flex items-center gap-1.5 rounded border bg-slate-900 px-1.5 py-0.5 text-[11px]"
                   >
-                    <span className="max-w-[280px] truncate text-[var(--text-primary)]">
+                    <span className="max-w-[280px] truncate">
                       {depTask?.title || 'Unknown task'}
                     </span>
                     <span className="font-mono">{depId.slice(0, 8)}</span>
@@ -382,11 +387,8 @@ function TaskDetailForm({
               })}
             </div>
           ) : (
-            <p className="text-[12px] font-normal text-[var(--text-secondary)]">
-              No dependencies
-            </p>
+            <p className="text-[12px] font-normal">No dependencies</p>
           )}
-
           {isEditable && (
             <div className="mt-1 flex flex-col gap-1.5">
               {dependencyChoices.length > 0 ? (
@@ -409,7 +411,7 @@ function TaskDetailForm({
                   </select>
                   <button
                     type="button"
-                    className="rounded-md border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-md border px-3 py-2 text-xs font-medium  disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => {
                       void handleAddDependency()
                     }}
@@ -419,14 +421,12 @@ function TaskDetailForm({
                   </button>
                 </div>
               ) : (
-                <p className="text-[12px] font-normal text-[var(--text-secondary)]">
+                <p className="text-[12px] font-normal">
                   No available tasks to add.
                 </p>
               )}
               {dependencyError && (
-                <p className="text-[12px] font-normal text-[var(--status-failed)]">
-                  {dependencyError}
-                </p>
+                <p className="text-[12px] font-normal">{dependencyError}</p>
               )}
             </div>
           )}
@@ -464,3 +464,6 @@ function TaskTimelineLayout() {
     </div>
   )
 }
+export const Route = createFileRoute('/$taskId')({
+  component: TaskDetailPage,
+})

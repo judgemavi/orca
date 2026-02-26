@@ -18,7 +18,9 @@ export function FailedRunActions() {
 
   const rerunModelsQuery = useModelsQuery(rerunTool || undefined)
   const runTaskMutation = useRunTaskMutation()
-  const rerunModels = rerunTool ? (rerunModelsQuery.data?.[rerunTool] ?? []) : []
+  const rerunModels = rerunTool
+    ? (rerunModelsQuery.data?.[rerunTool] ?? [])
+    : []
 
   const handleRerun = async () => {
     setRerunError(null)
@@ -35,8 +37,8 @@ export function FailedRunActions() {
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 p-3">
-      <div className="text-xs text-[var(--text-primary)]">
+    <div className="flex flex-col gap-2.5 rounded-md border border-red-400/30 bg-red-400/10 p-3">
+      <div className="text-xs">
         Execution failed. Re-run this task to generate a new result.
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
@@ -64,7 +66,7 @@ export function FailedRunActions() {
           {runTaskMutation.isPending ? 'Re-running…' : 'Re-run'}
         </ActionButton>
       </div>
-      {rerunError && <div className="text-xs text-[var(--status-failed)]">{rerunError}</div>}
+      {rerunError && <div className="text-xs">{rerunError}</div>}
     </div>
   )
 }

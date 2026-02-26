@@ -44,8 +44,9 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
 
   const selectedInteraction = useMemo(
     () =>
-      (interactionsQuery.data ?? []).find((item) => item.id === interactionId) ??
-      null,
+      (interactionsQuery.data ?? []).find(
+        (item) => item.id === interactionId,
+      ) ?? null,
     [interactionId, interactionsQuery.data],
   )
 
@@ -70,18 +71,19 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
     el.scrollTop = el.scrollHeight
   }, [content])
 
-  const titlePrefix = PHASE_LABELS[selectedInteraction?.phase ?? ''] ?? 'Interaction'
+  const titlePrefix =
+    PHASE_LABELS[selectedInteraction?.phase ?? ''] ?? 'Interaction'
   const title = selectedInteraction
     ? `${titlePrefix} #${selectedInteraction.attempt} Log`
     : 'Interaction Log'
 
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)]">
-      <header className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2.5">
-        <div className="text-sm font-medium text-[var(--text-primary)]">{title}</div>
+    <section className="flex h-full min-h-0 flex-col rounded-lg border">
+      <header className="flex items-center justify-between border-b px-3 py-2.5">
+        <div className="text-sm font-medium">{title}</div>
         <button
           type="button"
-          className="rounded border border-[var(--border)] p-1 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+          className="rounded border p-1 transition-colors "
           onClick={onClose}
           aria-label="Close log panel"
         >
@@ -104,13 +106,13 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
 
         {selectedInteraction?.status === 'failed' &&
           (selectedInteraction.error || contentQuery.data?.error) && (
-          <div className="mt-2 text-xs text-[var(--status-failed)]">
-            Error: {selectedInteraction.error || contentQuery.data?.error}
-          </div>
-        )}
+            <div className="mt-2 text-xs">
+              Error: {selectedInteraction.error || contentQuery.data?.error}
+            </div>
+          )}
       </div>
 
-      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-2 text-xs">
         <span>
           Tokens: {formatTokenCount(selectedInteraction?.input_tokens)} in /{' '}
           {formatTokenCount(selectedInteraction?.output_tokens)} out
@@ -118,9 +120,13 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
         <span>Cost: {formatCost(selectedInteraction?.estimated_cost)}</span>
         <span>
           Duration:{' '}
-          {formatDuration(contentQuery.data?.duration_ms ?? selectedInteraction?.duration_ms)}
+          {formatDuration(
+            contentQuery.data?.duration_ms ?? selectedInteraction?.duration_ms,
+          )}
         </span>
-        {stream.isStreaming && <span className="text-emerald-500">Streaming</span>}
+        {stream.isStreaming && (
+          <span className="text-emerald-500">Streaming</span>
+        )}
       </footer>
     </section>
   )

@@ -41,25 +41,21 @@ export function OperationsIndicator() {
 
   return (
     <details className="relative">
-      <summary className="inline-flex list-none select-none items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-1 text-xs text-[var(--text-secondary)]">
-        <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+      <summary className="inline-flex list-none select-none items-center gap-2 rounded-full border px-2.5 py-1 text-xs">
+        <span className="h-2 w-2 rounded-full bg-blue-500" />
         {operations.length} active operation{operations.length !== 1 ? 's' : ''}
       </summary>
-      <div className="absolute right-0 top-[calc(100%+8px)] z-30 max-h-[260px] min-w-[260px] max-w-[min(360px,calc(100vw-32px))] overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] shadow-[0_10px_24px_rgba(0,0,0,0.18)]">
+      <div className="absolute right-0 top-[calc(100%+8px)] z-30 max-h-[260px] min-w-[260px] max-w-[min(360px,calc(100vw-32px))] overflow-auto rounded-lg border shadow-[0_10px_24px_rgba(0,0,0,0.18)]">
         {operations.map((op) => (
           <div
             key={op.id}
-            className="flex justify-between gap-2.5 border-b border-[var(--border)] px-2.5 py-2 last:border-b-0"
+            className="flex justify-between gap-2.5 border-b px-2.5 py-2 last:border-b-0"
           >
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-xs font-semibold text-[var(--text-primary)]">
-                {op.type}
-              </span>
-              <span className="font-mono text-[11px] text-[var(--text-secondary)]">
-                {formatTarget(op)}
-              </span>
+              <span className="text-xs font-semibold">{op.type}</span>
+              <span className="font-mono text-[11px]">{formatTarget(op)}</span>
             </div>
-            <span className="whitespace-nowrap font-mono text-[11px] text-[var(--text-secondary)]">
+            <span className="whitespace-nowrap font-mono text-[11px]">
               {formatElapsed(op.created_at, nowMs)}
             </span>
           </div>
