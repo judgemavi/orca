@@ -43,8 +43,8 @@ export function InteractionEntry({
               interaction.status === 'completed'
                 ? 'border-emerald-500 text-emerald-500'
                 : interaction.status === 'failed'
-                  ? 'border-red-400'
-                  : 'animate-pulse border-blue-500 text-blue-500',
+                  ? 'border-danger'
+                  : 'animate-pulse border-accent text-accent',
             ].join(' ')}
             aria-hidden
           >
@@ -59,7 +59,7 @@ export function InteractionEntry({
             {formatCost(interaction.estimated_cost)}
           </span>
           {isRunning && (
-            <span className="rounded border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-blue-500">
+            <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-accent">
               running
             </span>
           )}
@@ -70,8 +70,8 @@ export function InteractionEntry({
           className={[
             'rounded border px-2 py-0.5 text-[11px] transition-colors',
             activeLogId === interaction.id
-              ? 'border-blue-500 bg-blue-500/15 text-blue-500'
-              : 'border-slate-700 ',
+              ? 'border-accent bg-accent/15 text-accent'
+              : 'border-border ',
           ].join(' ')}
           onClick={() => onToggleLog(interaction.id)}
         >

@@ -22,7 +22,7 @@ const STATUS_PRIORITY: Record<Task['status'], number> = {
 const STATUS_STYLES: Record<Task['status'], string> = {
   pending: 'bg-slate-500/15 text-slate-300',
   planned: 'bg-indigo-500/15 text-indigo-300',
-  running: 'bg-blue-500/15 text-blue-300',
+  running: 'bg-accent/15 text-blue-300',
   review: 'bg-amber-500/15 text-amber-300',
   failed: 'bg-red-500/15 text-red-300',
   approved: 'bg-green-500/15 text-green-300',
@@ -137,20 +137,20 @@ export function TasksTable({ tasks }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="border-b border-slate-700 px-4 py-2.5">
+      <div className="border-b border-border px-4 py-2.5">
         <input
           type="text"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
           placeholder="Filter by title"
-          className="w-full rounded-md border border-slate-700 px-3 py-1.5 text-sm outline-none focus:border-blue-500"
+          className="w-full rounded-md border border-border px-3 py-1.5 text-sm outline-none focus:border-accent"
         />
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
         <table className="min-w-full border-collapse text-[13px]">
           <thead className="sticky top-0 z-10">
-            <tr className="border-b border-slate-700">
+            <tr className="border-b border-border">
               <th className="px-3 py-2 text-left">
                 <SortableHeader
                   label="Status"
@@ -189,7 +189,7 @@ export function TasksTable({ tasks }: Props) {
             {filteredAndSortedTasks.map((task) => (
               <tr
                 key={task.id}
-                className="cursor-pointer border-b border-slate-700/70 transition "
+                className="cursor-pointer border-b border-border/70 transition "
                 onClick={() => {
                   void navigate({
                     to: '/$taskId',

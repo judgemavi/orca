@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
@@ -62,7 +61,7 @@ export function TaskDetailPage() {
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-700 border-t-blue-500" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
       </div>
     )
   }
@@ -71,7 +70,7 @@ export function TaskDetailPage() {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm">
         <span>Task not found.</span>
-        <Link to="/" className="rounded border border-slate-700 px-3 py-1.5 ">
+        <Link to="/" className="rounded border border-border px-3 py-1.5 ">
           Back to tasks
         </Link>
       </div>
@@ -106,7 +105,6 @@ function TaskDetailContent({
   isRunning: (type: string, targetId?: string) => boolean
 }) {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const updateTaskMutation = useUpdateTask()
   const deleteMutation = useDeleteTask()
   const [saving, setSaving] = useState(false)
@@ -131,20 +129,6 @@ function TaskDetailContent({
     },
     [isRunning, runningOperations],
   )
-  const invalidateBoard = useCallback(async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      queryClient.invalidateQueries({ queryKey: ['status'] }),
-    ])
-  }, [queryClient])
-  const onSaved = useCallback(() => {
-    void invalidateBoard()
-  }, [invalidateBoard])
-  const onDeleted = useCallback(() => {
-    void navigate({ to: '/' })
-    void invalidateBoard()
-  }, [invalidateBoard, navigate])
 
   const form = useTaskForm(
     {
@@ -161,7 +145,6 @@ function TaskDetailContent({
             description: values.description.trim(),
           },
         })
-        onSaved()
       } catch (err: any) {
         alert(err?.message ?? 'Save failed')
       } finally {
@@ -205,7 +188,6 @@ function TaskDetailContent({
     try {
       await api.addDependency(task.id, selectedDependencyId)
       setSelectedDependencyId('')
-      await invalidateBoard()
     } catch (err: any) {
       setDependencyError(err?.message ?? 'Failed to add dependency')
     } finally {
@@ -216,7 +198,7 @@ function TaskDetailContent({
   const handleDelete = async () => {
     try {
       await deleteMutation.mutateAsync(task.id)
-      onDeleted()
+      void navigate({ to: '/' })
     } catch (err: any) {
       alert(err?.message ?? 'Delete failed')
     }
@@ -228,14 +210,13 @@ function TaskDetailContent({
       config={configData}
       tools={tools}
       isOperationRunning={isOperationRunning}
-      onSaved={onSaved}
     >
       <div className="flex flex-1 overflow-hidden">
         <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-4 py-4">
           <div className="mb-3 flex items-center justify-between">
             <Link
               to="/"
-              className="rounded border border-slate-700 px-3 py-1.5 text-xs font-medium "
+              className="rounded border border-border px-3 py-1.5 text-xs font-medium "
             >
               ← Back to tasks
             </Link>
@@ -376,7 +357,7 @@ function TaskDetailForm({
                 return (
                   <span
                     key={depId}
-                    className="inline-flex items-center gap-1.5 rounded border bg-slate-900 px-1.5 py-0.5 text-[11px]"
+                    className="inline-flex items-center gap-1.5 rounded border bg-surface px-1.5 py-0.5 text-[11px]"
                   >
                     <span className="max-w-[280px] truncate">
                       {depTask?.title || 'Unknown task'}

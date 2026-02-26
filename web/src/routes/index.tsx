@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { api } from '../api'
 import { ReviewPanel } from '../components/board/ReviewPanel'
@@ -15,7 +14,6 @@ import { useRunTasksMutation, useTasksQuery } from '../hooks/queries/useTasks'
 
 export function TasksPage() {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const tasksQuery = useTasksQuery()
   const configQuery = useConfigQuery()
   const allModelsQuery = useModelsQuery()
@@ -59,18 +57,9 @@ export function TasksPage() {
     [tasks],
   )
 
-  const invalidateBoard = useCallback(async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      queryClient.invalidateQueries({ queryKey: ['status'] }),
-    ])
-  }, [queryClient])
-
   const runTasks = async (taskIds?: string[]) => {
     try {
       await runTasksMutation.mutateAsync(taskIds)
-      await invalidateBoard()
     } catch (err: any) {
       toast.error(err?.message ?? 'Run failed')
     }
@@ -79,7 +68,7 @@ export function TasksPage() {
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-700 border-t-blue-500" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
       </div>
     )
   }
@@ -108,14 +97,9 @@ export function TasksPage() {
           }}
           onToggleReview={() => setShowReview((v) => !v)}
           onMerge={() => {
-            void (async () => {
-              try {
-                await api.merge()
-                await invalidateBoard()
-              } catch (err: any) {
-                toast.error(err?.message ?? 'Merge failed')
-              }
-            })()
+            void api.merge().catch((err: any) => {
+              toast.error(err?.message ?? 'Merge failed')
+            })
           }}
           onCreateTask={() => setShowCreate(true)}
         />
@@ -136,7 +120,6 @@ export function TasksPage() {
               try {
                 await api.merge()
                 setShowReview(false)
-                await invalidateBoard()
               } catch (err: any) {
                 toast.error(err?.message ?? 'Merge failed')
               }
@@ -152,7 +135,6 @@ export function TasksPage() {
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false)
-            void invalidateBoard()
           }}
         />
       )}

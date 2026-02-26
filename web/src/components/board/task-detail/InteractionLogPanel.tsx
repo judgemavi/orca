@@ -94,7 +94,7 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
       <div className="min-h-0 flex-1 p-3">
         <pre
           ref={logBodyRef}
-          className="h-full min-h-[220px] overflow-auto rounded-md border border-slate-700 bg-slate-950 p-3 font-mono text-[11px] leading-relaxed text-slate-100"
+          className="h-full min-h-[220px] overflow-auto rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"
         >
           {!selectedInteraction
             ? 'Interaction not found.'

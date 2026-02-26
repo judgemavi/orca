@@ -30,7 +30,6 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
     activeLogId,
     setActiveLogId,
     isOperationRunning,
-    onSaved,
   } = useTaskDetailContext()
   void isOperationRunning
 
@@ -102,7 +101,6 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
         tool: runTool || undefined,
         model: runModel || undefined,
       })
-      onSaved()
     } catch (err: unknown) {
       setRunError(getErrorMessage(err, 'Run failed'))
     }

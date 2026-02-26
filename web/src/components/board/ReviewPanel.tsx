@@ -20,8 +20,8 @@ export function ReviewPanel({
   merging,
 }: Props) {
   return (
-    <div className="flex w-120 shrink-0 flex-col overflow-hidden border-l border-slate-700">
-      <div className="flex shrink-0 items-center justify-between border-b border-slate-700 px-4 py-3">
+    <div className="flex w-120 shrink-0 flex-col overflow-hidden border-l border-border">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2.5">
           <h2 className="text-sm font-semibold">Task Review</h2>
           <span className="text-xs">
@@ -44,7 +44,7 @@ export function ReviewPanel({
         {reviewTasks.map((task) => (
           <button
             key={task.id}
-            className="flex flex-col gap-1 rounded border border-slate-700 px-3 py-2 text-left hover:bg-slate-900"
+            className="flex flex-col gap-1 rounded border border-border px-3 py-2 text-left hover:bg-surface-alt"
             onClick={() => onSelectTask(task.id)}
             type="button"
           >
@@ -57,7 +57,7 @@ export function ReviewPanel({
         ))}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t border-slate-700 px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3">
         <span className="text-xs">
           {approvedTasks.length} approved task
           {approvedTasks.length !== 1 ? 's' : ''} ready to merge

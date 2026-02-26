@@ -1,34 +1,19 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { api } from '../../api'
 
 export function useApproveTaskMutation() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (taskId: string) => api.approveTask(taskId),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-        queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      ])
-    },
   })
 }
 
 export function useApprovePlanMutation() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (taskId: string) => api.approvePlan(taskId),
-    onSuccess: async (_data, taskId) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-        queryClient.invalidateQueries({ queryKey: ['taskPlan', taskId] }),
-      ])
-    },
   })
 }
 
 export function useRequestChangesMutation() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       id,
@@ -43,17 +28,10 @@ export function useRequestChangesMutation() {
       tool?: string
       model?: string
     }) => api.requestChanges(id, feedback, interactionId, tool, model),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-        queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      ])
-    },
   })
 }
 
 export function useRequestPlanChangesMutation() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       id,
@@ -68,19 +46,10 @@ export function useRequestPlanChangesMutation() {
       tool?: string
       model?: string
     }) => api.requestPlanChanges(id, feedback, interactionId, tool, model),
-    onSuccess: async (_data, variables) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-        queryClient.invalidateQueries({
-          queryKey: ['taskPlan', variables.id],
-        }),
-      ])
-    },
   })
 }
 
 export function useRunTaskMutation() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       taskId,
@@ -91,17 +60,10 @@ export function useRunTaskMutation() {
       tool?: string
       model?: string
     }) => api.runTasks([taskId], tool, model),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-        queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      ])
-    },
   })
 }
 
 export function useMergeTaskMutation() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       taskId,
@@ -114,17 +76,10 @@ export function useMergeTaskMutation() {
       tool?: string
       model?: string
     }) => api.mergeTask(taskId, mode, tool, model),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-        queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      ])
-    },
   })
 }
 
 export function useAIReviewMutation() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       taskId,
@@ -137,11 +92,6 @@ export function useAIReviewMutation() {
       model?: string
       prompt?: string
     }) => api.aiReview(taskId, tool, model, prompt),
-    onSuccess: async (_data, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: ['task-interactions', variables.taskId],
-      })
-    },
   })
 }
 

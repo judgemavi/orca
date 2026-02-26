@@ -37,6 +37,9 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request, id string)
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
+	if t, err := store.Get(resolved); err == nil {
+		s.hub.Broadcast(Event{Type: "task.updated", Data: t})
+	}
 	jsonOK(w, map[string]string{"task_id": resolved, "depends_on": depResolved})
 }
 

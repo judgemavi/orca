@@ -89,11 +89,11 @@ export function DiffViewer({ data, onAction }: Props) {
   )
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-900 p-4">
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
       <div className="text-sm font-semibold">{data?.title}</div>
       <Tabs.Root value={activeFile} onValueChange={setActiveFile}>
         {filesChanged.length > 1 && (
-          <Tabs.List className="flex gap-1 border-b border-slate-700 pb-2">
+          <Tabs.List className="flex gap-1 border-b border-border pb-2">
             {filesChanged.map((f) => (
               <Tabs.Trigger
                 key={f}
@@ -111,7 +111,7 @@ export function DiffViewer({ data, onAction }: Props) {
             value={f}
             forceMount={filesChanged.length <= 1 ? true : undefined}
           >
-            <div className="overflow-hidden rounded-md border border-slate-700">
+            <div className="overflow-hidden rounded-md border border-border">
               <ReactDiffViewer
                 oldValue={oldValue}
                 newValue={newValue}
@@ -129,7 +129,7 @@ export function DiffViewer({ data, onAction }: Props) {
           </Tabs.Content>
         ))}
         {filesChanged.length === 0 && (
-          <div className="overflow-hidden rounded-md border border-slate-700">
+          <div className="overflow-hidden rounded-md border border-border">
             <ReactDiffViewer
               oldValue={oldValue}
               newValue={newValue}

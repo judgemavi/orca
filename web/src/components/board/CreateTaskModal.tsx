@@ -13,7 +13,7 @@ interface Props {
 }
 
 const controlClass =
-  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-blue-500'
+  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-accent'
 
 export function CreateTaskModal({
   config: _config,
@@ -67,19 +67,20 @@ export function CreateTaskModal({
         if (!open) onClose()
       }}
     >
-      <DialogContent className="z-100 m-0! flex max-h-[90vh] w-120 max-w-[95vw] flex-col overflow-y-auto rounded-lg border!! p-0! shadow-[0_8px_32px_rgba(0,0,0,0.16)]">
-        <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2 className="text-[15px] font-semibold">New Task</h2>
-          <DialogClose
-            className="rounded px-1.5 py-1 text-sm  "
-            aria-label="Close"
-            type="button"
-          >
-            ✕
-          </DialogClose>
-        </div>
+      <DialogContent className="z-100 m-0! max-h-[90vh] w-120 max-w-[95vw] overflow-y-auto rounded-lg! border-0! bg-transparent! p-0!">
+        <div className="flex flex-col rounded-lg border border-border bg-surface text-foreground shadow-[0_8px_32px_rgba(0,0,0,0.16)]">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <h2 className="text-[15px] font-semibold">New Task</h2>
+            <DialogClose
+              className="rounded px-1.5 py-1 text-sm"
+              aria-label="Close"
+              type="button"
+            >
+              ✕
+            </DialogClose>
+          </div>
 
-        <form className="flex flex-col gap-3.5 p-5" onSubmit={handleSubmit}>
+          <form className="flex flex-col gap-3.5 p-5" onSubmit={handleSubmit}>
           <form.Field name="title">
             {(field) => (
               <label className="flex flex-col gap-1.5 text-xs font-medium">
@@ -165,6 +166,7 @@ export function CreateTaskModal({
             </ActionButton>
           </div>
         </form>
+        </div>
       </DialogContent>
     </Dialog>
   )

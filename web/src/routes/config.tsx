@@ -15,7 +15,7 @@ type SectionId =
   | 'logging'
 
 const inputClass =
-  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-blue-500'
+  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-accent'
 
 const sectionClass = 'rounded-lg border'
 
@@ -64,7 +64,7 @@ export function ConfigPage() {
   if (isLoading || !draft) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-700 border-t-blue-500" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
       </div>
     )
   }
@@ -453,11 +453,11 @@ function SectionCard({
         {children}
         <div className="flex items-center justify-end gap-3 pt-1">
           {error ? (
-            <span className="text-xs text-red-400">{error}</span>
+            <span className="text-xs text-danger">{error}</span>
           ) : null}
           <button
             type="button"
-            className="rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
             onClick={onSave}
             disabled={saving}
             data-section={id}

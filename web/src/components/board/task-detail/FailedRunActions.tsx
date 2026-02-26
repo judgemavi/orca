@@ -11,7 +11,7 @@ function getErrorMessage(err: unknown, fallback: string): string {
 }
 
 export function FailedRunActions() {
-  const { task, tools, onSaved } = useTaskDetailContext()
+  const { task, tools } = useTaskDetailContext()
   const [rerunTool, setRerunTool] = useState('')
   const [rerunModel, setRerunModel] = useState('')
   const [rerunError, setRerunError] = useState<string | null>(null)
@@ -30,14 +30,13 @@ export function FailedRunActions() {
         tool: rerunTool || undefined,
         model: rerunModel || undefined,
       })
-      onSaved()
     } catch (err: unknown) {
       setRerunError(getErrorMessage(err, 'Re-run failed'))
     }
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-md border border-red-400/30 bg-red-400/10 p-3">
+    <div className="flex flex-col gap-2.5 rounded-md border border-danger/30 bg-danger/10 p-3">
       <div className="text-xs">
         Execution failed. Re-run this task to generate a new result.
       </div>

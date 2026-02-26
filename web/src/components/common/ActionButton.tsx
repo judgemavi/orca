@@ -21,11 +21,11 @@ export function ActionButton({
     'inline-flex items-center rounded-md border px-3 py-1 text-[13px] font-medium transition-all duration-150'
   const variants: Record<NonNullable<Props['variant']>, string> = {
     default:
-      'border-slate-700 bg-transparent hover:bg-slate-900',
+      'border-border bg-transparent hover:bg-surface-alt',
     primary:
-      'border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white',
+      'border-accent text-accent hover:bg-accent hover:text-white',
     danger:
-      'border-red-400 hover:bg-red-400 hover:text-white',
+      'border-danger hover:bg-danger hover:text-white',
   }
   return (
     <button

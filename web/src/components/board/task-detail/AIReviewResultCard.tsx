@@ -18,7 +18,7 @@ export function AIReviewResultCard({
       type="button"
       className={[
         'ml-auto text-[10px]',
-        activeLogId === ri.id ? 'text-blue-500' : 'text-slate-400',
+        activeLogId === ri.id ? 'text-accent' : 'text-muted',
       ].join(' ')}
       onClick={() => onToggleLog(ri.id)}
     >
@@ -43,7 +43,7 @@ export function AIReviewResultCard({
 
   if (ri.status === 'failed') {
     return (
-      <div className="rounded-md border border-red-400/30 bg-red-400/10 p-2.5">
+      <div className="rounded-md border border-danger/30 bg-danger/10 p-2.5">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
             AI Review
@@ -76,7 +76,7 @@ export function AIReviewResultCard({
         className={[
           'rounded-md border p-2.5',
           isDismissed
-            ? 'border-slate-700 opacity-60'
+            ? 'border-border opacity-60'
             : result.approved
               ? 'border-emerald-500/35 bg-emerald-500/10'
               : 'border-amber-500/40 bg-amber-500/10',
@@ -90,7 +90,7 @@ export function AIReviewResultCard({
             className={[
               'text-[10px] font-semibold uppercase',
               isDismissed
-                ? 'text-slate-400'
+                ? 'text-muted'
                 : result.approved
                   ? 'text-emerald-400'
                   : 'text-amber-400',

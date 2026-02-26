@@ -9,6 +9,12 @@ function readString(
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+type TasksCache = { tasks: Task[] }
+
+function getTasks(old: TasksCache | undefined): Task[] {
+  return old?.tasks ?? []
+}
+
 export function handleWSEvent(queryClient: QueryClient, event: WSEvent) {
   const { type, data } = event
 
@@ -16,28 +22,32 @@ export function handleWSEvent(queryClient: QueryClient, event: WSEvent) {
 
   if (type === 'task.created') {
     const task = data as unknown as Task
-    queryClient.setQueryData<{ tasks: Task[] }>(['tasks'], (old) =>
-      old ? { tasks: [...old.tasks, task] } : { tasks: [task] },
-    )
+    queryClient.setQueryData<TasksCache>(['tasks'], (old) => {
+      const tasks = getTasks(old)
+      if (tasks.some((t) => t.id === task.id)) {
+        return { tasks: tasks.map((t) => (t.id === task.id ? task : t)) }
+      }
+      return { tasks: [...tasks, task] }
+    })
     return
   }
 
   if (type === 'task.updated' || type === 'merge.completed') {
     const task = data as unknown as Task
-    queryClient.setQueryData<{ tasks: Task[] }>(['tasks'], (old) =>
-      old
-        ? { tasks: old.tasks.map((t) => (t.id === task.id ? task : t)) }
-        : old,
-    )
+    queryClient.setQueryData<TasksCache>(['tasks'], (old) => {
+      const tasks = getTasks(old)
+      return { tasks: tasks.map((t) => (t.id === task.id ? task : t)) }
+    })
     return
   }
 
   if (type === 'task.deleted') {
     const taskId = readString(data, 'id')
     if (taskId) {
-      queryClient.setQueryData<{ tasks: Task[] }>(['tasks'], (old) =>
-        old ? { tasks: old.tasks.filter((t) => t.id !== taskId) } : old,
-      )
+      queryClient.setQueryData<TasksCache>(['tasks'], (old) => {
+        const tasks = getTasks(old)
+        return { tasks: tasks.filter((t) => t.id !== taskId) }
+      })
     }
     return
   }
@@ -60,19 +70,17 @@ export function handleWSEvent(queryClient: QueryClient, event: WSEvent) {
     const taskId = readString(data, 'task_id')
     if (taskId) {
       const interaction = data as unknown as Interaction
-      queryClient.setQueryData<{ interactions: Interaction[] }>(
+      queryClient.setQueryData<Interaction[]>(
         ['task-interactions', taskId],
         (old) => {
-          if (!old) return { interactions: [interaction] }
-          const idx = old.interactions.findIndex(
-            (i) => i.id === interaction.id,
-          )
+          const list = old ?? []
+          const idx = list.findIndex((i) => i.id === interaction.id)
           if (idx >= 0) {
-            const next = [...old.interactions]
+            const next = [...list]
             next[idx] = interaction
-            return { interactions: next }
+            return next
           }
-          return { interactions: [...old.interactions, interaction] }
+          return [...list, interaction]
         },
       )
     }
@@ -80,13 +88,13 @@ export function handleWSEvent(queryClient: QueryClient, event: WSEvent) {
   }
 
   // --- signal-only events: invalidateQueries ---
+  // Task cache is fully driven by task.created / task.updated / task.deleted
+  // entity events above, so signal handlers only refresh non-entity queries
+  // (operations, status, reviews, sessions).
 
   if (type.startsWith('ai-review.')) {
     const taskId = readString(data, 'task_id')
     if (taskId) {
-      void queryClient.invalidateQueries({
-        queryKey: ['task-interactions', taskId],
-      })
       void queryClient.invalidateQueries({
         queryKey: ['task-reviews', taskId],
       })
@@ -110,7 +118,6 @@ export function handleWSEvent(queryClient: QueryClient, event: WSEvent) {
     type === 'merge.failed'
   ) {
     void Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
       queryClient.invalidateQueries({ queryKey: ['operations'] }),
       queryClient.invalidateQueries({ queryKey: ['status'] }),
     ])
@@ -124,7 +131,6 @@ export function handleWSEvent(queryClient: QueryClient, event: WSEvent) {
     type.startsWith('explore.')
   ) {
     void Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
       queryClient.invalidateQueries({ queryKey: ['operations'] }),
       queryClient.invalidateQueries({ queryKey: ['status'] }),
     ])

@@ -14,7 +14,6 @@ export function useTaskPlanQuery(taskId: string) {
 }
 
 export function useGeneratePlanMutation() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       taskId,
@@ -25,11 +24,6 @@ export function useGeneratePlanMutation() {
       tool?: string
       model?: string
     }) => api.generateTaskPlan(taskId, { tool, model }),
-    onSuccess: async (_data, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: planKeys.taskPlan(variables.taskId),
-      })
-    },
   })
 }
 
@@ -38,10 +32,11 @@ export function useSavePlanMutation() {
   return useMutation({
     mutationFn: ({ taskId, plan }: { taskId: string; plan: string }) =>
       api.saveTaskPlan(taskId, plan),
-    onSuccess: async (_data, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: planKeys.taskPlan(variables.taskId),
-      })
+    onSuccess: (_data, variables) => {
+      queryClient.setQueryData(
+        planKeys.taskPlan(variables.taskId),
+        variables.plan,
+      )
     },
   })
 }

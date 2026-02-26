@@ -32,13 +32,13 @@ export function TasksToolbar({
   onCreateTask,
 }: Props) {
   return (
-    <div className="flex shrink-0 items-center justify-between border-b border-slate-700 px-4 py-2.5">
+    <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2.5">
       <div className="flex items-center gap-2 text-sm">
         <span className="text-xs font-semibold uppercase tracking-wide">
           Tasks
         </span>
         {(decomposeRunning || cleanupRunning || exploring) && (
-          <span className="text-xs text-blue-500">
+          <span className="text-xs text-accent">
             {decomposeRunning && 'Decomposing... '}
             {cleanupRunning && 'Cleaning... '}
             {exploring && 'Exploring...'}

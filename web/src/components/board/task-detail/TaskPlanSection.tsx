@@ -48,7 +48,6 @@ export function TaskPlanSection({ readOnly = false }: Props) {
     activeLogId,
     setActiveLogId,
     isOperationRunning,
-    onSaved,
   } = useTaskDetailContext()
   const taskPlanQuery = useTaskPlanQuery(task.id)
   const generatePlanMutation = useGeneratePlanMutation()
@@ -148,7 +147,6 @@ export function TaskPlanSection({ readOnly = false }: Props) {
     try {
       await approvePlanMutation.mutateAsync(task.id)
       setPlanReviewExpanded(false)
-      onSaved()
     } catch (err: any) {
       setPlanError(err?.message ?? 'Approve plan failed')
     }
@@ -206,7 +204,6 @@ export function TaskPlanSection({ readOnly = false }: Props) {
     try {
       await savePlanMutation.mutateAsync({ taskId: task.id, plan: planDraft })
       setPlanEditing(false)
-      onSaved()
     } catch (err: any) {
       setPlanError(err?.message ?? 'Failed to save plan')
     }
@@ -412,7 +409,7 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                       {planReviewExpanded && (
                         <div className="flex flex-col gap-2.5 rounded-md border p-2.5">
                           <textarea
-                            className="w-full resize-y rounded-md border p-2.5 text-xs outline-none focus:border-blue-500"
+                            className="w-full resize-y rounded-md border p-2.5 text-xs outline-none focus:border-accent"
                             value={planFeedback}
                             onChange={(e) => setPlanFeedback(e.target.value)}
                             rows={4}

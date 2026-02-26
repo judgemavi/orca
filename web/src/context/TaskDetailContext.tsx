@@ -8,7 +8,6 @@ export type TaskDetailContextValue = {
   activeLogId: string | null
   setActiveLogId: (id: string | null) => void
   isOperationRunning: (type: string, targetId?: string) => boolean
-  onSaved: () => void
 }
 
 export const TaskDetailContext = createContext<TaskDetailContextValue | null>(
@@ -21,7 +20,6 @@ type TaskDetailProviderProps = {
   config: Config
   tools: string[]
   isOperationRunning: (type: string, targetId?: string) => boolean
-  onSaved: () => void
 }
 
 export function TaskDetailProvider({
@@ -30,7 +28,6 @@ export function TaskDetailProvider({
   config,
   tools,
   isOperationRunning,
-  onSaved,
 }: TaskDetailProviderProps) {
   const [activeLogId, setActiveLogId] = useState<string | null>(null)
 
@@ -43,7 +40,6 @@ export function TaskDetailProvider({
         activeLogId,
         setActiveLogId,
         isOperationRunning,
-        onSaved,
       }}
     >
       {children}

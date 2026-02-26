@@ -24,7 +24,7 @@ export function InlineReviewActions({
   forceReviewExpanded = false,
   prefillFeedback = '',
 }: Props) {
-  const { task, tools, activeLogId, onSaved } = useTaskDetailContext()
+  const { task, tools, activeLogId } = useTaskDetailContext()
   void activeLogId
 
   const approveMutation = useApproveTaskMutation()
@@ -79,7 +79,6 @@ export function InlineReviewActions({
     setReviewActionError(null)
     try {
       await approveMutation.mutateAsync(task.id)
-      onSaved()
     } catch (err: unknown) {
       setReviewActionError(getErrorMessage(err, 'Approve failed'))
     }
@@ -101,7 +100,6 @@ export function InlineReviewActions({
         tool: rerunTool || undefined,
         model: rerunModel || undefined,
       })
-      onSaved()
     } catch (err: unknown) {
       setReviewActionError(getErrorMessage(err, 'Request changes failed'))
     }
@@ -163,7 +161,7 @@ export function InlineReviewActions({
         <div className="flex flex-col gap-2">
           <textarea
             id="request-changes-feedback"
-            className="w-full resize-y rounded-md border p-2 text-[13px] outline-none focus:border-blue-500"
+            className="w-full resize-y rounded-md border p-2 text-[13px] outline-none focus:border-accent"
             rows={3}
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
@@ -206,7 +204,7 @@ export function InlineReviewActions({
       {aiReviewExpanded && (
         <div className="flex flex-col gap-2">
           <textarea
-            className="w-full resize-y rounded-md border p-2 text-[13px] outline-none focus:border-blue-500"
+            className="w-full resize-y rounded-md border p-2 text-[13px] outline-none focus:border-accent"
             rows={2}
             value={aiReviewPrompt}
             onChange={(e) => setAIReviewPrompt(e.target.value)}

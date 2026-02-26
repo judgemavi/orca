@@ -21,7 +21,6 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
     activeLogId,
     setActiveLogId,
     isOperationRunning,
-    onSaved,
   } = useTaskDetailContext()
   const mergeTaskMutation = useMergeTaskMutation()
   const mergeInteractionsQuery = useInteractionsQuery(task.id, {
@@ -93,7 +92,6 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
         } else if (evt.type === 'merge.completed') {
           setMergeProgress(null)
           setConflictError(null)
-          onSaved()
         } else if (evt.type === 'merge.failed') {
           setMergeProgress(null)
           const isConflict = Boolean((evt.data as any)?.conflict)
@@ -115,7 +113,7 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
           }
         }
       },
-      [task.id, onSaved],
+      [task.id],
     ),
   )
 
