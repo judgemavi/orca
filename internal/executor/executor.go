@@ -120,10 +120,6 @@ type Executor struct {
 
 // --- private helpers ---
 
-func (e *Executor) budgetAwareEnabled() bool {
-	return e.config.Orchestrator.TaskBudget > 0 || e.config.Orchestrator.CostBudget > 0
-}
-
 func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts RunOpts) ([]taskInfo, []string, error) {
 	prepared := make([]taskInfo, 0, len(taskIDs))
 	createdTaskIDs := make([]string, 0, len(taskIDs))
@@ -158,9 +154,6 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts Run
 		}
 		if contextPrefix != "" {
 			prompt = contextPrefix + prompt
-		}
-		if e.budgetAwareEnabled() {
-			prompt = strings.TrimSpace(prompts.BudgetAware) + "\n\n---\n\n" + prompt
 		}
 		prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n" + strings.TrimSpace(prompts.ExecutorStyle) + "\n\n---\n\n" + prompt
 
@@ -404,9 +397,6 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		args = d.ResumeArgs(t.SessionID, feedback, model)
 	} else {
 		prompt = strings.TrimSpace(prompt) + "\n\nReviewer feedback: " + feedback
-	}
-	if e.budgetAwareEnabled() {
-		prompt = strings.TrimSpace(prompts.BudgetAware) + "\n\n---\n\n" + prompt
 	}
 	prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n" + strings.TrimSpace(prompts.ExecutorStyle) + "\n\n---\n\n" + prompt
 

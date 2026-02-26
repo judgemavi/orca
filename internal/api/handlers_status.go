@@ -34,7 +34,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"context_stale":       stale,
 		"context_age_minutes": int(age.Minutes()),
 		"total_cost":          projectTotal,
-		"budget":              s.cfg.Orchestrator.CostBudget,
 		"running_operations":  len(runningInteractions),
 	}
 

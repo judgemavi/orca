@@ -37,8 +37,6 @@ export interface Config {
   validation: { commands: string[] }
   workers: { max_parallel: number }
   orchestrator: {
-    cost_budget: number
-    task_budget: number
     supervisor_tool: string
     supervisor_model: string
     phases: Record<string, { tool: string; model: string }>

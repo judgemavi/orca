@@ -31,7 +31,7 @@ orca/
 │   ├── mcp/                   # MCP stdio server tools
 │   ├── merger/                # (reserved)
 │   ├── model/                 # Aggregates available LLM models from drivers
-│   ├── monitor/               # Stuck/conflict/budget runtime monitors
+│   ├── monitor/               # Stuck/conflict runtime monitors
 │   ├── nullable/              # Generic nil-safe pointer dereference
 │   ├── orchestrator/          # Supervisor agent bootstrap (MCP config, launch args)
 │   ├── plan/                  # Implementation planning
@@ -176,7 +176,7 @@ Orca MCP (`orca mcp`) exposes 35 tools for task orchestration.
 `worktree_cleanup`, `worktree_status`
 
 ### Monitoring
-`budget_status`, `quality_results`, `log_event`, `log_query`
+`cost_status`, `quality_results`, `log_event`, `log_query`
 
 ---
 

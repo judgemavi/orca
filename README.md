@@ -129,7 +129,7 @@ orca cleanup                 [--dry-run]
 - **Project/config:** `project_status`, `config_get`, `config_update`, `models_list`
 - **Context:** `explore`, `explore_status`
 - **Worktree:** `worktree_cleanup`, `worktree_status`
-- **Monitoring:** `budget_status`, `quality_results`, `log_event`, `log_query`
+- **Monitoring:** `cost_status`, `quality_results`, `log_event`, `log_query`
 
 ## Project Structure
 

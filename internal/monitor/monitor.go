@@ -1,7 +1,7 @@
 package monitor
 
 // Package monitor provides runtime monitors that watch task execution
-// for stuck processes, file conflicts, and budget overruns.
+// for stuck processes and file conflicts.
 //
 // Consumed by: executor (monitor_coordinator.go)
 // Interface: Monitor { Start(ctx) error; Stop() error }

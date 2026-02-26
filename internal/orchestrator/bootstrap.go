@@ -145,7 +145,7 @@ var AllowedTools = []string{
 	// Operations
 	"mcp__orca__worktree_cleanup",
 	"mcp__orca__worktree_status",
-	"mcp__orca__budget_status",
+	"mcp__orca__cost_status",
 	"mcp__orca__quality_results",
 	// Read-only inspection
 	"Read",
@@ -159,6 +159,10 @@ func BuildLaunchArgs(d driver.Driver, model, mcpConfigPath string) []string {
 	if d == nil {
 		return nil
 	}
+	sd, ok := d.(driver.SupervisorDriver)
+	if !ok {
+		return nil
+	}
 	allowedToolsStr := strings.Join(AllowedTools, ",")
-	return d.InteractiveArgs(mcpConfigPath, allowedToolsStr, SystemPrompt, model)
+	return sd.InteractiveArgs(mcpConfigPath, allowedToolsStr, SystemPrompt, model)
 }

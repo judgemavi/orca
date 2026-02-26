@@ -9,7 +9,6 @@ type Driver interface {
 
 	// Arg construction
 	HeadlessArgs(prompt, model string) []string
-	InteractiveArgs(mcpConfig, allowedTools, context, model string) []string
 	ResumeArgs(sessionID, feedback, model string) []string
 
 	// Streaming NDJSON event parsing
@@ -21,6 +20,11 @@ type Driver interface {
 
 	// Session ID extraction from events
 	ParseSessionID(events []Event) string
+}
+
+// SupervisorDriver defines interactive launch args used only by supervisor sessions.
+type SupervisorDriver interface {
+	InteractiveArgs(mcpConfig, allowedTools, context, model string) []string
 }
 
 // Event represents a parsed streaming event from a tool.

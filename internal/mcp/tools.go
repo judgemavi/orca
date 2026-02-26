@@ -67,7 +67,7 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"explore_status":             s.HandleExploreStatusTool,
 		"worktree_cleanup":           s.HandleWorktreeCleanupTool,
 		"worktree_status":            s.HandleWorktreeStatusTool,
-		"budget_status":              s.HandleBudgetStatusTool,
+		"cost_status":                s.HandleCostStatusTool,
 		"quality_results":            s.HandleQualityResultsTool,
 		"interactions_list":          s.HandleInteractionsListTool,
 		"interaction_get":            s.HandleInteractionGetTool,

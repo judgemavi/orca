@@ -1,14 +1,13 @@
 package executor
 
-// monitor_coordinator.go wires up runtime monitors (stuck, conflict, budget)
+// monitor_coordinator.go wires up runtime monitors (stuck, conflict)
 // and provides the callback glue between monitor alerts and executor actions.
 //
 // Called by: RunBatch
-// Key flow: startMonitors → [stuck|conflict|budget].Start → callbacks → killProcess
+// Key flow: startMonitors → [stuck|conflict].Start → callbacks → killProcess
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -53,27 +52,6 @@ func (e *Executor) startMonitors(ctx context.Context, taskIDs []string) context.
 	)
 	e.monitors = append(e.monitors, stuck)
 
-	if (e.config.Orchestrator.CostBudget > 0 || e.config.Orchestrator.TaskBudget > 0) && e.interactions != nil && len(taskIDs) > 0 {
-		taskBudget := e.config.Orchestrator.TaskBudget
-		if taskBudget <= 0 {
-			taskBudget = e.config.Orchestrator.CostBudget / float64(len(taskIDs))
-		}
-		budget := monitor.NewBudgetEnforcer(
-			stuckCheckInterval,
-			taskBudget,
-			e.config.Orchestrator.CostBudget,
-			e.checkBudget,
-			func(taskID string, spent, limit float64) {
-				msg := fmt.Sprintf("budget exceeded ($%.2f/$%.2f)", spent, limit)
-				slog.Warn("monitor budget alert", "task_id", taskID, "spent", spent, "limit", limit, "message", msg)
-				e.emitMonitorAlert("budget", taskID, msg)
-				e.killProcess(taskID)
-			},
-			taskIDs,
-		)
-		e.monitors = append(e.monitors, budget)
-	}
-
 	conflict := monitor.NewConflictDetector(
 		e.config.Project.WorktreeDir,
 		conflictInterval,
@@ -115,19 +93,4 @@ func (e *Executor) checkConflicts(taskIDs, files []string) {
 	for _, taskID := range taskIDs {
 		e.emitMonitorAlert("conflict", taskID, msg)
 	}
-}
-
-func (e *Executor) checkBudget(taskID string) float64 {
-	var total sql.NullFloat64
-	if err := e.db.QueryRow(
-		`SELECT SUM(estimated_cost) FROM task_interactions WHERE task_id = ?`,
-		taskID,
-	).Scan(&total); err != nil {
-		slog.Warn("monitor query task cost failed", "task_id", taskID, "err", err)
-		return 0
-	}
-	if !total.Valid {
-		return 0
-	}
-	return total.Float64
 }

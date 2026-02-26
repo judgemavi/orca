@@ -21,7 +21,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/procutil"
 )
 
-// Worker executes tasks via either headless or interactive adapter modes.
+// Worker executes tasks via headless adapter mode.
 type Worker interface {
 	Execute(ctx context.Context, taskID, prompt, worktreePath string) (*Result, error)
 	ExecuteResume(ctx context.Context, taskID, sessionID, feedback, worktreePath string) (*Result, error)

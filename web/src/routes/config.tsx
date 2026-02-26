@@ -241,28 +241,6 @@ export function ConfigPage() {
               </select>
             </label>
 
-            <LabeledInput
-              label="Cost budget"
-              type="number"
-              value={String(draft.orchestrator.cost_budget)}
-              onChange={(value) =>
-                updateSection('orchestrator', {
-                  ...draft.orchestrator,
-                  cost_budget: Number(value) || 0,
-                })
-              }
-            />
-            <LabeledInput
-              label="Task budget"
-              type="number"
-              value={String(draft.orchestrator.task_budget)}
-              onChange={(value) =>
-                updateSection('orchestrator', {
-                  ...draft.orchestrator,
-                  task_budget: Number(value) || 0,
-                })
-              }
-            />
           </div>
 
           <div className="space-y-2">

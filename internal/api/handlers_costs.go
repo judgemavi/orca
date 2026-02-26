@@ -22,13 +22,9 @@ func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 
 	projectTotal, _ := s.interactions.ProjectTotal()
 	summary, _ := s.interactions.ProjectSummary()
-	budget := s.cfg.Orchestrator.CostBudget
-	remaining, _ := s.interactions.BudgetRemaining(budget)
 
 	jsonOK(w, map[string]interface{}{
-		"total":     projectTotal,
-		"budget":    budget,
-		"remaining": remaining,
-		"tools":     summary,
+		"total": projectTotal,
+		"tools": summary,
 	})
 }

@@ -192,7 +192,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	maxParallelStr := "3"
 	supervisorTool := available[0]
 	supervisorModel := ""
-	costBudget := "0"
 	validationCmd := ""
 	qualityScopeCheck := true
 	qualityTestDelta := true
@@ -220,7 +219,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			}
 		}
 		supervisorModel = existingCfg.Orchestrator.SupervisorModel
-		costBudget = strconv.FormatFloat(existingCfg.Orchestrator.CostBudget, 'f', -1, 64)
 		if len(existingCfg.Validation.Commands) > 0 {
 			validationCmd = existingCfg.Validation.Commands[0]
 		}
@@ -253,7 +251,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		groups = append(groups,
 			huh.NewGroup(
 				huh.NewInput().Title("Validation command").Description("Test command to run after integration (leave empty to skip)").Placeholder("e.g. go test ./...").Value(&validationCmd),
-				huh.NewInput().Title("Cost budget (USD)").Description("0 = unlimited").Value(&costBudget),
 				huh.NewMultiSelect[string]().Title("Quality gates").Options(qualityOpts...).Value(&qualitySelected),
 			),
 		)
@@ -329,9 +326,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	cfg.Tools = append([]string(nil), available...)
 	cfg.Orchestrator.SupervisorTool = supervisorTool
 	cfg.Orchestrator.SupervisorModel = supervisorModel
-
-	budget, _ := strconv.ParseFloat(costBudget, 64)
-	cfg.Orchestrator.CostBudget = budget
 
 	if validationCmd != "" {
 		cfg.Validation.Commands = []string{validationCmd}

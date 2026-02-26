@@ -7,7 +7,7 @@ import (
 
 // MonitorAlert is a transient monitor event emitted by runtime safeguards.
 type MonitorAlert struct {
-	Type      string    `json:"type"` // "stuck", "budget", "conflict"
+	Type      string    `json:"type"` // "stuck", "conflict"
 	TaskID    string    `json:"task_id"`
 	Message   string    `json:"message"`
 	Timestamp time.Time `json:"timestamp"`

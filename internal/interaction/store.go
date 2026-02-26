@@ -463,17 +463,6 @@ func (s *Store) ProjectTotal() (float64, error) {
 	return total.Float64, nil
 }
 
-func (s *Store) BudgetRemaining(budget float64) (float64, error) {
-	if budget <= 0 {
-		return 0, nil
-	}
-	total, err := s.ProjectTotal()
-	if err != nil {
-		return 0, err
-	}
-	return budget - total, nil
-}
-
 func (s *Store) RunTotal(runID string) (float64, error) {
 	var total sql.NullFloat64
 	if err := s.db.QueryRow(`SELECT SUM(estimated_cost) FROM task_interactions WHERE run_id = ?`, runID).Scan(&total); err != nil {

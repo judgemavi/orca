@@ -42,8 +42,6 @@ type PhaseConfig struct {
 }
 
 type OrchestratorConfig struct {
-	CostBudget      float64                `json:"cost_budget"`
-	TaskBudget      float64                `json:"task_budget"`
 	SupervisorTool  string                 `json:"supervisor_tool"`
 	SupervisorModel string                 `json:"supervisor_model"`
 	Phases          map[string]PhaseConfig `json:"phases"`
@@ -114,13 +112,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Monitor.MaxStuckCycles < 0 {
 		return fmt.Errorf("monitor.max_stuck_cycles must be >= 0, got %d", c.Monitor.MaxStuckCycles)
-	}
-
-	if c.Orchestrator.CostBudget < 0 {
-		return fmt.Errorf("orchestrator.cost_budget must be >= 0, got %v", c.Orchestrator.CostBudget)
-	}
-	if c.Orchestrator.TaskBudget < 0 {
-		return fmt.Errorf("orchestrator.task_budget must be >= 0, got %v", c.Orchestrator.TaskBudget)
 	}
 
 	if c.Orchestrator.SupervisorTool != "" {

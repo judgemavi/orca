@@ -167,7 +167,7 @@ func (r *Registry) runOrc(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runCosts(cmd *cobra.Command, args []string) error {
-	db, cfg, _, err := r.loadRuntimeOrErr()
+	db, _, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -242,14 +242,6 @@ func (r *Registry) runCosts(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  Run %s  $%.2f  (%d tasks)\n", short(id), runCost, taskCount)
 			}
 		}
-	}
-
-	budget := cfg.Orchestrator.CostBudget
-	if budget > 0 {
-		remaining, _ := ct.BudgetRemaining(budget)
-		fmt.Printf("\nBudget: $%.2f  remaining: $%.2f\n", budget, remaining)
-	} else {
-		fmt.Println("\nBudget: unlimited")
 	}
 
 	return nil

@@ -426,8 +426,8 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "budget_status",
-			Description: "Get current total cost, budget, remaining budget, and per-tool breakdown.",
+			Name:        "cost_status",
+			Description: "Get current cost status: total cost and per-tool breakdown.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},

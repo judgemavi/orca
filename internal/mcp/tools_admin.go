@@ -192,23 +192,18 @@ func (s *Server) HandleWorktreeStatusTool(_ json.RawMessage) (interface{}, error
 	}, nil
 }
 
-func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, error) {
+func (s *Server) HandleCostStatusTool(argsRaw json.RawMessage) (interface{}, error) {
 	if _, err := parseArgs[struct{}](argsRaw); err != nil {
-		return nil, fmt.Errorf("budget_status: %w", err)
+		return nil, fmt.Errorf("cost_status: %w", err)
 	}
 	if s.db == nil {
 		return nil, fmt.Errorf("cost tracking not configured")
 	}
 
 	tracker := interaction.NewStore(s.db, ".orca/interactions")
-	budget := s.config.Orchestrator.CostBudget
 	total, err := tracker.ProjectTotal()
 	if err != nil {
 		return nil, fmt.Errorf("project total: %w", err)
-	}
-	remaining, err := tracker.BudgetRemaining(budget)
-	if err != nil {
-		return nil, fmt.Errorf("budget remaining: %w", err)
 	}
 	tools, err := tracker.ProjectSummary()
 	if err != nil {
@@ -216,8 +211,6 @@ func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, e
 	}
 	return map[string]interface{}{
 		"total_cost": total,
-		"budget":     budget,
-		"remaining":  remaining,
 		"tools":      tools,
 	}, nil
 }

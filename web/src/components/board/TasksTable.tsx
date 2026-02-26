@@ -52,17 +52,6 @@ function formatRelativeTime(iso: string) {
   return rtf.format(deltaSeconds, 'second')
 }
 
-function getTaskTool(task: Task): string {
-  const withTool = task as Task & {
-    tool?: string
-    last_tool?: string
-    suggested_tool?: string
-  }
-  return (
-    withTool.tool || withTool.last_tool || withTool.suggested_tool || 'auto'
-  )
-}
-
 function formatTaskCost(task: Task): string {
   const withCost = task as Task & {
     estimated_cost?: number
@@ -82,9 +71,8 @@ export function TasksTable({ tasks }: Props) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
-        <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] gap-2 border-b border-border-subtle px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/60 md:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_5.5rem_1rem]">
+        <div className="grid grid-cols-[minmax(0,1fr)_4.5rem] gap-2 border-b border-border-subtle px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/60 md:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_1rem]">
           <span>Task</span>
-          <span className="hidden md:block">Tool</span>
           <span>Updated</span>
           <span className="hidden md:block">Cost</span>
           <span className="hidden md:block" />
@@ -95,7 +83,7 @@ export function TasksTable({ tasks }: Props) {
             <button
               key={task.id}
               type="button"
-              className="group grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-surface-alt md:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_5.5rem_1rem]"
+              className="group grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-surface-alt md:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_1rem]"
               onClick={() => {
                 void navigate({
                   to: '/$taskId',
@@ -113,9 +101,6 @@ export function TasksTable({ tasks }: Props) {
                   {task.status}
                 </span>
                 <span className="truncate text-sm">{task.title}</span>
-              </span>
-              <span className="hidden truncate text-xs text-foreground/70 md:block">
-                {getTaskTool(task)}
               </span>
               <span className="truncate text-xs text-foreground/70">
                 {formatRelativeTime(task.updated_at)}
