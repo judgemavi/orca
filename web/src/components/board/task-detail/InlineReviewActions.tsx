@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { api } from '../../../api'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
-import {
-  useAIReviewMutation,
-  useApproveTaskMutation,
-  useRequestChangesMutation,
-} from '../../../hooks/queries/useTaskMutations'
 import { controlClass } from '../../../lib/constants'
+import { getErrorMessage } from '../../../lib/utils'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import { selectByPhase, useInteractionsQuery } from './useInteractions'
@@ -16,10 +14,6 @@ type Props = {
   prefillFeedback?: string
 }
 
-function getErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback
-}
-
 export function InlineReviewActions({
   forceReviewExpanded = false,
   prefillFeedback = '',
@@ -27,9 +21,15 @@ export function InlineReviewActions({
   const { task, tools, activeLogId } = useTaskDetailContext()
   void activeLogId
 
-  const approveMutation = useApproveTaskMutation()
-  const requestChangesMutation = useRequestChangesMutation()
-  const aiReviewMutation = useAIReviewMutation()
+  const approveMutation = useMutation({ mutationFn: (taskId: string) => api.approveTask(taskId) })
+  const requestChangesMutation = useMutation({
+    mutationFn: (args: { id: string; feedback: string; interactionId?: string; tool?: string; model?: string }) =>
+      api.requestChanges(args.id, args.feedback, args.interactionId, args.tool, args.model),
+  })
+  const aiReviewMutation = useMutation({
+    mutationFn: (args: { taskId: string; tool?: string; model?: string; prompt?: string }) =>
+      api.aiReview(args.taskId, args.tool, args.model, args.prompt),
+  })
   const runInteractions = useInteractionsQuery(task.id, {
     select: selectByPhase('run'),
   })

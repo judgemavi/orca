@@ -2,9 +2,11 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
+import { useMutation } from '@tanstack/react-query'
+import { api } from '../../../api'
 import { useTaskReviewsQuery } from '../../../hooks/queries/useReviews'
-import { useRunTaskMutation } from '../../../hooks/queries/useTaskMutations'
 import { controlClass } from '../../../lib/constants'
+import { getErrorMessage } from '../../../lib/utils'
 import type { AIReviewResult, Interaction } from '../../../types'
 import { DiffViewer } from '../../blocks/DiffViewer'
 import { ActionButton } from '../../common/ActionButton'
@@ -17,10 +19,6 @@ import { selectByPhase, useInteractionsQuery } from './useInteractions'
 
 interface Props {
   readOnly?: boolean
-}
-
-function getErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback
 }
 
 export function TaskExecutionSection({ readOnly = false }: Props) {
@@ -40,7 +38,10 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
     select: selectByPhase('review'),
   })
   const reviewsQuery = useTaskReviewsQuery(task.id)
-  const runTaskMutation = useRunTaskMutation()
+  const runTaskMutation = useMutation({
+    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
+      api.runTasks([args.taskId], args.tool, args.model),
+  })
 
   const [runTool, setRunTool] = useState('')
   const [runModel, setRunModel] = useState('')

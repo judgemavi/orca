@@ -4,7 +4,6 @@ import { Outlet, Link, createRootRoute } from '@tanstack/react-router'
 import { Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { handleWSEvent } from '../lib/wsQueryBridge'
-import { wsEvents, useWSSubscribe } from '../lib/wsEvents'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { OperationsIndicator } from '../components/common/OperationsIndicator'
 import { ConsolePanel } from '../components/console/ConsolePanel'
@@ -59,18 +58,10 @@ const RootLayout = () => {
     })
   }, [])
 
-  const onWSEvent = useCallback(
-    (event: Parameters<typeof handleWSEvent>[1]) => {
+  useWebSocket(
+    useCallback((event: Parameters<typeof handleWSEvent>[1]) => {
       handleWSEvent(queryClient, event)
-      wsEvents.emit(event)
-    },
-    [],
-  )
 
-  useWebSocket(onWSEvent)
-
-  useWSSubscribe(
-    useCallback((event) => {
       if (
         event.type === 'session.created' &&
         String(event.data.type) === 'orchestrator'

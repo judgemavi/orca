@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel'
 import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar'
@@ -13,25 +13,21 @@ import {
 import { useTaskForm } from '../hooks/forms/useTaskForm'
 import { useConfigQuery } from '../hooks/queries/useConfig'
 import { useModelsQuery } from '../hooks/queries/useModels'
-import { useOperationsQuery } from '../hooks/queries/useOperations'
-import {
-  useDeleteTask,
-  useTasksQuery,
-  useUpdateTask,
-} from '../hooks/queries/useTasks'
+import { useMutation } from '@tanstack/react-query'
+import { useRunningOperations } from '../hooks/queries/useRunningOperations'
+import { useTasksQuery } from '../hooks/queries/useTasks'
 import { controlClass } from '../lib/constants'
-import type { Config, Operation, Task } from '../types'
+import type { Config, Task } from '../types'
 
 export function TaskDetailPage() {
   const { taskId } = useParams({ from: '/$taskId' })
   const tasksQuery = useTasksQuery()
   const configQuery = useConfigQuery()
   const allModelsQuery = useModelsQuery()
-  const operationsQuery = useOperationsQuery()
+  const { isRunning } = useRunningOperations()
 
   const tasks = tasksQuery.data?.tasks ?? []
   const configData = configQuery.data
-  const operations = operationsQuery.data?.operations ?? []
   const modelsByTool = allModelsQuery.data ?? {}
   const loading =
     tasksQuery.isLoading || configQuery.isLoading || allModelsQuery.isLoading
@@ -39,22 +35,6 @@ export function TaskDetailPage() {
     const fromConfig = Object.keys(modelsByTool)
     return Array.from(new Set(fromConfig)).sort((a, b) => a.localeCompare(b))
   }, [modelsByTool])
-  const runningOperations = useMemo(
-    () => operations.filter((op) => op.status === 'running'),
-    [operations],
-  )
-  const isRunning = useCallback(
-    (type: string, targetId?: string) => {
-      return runningOperations.some(
-        (op) =>
-          op.type === type &&
-          (targetId === undefined ||
-            targetId === '' ||
-            op.target_id === targetId),
-      )
-    },
-    [runningOperations],
-  )
 
   const task = tasks.find((item) => item.id === taskId)
 
@@ -83,7 +63,6 @@ export function TaskDetailPage() {
       tasks={tasks}
       configData={configData}
       tools={tools}
-      operations={operations}
       isRunning={isRunning}
     />
   )
@@ -94,41 +73,23 @@ function TaskDetailContent({
   tasks,
   configData,
   tools,
-  operations,
   isRunning,
 }: {
   task: Task
   tasks: Task[]
   configData: Config
   tools: string[]
-  operations: Operation[]
   isRunning: (type: string, targetId?: string) => boolean
 }) {
   const navigate = useNavigate()
-  const updateTaskMutation = useUpdateTask()
-  const deleteMutation = useDeleteTask()
+  const updateTaskMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) => api.updateTask(id, data),
+  })
+  const deleteMutation = useMutation({ mutationFn: (id: string) => api.deleteTask(id) })
   const [saving, setSaving] = useState(false)
   const [selectedDependencyId, setSelectedDependencyId] = useState('')
   const [addingDependency, setAddingDependency] = useState(false)
   const [dependencyError, setDependencyError] = useState<string | null>(null)
-
-  const runningOperations = useMemo(
-    () => operations.filter((op) => op.status === 'running'),
-    [operations],
-  )
-  const isOperationRunning = useCallback(
-    (type: string, targetId?: string) => {
-      if (runningOperations.length === 0) return isRunning(type, targetId)
-      return runningOperations.some(
-        (op) =>
-          op.type === type &&
-          (targetId === undefined ||
-            targetId === '' ||
-            op.target_id === targetId),
-      )
-    },
-    [isRunning, runningOperations],
-  )
 
   const form = useTaskForm(
     {
@@ -209,7 +170,7 @@ function TaskDetailContent({
       task={task}
       config={configData}
       tools={tools}
-      isOperationRunning={isOperationRunning}
+      isOperationRunning={isRunning}
     >
       <div className="flex flex-1 overflow-hidden">
         <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-4 py-4">

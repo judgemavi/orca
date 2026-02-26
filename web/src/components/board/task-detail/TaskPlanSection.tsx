@@ -7,20 +7,16 @@ import { ToolModelSelector } from '../../common/ToolModelSelector'
 import { InteractionEntry } from './InteractionEntry'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { controlClass } from '../../../lib/constants'
+import { useMutation } from '@tanstack/react-query'
+import { api } from '../../../api'
 import {
   useTaskPlanQuery,
-  useGeneratePlanMutation,
   useSavePlanMutation,
 } from '../../../hooks/queries/usePlan'
-import {
-  useApprovePlanMutation,
-  useEvaluateTaskMutation,
-  useRequestPlanChangesMutation,
-} from '../../../hooks/queries/useTaskMutations'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
 import { useInteractionsQuery, selectByPhase } from './useInteractions'
 import { useTaskReviewsQuery } from '../../../hooks/queries/useReviews'
-import { useWSSubscribe } from '../../../lib/wsEvents'
+import { useWebSocket } from '../../../hooks/useWebSocket'
 import type { TaskEvaluation } from '../../../types'
 
 interface Props {
@@ -50,11 +46,20 @@ export function TaskPlanSection({ readOnly = false }: Props) {
     isOperationRunning,
   } = useTaskDetailContext()
   const taskPlanQuery = useTaskPlanQuery(task.id)
-  const generatePlanMutation = useGeneratePlanMutation()
+  const generatePlanMutation = useMutation({
+    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
+      api.generateTaskPlan(args.taskId, { tool: args.tool, model: args.model }),
+  })
   const savePlanMutation = useSavePlanMutation()
-  const approvePlanMutation = useApprovePlanMutation()
-  const requestPlanChangesMutation = useRequestPlanChangesMutation()
-  const evaluateTaskMutation = useEvaluateTaskMutation()
+  const approvePlanMutation = useMutation({ mutationFn: (taskId: string) => api.approvePlan(taskId) })
+  const requestPlanChangesMutation = useMutation({
+    mutationFn: (args: { id: string; feedback: string; interactionId?: string; tool?: string; model?: string }) =>
+      api.requestPlanChanges(args.id, args.feedback, args.interactionId, args.tool, args.model),
+  })
+  const evaluateTaskMutation = useMutation({
+    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
+      api.evaluateTask(args.taskId, args.tool, args.model),
+  })
 
   const [planDraft, setPlanDraft] = useState('')
   const [planEditing, setPlanEditing] = useState(false)
@@ -113,7 +118,7 @@ export function TaskPlanSection({ readOnly = false }: Props) {
     setPlanDraft(taskPlanQuery.data)
   }, [taskPlanQuery.data, planEditing])
 
-  useWSSubscribe(
+  useWebSocket(
     useCallback(
       (evt) => {
         const evtTaskId =

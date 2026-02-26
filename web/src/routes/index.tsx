@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useMutation } from '@tanstack/react-query'
 import { api } from '../api'
 import { ReviewPanel } from '../components/board/ReviewPanel'
 import { CreateTaskModal } from '../components/board/CreateTaskModal'
@@ -9,43 +10,25 @@ import { TasksToolbar } from '../components/board/TasksToolbar'
 import { toast } from 'sonner'
 import { useConfigQuery } from '../hooks/queries/useConfig'
 import { useModelsQuery } from '../hooks/queries/useModels'
-import { useOperationsQuery } from '../hooks/queries/useOperations'
-import { useRunTasksMutation, useTasksQuery } from '../hooks/queries/useTasks'
+import { useRunningOperations } from '../hooks/queries/useRunningOperations'
+import { useTasksQuery } from '../hooks/queries/useTasks'
 
 export function TasksPage() {
   const navigate = useNavigate()
   const tasksQuery = useTasksQuery()
   const configQuery = useConfigQuery()
   const allModelsQuery = useModelsQuery()
-  const operationsQuery = useOperationsQuery()
-  const runTasksMutation = useRunTasksMutation()
+  const { isRunning } = useRunningOperations()
+  const runTasksMutation = useMutation({ mutationFn: (taskIds?: string[]) => api.runTasks(taskIds) })
 
   const [showCreate, setShowCreate] = useState(false)
   const [showReview, setShowReview] = useState(false)
 
   const tasks = tasksQuery.data?.tasks ?? []
-  const operations = operationsQuery.data?.operations ?? []
   const loading = tasksQuery.isLoading || configQuery.isLoading
   const configData = configQuery.data
 
   void allModelsQuery.data
-
-  const runningOperations = useMemo(
-    () => operations.filter((op) => op.status === 'running'),
-    [operations],
-  )
-
-  const isRunning = useCallback(
-    (type: string, targetId?: string) =>
-      runningOperations.some(
-        (op) =>
-          op.type === type &&
-          (targetId === undefined ||
-            targetId === '' ||
-            op.target_id === targetId),
-      ),
-    [runningOperations],
-  )
 
   const reviewTasks = useMemo(
     () => tasks.filter((t) => t.status === 'review' || t.status === 'failed'),

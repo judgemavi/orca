@@ -1,9 +1,10 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import { Dialog, DialogClose, DialogContent } from '@tiny-bits/react-dialog'
+import { useMutation } from '@tanstack/react-query'
 import { api } from '../../api'
 import { useCreateTaskForm } from '../../hooks/forms/useCreateTaskForm'
-import { useCreateTask, useTasksQuery } from '../../hooks/queries/useTasks'
-import type { Config } from '../../types'
+import { useTasksQuery } from '../../hooks/queries/useTasks'
+import type { Config, Task } from '../../types'
 import { ActionButton } from '../common/ActionButton'
 
 interface Props {
@@ -20,7 +21,7 @@ export function CreateTaskModal({
   onClose,
   onCreated,
 }: Props) {
-  const createTaskMutation = useCreateTask()
+  const createTaskMutation = useMutation({ mutationFn: (data: Partial<Task>) => api.createTask(data) })
   const tasksQuery = useTasksQuery()
   const [error, setError] = useState('')
 

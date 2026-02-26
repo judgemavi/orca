@@ -3,10 +3,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { useWSSubscribe } from '../../../lib/wsEvents'
+import { useWebSocket } from '../../../hooks/useWebSocket'
 import { controlClass } from '../../../lib/constants'
+import { useMutation } from '@tanstack/react-query'
+import { api } from '../../../api'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
-import { useMergeTaskMutation } from '../../../hooks/queries/useTaskMutations'
 import { selectByPhase, useInteractionsQuery } from './useInteractions'
 import { InteractionEntry } from './InteractionEntry'
 
@@ -22,7 +23,10 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
     setActiveLogId,
     isOperationRunning,
   } = useTaskDetailContext()
-  const mergeTaskMutation = useMergeTaskMutation()
+  const mergeTaskMutation = useMutation({
+    mutationFn: (args: { taskId: string; mode?: string; tool?: string; model?: string }) =>
+      api.mergeTask(args.taskId, args.mode, args.tool, args.model),
+  })
   const mergeInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByPhase('merge'),
   })
@@ -73,7 +77,7 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
   const onToggleLog = (id: string) =>
     setActiveLogId(activeLogId === id ? null : id)
 
-  useWSSubscribe(
+  useWebSocket(
     useCallback(
       (evt) => {
         const evtTaskId =

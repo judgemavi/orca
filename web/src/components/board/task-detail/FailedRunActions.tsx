@@ -1,14 +1,12 @@
 import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { api } from '../../../api'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
-import { useRunTaskMutation } from '../../../hooks/queries/useTaskMutations'
 import { controlClass } from '../../../lib/constants'
+import { getErrorMessage } from '../../../lib/utils'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
-
-function getErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback
-}
 
 export function FailedRunActions() {
   const { task, tools } = useTaskDetailContext()
@@ -17,7 +15,10 @@ export function FailedRunActions() {
   const [rerunError, setRerunError] = useState<string | null>(null)
 
   const rerunModelsQuery = useModelsQuery(rerunTool || undefined)
-  const runTaskMutation = useRunTaskMutation()
+  const runTaskMutation = useMutation({
+    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
+      api.runTasks([args.taskId], args.tool, args.model),
+  })
   const rerunModels = rerunTool
     ? (rerunModelsQuery.data?.[rerunTool] ?? [])
     : []

@@ -1,138 +1,107 @@
 import type { QueryClient } from '@tanstack/react-query'
 import type { WSEvent, Task, Config, Interaction } from '../types'
-
-function readString(
-  data: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  const value = data[key]
-  return typeof value === 'string' && value.length > 0 ? value : undefined
-}
+import { queryKeys } from './queryKeys'
 
 type TasksCache = { tasks: Task[] }
 
-function getTasks(old: TasksCache | undefined): Task[] {
-  return old?.tasks ?? []
+function taskId(data: Record<string, unknown>): string | undefined {
+  const v = data.task_id ?? data.id
+  return typeof v === 'string' && v.length > 0 ? v : undefined
 }
 
-export function handleWSEvent(queryClient: QueryClient, event: WSEvent) {
+function upsertTask(qc: QueryClient, data: Record<string, unknown>) {
+  const task = data as unknown as Task
+  qc.setQueryData<TasksCache>(queryKeys.tasks, (old) => {
+    const tasks = old?.tasks ?? []
+    if (tasks.some((t) => t.id === task.id)) {
+      return { tasks: tasks.map((t) => (t.id === task.id ? task : t)) }
+    }
+    return { tasks: [...tasks, task] }
+  })
+}
+
+function upsertInteraction(qc: QueryClient, data: Record<string, unknown>) {
+  const tid = taskId(data)
+  if (!tid) return
+  const interaction = data as unknown as Interaction
+  qc.setQueryData<Interaction[]>(queryKeys.taskInteractions(tid), (old) => {
+    const list = old ?? []
+    const idx = list.findIndex((i) => i.id === interaction.id)
+    if (idx >= 0) {
+      const next = [...list]
+      next[idx] = interaction
+      return next
+    }
+    return [...list, interaction]
+  })
+}
+
+const INVALIDATE_EXACT: Record<string, readonly (readonly string[])[]> = {
+  'session.created': [queryKeys.sessions],
+  'session.exited': [queryKeys.sessions],
+  'plan.generating': [queryKeys.operations()],
+  'plan.failed': [queryKeys.operations()],
+  'merge.started': [queryKeys.operations(), queryKeys.status],
+  'merge.progress': [queryKeys.operations(), queryKeys.status],
+  'merge.failed': [queryKeys.operations(), queryKeys.status],
+}
+
+const SIGNAL_PREFIXES = ['run.', 'decompose.', 'cleanup.', 'explore.']
+
+export function handleWSEvent(qc: QueryClient, event: WSEvent) {
   const { type, data } = event
 
   // --- entity events: setQueryData ---
 
-  if (type === 'task.created') {
-    const task = data as unknown as Task
-    queryClient.setQueryData<TasksCache>(['tasks'], (old) => {
-      const tasks = getTasks(old)
-      if (tasks.some((t) => t.id === task.id)) {
-        return { tasks: tasks.map((t) => (t.id === task.id ? task : t)) }
-      }
-      return { tasks: [...tasks, task] }
-    })
-    return
-  }
-
-  if (type === 'task.updated' || type === 'merge.completed') {
-    const task = data as unknown as Task
-    queryClient.setQueryData<TasksCache>(['tasks'], (old) => {
-      const tasks = getTasks(old)
-      return { tasks: tasks.map((t) => (t.id === task.id ? task : t)) }
-    })
+  if (type === 'task.created' || type === 'task.updated' || type === 'merge.completed') {
+    upsertTask(qc, data)
     return
   }
 
   if (type === 'task.deleted') {
-    const taskId = readString(data, 'id')
-    if (taskId) {
-      queryClient.setQueryData<TasksCache>(['tasks'], (old) => {
-        const tasks = getTasks(old)
-        return { tasks: tasks.filter((t) => t.id !== taskId) }
-      })
+    const id = taskId(data)
+    if (id) {
+      qc.setQueryData<TasksCache>(queryKeys.tasks, (old) => ({
+        tasks: (old?.tasks ?? []).filter((t) => t.id !== id),
+      }))
     }
     return
   }
 
   if (type === 'config.updated') {
-    queryClient.setQueryData(['config'], data as unknown as Config)
+    qc.setQueryData(queryKeys.config, data as unknown as Config)
     return
   }
 
   if (type === 'plan.completed') {
-    const taskId = readString(data, 'task_id')
-    const plan = typeof data.plan === 'string' ? data.plan : ''
-    if (taskId) {
-      queryClient.setQueryData(['taskPlan', taskId], plan)
-    }
+    const tid = taskId(data)
+    if (tid) qc.setQueryData(queryKeys.taskPlan(tid), typeof data.plan === 'string' ? data.plan : '')
     return
   }
 
   if (type.startsWith('interaction.')) {
-    const taskId = readString(data, 'task_id')
-    if (taskId) {
-      const interaction = data as unknown as Interaction
-      queryClient.setQueryData<Interaction[]>(
-        ['task-interactions', taskId],
-        (old) => {
-          const list = old ?? []
-          const idx = list.findIndex((i) => i.id === interaction.id)
-          if (idx >= 0) {
-            const next = [...list]
-            next[idx] = interaction
-            return next
-          }
-          return [...list, interaction]
-        },
-      )
-    }
+    upsertInteraction(qc, data)
     return
   }
 
-  // --- signal-only events: invalidateQueries ---
-  // Task cache is fully driven by task.created / task.updated / task.deleted
-  // entity events above, so signal handlers only refresh non-entity queries
-  // (operations, status, reviews, sessions).
+  // --- signal events: invalidateQueries ---
 
   if (type.startsWith('ai-review.')) {
-    const taskId = readString(data, 'task_id')
-    if (taskId) {
-      void queryClient.invalidateQueries({
-        queryKey: ['task-reviews', taskId],
-      })
-    }
+    const tid = taskId(data)
+    if (tid) void qc.invalidateQueries({ queryKey: queryKeys.taskReviews(tid) })
     return
   }
 
-  if (type === 'session.created' || type === 'session.exited') {
-    void queryClient.invalidateQueries({ queryKey: ['sessions'] })
+  const exactKeys = INVALIDATE_EXACT[type]
+  if (exactKeys) {
+    void Promise.all(exactKeys.map((key) => qc.invalidateQueries({ queryKey: key })))
     return
   }
 
-  if (type === 'plan.generating' || type === 'plan.failed') {
-    void queryClient.invalidateQueries({ queryKey: ['operations'] })
-    return
-  }
-
-  if (
-    type === 'merge.started' ||
-    type === 'merge.progress' ||
-    type === 'merge.failed'
-  ) {
+  if (SIGNAL_PREFIXES.some((p) => type.startsWith(p))) {
     void Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      queryClient.invalidateQueries({ queryKey: ['status'] }),
-    ])
-    return
-  }
-
-  if (
-    type.startsWith('run.') ||
-    type.startsWith('decompose.') ||
-    type.startsWith('cleanup.') ||
-    type.startsWith('explore.')
-  ) {
-    void Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      queryClient.invalidateQueries({ queryKey: ['status'] }),
+      qc.invalidateQueries({ queryKey: queryKeys.operations() }),
+      qc.invalidateQueries({ queryKey: queryKeys.status }),
     ])
   }
 }
