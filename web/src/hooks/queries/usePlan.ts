@@ -15,11 +15,14 @@ export function useSavePlanMutation() {
   return useMutation({
     mutationFn: ({ taskId, plan }: { taskId: string; plan: string }) =>
       api.saveTaskPlan(taskId, plan),
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
       queryClient.setQueryData(
         queryKeys.taskPlan(variables.taskId),
         variables.plan,
       )
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.taskPlan(variables.taskId),
+      })
     },
   })
 }

@@ -4,15 +4,24 @@ package plan
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/llm"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
+
+// planResponse is the structured JSON response expected from the planner LLM.
+type planResponse struct {
+	Status string `json:"status"` // "completed" or "blocked"
+	Plan   string `json:"plan"`
+	Reason string `json:"reason"`
+}
 
 // Generator produces markdown implementation plans for tasks.
 type Generator struct {
@@ -84,13 +93,15 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 	stdout := ""
 	exitCode := -1
 	stderr := ""
-	generatedPlan := ""
 	if result != nil {
 		stdout = result.Stdout
 		exitCode = result.ExitCode
 		stderr = result.Stderr
-		generatedPlan = strings.TrimSpace(stdout)
 	}
+
+	// Parse structured JSON response; fall back to raw text for backwards compat.
+	generatedPlan, blocked, blockedReason := parsePlanResponse(stdout)
+
 	if writer != nil {
 		status := "completed"
 		opts := []interaction.FinishOption{}
@@ -103,6 +114,9 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 		} else if exitCode != 0 {
 			status = "failed"
 			opts = append(opts, interaction.WithError(fmt.Sprintf("planner exited %d: %s", exitCode, stderr)))
+		} else if blocked {
+			status = "failed"
+			opts = append(opts, interaction.WithError(fmt.Sprintf("planner blocked: %s", blockedReason)))
 		} else if generatedPlan != "" {
 			opts = append(opts, interaction.WithDiff(generatedPlan))
 		}
@@ -115,7 +129,34 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 	if exitCode != 0 {
 		return "", fmt.Errorf("planner exited %d: %s", exitCode, stderr)
 	}
+	if blocked {
+		return "", fmt.Errorf("planner blocked: %s", blockedReason)
+	}
 	return generatedPlan, nil
+}
+
+// parsePlanResponse attempts structured JSON extraction from planner output.
+// Returns (plan, blocked, blockedReason). Falls back to raw text if no JSON found.
+func parsePlanResponse(stdout string) (string, bool, string) {
+	var resp planResponse
+	if err := llm.ExtractJSON(stdout, &resp); err != nil {
+		// Fallback: treat entire output as raw plan text (backwards compat).
+		slog.Debug("plan: no structured JSON, falling back to raw text", "err", err)
+		return strings.TrimSpace(stdout), false, ""
+	}
+	if strings.EqualFold(resp.Status, "blocked") {
+		reason := resp.Reason
+		if reason == "" {
+			reason = "planner reported blocked with no reason"
+		}
+		return "", true, reason
+	}
+	plan := strings.TrimSpace(resp.Plan)
+	if plan == "" {
+		// JSON parsed but plan field empty — fall back to raw text.
+		return strings.TrimSpace(stdout), false, ""
+	}
+	return plan, false, ""
 }
 
 func buildPlanPrompt(codebaseContext, title, description string) string {

@@ -10,7 +10,7 @@ Given a task and codebase context, produce a concise implementation plan.
 
 ## Instructions
 
-Produce a plain-text implementation plan. Cover:
+Produce an implementation plan covering:
 - Approach and strategy
 - Which files to modify and why
 - Ordered steps
@@ -18,4 +18,9 @@ Produce a plain-text implementation plan. Cover:
 - What tests to write or update
 
 Keep it concise. No code blocks — the executor handles implementation.
-Respond with ONLY the plan. No preamble.
+
+Respond with ONLY a JSON object (no markdown fences, no surrounding text):
+{"status": "completed", "plan": "your implementation plan here"}
+
+If you cannot produce a plan (missing critical info, fundamentally ambiguous requirements):
+{"status": "blocked", "reason": "what's missing or unclear"}

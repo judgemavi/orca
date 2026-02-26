@@ -23,8 +23,11 @@ func (c *Codex) Models() []string {
 	}
 }
 
-func (c *Codex) HeadlessArgs(prompt, model string) []string {
+func (c *Codex) HeadlessArgs(prompt, model, dir string) []string {
 	args := []string{"exec", prompt, "--json", "--full-auto"}
+	if dir != "" {
+		args = append(args, "-C", dir)
+	}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -39,8 +42,11 @@ func (c *Codex) InteractiveArgs(_ string, _ string, context, model string) []str
 	return args
 }
 
-func (c *Codex) ResumeArgs(sessionID, feedback, model string) []string {
+func (c *Codex) ResumeArgs(sessionID, feedback, model, dir string) []string {
 	args := []string{"exec", "resume", sessionID, feedback, "--json", "--full-auto"}
+	if dir != "" {
+		args = append(args, "-C", dir)
+	}
 	if model != "" {
 		args = append(args, "--model", model)
 	}

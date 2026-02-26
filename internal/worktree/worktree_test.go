@@ -120,6 +120,52 @@ func TestListWithAgeReturnsTaskIDsAndAges(t *testing.T) {
 	}
 }
 
+func TestNewManagerResolvesRelativeWorktreeDir(t *testing.T) {
+	repoDir := t.TempDir()
+	m := NewManager(repoDir, ".orca/worktrees")
+
+	want := filepath.Join(repoDir, ".orca", "worktrees")
+	if m.worktreeDir != want {
+		t.Fatalf("NewManager() worktreeDir = %q, want %q", m.worktreeDir, want)
+	}
+}
+
+func TestResolveTaskDirReturnsAbsolutePathForRelativeInput(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+
+	repoDir := t.TempDir()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("Chdir(repoDir) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(cwd)
+	})
+
+	relativeDir := ".orca/worktrees"
+	exactPath := filepath.Join(relativeDir, "task-123")
+	if err := os.MkdirAll(exactPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", exactPath, err)
+	}
+
+	got := ResolveTaskDir(relativeDir, "123")
+	if !filepath.IsAbs(got) {
+		t.Fatalf("ResolveTaskDir() = %q, want absolute path", got)
+	}
+
+	want := filepath.Join(repoDir, ".orca", "worktrees", "task-123")
+	gotEval, gotErr := filepath.EvalSymlinks(got)
+	wantEval, wantErr := filepath.EvalSymlinks(want)
+	if gotErr != nil || wantErr != nil {
+		t.Fatalf("EvalSymlinks() errors got=%v want=%v", gotErr, wantErr)
+	}
+	if gotEval != wantEval {
+		t.Fatalf("ResolveTaskDir() = %q (%q), want %q (%q)", got, gotEval, want, wantEval)
+	}
+}
+
 func newTestManagerWithRepo(t *testing.T) (*Manager, string) {
 	t.Helper()
 

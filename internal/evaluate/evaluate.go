@@ -3,6 +3,8 @@ package evaluate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -21,6 +23,7 @@ type EvaluationResult struct {
 	Confidence            float64 `json:"confidence"`
 	Reasoning             string  `json:"reasoning"`
 	SuggestedSubtaskCount int     `json:"suggested_subtask_count"`
+	DescriptionHash       string  `json:"description_hash"`
 }
 
 type Evaluator struct {
@@ -50,6 +53,7 @@ func (e *Evaluator) EvaluateWithModel(taskID, title, description, model string) 
 
 func (e *Evaluator) evaluate(taskID, title, description, model string) (*EvaluationResult, error) {
 	prompt := buildEvaluatePrompt(explore.LoadContext(e.repoDir), title, description)
+	descriptionHash := taskDescriptionHash(title, description)
 	selectedModel := e.model
 	if model != "" {
 		selectedModel = model
@@ -114,7 +118,12 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 			opts = append(opts, interaction.WithError(fmt.Sprintf("evaluator exited %d: %s", exitCode, stderr)))
 		} else {
 			if parseErr != nil {
-				evaluationResult = &EvaluationResult{NeedsBreakdown: false}
+				evaluationResult = &EvaluationResult{
+					NeedsBreakdown:  false,
+					DescriptionHash: descriptionHash,
+				}
+			} else {
+				evaluationResult.DescriptionHash = descriptionHash
 			}
 			qualityBytes, _ := json.Marshal(evaluationResult)
 			opts = append(opts, interaction.WithQuality(string(qualityBytes)))
@@ -130,9 +139,13 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 	}
 
 	if parseErr != nil {
-		return &EvaluationResult{NeedsBreakdown: false}, nil
+		return &EvaluationResult{
+			NeedsBreakdown:  false,
+			DescriptionHash: descriptionHash,
+		}, nil
 	}
 
+	evaluationResult.DescriptionHash = descriptionHash
 	return evaluationResult, nil
 }
 
@@ -142,4 +155,9 @@ func buildEvaluatePrompt(codebaseContext, title, description string) string {
 		contextSection = "## Codebase Context\n\n" + codebaseContext + "\n\n"
 	}
 	return fmt.Sprintf(prompts.Evaluate, contextSection, title, description)
+}
+
+func taskDescriptionHash(title, description string) string {
+	sum := sha256.Sum256([]byte(title + "\n" + description))
+	return hex.EncodeToString(sum[:])
 }

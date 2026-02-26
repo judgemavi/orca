@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
@@ -8,7 +8,7 @@ import { useWebSocket } from '../../../hooks/useWebSocket'
 import { controlClass } from '../../../lib/constants'
 import { queryKeys } from '../../../lib/queryKeys'
 import { getErrorMessage } from '../../../lib/utils'
-import { isKnownWSEvent } from '../../../types'
+import { isKnownWSEvent, type AIReviewResult } from '../../../types'
 import { ActionButton } from '../../common/ActionButton'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import { selectByPhase, useInteractionsQuery } from './useInteractions'
@@ -17,9 +17,54 @@ interface Props {
   onClose: () => void
 }
 
-export function TaskActionsBar({
-  onClose,
-}: Props) {
+async function sha256Hex(value: string): Promise<string> {
+  const buffer = new TextEncoder().encode(value)
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+function parseEvaluationDescriptionHash(qualityJSON?: string): string | null {
+  if (!qualityJSON) return null
+  try {
+    const parsed = JSON.parse(qualityJSON) as { description_hash?: unknown }
+    if (typeof parsed.description_hash !== 'string') return null
+    const hash = parsed.description_hash.trim()
+    return hash || null
+  } catch {
+    return null
+  }
+}
+
+function parseAIReviewResult(qualityJSON?: string): AIReviewResult | null {
+  if (!qualityJSON) return null
+  try {
+    const parsed = JSON.parse(qualityJSON) as {
+      task_id?: unknown
+      approved?: unknown
+      feedback?: unknown
+      tool?: unknown
+      prompt?: unknown
+    }
+    if (typeof parsed.task_id !== 'string') return null
+    if (typeof parsed.approved !== 'boolean') return null
+    if (typeof parsed.feedback !== 'string') return null
+    if (typeof parsed.tool !== 'string') return null
+    if (parsed.prompt != null && typeof parsed.prompt !== 'string') return null
+    return {
+      task_id: parsed.task_id,
+      approved: parsed.approved,
+      feedback: parsed.feedback,
+      tool: parsed.tool,
+      prompt: typeof parsed.prompt === 'string' ? parsed.prompt : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function TaskActionsBar({ onClose }: Props) {
   const queryClient = useQueryClient()
   const { task, tools, isOperationRunning } = useTaskDetailContext()
   const taskPlanQuery = useTaskPlanQuery(task.id)
@@ -115,10 +160,13 @@ export function TaskActionsBar({
   const [requestPlanFeedback, setRequestPlanFeedback] = useState('')
   const [aiReviewExpanded, setAIReviewExpanded] = useState(false)
   const [aiReviewPrompt, setAIReviewPrompt] = useState('')
+  const [aiFeedbackAppliedNotice, setAIFeedbackAppliedNotice] = useState(false)
   const [actionTool, setActionTool] = useState('')
   const [actionModel, setActionModel] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [evaluateStarted, setEvaluateStarted] = useState(false)
+  const [currentDescriptionHash, setCurrentDescriptionHash] = useState('')
+  const lastProcessedReviewInteractionIdRef = useRef<string | null>(null)
 
   const actionModelsQuery = useModelsQuery(actionTool || undefined)
   const actionModels = actionTool
@@ -131,10 +179,50 @@ export function TaskActionsBar({
   const mergeInteractions = mergeInteractionsQuery.data ?? []
   const planLoading = taskPlanQuery.isLoading
   const planGenerating = isOperationRunning('plan_generate', task.id)
+  const hasPlanInteraction = planInteractions.length > 0
+  const hideEvaluateAction =
+    hasPlanInteraction || planGenerating || generateTaskPlanMutation.isPending
   const hasPlan = Boolean(taskPlanQuery.data?.trim())
   const evaluating =
     evaluateStarted ||
     evaluateInteractions.some((item) => item.status === 'running')
+
+  useEffect(() => {
+    let cancelled = false
+    void sha256Hex(`${task.title}\n${task.description}`)
+      .then((hash) => {
+        if (!cancelled) {
+          setCurrentDescriptionHash(hash)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCurrentDescriptionHash('')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [task.title, task.description])
+
+  const latestCompletedEvaluate = useMemo(
+    () =>
+      [...evaluateInteractions]
+        .reverse()
+        .find((item) => item.status === 'completed'),
+    [evaluateInteractions],
+  )
+  const latestEvaluationDescriptionHash = useMemo(
+    () => parseEvaluationDescriptionHash(latestCompletedEvaluate?.quality_json),
+    [latestCompletedEvaluate?.quality_json],
+  )
+  const descriptionUnchangedSinceLastEvaluation =
+    Boolean(latestEvaluationDescriptionHash) &&
+    Boolean(currentDescriptionHash) &&
+    latestEvaluationDescriptionHash === currentDescriptionHash
+  const evaluateDisabledReason = descriptionUnchangedSinceLastEvaluation
+    ? 'Description unchanged since last evaluation'
+    : undefined
 
   const latestCompletedRunId = useMemo(
     () =>
@@ -144,9 +232,9 @@ export function TaskActionsBar({
   )
   const latestCompletedPlanId = useMemo(
     () =>
-      [...planInteractions].reverse().find(
-        (item) => item.status === 'completed',
-      )?.id,
+      [...planInteractions]
+        .reverse()
+        .find((item) => item.status === 'completed')?.id,
     [planInteractions],
   )
 
@@ -184,9 +272,26 @@ export function TaskActionsBar({
     setRequestPlanFeedback('')
     setAIReviewExpanded(false)
     setAIReviewPrompt('')
+    setAIFeedbackAppliedNotice(false)
     setActionError(null)
     setEvaluateStarted(false)
   }, [task.id, task.status])
+
+  // Only reset the processed-review tracker on task change, not status change.
+  // This prevents the fallback useEffect from re-applying stale AI review
+  // feedback when task cycles back to 'review' after a request-changes run.
+  useEffect(() => {
+    lastProcessedReviewInteractionIdRef.current = null
+  }, [task.id])
+
+  const applyAIReviewFeedback = (feedback: string) => {
+    const hadExistingRequestText =
+      requestChangesExpanded && requestFeedback.trim().length > 0
+    setRequestChangesExpanded(true)
+    setAIReviewExpanded(false)
+    setRequestFeedback(feedback)
+    setAIFeedbackAppliedNotice(hadExistingRequestText)
+  }
 
   useWebSocket((evt) => {
     if (!isKnownWSEvent(evt)) return
@@ -212,8 +317,37 @@ export function TaskActionsBar({
       void queryClient.invalidateQueries({
         queryKey: queryKeys.taskInteractions(task.id),
       })
+      return
+    }
+    if (evt.type === 'ai-review.completed' && evt.data.task_id === task.id) {
+      if (task.status === 'review' && !evt.data.approved && evt.data.feedback) {
+        applyAIReviewFeedback(evt.data.feedback)
+      }
     }
   })
+
+  useEffect(() => {
+    if (task.status !== 'review') return
+    const latestCompletedReview = [...reviewInteractions]
+      .reverse()
+      .find((item) => item.status === 'completed')
+    if (!latestCompletedReview) return
+    if (
+      lastProcessedReviewInteractionIdRef.current === latestCompletedReview.id
+    ) {
+      return
+    }
+    const reviewResult = parseAIReviewResult(latestCompletedReview.quality_json)
+    if (
+      reviewResult &&
+      reviewResult.task_id === task.id &&
+      !reviewResult.approved &&
+      reviewResult.feedback
+    ) {
+      applyAIReviewFeedback(reviewResult.feedback)
+    }
+    lastProcessedReviewInteractionIdRef.current = latestCompletedReview.id
+  }, [reviewInteractions, task.id, task.status])
 
   const handleStart = async () => {
     setActionError(null)
@@ -393,29 +527,30 @@ export function TaskActionsBar({
             <ActionButton
               variant="primary"
               onClick={handleGeneratePlan}
-              disabled={
-                planLoading ||
-                phaseInProgress ||
-                evaluating
-              }
+              disabled={planLoading || phaseInProgress || evaluating}
             >
               {planGenerating || generateTaskPlanMutation.isPending
                 ? 'Generating…'
                 : 'Generate Plan'}
             </ActionButton>
-            <ActionButton
-              variant="default"
-              onClick={handleEvaluateTask}
-              disabled={
-                planLoading ||
-                phaseInProgress ||
-                evaluating
-              }
-            >
-              {evaluateTaskMutation.isPending || evaluating
-                ? 'Evaluating…'
-                : 'Evaluate'}
-            </ActionButton>
+            {!hideEvaluateAction && (
+              <span title={evaluateDisabledReason}>
+                <ActionButton
+                  variant="default"
+                  onClick={handleEvaluateTask}
+                  disabled={
+                    planLoading ||
+                    phaseInProgress ||
+                    evaluating ||
+                    descriptionUnchangedSinceLastEvaluation
+                  }
+                >
+                  {evaluateTaskMutation.isPending || evaluating
+                    ? 'Evaluating…'
+                    : 'Evaluate'}
+                </ActionButton>
+              </span>
+            )}
           </>
         )
       }
@@ -469,6 +604,7 @@ export function TaskActionsBar({
             onClick={() => {
               setRequestPlanChangesExpanded(true)
               setAIReviewExpanded(false)
+              setAIFeedbackAppliedNotice(false)
               setActionError(null)
             }}
             disabled={
@@ -522,7 +658,9 @@ export function TaskActionsBar({
             onClick={handleResume}
             disabled={runningBusy || resumeTaskMutation.isPending}
           >
-            {runningBusy || resumeTaskMutation.isPending ? 'Resuming…' : 'Resume'}
+            {runningBusy || resumeTaskMutation.isPending
+              ? 'Resuming…'
+              : 'Resume'}
           </ActionButton>
         </>
       )
@@ -536,6 +674,7 @@ export function TaskActionsBar({
               variant="default"
               onClick={() => {
                 setRequestChangesExpanded(false)
+                setAIFeedbackAppliedNotice(false)
                 setActionError(null)
               }}
               disabled={phaseInProgress || requestChangesMutation.isPending}
@@ -587,7 +726,8 @@ export function TaskActionsBar({
             onClick={handleApprove}
             disabled={
               phaseInProgress ||
-              approveMutation.isPending || requestChangesMutation.isPending
+              approveMutation.isPending ||
+              requestChangesMutation.isPending
             }
           >
             {approveMutation.isPending ? 'Approving…' : 'Approve'}
@@ -597,11 +737,13 @@ export function TaskActionsBar({
             onClick={() => {
               setAIReviewExpanded(false)
               setRequestChangesExpanded(true)
+              setAIFeedbackAppliedNotice(false)
               setActionError(null)
             }}
             disabled={
               phaseInProgress ||
-              approveMutation.isPending || requestChangesMutation.isPending
+              approveMutation.isPending ||
+              requestChangesMutation.isPending
             }
           >
             Request Changes
@@ -610,6 +752,7 @@ export function TaskActionsBar({
             variant="default"
             onClick={() => {
               setRequestChangesExpanded(false)
+              setAIFeedbackAppliedNotice(false)
               setAIReviewExpanded(true)
               setActionError(null)
             }}
@@ -657,12 +800,24 @@ export function TaskActionsBar({
   }
 
   const showToolModelSelector =
-    task.status !== 'running' && task.status !== 'merged'
+    (task.status === 'pending' && !hasPlan) ||
+    (task.status === 'pending' && hasPlan && requestPlanChangesExpanded) ||
+    task.status === 'planned' ||
+    (task.status === 'review' &&
+      (requestChangesExpanded || aiReviewExpanded)) ||
+    task.status === 'failed'
 
   return (
     <div className="sticky bottom-0 z-20 border-t border-border-subtle bg-surface-elevated/95 px-4 py-3 backdrop-blur-sm shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
-      {(requestChangesExpanded || requestPlanChangesExpanded || aiReviewExpanded) && (
+      {(requestChangesExpanded ||
+        requestPlanChangesExpanded ||
+        aiReviewExpanded) && (
         <div className="mb-3 flex flex-col gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-3">
+          {requestChangesExpanded && aiFeedbackAppliedNotice && (
+            <div className="text-[11px] text-muted">
+              AI review feedback applied
+            </div>
+          )}
           <textarea
             id="request-changes-feedback"
             className="w-full resize-y rounded-md border border-border-subtle bg-surface px-2.5 py-2 text-[13px] outline-none focus:border-accent"
@@ -684,6 +839,7 @@ export function TaskActionsBar({
                 return
               }
               setRequestFeedback(event.target.value)
+              setAIFeedbackAppliedNotice(false)
             }}
             placeholder={
               aiReviewExpanded

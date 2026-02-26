@@ -8,8 +8,8 @@ type Driver interface {
 	Models() []string
 
 	// Arg construction
-	HeadlessArgs(prompt, model string) []string
-	ResumeArgs(sessionID, feedback, model string) []string
+	HeadlessArgs(prompt, model, dir string) []string
+	ResumeArgs(sessionID, feedback, model, dir string) []string
 
 	// Streaming NDJSON event parsing
 	ParseEvent(line []byte) (Event, error)

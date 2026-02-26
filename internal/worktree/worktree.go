@@ -36,6 +36,9 @@ type Manager struct {
 // NewManager creates a worktree manager rooted at the given repo, storing
 // worktrees under worktreeDir.
 func NewManager(repoDir, worktreeDir string) *Manager {
+	if !filepath.IsAbs(worktreeDir) {
+		worktreeDir = filepath.Join(repoDir, worktreeDir)
+	}
 	return &Manager{
 		repoDir:     repoDir,
 		worktreeDir: worktreeDir,
@@ -87,6 +90,11 @@ func FormatBranchName(taskID, title string) string {
 // ResolveTaskDir finds the actual worktree directory path for a taskID,
 // handling both old (task-{id}) and new (task-{id}--{slug}) formats.
 func ResolveTaskDir(worktreeDir, taskID string) string {
+	if !filepath.IsAbs(worktreeDir) {
+		if abs, err := filepath.Abs(worktreeDir); err == nil {
+			worktreeDir = abs
+		}
+	}
 	exact := filepath.Join(worktreeDir, "task-"+taskID)
 	if _, err := os.Stat(exact); err == nil {
 		return exact

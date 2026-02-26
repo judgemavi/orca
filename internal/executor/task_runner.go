@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"regexp"
+
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/procutil"
 	"github.com/jasjeetmavi/orca/internal/pty"
@@ -84,8 +86,34 @@ func (e *Executor) streamPipe(ctx context.Context, info taskInfo, outputCh chan<
 	result.OutputTokens = res.OutputTokens
 	result.TotalCost = res.TotalCost
 	e.storeSessionID(info.taskID, res.SessionID)
+
+	// Override diff with integration branch comparison so re-runs on existing
+	// worktrees capture all changes, not just the last commit (HEAD~1..HEAD).
+	base := e.config.Project.IntegrationBranch
+	if diff, err := procutil.GitOutput(info.worktreePath, "diff", base+"..HEAD"); err == nil {
+		result.Diff = diff
+	}
+	if names, err := procutil.GitOutput(info.worktreePath, "diff", base+"..HEAD", "--name-only"); err == nil && names != "" {
+		result.FilesChanged = nil
+		for _, f := range strings.Split(strings.TrimSpace(names), "\n") {
+			if f != "" {
+				result.FilesChanged = append(result.FilesChanged, f)
+			}
+		}
+	}
+
 	if res.ExitCode == 0 {
-		result.Status = "review"
+		if failure := detectSilentFailure(result.Diff, result.Stdout); failure != "" {
+			result.Status = "failed"
+			if result.Stderr != "" {
+				result.Stderr = failure + "; stderr: " + result.Stderr
+			} else {
+				result.Stderr = failure
+			}
+			slog.Warn("silent failure detected (pipe)", "task_id", info.taskID, "failure", failure, "stderr", result.Stderr, "dir", info.worktreePath)
+		} else {
+			result.Status = "review"
+		}
 	}
 	return result
 }
@@ -109,6 +137,7 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	if len(args) == 0 {
 		args = buildWorkerArgs(info, info.prompt, info.model, info.worktreePath)
 	}
+	slog.Info("worker.starting (pty)", "task_id", info.taskID, "binary", info.driver.Binary(), "dir", info.worktreePath, "args_count", len(args))
 	sess, err := e.sessionMgr.Create(pty.CreateOpts{
 		Type:    pty.SessionWorker,
 		Command: info.driver.Binary(),
@@ -125,6 +154,7 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	}
 
 	e.startProcess(info.taskID, sess.Cmd, sess.ID)
+	slog.Info("worker.spawned (pty)", "task_id", info.taskID, "session_id", sess.ID, "pid", sess.Cmd.Process.Pid, "dir", info.worktreePath)
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -221,6 +251,9 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	}
 
 	result.ExitCode = waitSessionExitCode(sess)
+	if result.ExitCode != 0 {
+		slog.Warn("worker.failed (pty)", "task_id", info.taskID, "exit_code", result.ExitCode, "duration", time.Since(start), "dir", info.worktreePath, "output_tail", lastN(rawOutput.String(), 500))
+	}
 
 	_, _ = procutil.GitOutput(info.worktreePath, "add", "-A")
 	commitMsg := "orca: task " + info.taskID
@@ -242,7 +275,17 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	}
 
 	if result.ExitCode == 0 {
-		result.Status = "review"
+		if failure := detectSilentFailure(result.Diff, result.Stdout); failure != "" {
+			result.Status = "failed"
+			if result.Stderr != "" {
+				result.Stderr = failure + "; stderr: " + result.Stderr
+			} else {
+				result.Stderr = failure
+			}
+			slog.Warn("silent failure detected (pty)", "task_id", info.taskID, "failure", failure, "stderr", result.Stderr, "dir", info.worktreePath)
+		} else {
+			result.Status = "review"
+		}
 	}
 	return result
 }
@@ -269,9 +312,38 @@ func waitSessionExitCode(sess *pty.Session) int {
 	return sess.ExitCode
 }
 
+func lastN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
+}
+
+// blockerPattern matches common failure signals in agent stdout.
+var blockerPattern = regexp.MustCompile(`(?i)(?:BLOCKED:|cannot complete|permission denied|operation not permitted|unable to write|read-only file system|no such file or directory|sandbox.{0,20}(?:block|prevent|restrict))`)
+
+// detectSilentFailure checks for exit-0-but-no-progress scenarios.
+// Returns an error message if a silent failure is detected, empty string otherwise.
+func detectSilentFailure(diff, stdout string) string {
+	if strings.TrimSpace(diff) != "" {
+		return "" // has changes, not a silent failure
+	}
+
+	// No diff produced — check stdout for blocker signals.
+	tail := stdout
+	if len(tail) > 2000 {
+		tail = tail[len(tail)-2000:]
+	}
+	if loc := blockerPattern.FindString(tail); loc != "" {
+		return fmt.Sprintf("no changes produced; blocker detected: %s", loc)
+	}
+
+	return "no changes produced"
+}
+
 func buildWorkerArgs(info taskInfo, prompt, model, worktreePath string) []string {
 	contextContent := procutil.LoadContextFromWorktree(worktreePath)
-	args := info.driver.HeadlessArgs(prompt, model)
+	args := info.driver.HeadlessArgs(prompt, model, worktreePath)
 	for i := range args {
 		args[i] = strings.ReplaceAll(args[i], "{{context}}", contextContent)
 	}

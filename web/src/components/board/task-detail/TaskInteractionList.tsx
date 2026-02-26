@@ -6,9 +6,14 @@ import { useMutation } from '@tanstack/react-query'
 import { api } from '../../../api'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { useModelsQuery } from '../../../hooks/queries/useModels'
+import {
+  useSavePlanMutation,
+  useTaskPlanQuery,
+} from '../../../hooks/queries/usePlan'
 import { useTaskReviewsQuery } from '../../../hooks/queries/useReviews'
 import { useWebSocket } from '../../../hooks/useWebSocket'
 import { controlClass } from '../../../lib/constants'
+import { getErrorMessage } from '../../../lib/utils'
 import {
   isKnownWSEvent,
   type Interaction,
@@ -98,6 +103,8 @@ function evaluationComplexityLabel(evaluation: ParsedTaskEvaluation): string {
 export function TaskInteractionList({ taskId, readOnly = false }: Props) {
   const { task, tools, activeLogId, setActiveLogId, isOperationRunning } =
     useTaskDetailContext()
+  const taskPlanQuery = useTaskPlanQuery(taskId)
+  const savePlanMutation = useSavePlanMutation()
   const interactionsQuery = useInteractionsQuery(taskId, {
     select: (interactions) =>
       [...interactions].sort(
@@ -123,6 +130,9 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
   const [conflictError, setConflictError] = useState<string | null>(null)
   const [conflictWorktreePath, setConflictWorktreePath] = useState('')
   const [showManualResolve, setShowManualResolve] = useState(false)
+  const [planDraft, setPlanDraft] = useState('')
+  const [planEditing, setPlanEditing] = useState(true)
+  const [planSaveError, setPlanSaveError] = useState<string | null>(null)
 
   const mergeModelsQuery = useModelsQuery(mergeTool || undefined)
   const interactions = interactionsQuery.data ?? []
@@ -180,6 +190,20 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
   const latestCompletedId =
     [...interactions].reverse().find((item) => item.status === 'completed')
       ?.id ?? null
+  const latestCompletedPlanInteraction =
+    [...interactions]
+      .reverse()
+      .find((item) => item.phase === 'plan' && item.status === 'completed') ??
+    null
+  const latestCompletedPlanId = latestCompletedPlanInteraction?.id ?? null
+  const planEditableStatus =
+    task.status === 'pending' || task.status === 'planned'
+  const planEditable = !readOnly && planEditableStatus
+  const currentPlanText =
+    taskPlanQuery.data ??
+    task.plan ??
+    latestCompletedPlanInteraction?.diff ??
+    ''
   const latestFailedMergeId =
     [...mergeInteractions]
       .reverse()
@@ -198,12 +222,16 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
   }, [latestCompletedId])
 
   useEffect(() => {
+    if (!taskId) return
     setMergeProgress(null)
     setConflictError(null)
     setConflictWorktreePath('')
     setShowManualResolve(false)
     setMergeTool('')
     setMergeModel('')
+    setPlanDraft('')
+    setPlanEditing(true)
+    setPlanSaveError(null)
   }, [taskId])
 
   useEffect(() => {
@@ -215,6 +243,10 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
     setMergeTool('')
     setMergeModel('')
   }, [task.status])
+
+  useEffect(() => {
+    setPlanDraft(currentPlanText)
+  }, [currentPlanText])
 
   useWebSocket(
     useCallback(
@@ -283,6 +315,18 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
   const onToggleLog = (id: string) =>
     setActiveLogId(activeLogId === id ? null : id)
 
+  const onSavePlan = async () => {
+    setPlanSaveError(null)
+    try {
+      await savePlanMutation.mutateAsync({
+        taskId,
+        plan: planDraft,
+      })
+    } catch (err) {
+      setPlanSaveError(getErrorMessage(err, 'Failed to save plan'))
+    }
+  }
+
   const onMergeToolChange = (t: string) => {
     setMergeTool(t)
     setMergeModel('')
@@ -348,6 +392,11 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
               item.phase === 'run'
                 ? getReviewsForRun(item.id, item.started_at)
                 : []
+            const isEditableLatestPlan =
+              item.phase === 'plan' &&
+              item.status === 'completed' &&
+              item.id === latestCompletedPlanId &&
+              planEditable
 
             return (
               <InteractionEntry
@@ -364,7 +413,65 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
                 activeLogId={activeLogId}
                 onToggleLog={onToggleLog}
               >
-                {item.phase === 'plan' &&
+                {isEditableLatestPlan && (
+                  <div className="rounded-lg bg-surface p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className={[
+                            'rounded border px-2 py-1 text-xs',
+                            planEditing
+                              ? 'border-accent bg-accent/10 text-accent'
+                              : 'border-border-subtle',
+                          ].join(' ')}
+                          onClick={() => setPlanEditing(true)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className={[
+                            'rounded border px-2 py-1 text-xs',
+                            !planEditing
+                              ? 'border-accent bg-accent/10 text-accent'
+                              : 'border-border-subtle',
+                          ].join(' ')}
+                          onClick={() => setPlanEditing(false)}
+                        >
+                          Preview
+                        </button>
+                      </div>
+                      <ActionButton
+                        variant="primary"
+                        onClick={() => void onSavePlan()}
+                        disabled={
+                          savePlanMutation.isPending ||
+                          planDraft === currentPlanText
+                        }
+                      >
+                        {savePlanMutation.isPending ? 'Saving…' : 'Save Plan'}
+                      </ActionButton>
+                    </div>
+                    {planEditing ? (
+                      <textarea
+                        value={planDraft}
+                        onChange={(event) => setPlanDraft(event.target.value)}
+                        className={`${controlClass} min-h-[220px] w-full resize-y font-mono text-xs leading-5`}
+                      />
+                    ) : (
+                      <div className="prose prose-invert prose-sm max-h-[300px] max-w-none overflow-auto rounded-lg bg-surface-alt p-4 text-xs">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {planDraft}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                    {planSaveError && <div className="text-xs">{planSaveError}</div>}
+                  </div>
+                )}
+
+                {!isEditableLatestPlan &&
+                  item.phase === 'plan' &&
                   item.status === 'completed' &&
                   item.diff && (
                     <div className="prose prose-invert prose-sm max-h-[300px] max-w-none overflow-auto rounded-lg bg-surface p-4 text-xs">
@@ -527,11 +634,7 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
                   )}
 
                 {item.phase === 'review' && (
-                  <AIReviewResultCard
-                    interaction={item}
-                    activeLogId={activeLogId}
-                    onToggleLog={onToggleLog}
-                  />
+                  <AIReviewResultCard interaction={item} />
                 )}
 
                 {item.phase === 'merge' &&

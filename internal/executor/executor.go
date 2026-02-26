@@ -36,6 +36,8 @@ import (
 var runnableTaskStatuses = map[string]bool{
 	"pending": true,
 	"planned": true,
+	"failed":  true,
+	"review":  true,
 }
 
 // TaskResult holds the outcome of a single task execution.
@@ -142,12 +144,16 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts Run
 			timeout = parsed
 		}
 
-		wtPath, _, err := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch, t.Title)
-		if err != nil {
-			e.closePreparedWriters(prepared)
-			return nil, createdTaskIDs, fmt.Errorf("create worktree for task %s: %w", taskID, err)
+		wtPath := worktree.ResolveTaskDir(e.config.Project.WorktreeDir, taskID)
+		if _, statErr := os.Stat(wtPath); os.IsNotExist(statErr) {
+			created, _, createErr := e.worktrees.Create(taskID, e.config.Project.IntegrationBranch, t.Title)
+			if createErr != nil {
+				e.closePreparedWriters(prepared)
+				return nil, createdTaskIDs, fmt.Errorf("create worktree for task %s: %w", taskID, createErr)
+			}
+			wtPath = created
+			createdTaskIDs = append(createdTaskIDs, taskID)
 		}
-		createdTaskIDs = append(createdTaskIDs, taskID)
 
 		prompt := t.Title + "\n\n" + t.Description
 		if t.Plan != "" {
@@ -376,7 +382,7 @@ type resumeRunState struct {
 	resumeSessionID string
 }
 
-func (e *Executor) resolveResumeRunState(taskID, sessionID string, d driver.Driver, model string, requireSession bool) (resumeRunState, error) {
+func (e *Executor) resolveResumeRunState(taskID, sessionID string, d driver.Driver, model, worktreePath string, requireSession bool) (resumeRunState, error) {
 	reviewID, feedback, err := e.taskStore.GetPendingReview(taskID)
 	if err != nil && err != sql.ErrNoRows {
 		return resumeRunState{}, fmt.Errorf("get pending review for task %s: %w", taskID, err)
@@ -393,7 +399,7 @@ func (e *Executor) resolveResumeRunState(taskID, sessionID string, d driver.Driv
 	var args []string
 	resumeSessionID := ""
 	if sessionID != "" {
-		args = d.ResumeArgs(sessionID, feedback, model)
+		args = d.ResumeArgs(sessionID, feedback, model, worktreePath)
 		resumeSessionID = sessionID
 	}
 
@@ -454,7 +460,7 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		prompt = contextPrefix + prompt
 	}
 
-	resumeState, err := e.resolveResumeRunState(taskID, t.SessionID, d, model, requireStopped)
+	resumeState, err := e.resolveResumeRunState(taskID, t.SessionID, d, model, wtPath, requireStopped)
 	if err != nil {
 		return nil, err
 	}

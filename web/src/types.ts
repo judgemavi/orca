@@ -109,6 +109,7 @@ export interface TaskEvaluation {
   confidence: number
   reasoning: string
   suggested_subtask_count: number
+  description_hash?: string
 }
 
 interface WSEventBase<TType extends string, TData> {

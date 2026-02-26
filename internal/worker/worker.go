@@ -73,6 +73,12 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 	ctx, cancel := context.WithTimeout(ctx, a.Timeout)
 	defer cancel()
 
+	if worktreePath != "" {
+		if _, err := os.Stat(worktreePath); err != nil {
+			return nil, fmt.Errorf("worktree dir %s: %w", worktreePath, err)
+		}
+	}
+
 	cmd := exec.CommandContext(ctx, a.Driver.Binary(), args...)
 	cmd.Dir = worktreePath
 	cmd.Env = filteredEnv()
@@ -90,11 +96,13 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 		a.CmdCallback(cmd)
 	}
 
+	slog.Info("worker.starting", "task_id", taskID, "binary", a.Driver.Binary(), "dir", worktreePath, "args_count", len(args))
+
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("exec %s: %w", a.Driver.Binary(), err)
+		return nil, fmt.Errorf("exec %s in %s: %w", a.Driver.Binary(), worktreePath, err)
 	}
-	slog.Info("worker.spawned", "task_id", taskID, "binary", a.Driver.Binary(), "pid", cmd.Process.Pid)
+	slog.Info("worker.spawned", "task_id", taskID, "binary", a.Driver.Binary(), "pid", cmd.Process.Pid, "dir", worktreePath)
 
 	var stderr bytes.Buffer
 	var (
@@ -216,7 +224,16 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 			return nil, fmt.Errorf("exec %s: %w", a.Driver.Binary(), runErr)
 		}
 	}
-	slog.Info("worker.exited", "task_id", taskID, "exit_code", result.ExitCode, "duration", duration)
+	logFields := []any{"task_id", taskID, "exit_code", result.ExitCode, "duration", duration, "dir", worktreePath}
+	if result.ExitCode != 0 && result.Stderr != "" {
+		// Truncate stderr for log readability.
+		stderrSnippet := result.Stderr
+		if len(stderrSnippet) > 500 {
+			stderrSnippet = stderrSnippet[len(stderrSnippet)-500:]
+		}
+		logFields = append(logFields, "stderr", stderrSnippet)
+	}
+	slog.Info("worker.exited", logFields...)
 
 	_, _ = procutil.GitOutput(worktreePath, "add", "-A")
 	commitMsg := "orca: task " + taskID
@@ -286,7 +303,7 @@ func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath stri
 		return nil, fmt.Errorf("timeout must be > 0")
 	}
 
-	args := a.Driver.HeadlessArgs(prompt, a.Model)
+	args := a.Driver.HeadlessArgs(prompt, a.Model, worktreePath)
 	return a.executeWithArgs(ctx, taskID, args, worktreePath)
 }
 
@@ -298,7 +315,7 @@ func (a *Adapter) ExecuteResume(ctx context.Context, taskID, sessionID, feedback
 	if a.Timeout <= 0 {
 		return nil, fmt.Errorf("timeout must be > 0")
 	}
-	args := a.Driver.ResumeArgs(sessionID, feedback, a.Model)
+	args := a.Driver.ResumeArgs(sessionID, feedback, a.Model, worktreePath)
 	return a.executeWithArgs(ctx, taskID, args, worktreePath)
 }
 

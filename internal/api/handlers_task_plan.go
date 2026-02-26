@@ -54,6 +54,15 @@ func (s *Server) handlePutTaskPlan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	tk, err := store.Get(resolved)
+	if err != nil {
+		jsonError(w, err, http.StatusNotFound)
+		return
+	}
+	if tk.Status != "pending" && tk.Status != "planned" {
+		jsonError(w, "task plan can only be edited while task is pending or planned", http.StatusBadRequest)
+		return
+	}
 
 	if err := store.SetPlan(resolved, req.Plan); err != nil {
 		jsonError(w, err, http.StatusInternalServerError)

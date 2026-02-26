@@ -22,7 +22,7 @@ func (c *Claude) Models() []string {
 	}
 }
 
-func (c *Claude) HeadlessArgs(prompt, model string) []string {
+func (c *Claude) HeadlessArgs(prompt, model, _ string) []string {
 	args := []string{
 		"-p", prompt,
 		"--output-format", "stream-json",
@@ -48,7 +48,7 @@ func (c *Claude) InteractiveArgs(mcpConfig, allowedTools, context, model string)
 	return args
 }
 
-func (c *Claude) ResumeArgs(sessionID, feedback, model string) []string {
+func (c *Claude) ResumeArgs(sessionID, feedback, model, _ string) []string {
 	args := []string{
 		"--resume", sessionID,
 		"-p", feedback,
