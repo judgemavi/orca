@@ -123,5 +123,6 @@ func buildPlanPrompt(codebaseContext, title, description string) string {
 	if strings.TrimSpace(codebaseContext) != "" {
 		contextSection = "## Codebase Context\n\n" + codebaseContext + "\n\n"
 	}
-	return fmt.Sprintf(prompts.Plan, contextSection, title, description)
+	prompt := fmt.Sprintf(prompts.Plan, contextSection, title, description)
+	return strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
 }

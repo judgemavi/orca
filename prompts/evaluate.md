@@ -25,5 +25,4 @@ Respond with ONLY a JSON object in this exact shape:
 Rules:
 - `confidence` must be between 0.0 and 1.0
 - `suggested_subtask_count` must be 0 when `needs_breakdown` is false
-- If `needs_breakdown` is true, `suggested_subtask_count` must be a realistic value from 2 to 6
 - Keep `reasoning` concise and specific to this task

@@ -162,7 +162,7 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts Run
 		if e.budgetAwareEnabled() {
 			prompt = strings.TrimSpace(prompts.BudgetAware) + "\n\n---\n\n" + prompt
 		}
-		prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
+		prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n" + strings.TrimSpace(prompts.ExecutorStyle) + "\n\n---\n\n" + prompt
 
 		var writer *interaction.Writer
 		if e.interactions != nil {
@@ -408,7 +408,7 @@ func (e *Executor) RunSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	if e.budgetAwareEnabled() {
 		prompt = strings.TrimSpace(prompts.BudgetAware) + "\n\n---\n\n" + prompt
 	}
-	prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
+	prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n" + strings.TrimSpace(prompts.ExecutorStyle) + "\n\n---\n\n" + prompt
 
 	if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
 		return fmt.Errorf("set task running: %w", err)
