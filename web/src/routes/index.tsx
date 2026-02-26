@@ -6,12 +6,31 @@ import { api } from '../api'
 import { ReviewPanel } from '../components/board/ReviewPanel'
 import { CreateTaskModal } from '../components/board/CreateTaskModal'
 import { TasksTable } from '../components/board/TasksTable'
-import { TasksToolbar } from '../components/board/TasksToolbar'
+import { TasksToolbar, type TaskListFilter } from '../components/board/TasksToolbar'
 import { toast } from 'sonner'
 import { useConfigQuery } from '../hooks/queries/useConfig'
 import { useModelsQuery } from '../hooks/queries/useModels'
 import { useRunningOperations } from '../hooks/queries/useRunningOperations'
 import { useTasksQuery } from '../hooks/queries/useTasks'
+import type { Task } from '../types'
+
+const STATUS_PRIORITY: Record<Task['status'], number> = {
+  running: 0,
+  review: 1,
+  failed: 2,
+  planned: 3,
+  pending: 4,
+  approved: 5,
+  merged: 6,
+}
+
+function taskMatchesFilter(task: Task, filter: TaskListFilter) {
+  if (filter === 'all') return true
+  if (filter === 'pending') return task.status === 'pending' || task.status === 'planned'
+  if (filter === 'running') return task.status === 'running'
+  if (filter === 'review') return task.status === 'review'
+  return task.status === 'approved' || task.status === 'merged' || task.status === 'failed'
+}
 
 export function TasksPage() {
   const navigate = useNavigate()
@@ -23,6 +42,8 @@ export function TasksPage() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [showReview, setShowReview] = useState(false)
+  const [activeFilter, setActiveFilter] = useState<TaskListFilter>('all')
+  const [search, setSearch] = useState('')
 
   const tasks = tasksQuery.data?.tasks ?? []
   const loading = tasksQuery.isLoading || configQuery.isLoading
@@ -39,6 +60,46 @@ export function TasksPage() {
     () => tasks.filter((t) => t.status === 'approved'),
     [tasks],
   )
+
+  const pendingCount = useMemo(
+    () =>
+      tasks.filter((task) => task.status === 'pending' || task.status === 'planned')
+        .length,
+    [tasks],
+  )
+  const runningCount = useMemo(
+    () => tasks.filter((task) => task.status === 'running').length,
+    [tasks],
+  )
+  const reviewCount = useMemo(
+    () => tasks.filter((task) => task.status === 'review').length,
+    [tasks],
+  )
+  const doneCount = useMemo(
+    () =>
+      tasks.filter(
+        (task) =>
+          task.status === 'approved' ||
+          task.status === 'merged' ||
+          task.status === 'failed',
+      ).length,
+    [tasks],
+  )
+
+  const visibleTasks = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase()
+
+    return [...tasks]
+      .filter((task) => taskMatchesFilter(task, activeFilter))
+      .filter((task) =>
+        normalizedSearch ? task.title.toLowerCase().includes(normalizedSearch) : true,
+      )
+      .sort((a, b) => {
+        const byStatus = STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status]
+        if (byStatus !== 0) return byStatus
+        return Date.parse(b.updated_at) - Date.parse(a.updated_at)
+      })
+  }, [tasks, activeFilter, search])
 
   const runTasks = async (taskIds?: string[]) => {
     try {
@@ -75,6 +136,14 @@ export function TasksPage() {
           decomposeRunning={decomposeRunning}
           cleanupRunning={cleanupRunning}
           exploring={exploring}
+          activeFilter={activeFilter}
+          search={search}
+          totalTasks={tasks.length}
+          visibleTasks={visibleTasks.length}
+          pendingCount={pendingCount}
+          runningCount={runningCount}
+          reviewCount={reviewCount}
+          doneCount={doneCount}
           onRun={() => {
             void runTasks()
           }}
@@ -85,9 +154,26 @@ export function TasksPage() {
             })
           }}
           onCreateTask={() => setShowCreate(true)}
+          onFilterChange={setActiveFilter}
+          onSearchChange={setSearch}
         />
 
-        <TasksTable tasks={tasks} />
+        {tasks.length === 0 ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+            <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+              <p className="text-sm">No tasks yet.</p>
+              <button
+                type="button"
+                onClick={() => setShowCreate(true)}
+                className="inline-flex items-center rounded-lg border border-accent bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent/90"
+              >
+                Create your first task →
+              </button>
+            </div>
+          </div>
+        ) : (
+          <TasksTable tasks={visibleTasks} />
+        )}
       </div>
 
       {showReview && (

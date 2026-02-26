@@ -1,19 +1,9 @@
-import * as Collapsible from '@radix-ui/react-collapsible'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { useModelsQuery } from '../../../hooks/queries/useModels'
-import { useMutation } from '@tanstack/react-query'
-import { api } from '../../../api'
 import { useTaskReviewsQuery } from '../../../hooks/queries/useReviews'
-import { controlClass } from '../../../lib/constants'
-import { getErrorMessage } from '../../../lib/utils'
-import type { AIReviewResult, Interaction } from '../../../types'
+import type { Interaction } from '../../../types'
 import { DiffViewer } from '../../blocks/DiffViewer'
-import { ActionButton } from '../../common/ActionButton'
-import { ToolModelSelector } from '../../common/ToolModelSelector'
 import { AIReviewResultCard } from './AIReviewResultCard'
-import { FailedRunActions } from './FailedRunActions'
-import { InlineReviewActions } from './InlineReviewActions'
 import { InteractionEntry } from './InteractionEntry'
 import { selectByPhase, useInteractionsQuery } from './useInteractions'
 
@@ -22,14 +12,7 @@ interface Props {
 }
 
 export function TaskExecutionSection({ readOnly = false }: Props) {
-  const {
-    task,
-    tools,
-    activeLogId,
-    setActiveLogId,
-    isOperationRunning,
-  } = useTaskDetailContext()
-  void isOperationRunning
+  const { task, activeLogId, setActiveLogId } = useTaskDetailContext()
 
   const runInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByPhase('run'),
@@ -38,26 +21,13 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
     select: selectByPhase('review'),
   })
   const reviewsQuery = useTaskReviewsQuery(task.id)
-  const runTaskMutation = useMutation({
-    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
-      api.runTasks([args.taskId], args.tool, args.model),
-  })
 
-  const [runTool, setRunTool] = useState('')
-  const [runModel, setRunModel] = useState('')
-  const [reviewExpanded, setReviewExpanded] = useState(false)
-  const [expandedDiffs, setExpandedDiffs] = useState<Set<string>>(new Set())
-  const [dismissedReviews, setDismissedReviews] = useState<Set<string>>(
+  const [expandedInteractions, setExpandedInteractions] = useState<Set<string>>(
     new Set(),
   )
-  const [runError, setRunError] = useState<string | null>(null)
-
-  const runModelsQuery = useModelsQuery(runTool || undefined)
 
   const runInteractions = runInteractionsQuery.data ?? []
   const reviewInteractions = reviewInteractionsQuery.data ?? []
-  const runPending = runTaskMutation.isPending
-  const runModels = runTool ? (runModelsQuery.data?.[runTool] ?? []) : []
 
   const runInteractionIDs = useMemo(
     () => new Set(runInteractions.map((item) => item.id)),
@@ -76,39 +46,20 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
   const interactionsLoading =
     runInteractionsQuery.isLoading || reviewInteractionsQuery.isLoading
 
-  const hasRunningExecution = runInteractions.some(
-    (item) => item.status === 'running',
-  )
   const latestCompletedId =
     [...runInteractions].reverse().find((item) => item.status === 'completed')
-      ?.id ?? null
-  const latestFailedId =
-    [...runInteractions].reverse().find((item) => item.status === 'failed')
       ?.id ?? null
 
   useEffect(() => {
     if (latestCompletedId) {
-      setExpandedDiffs(new Set([latestCompletedId]))
+      setExpandedInteractions(new Set([latestCompletedId]))
       return
     }
-    setExpandedDiffs(new Set())
+    setExpandedInteractions(new Set())
   }, [latestCompletedId])
 
-  const handleRun = async () => {
-    setRunError(null)
-    try {
-      await runTaskMutation.mutateAsync({
-        taskId: task.id,
-        tool: runTool || undefined,
-        model: runModel || undefined,
-      })
-    } catch (err: unknown) {
-      setRunError(getErrorMessage(err, 'Run failed'))
-    }
-  }
-
-  function toggleDiff(id: string) {
-    setExpandedDiffs((prev) => {
+  function toggleInteraction(id: string) {
+    setExpandedInteractions((prev) => {
       const next = new Set(prev)
       if (next.has(id)) {
         next.delete(id)
@@ -141,81 +92,23 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
     [runInteractions, reviewInteractions],
   )
 
-  const activeAISuggestion = useMemo(() => {
-    if (!latestCompletedId) return null
-    const latestCompleted = runInteractions.find(
-      (i) => i.id === latestCompletedId,
-    )
-    if (!latestCompleted) return null
-
-    const revs = getReviewsForRun(latestCompletedId, latestCompleted.started_at)
-    for (let i = revs.length - 1; i >= 0; i--) {
-      const ri = revs[i]
-      if (ri.status !== 'completed' || !ri.quality_json) continue
-      if (dismissedReviews.has(ri.id)) return null
-      try {
-        const result: AIReviewResult = JSON.parse(ri.quality_json)
-        if (!result.approved) {
-          return { interactionId: ri.id, feedback: result.feedback }
-        }
-      } catch {
-        // ignore
-      }
-      return null
-    }
-    return null
-  }, [latestCompletedId, runInteractions, dismissedReviews, getReviewsForRun])
-
   return (
-    <div className="flex flex-col gap-2.5 rounded-md border p-3">
+    <div className="flex flex-col gap-4 rounded-lg bg-surface p-4">
       {interactionsLoading && (
         <div className="text-xs">Loading interactions...</div>
       )}
 
       {!interactionsLoading && runInteractions.length === 0 && (
-        <>
-          {task.status === 'planned' && !readOnly ? (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
-              <ToolModelSelector
-                tools={tools}
-                selectedTool={runTool}
-                selectedModel={runModel}
-                models={runModels}
-                modelsFetching={runModelsQuery.isFetching}
-                onToolChange={(tool) => {
-                  setRunTool(tool)
-                  setRunModel('')
-                }}
-                onModelChange={setRunModel}
-                controlClass={controlClass}
-                toolPlaceholder="- phase/default tool"
-                modelPlaceholder="- default model"
-                className="contents"
-              />
-              <ActionButton
-                variant="primary"
-                onClick={handleRun}
-                disabled={runPending}
-              >
-                {runPending ? 'Running…' : 'Run'}
-              </ActionButton>
-            </div>
-          ) : (
-            <div className="text-xs">
-              No execution interactions found for this task yet.
-            </div>
-          )}
-          {runError && <div className="text-xs">{runError}</div>}
-        </>
+        <div className="text-xs">
+          {task.status === 'planned' && !readOnly
+            ? 'Run this task from the action bar below to start execution.'
+            : 'No execution interactions found for this task yet.'}
+        </div>
       )}
 
       {!interactionsLoading && runInteractions.length > 0 && (
         <div className="flex flex-col gap-2">
           {runInteractions.map((item) => {
-            const isLatestCompleted =
-              item.status === 'completed' && item.id === latestCompletedId
-            const isLatestFailed =
-              item.status === 'failed' && item.id === latestFailedId
             const itemReviews = runReviews.filter(
               (review) => review.interaction_id === item.id,
             )
@@ -228,44 +121,34 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
               <InteractionEntry
                 key={item.id}
                 interaction={item}
+                collapsible
+                showDiffSummary
+                expanded={item.status === 'running' || expandedInteractions.has(item.id)}
+                alwaysExpanded={item.status === 'running'}
+                onExpandedChange={() => toggleInteraction(item.id)}
                 activeLogId={activeLogId}
                 onToggleLog={(id) =>
                   setActiveLogId(activeLogId === id ? null : id)
                 }
               >
                 {item.status === 'completed' && item.diff && (
-                  <Collapsible.Root
-                    open={expandedDiffs.has(item.id)}
-                    onOpenChange={() => toggleDiff(item.id)}
-                  >
-                    <Collapsible.Trigger asChild>
-                      <button type="button" className="text-xs">
-                        {expandedDiffs.has(item.id)
-                          ? '▾ Hide diff'
-                          : '▸ Show diff'}
-                      </button>
-                    </Collapsible.Trigger>
-                    <Collapsible.Content>
-                      <DiffViewer
-                        data={{
-                          task_id: task.id,
-                          title: task.title,
-                          diff: item.diff,
-                          files_changed: [],
-                          actions: [],
-                        }}
-                      />
-                    </Collapsible.Content>
-                  </Collapsible.Root>
+                  <DiffViewer
+                    data={{
+                      task_id: task.id,
+                      title: task.title,
+                      diff: item.diff,
+                      files_changed: [],
+                      actions: [],
+                    }}
+                  />
                 )}
 
                 {runReviewInteractions.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-2">
                     {runReviewInteractions.map((reviewInteraction) => (
                       <AIReviewResultCard
                         key={reviewInteraction.id}
                         interaction={reviewInteraction}
-                        dismissed={dismissedReviews.has(reviewInteraction.id)}
                         activeLogId={activeLogId}
                         onToggleLog={(id) =>
                           setActiveLogId(activeLogId === id ? null : id)
@@ -276,24 +159,24 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                 )}
 
                 {item.status === 'completed' && itemReviews.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-2">
                     {itemReviews.map((review) => (
                       <div
                         key={review.id}
                         className={[
-                          'rounded-md border p-2.5',
+                          'rounded-md border p-4',
                           review.status === 'pending'
                             ? 'border-amber-500/40 bg-amber-500/10'
                             : 'border-emerald-500/35 bg-emerald-500/10',
                         ].join(' ')}
                       >
-                        <div className="mb-1 flex items-center gap-2">
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="text-xs font-medium uppercase tracking-wide">
                             Request Changes
                           </span>
                           <span
                             className={[
-                              'text-[10px] font-semibold uppercase',
+                              'text-xs font-medium uppercase tracking-wide',
                               review.status === 'pending'
                                 ? 'text-amber-400'
                                 : 'text-emerald-400',
@@ -311,46 +194,6 @@ export function TaskExecutionSection({ readOnly = false }: Props) {
                     ))}
                   </div>
                 )}
-
-                {isLatestCompleted &&
-                  task.status === 'review' &&
-                  !readOnly &&
-                  !hasRunningExecution &&
-                  (activeAISuggestion && !reviewExpanded ? (
-                    <div className="flex flex-col gap-2.5">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <ActionButton
-                          variant="primary"
-                          onClick={() => {
-                            setReviewExpanded(true)
-                          }}
-                        >
-                          Request Changes
-                        </ActionButton>
-                        <ActionButton
-                          variant="default"
-                          onClick={() => {
-                            setDismissedReviews(
-                              (prev) =>
-                                new Set([
-                                  ...prev,
-                                  activeAISuggestion.interactionId,
-                                ]),
-                            )
-                          }}
-                        >
-                          Dismiss
-                        </ActionButton>
-                      </div>
-                    </div>
-                  ) : (
-                    <InlineReviewActions
-                      forceReviewExpanded={reviewExpanded}
-                      prefillFeedback={activeAISuggestion?.feedback}
-                    />
-                  ))}
-
-                {isLatestFailed && !readOnly && <FailedRunActions />}
               </InteractionEntry>
             )
           })}

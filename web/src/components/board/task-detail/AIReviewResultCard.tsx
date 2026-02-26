@@ -28,7 +28,7 @@ export function AIReviewResultCard({
 
   if (ri.status === 'running') {
     return (
-      <div className="rounded-md border p-2.5">
+      <div className="rounded-lg bg-surface-alt p-2.5">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
             AI Review
@@ -43,7 +43,7 @@ export function AIReviewResultCard({
 
   if (ri.status === 'failed') {
     return (
-      <div className="rounded-md border border-danger/30 bg-danger/10 p-2.5">
+      <div className="rounded-lg border border-danger/30 bg-danger/10 p-2.5">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
             AI Review
@@ -74,12 +74,12 @@ export function AIReviewResultCard({
     return (
       <div
         className={[
-          'rounded-md border p-2.5',
+          'rounded-lg p-2.5',
           isDismissed
-            ? 'border-border opacity-60'
+            ? 'bg-surface-alt opacity-60'
             : result.approved
-              ? 'border-emerald-500/35 bg-emerald-500/10'
-              : 'border-amber-500/40 bg-amber-500/10',
+              ? 'bg-emerald-500/10 shadow-sm shadow-emerald-500/10'
+              : 'bg-amber-500/10 shadow-sm shadow-amber-500/10',
         ].join(' ')}
       >
         <div className="mb-1 flex items-center gap-2">
@@ -106,7 +106,7 @@ export function AIReviewResultCard({
           {logButton}
         </div>
         {result.prompt && (
-          <div className="mb-1.5 rounded border px-2 py-1.5 text-[11px] italic">
+          <div className="mb-1.5 rounded bg-surface px-2 py-1.5 text-[11px] italic">
             {result.prompt}
           </div>
         )}

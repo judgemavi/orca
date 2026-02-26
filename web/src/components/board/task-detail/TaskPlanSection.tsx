@@ -1,4 +1,3 @@
-import * as Collapsible from '@radix-ui/react-collapsible'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -71,7 +70,9 @@ export function TaskPlanSection({ readOnly = false }: Props) {
   const [generateTool, setGenerateTool] = useState('')
   const [generateModel, setGenerateModel] = useState('')
   const [planError, setPlanError] = useState<string | null>(null)
-  const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
+  const [expandedInteractions, setExpandedInteractions] = useState<Set<string>>(
+    new Set(),
+  )
 
   const generateModelsQuery = useModelsQuery(generateTool || undefined)
   const planInteractionsQuery = useInteractionsQuery(task.id, {
@@ -110,7 +111,7 @@ export function TaskPlanSection({ readOnly = false }: Props) {
     setGenerateTool('')
     setGenerateModel('')
     setPlanError(null)
-    setExpandedPlans(new Set())
+    setExpandedInteractions(new Set())
   }, [task.id])
 
   useEffect(() => {
@@ -224,14 +225,14 @@ export function TaskPlanSection({ readOnly = false }: Props) {
 
   useEffect(() => {
     if (latestCompletedId) {
-      setExpandedPlans(new Set([latestCompletedId]))
+      setExpandedInteractions(new Set([latestCompletedId]))
       return
     }
-    setExpandedPlans(new Set())
+    setExpandedInteractions(new Set())
   }, [latestCompletedId])
 
-  function togglePlan(id: string) {
-    setExpandedPlans((prev) => {
+  function toggleInteraction(id: string) {
+    setExpandedInteractions((prev) => {
       const next = new Set(prev)
       if (next.has(id)) {
         next.delete(id)
@@ -243,7 +244,7 @@ export function TaskPlanSection({ readOnly = false }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-md border p-3">
+    <div className="flex flex-col gap-4 rounded-lg bg-surface p-4">
       {!readOnly && (
         <div
           className={[
@@ -290,7 +291,7 @@ export function TaskPlanSection({ readOnly = false }: Props) {
       )}
 
       {taskEvaluation && (
-        <div className="flex flex-col gap-1.5 rounded-md border p-2.5">
+        <div className="flex flex-col gap-2 rounded-lg bg-surface-alt p-4">
           <div className="text-xs">
             Complexity:{' '}
             <span className="font-medium">{taskEvaluation.complexity}</span>
@@ -329,50 +330,40 @@ export function TaskPlanSection({ readOnly = false }: Props) {
               <InteractionEntry
                 key={item.id}
                 interaction={item}
+                collapsible
+                expanded={item.status === 'running' || expandedInteractions.has(item.id)}
+                alwaysExpanded={item.status === 'running'}
+                onExpandedChange={() => toggleInteraction(item.id)}
                 activeLogId={activeLogId}
                 onToggleLog={(id) =>
                   setActiveLogId(activeLogId === id ? null : id)
                 }
               >
                 {item.status === 'completed' && item.diff && (
-                  <Collapsible.Root
-                    open={expandedPlans.has(item.id)}
-                    onOpenChange={() => togglePlan(item.id)}
-                  >
-                    <Collapsible.Trigger asChild>
-                      <button type="button" className="text-xs ">
-                        {expandedPlans.has(item.id)
-                          ? '▾ Hide plan'
-                          : '▸ Show plan'}
-                      </button>
-                    </Collapsible.Trigger>
-                    <Collapsible.Content>
-                      <div className="prose prose-invert prose-sm max-w-none max-h-[300px] overflow-auto rounded-md border p-2.5 text-xs">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {item.diff}
-                        </ReactMarkdown>
-                      </div>
-                    </Collapsible.Content>
-                  </Collapsible.Root>
+                  <div className="prose prose-invert prose-sm max-h-[300px] max-w-none overflow-auto rounded-lg bg-surface p-4 text-xs">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {item.diff}
+                    </ReactMarkdown>
+                  </div>
                 )}
 
                 {item.status === 'completed' && itemReviews.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-2">
                     {itemReviews.map((review) => (
                       <div
                         key={review.id}
                         className={[
-                          'rounded-md border p-2.5',
+                          'rounded-md border p-4',
                           review.status === 'pending'
                             ? 'border-amber-500/40 bg-amber-500/10'
                             : 'border-emerald-500/35 bg-emerald-500/10 opacity-80',
                         ].join(' ')}
                       >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium uppercase tracking-wide">
                             {review.status}
                           </span>
-                          <span className="text-[11px]">
+                          <span className="text-xs">
                             {formatRelativeTime(review.created_at)}
                           </span>
                         </div>
@@ -388,7 +379,7 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                   canReviewPlan &&
                   !readOnly &&
                   !hasRunningPlan && (
-                    <div className="flex flex-col gap-2.5">
+                    <div className="flex flex-col gap-3">
                       <div className="flex justify-end gap-2">
                         <ActionButton
                           variant="primary"
@@ -409,9 +400,9 @@ export function TaskPlanSection({ readOnly = false }: Props) {
                       </div>
 
                       {planReviewExpanded && (
-                        <div className="flex flex-col gap-2.5 rounded-md border p-2.5">
+                        <div className="flex flex-col gap-3 rounded-lg bg-surface-alt p-4">
                           <textarea
-                            className="w-full resize-y rounded-md border p-2.5 text-xs outline-none focus:border-accent"
+                            className="w-full resize-y rounded-md border px-3 py-1.5 text-sm outline-none focus:border-accent"
                             value={planFeedback}
                             onChange={(e) => setPlanFeedback(e.target.value)}
                             rows={4}

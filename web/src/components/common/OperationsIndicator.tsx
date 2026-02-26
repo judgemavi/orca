@@ -45,7 +45,7 @@ export function OperationsIndicator() {
         <span className="h-2 w-2 rounded-full bg-accent" />
         {operations.length} active operation{operations.length !== 1 ? 's' : ''}
       </summary>
-      <div className="absolute right-0 top-[calc(100%+8px)] z-30 max-h-[260px] min-w-[260px] max-w-[min(360px,calc(100vw-32px))] overflow-auto rounded-lg border shadow-[0_10px_24px_rgba(0,0,0,0.18)]">
+      <div className="absolute right-0 top-[calc(100%+8px)] z-30 max-h-[260px] min-w-[260px] max-w-[min(360px,calc(100vw-32px))] overflow-auto rounded-lg border border-border-subtle bg-surface-elevated shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
         {operations.map((op) => (
           <div
             key={op.id}

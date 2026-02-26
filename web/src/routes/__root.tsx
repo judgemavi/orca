@@ -81,10 +81,10 @@ const RootLayout = () => {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-4">
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4">
         <Link
           to="/"
-          className="px-3.5 py-1.5 text-sm font-medium text-foreground"
+          className="px-3 py-1.5 text-sm font-medium text-foreground"
         >
           Orca
         </Link>
@@ -92,14 +92,14 @@ const RootLayout = () => {
           <button
             type="button"
             onClick={cycleTheme}
-            className="rounded border p-1.5"
+            className="rounded border border-border-subtle bg-surface-alt p-1.5 hover:bg-surface"
             aria-label="Toggle theme"
           >
             <ThemeIcon size={14} />
           </button>
           <Link
             to="/config"
-            className="rounded border p-1.5  "
+            className="rounded border border-border-subtle bg-surface-alt p-1.5 hover:bg-surface"
             aria-label="Open config"
           >
             <Settings size={14} />

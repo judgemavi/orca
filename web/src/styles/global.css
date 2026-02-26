@@ -1,35 +1,43 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
 :root {
-  --t-background: #ffffff;
-  --t-surface: #f8fafc;
-  --t-surface-alt: #f1f5f9;
-  --t-border: #e2e8f0;
-  --t-foreground: #0f172a;
-  --t-muted: #64748b;
-  --t-accent: #2563eb;
-  --t-danger: #ef4444;
-  --t-success: #10b981;
+  --t-background: #fafaf9;
+  --t-surface: #ffffff;
+  --t-surface-alt: #f5f3f0;
+  --t-border: rgba(0, 0, 0, 0.08);
+  --t-foreground: #1c1917;
+  --t-muted: #78716c;
+  --t-accent: #6e56cf;
+  --t-danger: #e5484d;
+  --t-success: #30a46c;
+  --t-surface-elevated: #ffffff;
+  --t-border-subtle: rgba(0, 0, 0, 0.04);
 }
 
 .dark {
-  --t-background: #020617;
-  --t-surface: #0f172a;
-  --t-surface-alt: #1e293b;
-  --t-border: #334155;
-  --t-foreground: #e2e8f0;
-  --t-muted: #94a3b8;
-  --t-accent: #3b82f6;
-  --t-danger: #f87171;
-  --t-success: #34d399;
+  --t-background: #13111c;
+  --t-surface: #1c1a27;
+  --t-surface-alt: #262435;
+  --t-border: rgba(255, 255, 255, 0.08);
+  --t-foreground: #e8e6f0;
+  --t-muted: #8b89a0;
+  --t-accent: #6e56cf;
+  --t-danger: #e5484d;
+  --t-success: #30a46c;
+  --t-surface-elevated: #2a2839;
+  --t-border-subtle: rgba(255, 255, 255, 0.04);
+  --t-shadow-color: rgba(0, 0, 0, 0.4);
 }
 
 @theme {
   --color-background: var(--t-background);
   --color-surface: var(--t-surface);
   --color-surface-alt: var(--t-surface-alt);
+  --color-surface-elevated: var(--t-surface-elevated);
   --color-border: var(--t-border);
+  --color-border-subtle: var(--t-border-subtle);
   --color-foreground: var(--t-foreground);
   --color-muted: var(--t-muted);
   --color-accent: var(--t-accent);
@@ -38,6 +46,10 @@
 }
 
 @layer base {
+  .shadow-elevated {
+    box-shadow: 0 2px 12px var(--t-shadow-color, rgba(0, 0, 0, 0.15));
+  }
+
   html,
   body,
   #root {
@@ -46,7 +58,8 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      sans-serif;
   }
 
   ::-webkit-scrollbar {

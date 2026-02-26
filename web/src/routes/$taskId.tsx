@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
+import * as Collapsible from '@radix-ui/react-collapsible'
 import { api } from '../api'
 import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel'
 import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar'
@@ -18,6 +19,32 @@ import { useRunningOperations } from '../hooks/queries/useRunningOperations'
 import { useTasksQuery } from '../hooks/queries/useTasks'
 import { controlClass } from '../lib/constants'
 import type { Config, Task } from '../types'
+
+function formatRelativeTime(iso: string) {
+  const timestamp = Date.parse(iso)
+  if (!Number.isFinite(timestamp)) return 'just now'
+
+  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000)
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const ranges: Array<{ limit: number; unit: Intl.RelativeTimeFormatUnit; inSeconds: number }> =
+    [
+      { limit: 60, unit: 'second', inSeconds: 1 },
+      { limit: 3600, unit: 'minute', inSeconds: 60 },
+      { limit: 86400, unit: 'hour', inSeconds: 3600 },
+      { limit: 604800, unit: 'day', inSeconds: 86400 },
+      { limit: 2629800, unit: 'week', inSeconds: 604800 },
+      { limit: 31557600, unit: 'month', inSeconds: 2629800 },
+      { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
+    ]
+
+  for (const range of ranges) {
+    if (Math.abs(deltaSeconds) < range.limit) {
+      return rtf.format(Math.round(deltaSeconds / range.inSeconds), range.unit)
+    }
+  }
+
+  return 'just now'
+}
 
 export function TaskDetailPage() {
   const { taskId } = useParams({ from: '/$taskId' })
@@ -50,7 +77,10 @@ export function TaskDetailPage() {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm">
         <span>Task not found.</span>
-        <Link to="/" className="rounded border border-border px-3 py-1.5 ">
+        <Link
+          to="/"
+          className="rounded border border-border-subtle px-3 py-1.5 "
+        >
           Back to tasks
         </Link>
       </div>
@@ -173,24 +203,18 @@ function TaskDetailContent({
       isOperationRunning={isRunning}
     >
       <div className="flex flex-1 overflow-hidden">
-        <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-4 py-4">
+        <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-6 py-4">
           <div className="mb-3 flex items-center justify-between">
             <Link
               to="/"
-              className="rounded border border-border px-3 py-1.5 text-xs font-medium "
+              className="rounded border border-border-subtle px-3 py-1.5 text-xs font-medium "
             >
               ← Back to tasks
             </Link>
-            <div className="flex items-center gap-2.5">
-              <StatusBadge status={task.status} />
-              <span className="font-mono text-[11px]">
-                {task.id.slice(0, 8)}
-              </span>
-            </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-lg border">
-            <div className="flex flex-1 flex-col gap-3.5 p-5">
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-xl bg-surface shadow-elevated">
+            <div className="flex flex-1 flex-col gap-4 p-4">
               <TaskDetailForm
                 form={form}
                 isEditable={isEditable}
@@ -258,122 +282,182 @@ function TaskDetailForm({
   setDependencyError,
   handleAddDependency,
 }: TaskDetailFormProps) {
+  const [isExpanded, setIsExpanded] = useState(isEditable)
+
+  useEffect(() => {
+    setIsExpanded(isEditable)
+  }, [task.id, isEditable])
+
+  const dependencies = task.depends_on ?? []
+  const description = form.state.values.description.trim()
+  const dependencyCount = dependencies.length
+
   return (
     <form
       id="task-edit-form"
+      className="rounded-lg border border-border-subtle bg-surface"
       onSubmit={(e) => {
         e.preventDefault()
         void form.handleSubmit()
       }}
     >
-      <div className="flex flex-col gap-3.5">
-        <form.Field name="title">
-          {(field) => (
-            <label className="flex flex-col gap-1.5 text-xs font-medium">
-              Title
-              {isEditable ? (
-                <input
-                  className={controlClass}
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                />
-              ) : (
-                <div className="rounded-md border px-2.5 py-2 text-[13px] font-normal">
-                  {field.state.value || task.title}
-                </div>
+      <Collapsible.Root open={isExpanded} onOpenChange={setIsExpanded}>
+        <div className="px-3 py-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <StatusBadge status={task.status} size="lg" />
+                <h1 className="truncate text-lg font-semibold leading-tight">
+                  {form.state.values.title.trim() || task.title}
+                </h1>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                <span className="font-mono text-[11px]">{task.id.slice(0, 8)}</span>
+                <span>·</span>
+                <span>{dependencyCount} dependencies</span>
+                <span>·</span>
+                <span>
+                  {task.status} {formatRelativeTime(task.updated_at)}
+                </span>
+              </div>
+              {!isExpanded && description && (
+                <p className="mt-1 line-clamp-2 text-xs text-muted">{description}</p>
               )}
-            </label>
-          )}
-        </form.Field>
-
-        <form.Field name="description">
-          {(field) => (
-            <label className="flex flex-col gap-1.5 text-xs font-medium">
-              Description
-              {isEditable ? (
-                <textarea
-                  className={controlClass}
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  rows={4}
-                  placeholder="No description"
-                />
-              ) : (
-                <div className="min-h-[80px] whitespace-pre-wrap rounded-md border px-2.5 py-2 text-[13px] font-normal">
-                  {field.state.value || 'No description'}
+              {!isExpanded && dependencyCount > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {dependencies.map((depId) => {
+                    const depTask = tasksById.get(depId)
+                    return (
+                      <span
+                        key={depId}
+                        className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-alt px-1.5 py-0.5 text-[11px]"
+                      >
+                        <span className="truncate">{depTask?.title || 'Unknown task'}</span>
+                        <span className="font-mono">{depId.slice(0, 6)}</span>
+                      </span>
+                    )
+                  })}
                 </div>
-              )}
-            </label>
-          )}
-        </form.Field>
-
-        <div className="flex flex-col gap-1.5 text-xs font-medium">
-          Dependencies
-          {(task.depends_on ?? []).length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {(task.depends_on ?? []).map((depId) => {
-                const depTask = tasksById.get(depId)
-                return (
-                  <span
-                    key={depId}
-                    className="inline-flex items-center gap-1.5 rounded border bg-surface px-1.5 py-0.5 text-[11px]"
-                  >
-                    <span className="max-w-[280px] truncate">
-                      {depTask?.title || 'Unknown task'}
-                    </span>
-                    <span className="font-mono">{depId.slice(0, 8)}</span>
-                  </span>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="text-[12px] font-normal">No dependencies</p>
-          )}
-          {isEditable && (
-            <div className="mt-1 flex flex-col gap-1.5">
-              {dependencyChoices.length > 0 ? (
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <select
-                    className={controlClass}
-                    value={selectedDependencyId}
-                    onChange={(e) => {
-                      setSelectedDependencyId(e.target.value)
-                      if (dependencyError) setDependencyError(null)
-                    }}
-                    disabled={addingDependency}
-                  >
-                    <option value="">Select task dependency...</option>
-                    {dependencyChoices.map((choice) => (
-                      <option key={choice.id} value={choice.id}>
-                        {choice.title} ({choice.id.slice(0, 8)})
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="rounded-md border px-3 py-2 text-xs font-medium  disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={() => {
-                      void handleAddDependency()
-                    }}
-                    disabled={addingDependency || !selectedDependencyId}
-                  >
-                    {addingDependency ? 'Adding…' : 'Add Dependency'}
-                  </button>
-                </div>
-              ) : (
-                <p className="text-[12px] font-normal">
-                  No available tasks to add.
-                </p>
-              )}
-              {dependencyError && (
-                <p className="text-[12px] font-normal">{dependencyError}</p>
               )}
             </div>
-          )}
+            <Collapsible.Trigger asChild>
+              <button
+                type="button"
+                className="shrink-0 rounded border border-border-subtle px-2 py-1 text-xs font-medium"
+              >
+                {isExpanded ? 'Collapse' : isEditable ? 'Edit' : 'Expand'}
+              </button>
+            </Collapsible.Trigger>
+          </div>
         </div>
-      </div>
+
+        <Collapsible.Content className="border-t border-border-subtle px-3 py-3">
+          <div className="flex flex-col gap-4">
+            <form.Field name="title">
+              {(field) => (
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Title
+                  {isEditable ? (
+                    <input
+                      className={controlClass}
+                      value={field.state.value}
+                      onBlur={field.handleBlur}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                    />
+                  ) : (
+                    <div className="rounded-md bg-surface-alt px-3 py-1.5 text-sm font-normal">
+                      {field.state.value || task.title}
+                    </div>
+                  )}
+                </label>
+              )}
+            </form.Field>
+
+            <form.Field name="description">
+              {(field) => (
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Description
+                  {isEditable ? (
+                    <textarea
+                      className={controlClass}
+                      value={field.state.value}
+                      onBlur={field.handleBlur}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      rows={4}
+                      placeholder="No description"
+                    />
+                  ) : (
+                    <div className="min-h-[80px] whitespace-pre-wrap rounded-md bg-surface-alt px-3 py-1.5 text-sm font-normal">
+                      {field.state.value || 'No description'}
+                    </div>
+                  )}
+                </label>
+              )}
+            </form.Field>
+
+            <div className="flex flex-col gap-2 text-xs font-medium">
+              Dependencies
+              {dependencies.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {dependencies.map((depId) => {
+                    const depTask = tasksById.get(depId)
+                    return (
+                      <span
+                        key={depId}
+                        className="inline-flex items-center gap-2 rounded bg-surface-alt px-2 py-0.5 text-xs"
+                      >
+                        <span className="max-w-[280px] truncate">
+                          {depTask?.title || 'Unknown task'}
+                        </span>
+                        <span className="font-mono">{depId.slice(0, 8)}</span>
+                      </span>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs font-normal">No dependencies</p>
+              )}
+              {isEditable && (
+                <div className="mt-1 flex flex-col gap-2">
+                  {dependencyChoices.length > 0 ? (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <select
+                        className={controlClass}
+                        value={selectedDependencyId}
+                        onChange={(e) => {
+                          setSelectedDependencyId(e.target.value)
+                          if (dependencyError) setDependencyError(null)
+                        }}
+                        disabled={addingDependency}
+                      >
+                        <option value="">Select task dependency...</option>
+                        {dependencyChoices.map((choice) => (
+                          <option key={choice.id} value={choice.id}>
+                            {choice.title} ({choice.id.slice(0, 8)})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="rounded-md border border-border-subtle px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => {
+                          void handleAddDependency()
+                        }}
+                        disabled={addingDependency || !selectedDependencyId}
+                      >
+                        {addingDependency ? 'Adding…' : 'Add Dependency'}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs font-normal">No available tasks to add.</p>
+                  )}
+                  {dependencyError && <p className="text-xs font-normal">{dependencyError}</p>}
+                </div>
+              )}
+            </div>
+          </div>
+        </Collapsible.Content>
+      </Collapsible.Root>
     </form>
   )
 }

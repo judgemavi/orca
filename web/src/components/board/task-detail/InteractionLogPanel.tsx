@@ -78,12 +78,12 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
     : 'Interaction Log'
 
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-lg border">
-      <header className="flex items-center justify-between border-b px-3 py-2.5">
+    <section className="animate-in slide-in-from-right duration-200 flex h-full min-h-0 flex-col rounded-l-xl bg-surface-elevated shadow-elevated">
+      <header className="flex items-center justify-between px-4 py-3">
         <div className="text-sm font-medium">{title}</div>
         <button
           type="button"
-          className="rounded border p-1 transition-colors "
+          className="rounded-md p-1 transition-colors hover:bg-surface-alt"
           onClick={onClose}
           aria-label="Close log panel"
         >
@@ -91,10 +91,10 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 p-3">
+      <div className="min-h-0 flex-1 px-4 pb-4">
         <pre
           ref={logBodyRef}
-          className="h-full min-h-[220px] overflow-auto rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"
+          className="h-full min-h-[220px] overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed text-foreground"
         >
           {!selectedInteraction
             ? 'Interaction not found.'
@@ -112,7 +112,7 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
           )}
       </div>
 
-      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-2 text-xs">
+      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-xs">
         <span>
           Tokens: {formatTokenCount(selectedInteraction?.input_tokens)} in /{' '}
           {formatTokenCount(selectedInteraction?.output_tokens)} out

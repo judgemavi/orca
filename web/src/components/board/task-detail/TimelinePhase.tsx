@@ -1,8 +1,7 @@
 import { Check } from 'lucide-react'
-import type { ReactNode } from 'react'
 
-type TimelinePhaseState = 'disabled' | 'active' | 'completed'
-type TimelinePhaseId = 'planning' | 'execution' | 'merge'
+export type TimelinePhaseState = 'pending' | 'active' | 'completed' | 'failed'
+export type TimelinePhaseId = 'planning' | 'execution' | 'merge'
 
 const PHASE_LABELS: Record<TimelinePhaseId, string> = {
   planning: 'Planning',
@@ -13,49 +12,71 @@ const PHASE_LABELS: Record<TimelinePhaseId, string> = {
 interface Props {
   phase: TimelinePhaseId
   state: TimelinePhaseState
-  headerAction?: ReactNode
-  children: ReactNode
+  selected: boolean
+  summary?: string
+  onSelect: (phase: TimelinePhaseId) => void
 }
 
-export function TimelinePhase({ phase, state, headerAction, children }: Props) {
-  const isDisabled = state === 'disabled'
-  const isActive = state === 'active'
+export function TimelinePhase({
+  phase,
+  state,
+  selected,
+  summary,
+  onSelect,
+}: Props) {
   const isCompleted = state === 'completed'
+  const isActive = state === 'active'
+  const isPending = state === 'pending'
+  const isFailed = state === 'failed'
 
   return (
-    <section
-      className={[
-        'relative mb-4 border-l pl-6',
-        isDisabled
-          ? 'pointer-events-none border-dashed opacity-45'
-          : 'border-border',
-      ].join(' ')}
-      aria-disabled={isDisabled}
+    <button
+      type="button"
+      className="group flex min-w-0 items-center gap-2 py-1 text-left"
+      onClick={() => onSelect(phase)}
+      aria-current={selected ? 'step' : undefined}
     >
-      <div
+      <span
         className={[
-          'absolute -left-[9px] top-1 flex h-4 w-4 items-center justify-center rounded-full border',
-          isActive
-            ? 'animate-pulse border-accent bg-accent'
-            : isCompleted
-              ? 'border-emerald-500 bg-emerald-500 text-white'
-              : 'border-border',
+          'relative inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
+          isCompleted
+            ? 'bg-success text-white'
+            : isActive
+              ? 'bg-accent text-white'
+              : isFailed
+                ? 'bg-danger text-white'
+                : 'border border-border-subtle bg-transparent',
         ].join(' ')}
       >
+        {isActive && (
+          <span
+            className="absolute inset-0 rounded-full border border-accent/70 animate-ping"
+            aria-hidden
+          />
+        )}
         {isCompleted && <Check size={11} strokeWidth={3} />}
-      </div>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div
+      </span>
+      <span className="min-w-0">
+        <span
           className={[
-            'text-xs font-semibold uppercase tracking-[0.06em]',
-            isActive ? 'text-accent' : 'text-muted',
+            'block text-xs leading-4',
+            isActive
+              ? 'font-medium text-foreground'
+              : isFailed
+                ? 'text-danger'
+                : isPending
+                  ? 'text-muted'
+                  : 'text-muted',
           ].join(' ')}
         >
           {PHASE_LABELS[phase]}
-        </div>
-        {headerAction ? <div>{headerAction}</div> : null}
-      </div>
-      {children}
-    </section>
+        </span>
+        {isCompleted && !selected && summary ? (
+          <span className="block truncate text-[11px] leading-4 text-muted">
+            {summary}
+          </span>
+        ) : null}
+      </span>
+    </button>
   )
 }

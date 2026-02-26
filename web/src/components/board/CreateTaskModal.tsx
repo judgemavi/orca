@@ -14,7 +14,7 @@ interface Props {
 }
 
 const controlClass =
-  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-accent'
+  'w-full rounded-md border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent'
 
 export function CreateTaskModal({
   config: _config,
@@ -68,10 +68,10 @@ export function CreateTaskModal({
         if (!open) onClose()
       }}
     >
-      <DialogContent className="z-100 m-0! max-h-[90vh] w-120 max-w-[95vw] overflow-y-auto rounded-lg! border-0! bg-transparent! p-0!">
-        <div className="flex flex-col rounded-lg border border-border bg-surface text-foreground shadow-[0_8px_32px_rgba(0,0,0,0.16)]">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <h2 className="text-[15px] font-semibold">New Task</h2>
+      <DialogContent className="z-100 m-0! flex! h-screen! w-screen! items-center! justify-center! overflow-y-auto! bg-black/60! p-4! backdrop-blur-sm!">
+        <div className="max-h-[90vh] w-120 max-w-[95vw] overflow-y-auto rounded-xl bg-surface-elevated text-foreground shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+          <div className="flex items-center justify-between px-5 py-4">
+            <h2 className="text-base font-semibold">New Task</h2>
             <DialogClose
               className="rounded px-1.5 py-1 text-sm"
               aria-label="Close"
@@ -81,10 +81,10 @@ export function CreateTaskModal({
             </DialogClose>
           </div>
 
-          <form className="flex flex-col gap-3.5 p-5" onSubmit={handleSubmit}>
+          <form className="flex flex-col gap-4 p-4" onSubmit={handleSubmit}>
           <form.Field name="title">
             {(field) => (
-              <label className="flex flex-col gap-1.5 text-xs font-medium">
+              <label className="flex flex-col gap-2 text-xs font-medium">
                 Title *
                 <input
                   className={controlClass}
@@ -100,7 +100,7 @@ export function CreateTaskModal({
 
           <form.Field name="description">
             {(field) => (
-              <label className="flex flex-col gap-1.5 text-xs font-medium">
+              <label className="flex flex-col gap-2 text-xs font-medium">
                 Description
                 <textarea
                   className={controlClass}
@@ -117,9 +117,9 @@ export function CreateTaskModal({
           {dependencyTasks.length > 0 && (
             <form.Field name="dependencies">
               {(field) => (
-                <div className="flex flex-col gap-1.5 text-xs font-medium">
+                <div className="flex flex-col gap-2 text-xs font-medium">
                   Dependencies
-                  <div className="max-h-[140px] overflow-y-auto rounded-md border px-2 py-1.5">
+                  <div className="max-h-[140px] overflow-y-auto rounded-md border border-border-subtle bg-surface-alt px-3 py-1.5">
                     {dependencyTasks.map((task) => (
                       <label
                         key={task.id}
@@ -141,7 +141,7 @@ export function CreateTaskModal({
                         <span className="flex-1 truncate text-xs">
                           {task.title}
                         </span>
-                        <span className="font-mono text-[10px]">
+                        <span className="font-mono text-xs">
                           {task.id.slice(0, 8)}
                         </span>
                       </label>
@@ -154,7 +154,7 @@ export function CreateTaskModal({
 
           {error && <p className="text-xs">{error}</p>}
 
-          <div className="flex justify-end gap-2 pt-1">
+          <div className="flex justify-end gap-2 pt-4">
             <ActionButton variant="default" onClick={onClose} type="button">
               Cancel
             </ActionButton>

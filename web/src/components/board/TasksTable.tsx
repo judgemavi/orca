@@ -1,32 +1,28 @@
-import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { Task } from '../../types'
-
-type SortKey = 'status' | 'title' | 'created' | 'updated'
-type SortDirection = 'asc' | 'desc'
 
 interface Props {
   tasks: Task[]
 }
 
-const STATUS_PRIORITY: Record<Task['status'], number> = {
-  running: 0,
-  review: 1,
-  failed: 2,
-  planned: 3,
-  pending: 4,
-  approved: 5,
-  merged: 6,
+const STATUS_DOT: Record<Task['status'], string> = {
+  pending: 'bg-slate-400',
+  planned: 'bg-indigo-400',
+  running: 'bg-blue-400',
+  review: 'bg-amber-400',
+  failed: 'bg-red-400',
+  approved: 'bg-emerald-400',
+  merged: 'bg-violet-400',
 }
 
-const STATUS_STYLES: Record<Task['status'], string> = {
-  pending: 'bg-slate-500/15 text-slate-300',
-  planned: 'bg-indigo-500/15 text-indigo-300',
-  running: 'bg-accent/15 text-blue-300',
-  review: 'bg-amber-500/15 text-amber-300',
-  failed: 'bg-red-500/15 text-red-300',
-  approved: 'bg-green-500/15 text-green-300',
-  merged: 'bg-violet-500/15 text-violet-300',
+const STATUS_TEXT: Record<Task['status'], string> = {
+  pending: 'text-slate-300',
+  planned: 'text-indigo-300',
+  running: 'text-blue-300',
+  review: 'text-amber-300',
+  failed: 'text-red-300',
+  approved: 'text-emerald-300',
+  merged: 'text-violet-300',
 }
 
 function formatRelativeTime(iso: string) {
@@ -56,174 +52,87 @@ function formatRelativeTime(iso: string) {
   return rtf.format(deltaSeconds, 'second')
 }
 
-function SortableHeader({
-  label,
-  active,
-  direction,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  direction: SortDirection
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-wide "
-    >
-      {label}
-      <span className="text-[10px]">
-        {active ? (direction === 'asc' ? '▲' : '▼') : '↕'}
-      </span>
-    </button>
-  )
+function getTaskTool(task: Task): string {
+  const withTool = task as Task & {
+    tool?: string
+    last_tool?: string
+    suggested_tool?: string
+  }
+  return withTool.tool || withTool.last_tool || withTool.suggested_tool || 'auto'
+}
+
+function formatTaskCost(task: Task): string {
+  const withCost = task as Task & {
+    estimated_cost?: number
+    total_cost?: number
+    cost?: number
+  }
+  const value = withCost.cost ?? withCost.total_cost ?? withCost.estimated_cost
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `$${value.toFixed(2)}`
+  }
+  return '-'
 }
 
 export function TasksTable({ tasks }: Props) {
   const navigate = useNavigate()
-  const [filter, setFilter] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('status')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-
-  const filteredAndSortedTasks = useMemo(() => {
-    const normalizedFilter = filter.trim().toLowerCase()
-    const filtered = normalizedFilter
-      ? tasks.filter((task) =>
-          task.title.toLowerCase().includes(normalizedFilter),
-        )
-      : tasks
-
-    return [...filtered].sort((a, b) => {
-      let result = 0
-
-      if (sortKey === 'status') {
-        result = STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status]
-        if (result === 0) {
-          result = Date.parse(b.updated_at) - Date.parse(a.updated_at)
-        }
-      }
-
-      if (sortKey === 'title') {
-        result = a.title.localeCompare(b.title)
-      }
-
-      if (sortKey === 'created') {
-        result = Date.parse(a.created_at) - Date.parse(b.created_at)
-      }
-
-      if (sortKey === 'updated') {
-        result = Date.parse(a.updated_at) - Date.parse(b.updated_at)
-      }
-
-      if (result === 0) {
-        result = a.id.localeCompare(b.id)
-      }
-
-      return sortDirection === 'asc' ? result : -result
-    })
-  }, [tasks, filter, sortKey, sortDirection])
-
-  const onSortChange = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-      return
-    }
-
-    setSortKey(key)
-    setSortDirection('asc')
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="border-b border-border px-4 py-2.5">
-        <input
-          type="text"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder="Filter by title"
-          className="w-full rounded-md border border-border px-3 py-1.5 text-sm outline-none focus:border-accent"
-        />
-      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
+        <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] gap-2 border-b border-border-subtle px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/60 md:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_5.5rem_1rem]">
+          <span>Task</span>
+          <span className="hidden md:block">Tool</span>
+          <span>Updated</span>
+          <span className="hidden md:block">Cost</span>
+          <span className="hidden md:block" />
+        </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
-        <table className="min-w-full border-collapse text-[13px]">
-          <thead className="sticky top-0 z-10">
-            <tr className="border-b border-border">
-              <th className="px-3 py-2 text-left">
-                <SortableHeader
-                  label="Status"
-                  active={sortKey === 'status'}
-                  direction={sortDirection}
-                  onClick={() => onSortChange('status')}
+        <div className="space-y-0.5 pt-1">
+          {tasks.map((task) => (
+            <button
+              key={task.id}
+              type="button"
+              className="group grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-surface-alt md:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_5.5rem_1rem]"
+              onClick={() => {
+                void navigate({
+                  to: '/$taskId',
+                  params: { taskId: task.id },
+                })
+              }}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[task.status]}`}
                 />
-              </th>
-              <th className="px-3 py-2 text-left">
-                <SortableHeader
-                  label="Title"
-                  active={sortKey === 'title'}
-                  direction={sortDirection}
-                  onClick={() => onSortChange('title')}
-                />
-              </th>
-              <th className="px-3 py-2 text-left">
-                <SortableHeader
-                  label="Created"
-                  active={sortKey === 'created'}
-                  direction={sortDirection}
-                  onClick={() => onSortChange('created')}
-                />
-              </th>
-              <th className="px-3 py-2 text-left">
-                <SortableHeader
-                  label="Updated"
-                  active={sortKey === 'updated'}
-                  direction={sortDirection}
-                  onClick={() => onSortChange('updated')}
-                />
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredAndSortedTasks.map((task) => (
-              <tr
-                key={task.id}
-                className="cursor-pointer border-b border-border/70 transition "
-                onClick={() => {
-                  void navigate({
-                    to: '/$taskId',
-                    params: { taskId: task.id },
-                  })
-                }}
-              >
-                <td className="px-3 py-2">
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLES[task.status]}`}
-                  >
-                    {task.status}
-                  </span>
-                </td>
-                <td className="max-w-[36rem] truncate px-3 py-2">
-                  {task.title}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2">
-                  {formatRelativeTime(task.created_at)}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2">
-                  {formatRelativeTime(task.updated_at)}
-                </td>
-              </tr>
-            ))}
-            {filteredAndSortedTasks.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-3 py-8 text-center text-sm">
-                  No tasks match the current filter.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                <span
+                  className={`shrink-0 text-[11px] font-medium capitalize ${STATUS_TEXT[task.status]}`}
+                >
+                  {task.status}
+                </span>
+                <span className="truncate text-sm">{task.title}</span>
+              </span>
+              <span className="hidden truncate text-xs text-foreground/70 md:block">
+                {getTaskTool(task)}
+              </span>
+              <span className="truncate text-xs text-foreground/70">
+                {formatRelativeTime(task.updated_at)}
+              </span>
+              <span className="hidden truncate text-xs text-foreground/70 md:block">
+                {formatTaskCost(task)}
+              </span>
+              <span className="hidden text-foreground/40 opacity-0 transition group-hover:opacity-100 md:block">
+                ›
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {tasks.length === 0 && (
+          <div className="px-3 py-8 text-center text-sm text-foreground/70">
+            No tasks match the current filters.
+          </div>
+        )}
       </div>
     </div>
   )

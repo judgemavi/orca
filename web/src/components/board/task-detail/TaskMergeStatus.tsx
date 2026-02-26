@@ -153,7 +153,7 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
     mergeInteractions.find((item) => item.status === 'running')?.id ?? null
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-4 rounded-lg bg-surface p-4">
       {readOnly &&
         !mergeProgress &&
         !conflictError &&
@@ -162,18 +162,6 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
             Merge details are read-only for completed tasks.
           </div>
         )}
-
-      {!readOnly && (
-        <div className="flex justify-end">
-          <ActionButton
-            variant="primary"
-            onClick={() => void onMerge()}
-            disabled={merging}
-          >
-            {merging ? 'Merging…' : conflictError ? 'Retry Merge' : 'Merge'}
-          </ActionButton>
-        </div>
-      )}
 
       {mergeInteractions.length === 0 && !mergeProgress && !conflictError && (
         <div className="text-xs">No merge interactions yet.</div>
@@ -189,7 +177,7 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
           {item.id === latestRunningMergeId &&
             item.status === 'running' &&
             mergeProgress && (
-              <div className="rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-2 text-xs leading-5 text-[#8a1f1f]">
+              <div className="rounded-lg bg-accent/10 p-4 text-xs leading-5 text-accent">
                 {mergeProgress}
               </div>
             )}
@@ -197,8 +185,8 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
           {item.id === latestFailedMergeId &&
             item.status === 'failed' &&
             conflictError && (
-              <div className="flex flex-col gap-2 rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-3">
-                <div className="text-xs leading-5 text-[#8a1f1f]">
+              <div className="flex flex-col gap-2 rounded-lg bg-danger/10 p-4 text-danger">
+                <div className="text-xs leading-5">
                   Merge conflict: {conflictError}
                 </div>
                 {!readOnly && (
@@ -235,9 +223,9 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
                         </ActionButton>
                       </Collapsible.Trigger>
                       <Collapsible.Content>
-                        <div className="mt-2 flex flex-col gap-1.5 text-xs">
+                        <div className="mt-2 flex flex-col gap-2 text-xs">
                           {conflictWorktreePath && (
-                            <div className="font-mono text-[11px]">
+                            <div className="font-mono text-xs">
                               Worktree: <code>{conflictWorktreePath}</code>
                             </div>
                           )}
@@ -256,13 +244,13 @@ export function TaskMergeStatus({ readOnly = false }: Props) {
       ))}
 
       {mergeProgress && !latestRunningMergeId && (
-        <div className="rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-3 text-xs leading-5 text-[#8a1f1f]">
+        <div className="rounded-lg bg-accent/10 p-4 text-xs leading-5 text-accent">
           {mergeProgress}
         </div>
       )}
 
       {conflictError && !latestFailedMergeId && (
-        <div className="rounded-md border border-[#e0b4b4] bg-[#fff5f5] p-3 text-xs leading-5 text-[#8a1f1f]">
+        <div className="rounded-lg bg-danger/10 p-4 text-xs leading-5 text-danger">
           Merge conflict: {conflictError}
         </div>
       )}
