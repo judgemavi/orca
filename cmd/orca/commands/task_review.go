@@ -57,7 +57,7 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 
 	interactions := interaction.NewStore(db, ".orca/interactions")
 	taskRef := id
-	writer, err := interactions.Begin(&taskRef, "merge", "orca")
+	writer, err := interactions.Begin(&taskRef, interaction.PhaseMerge, "orca")
 	if err != nil {
 		return fmt.Errorf("begin merge interaction: %w", err)
 	}
@@ -70,11 +70,11 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 			if _, err := store.Get(taskID); err != nil {
 				return "", nil, "", 0, err
 			}
-			toolName, d, err := cfg.ResolveToolForPhase("merge", "")
+			toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
 			if err != nil {
 				return "", nil, "", 0, err
 			}
-			model := cfg.ResolveModelForPhase("merge", "", d)
+			model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
 			return toolName, d, model, 10 * time.Minute, nil
 		})
 	}
@@ -266,14 +266,14 @@ func (r *Registry) runReviewAI(cmd *cobra.Command, args []string) error {
 	modelFlag, _ := cmd.Flags().GetString("model")
 	promptFlag, _ := cmd.Flags().GetString("prompt")
 
-	toolName, d, err := cfg.ResolveToolForPhase("review", strings.TrimSpace(toolFlag))
+	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseReview, strings.TrimSpace(toolFlag))
 	if err != nil {
 		return err
 	}
-	model := cfg.ResolveModelForPhase("review", strings.TrimSpace(modelFlag), d)
+	model := cfg.ResolveModelForPhase(interaction.PhaseReview, strings.TrimSpace(modelFlag), d)
 
 	interactions := interaction.NewStore(db, ".orca/interactions")
-	runInteractions, err := interactions.ListByPhase(taskID, "run")
+	runInteractions, err := interactions.ListByPhase(taskID, interaction.PhaseRun)
 	if err != nil {
 		return fmt.Errorf("list run interactions for task %s: %w", short(taskID), err)
 	}

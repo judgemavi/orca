@@ -115,9 +115,6 @@ export const api = {
     }),
   stopTask: (id: string) => post<{ status: string }>(`/tasks/${id}/stop`),
   resumeTask: (id: string) => post<{ status: string }>(`/tasks/${id}/resume`),
-  // Backward-compatible aliases for existing call sites.
-  runTasks: (taskIds?: string[], tool?: string, model?: string) =>
-    api.startTasks(taskIds, tool, model),
   cancelTask: (id: string) => api.stopTask(id),
   mergeTask: (taskId: string, mode?: string, tool?: string, model?: string) =>
     request<{ operation_id: string }>(`/tasks/${taskId}/merge`, {
@@ -167,27 +164,27 @@ export const api = {
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),
-  decomposeTask: (id: string, tool?: string, model?: string) =>
+  breakdownTask: (id: string, tool?: string, model?: string) =>
     post<{
       task_id: string
       status: string
-    }>(`/tasks/${id}/decompose`, {
+    }>(`/tasks/${id}/breakdown`, {
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),
-  acceptDecompose: (id: string, interactionId: string, tasks?: ProposedTask[]) =>
+  acceptBreakdown: (id: string, interactionId: string, tasks?: ProposedTask[]) =>
     post<{
       created: number
       task_ids: string[]
       parent_id?: string
-    }>(`/tasks/${id}/decompose/accept`, {
+    }>(`/tasks/${id}/breakdown/accept`, {
       interaction_id: interactionId,
       ...(tasks ? { tasks } : {}),
     }),
-  rejectDecompose: (id: string, interactionId: string) =>
+  rejectBreakdown: (id: string, interactionId: string) =>
     post<{
       rejected: boolean
-    }>(`/tasks/${id}/decompose/reject`, {
+    }>(`/tasks/${id}/breakdown/reject`, {
       interaction_id: interactionId,
     }),
   requestPlanChanges: (

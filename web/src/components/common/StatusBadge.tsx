@@ -25,7 +25,7 @@ const TONES: Record<string, { badge: string; dot: string }> = {
     badge: 'bg-emerald-500/20 text-emerald-700',
     dot: 'bg-emerald-600',
   },
-  decomposed: {
+  broken_down: {
     badge: 'bg-orange-500/20 text-orange-700',
     dot: 'bg-orange-600',
   },

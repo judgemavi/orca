@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
@@ -49,7 +50,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request) {
 
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
 		mode := strings.TrimSpace(req.Mode)
-		s.runAsyncHandler(w, "merge", map[string]string{"status": "merging"}, func() {
+		s.runAsyncHandler(w, interaction.PhaseMerge, map[string]string{"status": "merging"}, func() {
 			taskID := tk.ID
 
 			s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
@@ -109,11 +110,11 @@ func (s *Server) resolveToolConfigForTask(taskID string, toolOverride string, mo
 		return "", nil, "", 0, err
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase("merge", toolOverride)
+	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseMerge, toolOverride)
 	if err != nil {
 		return "", nil, "", 0, err
 	}
-	model := s.cfg.ResolveModelForPhase("merge", modelOverride, d)
+	model := s.cfg.ResolveModelForPhase(interaction.PhaseMerge, modelOverride, d)
 	return toolName, d, model, 10 * time.Minute, nil
 }
 
@@ -126,7 +127,7 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if running, err := s.interactions.IsRunning(nil, "merge"); err != nil {
+	if running, err := s.interactions.IsRunning(nil, interaction.PhaseMerge); err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	} else if running {
@@ -162,7 +163,7 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
-	s.runAsyncHandler(w, "merge", map[string]string{"status": "merging"}, func() {
+	s.runAsyncHandler(w, interaction.PhaseMerge, map[string]string{"status": "merging"}, func() {
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
 		merged := make([]string, 0, len(taskIDs))
 		failed := make([]string, 0)

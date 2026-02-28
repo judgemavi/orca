@@ -1,4 +1,5 @@
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
+import { TASK_STATUSES } from '../../../lib/phases'
 import { Button } from '../../Button'
 import { TaskActionsLayout } from './TaskActionsLayout'
 import { useTaskActions } from './useTaskActions'
@@ -7,7 +8,7 @@ export function FailedTaskActions() {
   const { task } = useTaskDetailContext()
   const actions = useTaskActions(task)
 
-  const isStopped = task.status === 'stopped'
+  const isStopped = task.status === TASK_STATUSES.stopped
 
   return (
     <TaskActionsLayout

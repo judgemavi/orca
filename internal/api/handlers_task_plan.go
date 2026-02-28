@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/plan"
@@ -156,7 +156,7 @@ func (s *Server) handleRequestPlanChanges(w http.ResponseWriter, r *http.Request
 			jsonError(w, "invalid interaction_id", http.StatusBadRequest)
 			return
 		}
-		if in.TaskID == nil || *in.TaskID != resolved || in.Phase != "plan" || in.Status != "completed" {
+		if in.TaskID == nil || *in.TaskID != resolved || in.Phase != interaction.PhasePlan || in.Status != "completed" {
 			jsonError(w, "interaction_id must reference a completed plan interaction for this task", http.StatusBadRequest)
 			return
 		}
@@ -170,7 +170,7 @@ func (s *Server) handleRequestPlanChanges(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteractionID string) (int, error) {
-	if running, err := s.interactions.IsRunning(&taskID, "plan"); err != nil {
+	if running, err := s.interactions.IsRunning(&taskID, interaction.PhasePlan); err != nil {
 		return http.StatusInternalServerError, err
 	} else if running {
 		return http.StatusConflict, fmt.Errorf("plan generation already in progress")
@@ -188,14 +188,14 @@ func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteracti
 	model = strings.TrimSpace(model)
 	feedback = strings.TrimSpace(feedback)
 
-	toolName, d, err := s.cfg.ResolveToolForPhase("plan", tool)
+	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhasePlan, tool)
 	if err != nil {
 		if tool != "" {
 			return http.StatusBadRequest, err
 		}
 		return http.StatusInternalServerError, err
 	}
-	modelOverride := s.cfg.ResolveModelForPhase("plan", model, d)
+	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhasePlan, model, d)
 
 	description := tk.Description
 	if feedback != "" {
@@ -286,7 +286,7 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if running, runErr := s.interactions.IsRunning(&resolved, "evaluate"); runErr != nil {
+	if running, runErr := s.interactions.IsRunning(&resolved, interaction.PhaseEvaluate); runErr != nil {
 		jsonError(w, runErr, http.StatusInternalServerError)
 		return
 	} else if running {
@@ -294,7 +294,7 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase("explore", req.Tool)
+	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseExplore, req.Tool)
 	if err != nil {
 		if strings.TrimSpace(req.Tool) != "" {
 			jsonError(w, err, http.StatusBadRequest)
@@ -304,7 +304,7 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	modelOverride := s.cfg.ResolveModelForPhase("explore", strings.TrimSpace(req.Model), d)
+	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhaseExplore, strings.TrimSpace(req.Model), d)
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]string{
 			"task_id": resolved,
@@ -343,18 +343,18 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 	}(resolved, tk.Title, tk.Description)
 }
 
-// POST /api/v1/tasks/{id}/decompose
-func (s *Server) handleDecomposeTask(w http.ResponseWriter, r *http.Request) {
+// POST /api/v1/tasks/{id}/breakdown
+func (s *Server) handleBreakdownTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
-	type decomposeReq struct {
+	type breakdownReq struct {
 		Tool  string `json:"tool"`
 		Model string `json:"model"`
 	}
-	req, ok := decodeJSON[decomposeReq](w, r, true)
+	req, ok := decodeJSON[breakdownReq](w, r, true)
 	if !ok {
 		return
 	}
@@ -371,19 +371,19 @@ func (s *Server) handleDecomposeTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tk.Status != "pending" {
-		jsonError(w, "task must be in pending status to decompose", http.StatusBadRequest)
+		jsonError(w, "task must be in pending status to breakdown", http.StatusBadRequest)
 		return
 	}
 
-	if running, runErr := s.interactions.IsRunning(&taskID, "decompose"); runErr != nil {
+	if running, runErr := s.interactions.IsRunning(&taskID, interaction.PhaseBreakdown); runErr != nil {
 		jsonError(w, runErr, http.StatusInternalServerError)
 		return
 	} else if running {
-		jsonError(w, "decompose already in progress", http.StatusConflict)
+		jsonError(w, "breakdown already in progress", http.StatusConflict)
 		return
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase("plan", req.Tool)
+	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhasePlan, req.Tool)
 	if err != nil {
 		if strings.TrimSpace(req.Tool) != "" {
 			jsonError(w, err, http.StatusBadRequest)
@@ -393,7 +393,7 @@ func (s *Server) handleDecomposeTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	modelOverride := s.cfg.ResolveModelForPhase("plan", strings.TrimSpace(req.Model), d)
+	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhasePlan, strings.TrimSpace(req.Model), d)
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]string{
 			"task_id": taskID,
@@ -402,27 +402,27 @@ func (s *Server) handleDecomposeTask(w http.ResponseWriter, r *http.Request) {
 	})
 
 	s.hub.Broadcast(Event{
-		Type: "decompose.started",
+		Type: "breakdown.started",
 		Data: map[string]string{
 			"task_id": taskID,
 		},
 	})
 
 	go func(taskID, title, description string) {
-		decomposer := decompose.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
-		proposed, interactionID, decomposeErr := decomposer.Run(&taskID, strings.TrimSpace(title+"\n\n"+description))
-		if decomposeErr != nil {
+		breaker := breakdown.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
+		proposed, interactionID, breakdownErr := breaker.Run(&taskID, strings.TrimSpace(title+"\n\n"+description))
+		if breakdownErr != nil {
 			s.hub.Broadcast(Event{
-				Type: "decompose.failed",
+				Type: "breakdown.failed",
 				Data: map[string]string{
 					"task_id": taskID,
-					"error":   decomposeErr.Error(),
+					"error":   breakdownErr.Error(),
 				},
 			})
 			return
 		}
 
-		resultBytes, _ := json.Marshal(decomposeOperationResult{
+		resultBytes, _ := json.Marshal(breakdownOperationResult{
 			TaskID:   taskID,
 			Proposed: proposed,
 		})
@@ -433,7 +433,7 @@ func (s *Server) handleDecomposeTask(w http.ResponseWriter, r *http.Request) {
 				interaction.WithQuality(string(resultBytes)),
 			); err != nil {
 				s.hub.Broadcast(Event{
-					Type: "decompose.failed",
+					Type: "breakdown.failed",
 					Data: map[string]string{
 						"task_id": taskID,
 						"error":   err.Error(),
@@ -451,14 +451,14 @@ func (s *Server) handleDecomposeTask(w http.ResponseWriter, r *http.Request) {
 			data["interaction_id"] = interactionID
 		}
 		s.hub.Broadcast(Event{
-			Type: "decompose.completed",
+			Type: "breakdown.completed",
 			Data: data,
 		})
 	}(taskID, tk.Title, tk.Description)
 }
 
-// POST /api/v1/tasks/{id}/decompose/accept
-func (s *Server) handleAcceptDecompose(w http.ResponseWriter, r *http.Request) {
+// POST /api/v1/tasks/{id}/breakdown/accept
+func (s *Server) handleAcceptBreakdown(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -466,7 +466,7 @@ func (s *Server) handleAcceptDecompose(w http.ResponseWriter, r *http.Request) {
 
 	type acceptReq struct {
 		InteractionID string                   `json:"interaction_id"`
-		Tasks         []decompose.ProposedTask `json:"tasks"`
+		Tasks         []breakdown.ProposedTask `json:"tasks"`
 	}
 	req, ok := decodeJSON[acceptReq](w, r, false)
 	if !ok {
@@ -483,7 +483,7 @@ func (s *Server) handleAcceptDecompose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tk.Status != "pending" {
-		jsonError(w, "task must be in pending status to accept decompose", http.StatusBadRequest)
+		jsonError(w, "task must be in pending status to accept breakdown", http.StatusBadRequest)
 		return
 	}
 
@@ -494,21 +494,21 @@ func (s *Server) handleAcceptDecompose(w http.ResponseWriter, r *http.Request) {
 	}
 	in, err := s.interactions.Get(interactionID)
 	if err != nil {
-		jsonError(w, "decompose interaction not found", http.StatusNotFound)
+		jsonError(w, "breakdown interaction not found", http.StatusNotFound)
 		return
 	}
-	if in.TaskID == nil || *in.TaskID != taskID || in.Phase != "decompose" || in.Status != "completed" {
-		jsonError(w, "interaction_id must reference a completed decompose interaction for this task", http.StatusBadRequest)
+	if in.TaskID == nil || *in.TaskID != taskID || in.Phase != interaction.PhaseBreakdown || in.Status != "completed" {
+		jsonError(w, "interaction_id must reference a completed breakdown interaction for this task", http.StatusBadRequest)
 		return
 	}
 
-	result, err := parseDecomposeOperationResult(in.QualityJSON)
+	result, err := parseBreakdownOperationResult(in.QualityJSON)
 	if err != nil {
-		jsonError(w, "invalid decompose interaction result", http.StatusInternalServerError)
+		jsonError(w, "invalid breakdown interaction result", http.StatusInternalServerError)
 		return
 	}
 	if result.Accepted || result.Rejected {
-		jsonError(w, "decompose interaction already finalized", http.StatusBadRequest)
+		jsonError(w, "breakdown interaction already finalized", http.StatusBadRequest)
 		return
 	}
 
@@ -526,7 +526,7 @@ func (s *Server) handleAcceptDecompose(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "decomposed"}); err != nil {
+	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "broken_down"}); err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
@@ -563,8 +563,8 @@ func (s *Server) handleAcceptDecompose(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/v1/tasks/{id}/decompose/reject
-func (s *Server) handleRejectDecompose(w http.ResponseWriter, r *http.Request) {
+// POST /api/v1/tasks/{id}/breakdown/reject
+func (s *Server) handleRejectBreakdown(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -589,21 +589,21 @@ func (s *Server) handleRejectDecompose(w http.ResponseWriter, r *http.Request) {
 	}
 	in, err := s.interactions.Get(interactionID)
 	if err != nil {
-		jsonError(w, "decompose interaction not found", http.StatusNotFound)
+		jsonError(w, "breakdown interaction not found", http.StatusNotFound)
 		return
 	}
-	if in.TaskID == nil || *in.TaskID != taskID || in.Phase != "decompose" || in.Status != "completed" {
-		jsonError(w, "interaction_id must reference a completed decompose interaction for this task", http.StatusBadRequest)
+	if in.TaskID == nil || *in.TaskID != taskID || in.Phase != interaction.PhaseBreakdown || in.Status != "completed" {
+		jsonError(w, "interaction_id must reference a completed breakdown interaction for this task", http.StatusBadRequest)
 		return
 	}
 
-	result, err := parseDecomposeOperationResult(in.QualityJSON)
+	result, err := parseBreakdownOperationResult(in.QualityJSON)
 	if err != nil {
-		jsonError(w, "invalid decompose interaction result", http.StatusInternalServerError)
+		jsonError(w, "invalid breakdown interaction result", http.StatusInternalServerError)
 		return
 	}
 	if result.Accepted || result.Rejected {
-		jsonError(w, "decompose interaction already finalized", http.StatusBadRequest)
+		jsonError(w, "breakdown interaction already finalized", http.StatusBadRequest)
 		return
 	}
 
@@ -619,7 +619,7 @@ func (s *Server) handleRejectDecompose(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.hub.Broadcast(Event{
-		Type: "decompose.rejected",
+		Type: "breakdown.rejected",
 		Data: map[string]interface{}{
 			"task_id":        taskID,
 			"interaction_id": interactionID,

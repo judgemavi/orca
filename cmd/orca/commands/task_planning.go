@@ -43,11 +43,11 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	toolOverride, _ := cmd.Flags().GetString("tool")
 	modelOverride, _ := cmd.Flags().GetString("model")
 
-	toolName, d, err := cfg.ResolveToolForPhase("plan", toolOverride)
+	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolOverride)
 	if err != nil {
 		return err
 	}
-	modelName := cfg.ResolveModelForPhase("plan", modelOverride, d)
+	modelName := cfg.ResolveModelForPhase(interaction.PhasePlan, modelOverride, d)
 
 	repoDir, err := os.Getwd()
 	if err != nil {
@@ -151,11 +151,11 @@ func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
 	modelOverride, _ := cmd.Flags().GetString("model")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
-	toolName, d, err := cfg.ResolveToolForPhase("explore", toolOverride)
+	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseExplore, toolOverride)
 	if err != nil {
 		return err
 	}
-	modelName := cfg.ResolveModelForPhase("explore", modelOverride, d)
+	modelName := cfg.ResolveModelForPhase(interaction.PhaseExplore, modelOverride, d)
 
 	repoDir, err := os.Getwd()
 	if err != nil {
@@ -295,7 +295,7 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 		return err
 	}
 
-	running, err := interactions.IsRunning(&taskID, "plan")
+	running, err := interactions.IsRunning(&taskID, interaction.PhasePlan)
 	if err != nil {
 		return fmt.Errorf("check running plan generation: %w", err)
 	}
@@ -305,11 +305,11 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 
 	toolOverride, _ := cmd.Flags().GetString("tool")
 	modelOverride, _ := cmd.Flags().GetString("model")
-	toolName, d, err := cfg.ResolveToolForPhase("plan", toolOverride)
+	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolOverride)
 	if err != nil {
 		return err
 	}
-	modelName := cfg.ResolveModelForPhase("plan", modelOverride, d)
+	modelName := cfg.ResolveModelForPhase(interaction.PhasePlan, modelOverride, d)
 
 	reviewID, err := store.AddReview(taskID, feedback, latestPlanInteractionID)
 	if err != nil {
@@ -350,7 +350,7 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 }
 
 func latestCompletedPlanInteractionID(interactions *interaction.Store, taskID string) (string, error) {
-	items, err := interactions.ListByPhase(taskID, "plan")
+	items, err := interactions.ListByPhase(taskID, interaction.PhasePlan)
 	if err != nil {
 		return "", fmt.Errorf("list plan interactions for task %s: %w", short(taskID), err)
 	}

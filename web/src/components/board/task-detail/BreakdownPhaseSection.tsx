@@ -1,13 +1,14 @@
 import { Button } from '../../Button'
 import type { Interaction, ProposedTask } from '../../../types'
+import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
 
-type ParsedDecompose = {
+type ParsedBreakdown = {
   accepted: boolean
   rejected: boolean
   proposed: ProposedTask[]
 }
 
-function parseDecomposeResult(qualityJSON: string | undefined): ParsedDecompose {
+function parseBreakdownResult(qualityJSON: string | undefined): ParsedBreakdown {
   if (!qualityJSON) {
     return { accepted: false, rejected: false, proposed: [] }
   }
@@ -39,7 +40,7 @@ type Props = {
   rejecting?: boolean
 }
 
-export function DecomposePhaseSection({
+export function BreakdownPhaseSection({
   interaction,
   proposals,
   onAccept,
@@ -47,11 +48,11 @@ export function DecomposePhaseSection({
   accepting = false,
   rejecting = false,
 }: Props) {
-  if (interaction.phase !== 'decompose') return null
-  if (interaction.status === 'running') {
+  if (interaction.phase !== PHASES.breakdown) return null
+  if (interaction.status === INTERACTION_STATUSES.running) {
     return <div className="text-xs text-muted">Generating task breakdown…</div>
   }
-  if (interaction.status === 'failed') {
+  if (interaction.status === INTERACTION_STATUSES.failed) {
     return (
       <div className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger">
         {interaction.error || 'Breakdown failed'}
@@ -59,7 +60,7 @@ export function DecomposePhaseSection({
     )
   }
 
-  const result = parseDecomposeResult(interaction.quality_json)
+  const result = parseBreakdownResult(interaction.quality_json)
 
   const showProposals =
     proposals &&

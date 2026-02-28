@@ -1,5 +1,5 @@
 import type { Interaction, Task } from '../../../types'
-import { isRunLike } from '../../../lib/phases'
+import { INTERACTION_STATUSES, isRunLike } from '../../../lib/phases'
 import { DiffViewer } from '../../blocks/DiffViewer'
 
 type Props = {
@@ -10,7 +10,7 @@ type Props = {
 export function RunPhaseSection({ interaction, task }: Props) {
   if (
     !isRunLike(interaction.phase) ||
-    interaction.status !== 'completed' ||
+    interaction.status !== INTERACTION_STATUSES.completed ||
     !interaction.diff
   ) {
     return null

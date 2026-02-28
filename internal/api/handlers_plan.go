@@ -8,43 +8,43 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 )
 
-// ========== Plan (Decompose) ==========
+// ========== Plan (Breakdown) ==========
 
-type decomposeOperationResult struct {
+type breakdownOperationResult struct {
 	TaskID         string                   `json:"task_id,omitempty"`
 	Goal           string                   `json:"goal,omitempty"`
 	SessionID      string                   `json:"session_id,omitempty"`
-	Proposed       []decompose.ProposedTask `json:"proposed,omitempty"`
+	Proposed       []breakdown.ProposedTask `json:"proposed,omitempty"`
 	Accepted       bool                     `json:"accepted,omitempty"`
 	Rejected       bool                     `json:"rejected,omitempty"`
 	CreatedTaskIDs []string                 `json:"created_task_ids,omitempty"`
 }
 
-func parseDecomposeOperationResult(raw string) (decomposeOperationResult, error) {
+func parseBreakdownOperationResult(raw string) (breakdownOperationResult, error) {
 	if strings.TrimSpace(raw) == "" {
-		return decomposeOperationResult{}, nil
+		return breakdownOperationResult{}, nil
 	}
-	var out decomposeOperationResult
+	var out breakdownOperationResult
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
-		return decomposeOperationResult{}, err
+		return breakdownOperationResult{}, err
 	}
 	return out, nil
 }
 
-func (s *Server) findPendingDecomposeOperation(sessionID string) (*string, decomposeOperationResult, error) {
+func (s *Server) findPendingBreakdownOperation(sessionID string) (*string, breakdownOperationResult, error) {
 	rows, err := s.db.Query(
 		`SELECT id, quality_json
 		 FROM task_interactions
-		 WHERE phase = 'decompose' AND status = 'completed' AND run_id = ?
+		 WHERE phase = 'breakdown' AND status = 'completed' AND run_id = ?
 		 ORDER BY started_at DESC`,
 		sessionID,
 	)
 	if err != nil {
-		return nil, decomposeOperationResult{}, fmt.Errorf("list decompose interactions: %w", err)
+		return nil, breakdownOperationResult{}, fmt.Errorf("list breakdown interactions: %w", err)
 	}
 	defer rows.Close()
 
@@ -54,9 +54,9 @@ func (s *Server) findPendingDecomposeOperation(sessionID string) (*string, decom
 			quality sql.NullString
 		)
 		if err := rows.Scan(&id, &quality); err != nil {
-			return nil, decomposeOperationResult{}, fmt.Errorf("scan decompose interaction: %w", err)
+			return nil, breakdownOperationResult{}, fmt.Errorf("scan breakdown interaction: %w", err)
 		}
-		result, err := parseDecomposeOperationResult(quality.String)
+		result, err := parseBreakdownOperationResult(quality.String)
 		if err != nil {
 			continue
 		}
@@ -66,12 +66,12 @@ func (s *Server) findPendingDecomposeOperation(sessionID string) (*string, decom
 		return &id, result, nil
 	}
 	if err := rows.Err(); err != nil {
-		return nil, decomposeOperationResult{}, fmt.Errorf("read decompose interactions: %w", err)
+		return nil, breakdownOperationResult{}, fmt.Errorf("read breakdown interactions: %w", err)
 	}
-	return nil, decomposeOperationResult{}, sql.ErrNoRows
+	return nil, breakdownOperationResult{}, sql.ErrNoRows
 }
 
-func (s *Server) resolveDecomposeOp(w http.ResponseWriter, opID, sessionID string) (string, decomposeOperationResult, bool) {
+func (s *Server) resolveBreakdownOp(w http.ResponseWriter, opID, sessionID string) (string, breakdownOperationResult, bool) {
 	trimmedOpID := strings.TrimSpace(opID)
 	trimmedSessionID := strings.TrimSpace(sessionID)
 	if trimmedSessionID == "" {
@@ -79,48 +79,48 @@ func (s *Server) resolveDecomposeOp(w http.ResponseWriter, opID, sessionID strin
 	}
 
 	if trimmedOpID == "" {
-		resolvedID, result, err := s.findPendingDecomposeOperation(trimmedSessionID)
+		resolvedID, result, err := s.findPendingBreakdownOperation(trimmedSessionID)
 		if err == sql.ErrNoRows {
 			jsonError(w, "no pending plan for session", http.StatusNotFound)
-			return "", decomposeOperationResult{}, false
+			return "", breakdownOperationResult{}, false
 		}
 		if err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
-			return "", decomposeOperationResult{}, false
+			return "", breakdownOperationResult{}, false
 		}
 		return *resolvedID, result, true
 	}
 
 	op, err := s.interactions.Get(trimmedOpID)
 	if err != nil {
-		jsonError(w, "decompose operation not found", http.StatusNotFound)
-		return "", decomposeOperationResult{}, false
+		jsonError(w, "breakdown operation not found", http.StatusNotFound)
+		return "", breakdownOperationResult{}, false
 	}
-	if op.Phase != "decompose" {
-		jsonError(w, "operation is not decompose", http.StatusBadRequest)
-		return "", decomposeOperationResult{}, false
+	if op.Phase != "breakdown" {
+		jsonError(w, "operation is not breakdown", http.StatusBadRequest)
+		return "", breakdownOperationResult{}, false
 	}
 	if op.RunID != nil && *op.RunID != trimmedSessionID {
 		jsonError(w, "operation session mismatch", http.StatusBadRequest)
-		return "", decomposeOperationResult{}, false
+		return "", breakdownOperationResult{}, false
 	}
 	if op.Status == "running" {
-		jsonError(w, "decompose still running", http.StatusConflict)
-		return "", decomposeOperationResult{}, false
+		jsonError(w, "breakdown still running", http.StatusConflict)
+		return "", breakdownOperationResult{}, false
 	}
 	if op.Status == "failed" {
-		jsonError(w, "decompose operation failed", http.StatusBadRequest)
-		return "", decomposeOperationResult{}, false
+		jsonError(w, "breakdown operation failed", http.StatusBadRequest)
+		return "", breakdownOperationResult{}, false
 	}
 
-	result, err := parseDecomposeOperationResult(op.QualityJSON)
+	result, err := parseBreakdownOperationResult(op.QualityJSON)
 	if err != nil {
-		jsonError(w, "invalid decompose operation result", http.StatusInternalServerError)
-		return "", decomposeOperationResult{}, false
+		jsonError(w, "invalid breakdown operation result", http.StatusInternalServerError)
+		return "", breakdownOperationResult{}, false
 	}
 	if result.Accepted || result.Rejected || len(result.Proposed) == 0 {
 		jsonError(w, "no pending proposals for operation", http.StatusBadRequest)
-		return "", decomposeOperationResult{}, false
+		return "", breakdownOperationResult{}, false
 	}
 	return op.ID, result, true
 }
@@ -160,23 +160,23 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 
 	s.runAsyncHandler(
 		w,
-		"decompose",
-		map[string]string{"status": "decomposing"},
+		"breakdown",
+		map[string]string{"status": "breaking_down"},
 		func() {
-			s.hub.Broadcast(Event{Type: "decompose.started", Data: map[string]string{"session_id": sessionID}})
+			s.hub.Broadcast(Event{Type: "breakdown.started", Data: map[string]string{"session_id": sessionID}})
 			model := s.cfg.ResolveModelForPhase("plan", "", d)
-			decomposer := decompose.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions)
-			tasks, interactionID, err := decomposer.Run(nil, req.Goal)
+			breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions)
+			tasks, interactionID, err := breaker.Run(nil, req.Goal)
 			if err != nil {
 				data := map[string]string{"error": err.Error(), "session_id": sessionID}
 				if interactionID != "" {
 					data["operation_id"] = interactionID
 				}
-				s.hub.Broadcast(Event{Type: "decompose.failed", Data: data})
+				s.hub.Broadcast(Event{Type: "breakdown.failed", Data: data})
 				return
 			}
 
-			resultBytes, _ := json.Marshal(decomposeOperationResult{
+			resultBytes, _ := json.Marshal(breakdownOperationResult{
 				Goal:      req.Goal,
 				SessionID: sessionID,
 				Proposed:  tasks,
@@ -193,7 +193,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 			if interactionID != "" {
 				data["operation_id"] = interactionID
 			}
-			s.hub.Broadcast(Event{Type: "decompose.completed", Data: data})
+			s.hub.Broadcast(Event{Type: "breakdown.completed", Data: data})
 		},
 	)
 }
@@ -206,14 +206,14 @@ func (s *Server) handlePlanAccept(w http.ResponseWriter, r *http.Request) {
 	type acceptReq struct {
 		OperationID string                   `json:"operation_id"`
 		SessionID   string                   `json:"session_id"`
-		Tasks       []decompose.ProposedTask `json:"tasks"`
+		Tasks       []breakdown.ProposedTask `json:"tasks"`
 	}
 	req, ok := decodeJSON[acceptReq](w, r, false)
 	if !ok {
 		return
 	}
 
-	opID, result, ok := s.resolveDecomposeOp(w, req.OperationID, req.SessionID)
+	opID, result, ok := s.resolveBreakdownOp(w, req.OperationID, req.SessionID)
 	if !ok {
 		return
 	}
@@ -265,7 +265,7 @@ func (s *Server) handlePlanReject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if opID == "" {
-		resolvedID, _, err := s.findPendingDecomposeOperation(sessionID)
+		resolvedID, _, err := s.findPendingBreakdownOperation(sessionID)
 		if err == sql.ErrNoRows {
 			jsonOK(w, map[string]interface{}{"rejected": false})
 			return
@@ -277,12 +277,12 @@ func (s *Server) handlePlanReject(w http.ResponseWriter, r *http.Request) {
 		opID = *resolvedID
 	}
 
-	if op, err := s.interactions.Get(opID); err == nil && op.Phase == "decompose" && op.Status == "failed" {
+	if op, err := s.interactions.Get(opID); err == nil && op.Phase == "breakdown" && op.Status == "failed" {
 		jsonOK(w, map[string]interface{}{"rejected": false, "operation_id": opID})
 		return
 	}
 
-	resolvedID, result, ok := s.resolveDecomposeOp(w, opID, sessionID)
+	resolvedID, result, ok := s.resolveBreakdownOp(w, opID, sessionID)
 	if !ok {
 		return
 	}
@@ -299,11 +299,11 @@ func (s *Server) handlePlanReject(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]interface{}{"rejected": true, "operation_id": resolvedID})
 }
 
-func (s *Server) createTasksFromProposed(tasks []decompose.ProposedTask) ([]string, error) {
+func (s *Server) createTasksFromProposed(tasks []breakdown.ProposedTask) ([]string, error) {
 	return s.createTasksFromProposedWithParent(tasks, "")
 }
 
-func (s *Server) createTasksFromProposedWithParent(tasks []decompose.ProposedTask, parentID string) ([]string, error) {
+func (s *Server) createTasksFromProposedWithParent(tasks []breakdown.ProposedTask, parentID string) ([]string, error) {
 	store := s.taskStore
 	createdIDs := make([]string, len(tasks))
 	for i, t := range tasks {

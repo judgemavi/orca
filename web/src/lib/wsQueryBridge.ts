@@ -17,7 +17,7 @@ const INVALIDATE_EXACT: Record<string, readonly QueryKey[]> = {
   'merge.failed': [queryKeys.operations(), queryKeys.status],
 }
 
-const SIGNAL_PREFIXES = ['run.', 'decompose.', 'cleanup.', 'explore.']
+const SIGNAL_PREFIXES = ['run.', 'breakdown.', 'cleanup.', 'explore.']
 
 function getTaskID(data: Record<string, unknown>): string | undefined {
   const taskID = data.task_id
@@ -113,8 +113,8 @@ function handleKnownEvent(qc: QueryClient, event: KnownWSEvent): boolean {
       }
       return true
 
-    case 'ai-review.failed':
-    case 'ai-review.completed':
+    case 'ai_review.failed':
+    case 'ai_review.completed':
       void qc.invalidateQueries({
         queryKey: queryKeys.taskReviews(event.data.task_id),
       })
@@ -139,7 +139,7 @@ export function handleWSEvent(qc: QueryClient, event: WSEvent) {
   }
 
   const data = event.data
-  if (event.type.startsWith('ai-review.')) {
+  if (event.type.startsWith('ai_review.')) {
     const tid = getTaskIDFromUnknown(data)
     if (tid) void qc.invalidateQueries({ queryKey: queryKeys.taskReviews(tid) })
     return

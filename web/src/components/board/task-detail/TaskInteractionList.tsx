@@ -6,6 +6,7 @@ import { TaskInteractionItems } from './TaskInteractionItems'
 import { useInteractionsQuery } from './useInteractions'
 import { useMergeHandler } from './useMergeHandler'
 import { usePlanEditor } from './usePlanEditor'
+import { INTERACTION_STATUSES } from '../../../lib/phases'
 
 interface Props {
   taskId: string
@@ -38,8 +39,9 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
   })
 
   const latestCompletedId =
-    [...interactions].reverse().find((item) => item.status === 'completed')
-      ?.id ?? null
+    [...interactions]
+      .reverse()
+      .find((item) => item.status === INTERACTION_STATUSES.completed)?.id ?? null
 
   useEffect(() => {
     setExpandedInteractions(

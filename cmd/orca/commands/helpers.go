@@ -12,7 +12,7 @@ func statusIcon(status string) string {
 	switch status {
 	case "approved":
 		return "✓"
-	case "decomposed":
+	case "broken_down":
 		return "◈"
 	case "running":
 		return "●"

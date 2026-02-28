@@ -204,21 +204,21 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "breakdown",
-			Description: "Break down a goal into tasks using an LLM, or decompose an existing task into child subtasks. Returns proposed tasks for review.",
+			Description: "Break down a goal into tasks using an LLM, or break down an existing task into child subtasks. Returns proposed tasks for review.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"goal": map[string]interface{}{
 						"type":        "string",
-						"description": "The goal to decompose into tasks",
+						"description": "The goal to breakdown into tasks",
 					},
 					"task_id": map[string]interface{}{
 						"type":        "string",
-						"description": "Optional task ID to decompose. Uses task title+description as goal. Created subtasks will be children of this task.",
+						"description": "Optional task ID to breakdown. Uses task title+description as goal. Created subtasks will be children of this task.",
 					},
 					"tool": map[string]interface{}{
 						"type":        "string",
-						"description": "Tool to use for decomposition (optional, uses first available)",
+						"description": "Tool to use for breakdown (optional, uses first available)",
 					},
 					"auto_create": map[string]interface{}{
 						"type":        "boolean",

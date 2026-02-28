@@ -1,6 +1,6 @@
-import { DecomposePhaseSection } from './DecomposePhaseSection'
+import { BreakdownPhaseSection } from './BreakdownPhaseSection'
 import { useCallback, useMemo } from 'react'
-import { isRunLike } from '../../../lib/phases'
+import { INTERACTION_STATUSES, PHASES, isRunLike } from '../../../lib/phases'
 import type { Interaction, Task, TaskReview } from '../../../types'
 import { EvaluatePhaseSection } from './EvaluatePhaseSection'
 import { InteractionEntry } from './InteractionEntry'
@@ -41,11 +41,11 @@ export function TaskInteractionItems({
     [interactions],
   )
   const reviewInteractions = useMemo(
-    () => interactions.filter((item) => item.phase === 'review'),
+    () => interactions.filter((item) => item.phase === PHASES.review),
     [interactions],
   )
   const mergeInteractions = useMemo(
-    () => interactions.filter((item) => item.phase === 'merge'),
+    () => interactions.filter((item) => item.phase === PHASES.merge),
     [interactions],
   )
 
@@ -53,7 +53,7 @@ export function TaskInteractionItems({
     () =>
       new Set(
         interactions
-          .filter((item) => item.phase === 'plan')
+          .filter((item) => item.phase === PHASES.plan)
           .map((item) => item.id),
       ),
     [interactions],
@@ -83,14 +83,17 @@ export function TaskInteractionItems({
   )
 
   const latestFailedMergeId =
-    [...mergeInteractions].reverse().find((item) => item.status === 'failed')
-      ?.id ?? null
+    [...mergeInteractions]
+      .reverse()
+      .find((item) => item.status === INTERACTION_STATUSES.failed)?.id ?? null
   const latestRunningMergeId =
-    [...mergeInteractions].reverse().find((item) => item.status === 'running')
-      ?.id ?? null
+    [...mergeInteractions]
+      .reverse()
+      .find((item) => item.status === INTERACTION_STATUSES.running)?.id ?? null
   const latestCompletedRunStartedAt =
-    runInteractions.find((item) => item.status === 'completed')?.started_at ??
-    null
+    runInteractions.find(
+      (item) => item.status === INTERACTION_STATUSES.completed,
+    )?.started_at ?? null
   const latestCompletedRunStartedAtMS = latestCompletedRunStartedAt
     ? Date.parse(latestCompletedRunStartedAt)
     : NaN
@@ -122,7 +125,7 @@ export function TaskInteractionItems({
     <div className="flex flex-col gap-2">
       {interactions.map((item) => {
         if (
-          item.phase === 'review' &&
+          item.phase === PHASES.review &&
           hasReviewCutoff &&
           Date.parse(item.started_at) <= latestCompletedRunStartedAtMS
         ) {
@@ -136,16 +139,17 @@ export function TaskInteractionItems({
             collapsible
             showDiffSummary={isRunLike(item.phase)}
             expanded={
-              item.status === 'running' || expandedInteractions.has(item.id)
+              item.status === INTERACTION_STATUSES.running ||
+              expandedInteractions.has(item.id)
             }
-            alwaysExpanded={item.status === 'running'}
+            alwaysExpanded={item.status === INTERACTION_STATUSES.running}
             onExpandedChange={() => onToggleInteraction(item.id)}
           >
             <PlanPhaseSection
               interaction={item}
               isEditableLatestPlan={
-                item.phase === 'plan' &&
-                item.status === 'completed' &&
+                item.phase === PHASES.plan &&
+                item.status === INTERACTION_STATUSES.completed &&
                 item.id === planEditor.latestCompletedPlanId &&
                 planEditor.planEditable
               }
@@ -155,13 +159,13 @@ export function TaskInteractionItems({
               )}
             />
             <EvaluatePhaseSection interaction={item} />
-            <DecomposePhaseSection
+            <BreakdownPhaseSection
               interaction={item}
-              proposals={actions.latestDecomposeProposals}
-              onAccept={actions.handleAcceptDecompose}
-              onReject={actions.handleRejectDecompose}
-              accepting={actions.acceptDecomposePending}
-              rejecting={actions.rejectDecomposePending}
+              proposals={actions.latestBreakdownProposals}
+              onAccept={actions.handleAcceptBreakdown}
+              onReject={actions.handleRejectBreakdown}
+              accepting={actions.acceptBreakdownPending}
+              rejecting={actions.rejectBreakdownPending}
             />
             <RunPhaseSection interaction={item} task={task} />
             <ReviewPhaseSection

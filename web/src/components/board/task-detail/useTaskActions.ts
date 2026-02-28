@@ -5,6 +5,11 @@ import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { useTaskPlanQuery } from '../../../hooks/queries'
 import { useToolModelSelection } from '../../../hooks/useToolModelSelection'
 import { useWebSocket } from '../../../hooks/useWebSocket'
+import {
+  INTERACTION_STATUSES,
+  PHASES,
+  TASK_STATUSES,
+} from '../../../lib/phases'
 import { queryKeys } from '../../../lib/queryKeys'
 import { getErrorMessage } from '../../../lib/utils'
 import {
@@ -69,15 +74,9 @@ function parseAIReviewResult(qualityJSON?: string): AIReviewResult | null {
 function parseEvaluationNeedsBreakdown(qualityJSON?: string): boolean | null {
   if (!qualityJSON) return null
   try {
-    const parsed = JSON.parse(qualityJSON) as {
-      needs_breakdown?: unknown
-      should_decompose?: unknown
-    }
+    const parsed = JSON.parse(qualityJSON) as { needs_breakdown?: unknown }
     if (typeof parsed.needs_breakdown === 'boolean') {
       return parsed.needs_breakdown
-    }
-    if (typeof parsed.should_decompose === 'boolean') {
-      return parsed.should_decompose
     }
     return null
   } catch {
@@ -90,22 +89,22 @@ export function useTaskActions(task: Task) {
   const { tools, isOperationRunning } = useTaskDetailContext()
   const taskPlanQuery = useTaskPlanQuery(task.id)
   const planInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase('plan'),
+    select: selectByPhase(PHASES.plan),
   })
   const runInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByRunLike,
   })
   const evaluateInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase('evaluate'),
+    select: selectByPhase(PHASES.evaluate),
   })
   const reviewInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase('review'),
+    select: selectByPhase(PHASES.review),
   })
-  const decomposeInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase('decompose'),
+  const breakdownInteractionsQuery = useInteractionsQuery(task.id, {
+    select: selectByPhase(PHASES.breakdown),
   })
   const mergeInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase('merge'),
+    select: selectByPhase(PHASES.merge),
   })
 
   const startTaskMutation = useMutation({
@@ -176,20 +175,20 @@ export function useTaskActions(task: Task) {
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
       api.evaluateTask(args.taskId, args.tool, args.model),
   })
-  const decomposeTaskMutation = useMutation({
+  const breakdownTaskMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
-      api.decomposeTask(args.taskId, args.tool, args.model),
+      api.breakdownTask(args.taskId, args.tool, args.model),
   })
-  const acceptDecomposeMutation = useMutation({
+  const acceptBreakdownMutation = useMutation({
     mutationFn: (args: {
       taskId: string
       interactionId: string
       tasks?: ProposedTask[]
-    }) => api.acceptDecompose(args.taskId, args.interactionId, args.tasks),
+    }) => api.acceptBreakdown(args.taskId, args.interactionId, args.tasks),
   })
-  const rejectDecomposeMutation = useMutation({
+  const rejectBreakdownMutation = useMutation({
     mutationFn: (args: { taskId: string; interactionId: string }) =>
-      api.rejectDecompose(args.taskId, args.interactionId),
+      api.rejectBreakdown(args.taskId, args.interactionId),
   })
 
   const [requestChangesExpanded, setRequestChangesExpanded] = useState(false)
@@ -202,7 +201,7 @@ export function useTaskActions(task: Task) {
   const [aiFeedbackAppliedNotice, setAIFeedbackAppliedNotice] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [evaluateStarted, setEvaluateStarted] = useState(false)
-  const [decomposeStarted, setDecomposeStarted] = useState(false)
+  const [breakdownStarted, setBreakdownStarted] = useState(false)
   const [currentDescriptionHash, setCurrentDescriptionHash] = useState('')
   const lastProcessedReviewInteractionIdRef = useRef<string | null>(null)
   const latestTaskStatusRef = useRef(task.status)
@@ -220,7 +219,7 @@ export function useTaskActions(task: Task) {
   const runInteractions = runInteractionsQuery.data ?? []
   const evaluateInteractions = evaluateInteractionsQuery.data ?? []
   const reviewInteractions = reviewInteractionsQuery.data ?? []
-  const decomposeInteractions = decomposeInteractionsQuery.data ?? []
+  const breakdownInteractions = breakdownInteractionsQuery.data ?? []
   const mergeInteractions = mergeInteractionsQuery.data ?? []
 
   const planLoading = taskPlanQuery.isLoading
@@ -233,10 +232,14 @@ export function useTaskActions(task: Task) {
     taskPlanQuery.data.trim().length > 0
   const evaluating =
     evaluateStarted ||
-    evaluateInteractions.some((item) => item.status === 'running')
-  const decomposing =
-    decomposeStarted ||
-    decomposeInteractions.some((item) => item.status === 'running')
+    evaluateInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    )
+  const breakingDown =
+    breakdownStarted ||
+    breakdownInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    )
 
   useEffect(() => {
     let cancelled = false
@@ -260,7 +263,7 @@ export function useTaskActions(task: Task) {
     () =>
       [...evaluateInteractions]
         .reverse()
-        .find((item) => item.status === 'completed'),
+        .find((item) => item.status === INTERACTION_STATUSES.completed),
     [evaluateInteractions],
   )
   const latestEvaluationDescriptionHash = useMemo(
@@ -271,7 +274,7 @@ export function useTaskActions(task: Task) {
     () => parseEvaluationNeedsBreakdown(latestCompletedEvaluate?.quality_json),
     [latestCompletedEvaluate?.quality_json],
   )
-  const hideDecomposeAction = latestEvaluateNeedsBreakdown !== true
+  const hideBreakdownAction = latestEvaluateNeedsBreakdown !== true
   const descriptionUnchangedSinceLastEvaluation =
     Boolean(latestEvaluationDescriptionHash) &&
     Boolean(currentDescriptionHash) &&
@@ -282,13 +285,14 @@ export function useTaskActions(task: Task) {
 
   const latestCompletedRunId = useMemo(
     () =>
-      [...runInteractions].reverse().find((item) => item.status === 'completed')
-        ?.id,
+      [...runInteractions]
+        .reverse()
+        .find((item) => item.status === INTERACTION_STATUSES.completed)?.id,
     [runInteractions],
   )
   const latestCompletedRunStartedAtMS = useMemo(() => {
     const latestCompletedRun = runInteractions.find(
-      (item) => item.status === 'completed',
+      (item) => item.status === INTERACTION_STATUSES.completed,
     )
     if (!latestCompletedRun) return NaN
     return Date.parse(latestCompletedRun.started_at)
@@ -297,13 +301,13 @@ export function useTaskActions(task: Task) {
     () =>
       [...planInteractions]
         .reverse()
-        .find((item) => item.status === 'completed')?.id,
+        .find((item) => item.status === INTERACTION_STATUSES.completed)?.id,
     [planInteractions],
   )
-  const latestDecomposeProposals = useMemo(() => {
-    const latest = [...decomposeInteractions]
+  const latestBreakdownProposals = useMemo(() => {
+    const latest = [...breakdownInteractions]
       .reverse()
-      .find((item) => item.status === 'completed')
+      .find((item) => item.status === INTERACTION_STATUSES.completed)
     if (!latest?.quality_json) return null
     try {
       const parsed = JSON.parse(latest.quality_json) as {
@@ -326,37 +330,40 @@ export function useTaskActions(task: Task) {
     } catch {
       return null
     }
-  }, [decomposeInteractions])
+  }, [breakdownInteractions])
 
   const runningInProgress =
-    task.status === 'running' || isOperationRunning('run', task.id)
+    task.status === TASK_STATUSES.running ||
+    isOperationRunning(PHASES.run, task.id)
   const runningBusy = runningInProgress || startTaskMutation.isPending
   const pendingPhaseInProgress =
-    planInteractions.some((item) => item.status === 'running') ||
-    evaluateInteractions.some((item) => item.status === 'running') ||
-    decomposeInteractions.some((item) => item.status === 'running') ||
+    planInteractions.some((item) => item.status === INTERACTION_STATUSES.running) ||
+    evaluateInteractions.some((item) => item.status === INTERACTION_STATUSES.running) ||
+    breakdownInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    ) ||
     planGenerating ||
     generateTaskPlanMutation.isPending ||
-    isOperationRunning('evaluate', task.id) ||
+    isOperationRunning(PHASES.evaluate, task.id) ||
     evaluateTaskMutation.isPending ||
-    isOperationRunning('decompose', task.id) ||
-    decomposing ||
-    decomposeTaskMutation.isPending
+    isOperationRunning(PHASES.breakdown, task.id) ||
+    breakingDown ||
+    breakdownTaskMutation.isPending
   const reviewPhaseInProgress =
-    reviewInteractions.some((item) => item.status === 'running') ||
-    isOperationRunning('review', task.id) ||
+    reviewInteractions.some((item) => item.status === INTERACTION_STATUSES.running) ||
+    isOperationRunning(PHASES.review, task.id) ||
     aiReviewMutation.isPending
   const approvedPhaseInProgress =
-    mergeInteractions.some((item) => item.status === 'running') ||
-    isOperationRunning('merge', task.id) ||
+    mergeInteractions.some((item) => item.status === INTERACTION_STATUSES.running) ||
+    isOperationRunning(PHASES.merge, task.id) ||
     mergeTaskMutation.isPending
 
   const phaseInProgress =
-    task.status === 'pending'
+    task.status === TASK_STATUSES.pending
       ? pendingPhaseInProgress
-      : task.status === 'review'
+      : task.status === TASK_STATUSES.review
         ? reviewPhaseInProgress
-        : task.status === 'approved'
+        : task.status === TASK_STATUSES.approved
           ? approvedPhaseInProgress
           : false
 
@@ -370,7 +377,7 @@ export function useTaskActions(task: Task) {
     setAIFeedbackAppliedNotice(false)
     setActionError(null)
     setEvaluateStarted(false)
-    setDecomposeStarted(false)
+    setBreakdownStarted(false)
   }, [task.id, task.status])
 
   useEffect(() => {
@@ -409,8 +416,8 @@ export function useTaskActions(task: Task) {
           : null
       if (
         evt.data.id === task.id &&
-        latestTaskStatusRef.current === 'review' &&
-        nextStatus === 'running'
+        latestTaskStatusRef.current === TASK_STATUSES.review &&
+        nextStatus === TASK_STATUSES.running
       ) {
         resetReviewUIState()
       }
@@ -440,12 +447,12 @@ export function useTaskActions(task: Task) {
       })
       return
     }
-    if (evt.type === 'decompose.started' && evt.data.task_id === task.id) {
-      setDecomposeStarted(true)
+    if (evt.type === 'breakdown.started' && evt.data.task_id === task.id) {
+      setBreakdownStarted(true)
       return
     }
-    if (evt.type === 'decompose.completed' && evt.data.task_id === task.id) {
-      setDecomposeStarted(false)
+    if (evt.type === 'breakdown.completed' && evt.data.task_id === task.id) {
+      setBreakdownStarted(false)
       setActionError(null)
       void queryClient.invalidateQueries({
         queryKey: queryKeys.taskInteractions(task.id),
@@ -456,25 +463,29 @@ export function useTaskActions(task: Task) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.tasks })
       return
     }
-    if (evt.type === 'decompose.failed' && evt.data.task_id === task.id) {
-      setDecomposeStarted(false)
-      setActionError(evt.data.error || 'Decompose failed')
+    if (evt.type === 'breakdown.failed' && evt.data.task_id === task.id) {
+      setBreakdownStarted(false)
+      setActionError(evt.data.error || 'Breakdown failed')
       void queryClient.invalidateQueries({
         queryKey: queryKeys.taskInteractions(task.id),
       })
       return
     }
-    if (evt.type === 'ai-review.completed' && evt.data.task_id === task.id) {
-      if (task.status === 'review' && !evt.data.approved && evt.data.feedback) {
+    if (evt.type === 'ai_review.completed' && evt.data.task_id === task.id) {
+      if (
+        task.status === TASK_STATUSES.review &&
+        !evt.data.approved &&
+        evt.data.feedback
+      ) {
         applyAIReviewFeedback(evt.data.feedback)
       }
     }
   })
 
   useEffect(() => {
-    if (task.status !== 'review') return
+    if (task.status !== TASK_STATUSES.review) return
     const latestCompletedReview = reviewInteractions.find((item) => {
-      if (item.status !== 'completed') return false
+      if (item.status !== INTERACTION_STATUSES.completed) return false
       if (!Number.isFinite(latestCompletedRunStartedAtMS)) return true
       return Date.parse(item.started_at) > latestCompletedRunStartedAtMS
     })
@@ -638,9 +649,9 @@ export function useTaskActions(task: Task) {
     )
   }
 
-  const handleDecomposeTask = () => {
+  const handleBreakdownTask = () => {
     setActionError(null)
-    decomposeTaskMutation.mutate(
+    breakdownTaskMutation.mutate(
       {
         taskId: task.id,
         tool: actionTool || undefined,
@@ -648,19 +659,19 @@ export function useTaskActions(task: Task) {
       },
       {
         onError: (err: unknown) => {
-          setActionError(getErrorMessage(err, 'Decompose failed'))
+          setActionError(getErrorMessage(err, 'Breakdown failed'))
         },
       },
     )
   }
 
-  const handleAcceptDecompose = async (
+  const handleAcceptBreakdown = async (
     interactionId: string,
     tasks?: ProposedTask[],
   ) => {
     setActionError(null)
     try {
-      await acceptDecomposeMutation.mutateAsync({
+      await acceptBreakdownMutation.mutateAsync({
         taskId: task.id,
         interactionId,
         tasks,
@@ -677,10 +688,10 @@ export function useTaskActions(task: Task) {
     }
   }
 
-  const handleRejectDecompose = async (interactionId: string) => {
+  const handleRejectBreakdown = async (interactionId: string) => {
     setActionError(null)
     try {
-      await rejectDecomposeMutation.mutateAsync({
+      await rejectBreakdownMutation.mutateAsync({
         taskId: task.id,
         interactionId,
       })
@@ -738,12 +749,12 @@ export function useTaskActions(task: Task) {
     planLoading,
     planGenerating,
     hideEvaluateAction,
-    hideDecomposeAction,
+    hideBreakdownAction,
     evaluateDisabledReason,
     descriptionUnchangedSinceLastEvaluation,
     evaluating,
-    decomposing,
-    latestDecomposeProposals,
+    breakingDown,
+    latestBreakdownProposals,
     phaseInProgress,
     runningBusy,
     requestChangesExpanded,
@@ -771,9 +782,9 @@ export function useTaskActions(task: Task) {
     approvePlanPending: approvePlanMutation.isPending,
     requestPlanChangesPending: requestPlanChangesMutation.isPending,
     evaluatePending: evaluateTaskMutation.isPending,
-    decomposePending: decomposeTaskMutation.isPending,
-    acceptDecomposePending: acceptDecomposeMutation.isPending,
-    rejectDecomposePending: rejectDecomposeMutation.isPending,
+    breakdownPending: breakdownTaskMutation.isPending,
+    acceptBreakdownPending: acceptBreakdownMutation.isPending,
+    rejectBreakdownPending: rejectBreakdownMutation.isPending,
     handleStart,
     handleApprove,
     handleStop,
@@ -783,9 +794,9 @@ export function useTaskActions(task: Task) {
     handleApprovePlan,
     handleRequestPlanChanges,
     handleEvaluateTask,
-    handleDecomposeTask,
-    handleAcceptDecompose,
-    handleRejectDecompose,
+    handleBreakdownTask,
+    handleAcceptBreakdown,
+    handleRejectBreakdown,
     handleAIReview,
     handleMerge,
   }

@@ -80,18 +80,18 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 	var d driver.Driver
 	if toolName != "" {
 		var err error
-		selectedTool, d, err = cfg.ResolveToolForPhase("explore", toolName)
+		selectedTool, d, err = cfg.ResolveToolForPhase(interaction.PhaseExplore, toolName)
 		if err != nil {
 			return err
 		}
 	} else {
 		var err error
-		selectedTool, d, err = cfg.ResolveToolForPhase("explore", "")
+		selectedTool, d, err = cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
 		if err != nil {
 			return err
 		}
 	}
-	model := cfg.ResolveModelForPhase("explore", "", d)
+	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
 
 	explorer := explore.New(selectedTool, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
 	if explore.LoadContext(repoDir) != "" {

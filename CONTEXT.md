@@ -4,7 +4,7 @@
 
 Orca is a multi-agent CLI orchestrator for AI coding tools (Claude Code, Codex, Aider). It coordinates workers on shared codebases using git worktree isolation and a direct execution pipeline:
 
-`explore → decompose → plan → start → review → merge`
+`explore → breakdown → plan → start → review → merge`
 
 Ready tasks run directly via `executor.RunBatch()`.
 
@@ -19,7 +19,7 @@ orca/
 │   ├── api/                   # HTTP/WebSocket backend
 │   ├── banner/                # ASCII art logo printing
 │   ├── config/                # YAML config and defaults
-│   ├── decompose/             # Goal -> task breakdown
+│   ├── breakdown/             # Goal -> task breakdown
 │   ├── driver/                # Pluggable AI tool driver interface (Claude, Codex, Aider)
 │   ├── evaluate/              # Task complexity evaluation
 │   ├── executor/              # Direct task batch execution (RunBatch)
@@ -29,7 +29,6 @@ orca/
 │   ├── llm/                   # JSON extraction from LLM output
 │   ├── logging/               # slog config, rotating file writer, log querying
 │   ├── mcp/                   # MCP stdio server tools
-│   ├── merger/                # (reserved)
 │   ├── model/                 # Aggregates available LLM models from drivers
 │   ├── monitor/               # Stuck/conflict runtime monitors
 │   ├── nullable/              # Generic nil-safe pointer dereference
@@ -54,11 +53,13 @@ orca/
 
 ### Pipeline
 
-`Explore → Decompose → Plan → Start → Review → Merge`
+`Explore → Breakdown → Plan → Start → Review → Merge`
 
 ### Task Status Flow
 
 `pending → planned → running → review → approved → merged`
+
+Breakdown branch: `pending → broken_down` (when a parent task is split into child tasks).
 
 Stop path: `running → stopped` (via `tasks_stop`). `stopped → running` uses explicit session resume (`executor.ResumeTask`).
 
@@ -90,7 +91,7 @@ SQLite with versioned migrations (currently V3). WAL mode + foreign keys enabled
 ### Key: task_interactions
 
 Central tracking table replacing the old artifacts/costs model. Each row records one LLM invocation:
-- **Phases:** plan, run, review, merge
+- **Phases:** explore, breakdown, plan, evaluate, run, revise, review, merge
 - **Tracking:** input_tokens, output_tokens, estimated_cost, duration_ms, exit_code
 - **Outputs:** diff, quality_json, error, log_path
 
@@ -161,7 +162,7 @@ Orca MCP (`orca mcp`) exposes 35 tools for task orchestration.
 `breakdown`, `tasks_plan_generate`, `tasks_plan_evaluate`, `tasks_approve_plan`, `tasks_request_plan_changes`
 
 ### Execution
-`tasks_start`, `tasks_stop`, `tasks_resume`
+`tasks_start` (`tasks_run` alias), `tasks_stop` (`tasks_cancel` alias), `tasks_resume`
 
 ### Review & Integration
 `tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`

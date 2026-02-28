@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Interaction, Task } from '../../../types'
 import { useSavePlanMutation, useTaskPlanQuery } from '../../../hooks/queries'
+import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../../../lib/phases'
 import { getErrorMessage } from '../../../lib/utils'
 
 type Args = {
@@ -26,7 +27,11 @@ export function usePlanEditor({
   const latestCompletedPlanInteraction =
     [...interactions]
       .reverse()
-      .find((item) => item.phase === 'plan' && item.status === 'completed') ??
+      .find(
+        (item) =>
+          item.phase === PHASES.plan &&
+          item.status === INTERACTION_STATUSES.completed,
+      ) ??
     null
 
   const currentPlanText =
@@ -39,7 +44,10 @@ export function usePlanEditor({
 
   const planEditable = useMemo(() => {
     if (readOnly) return false
-    return task.status === 'pending' || task.status === 'planned'
+    return (
+      task.status === TASK_STATUSES.pending ||
+      task.status === TASK_STATUSES.planned
+    )
   }, [readOnly, task.status])
 
   useEffect(() => {

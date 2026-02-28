@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/executor"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/review"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
@@ -139,7 +140,7 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.withTaskValidation("task must be in review status for ai review", []string{"review"}, func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
-		toolName, d, err := s.cfg.ResolveToolForPhase("review", strings.TrimSpace(req.Tool))
+		toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseReview, strings.TrimSpace(req.Tool))
 		if err != nil {
 			if strings.TrimSpace(req.Tool) != "" {
 				jsonError(w, err, http.StatusBadRequest)
@@ -149,8 +150,8 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		modelOverride := s.cfg.ResolveModelForPhase("review", strings.TrimSpace(req.Model), d)
-		runInteractions, err := s.interactions.ListByPhase(tk.ID, "run")
+		modelOverride := s.cfg.ResolveModelForPhase(interaction.PhaseReview, strings.TrimSpace(req.Model), d)
+		runInteractions, err := s.interactions.ListByPhase(tk.ID, interaction.PhaseRun)
 		if err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
@@ -179,7 +180,7 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request) {
 			result, reviewErr := reviewer.Review(taskID, title, description, runDiff, prompt)
 			if reviewErr != nil {
 				s.hub.Broadcast(Event{
-					Type: "ai-review.failed",
+					Type: "ai_review.failed",
 					Data: map[string]string{
 						"task_id": taskID,
 						"error":   reviewErr.Error(),
@@ -188,7 +189,7 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.hub.Broadcast(Event{
-				Type: "ai-review.completed",
+				Type: "ai_review.completed",
 				Data: result,
 			})
 		}(tk.ID, tk.Title, tk.Description, diff, userPrompt)

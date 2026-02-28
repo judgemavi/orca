@@ -7,13 +7,14 @@ Multi-agent CLI orchestrator for AI coding tools. Orca coordinates Claude Code, 
 Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 
 1. `explore` — generate/refresh codebase context
-2. `breakdown` — decompose goals into dependency-aware tasks
+2. `breakdown` — break goals into dependency-aware tasks
 3. `tasks plan` / `tasks evaluate` — refine task implementation plans
 4. `start` — execute ready tasks directly (parallel, isolated worktrees)
 5. `review` — approve, request changes, or run AI review
 6. `merge` — merge approved tasks into integration branch
 
 Task flow: `pending → planned → running → review → approved → merged`.
+Breakdown branch: `pending → broken_down` (when a parent task is split into child tasks).
 Stop path: `running → stopped` (via `tasks_stop`); `stopped → running` (resume via `tasks_resume`).
 Failure path: `running → failed`.
 
@@ -57,7 +58,7 @@ orca init
 # Generate context
 orca explore
 
-# Add or decompose work
+# Add or break down work
 orca tasks add "Implement user authentication"
 orca breakdown "Add rate limiting and retry safety across API clients"
 
@@ -124,9 +125,9 @@ orca cleanup                 [--dry-run]
 
 `orca mcp` exposes 35 MCP tools for task orchestration:
 
-- **Task lifecycle:** `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_reopen`, `tasks_cancel`, `tasks_add_dependency`
+- **Task lifecycle:** `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_add_dependency`
 - **Planning:** `breakdown`, `tasks_plan_generate`, `tasks_plan_evaluate`, `tasks_approve_plan`, `tasks_request_plan_changes`
-- **Execution:** `tasks_run`
+- **Execution:** `tasks_start` (`tasks_run` alias), `tasks_stop` (`tasks_cancel` alias), `tasks_resume`
 - **Review/integration:** `tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`
 - **Interactions:** `interactions_list`, `interaction_get`
 - **Project/config:** `project_status`, `config_get`, `config_update`, `models_list`
@@ -141,8 +142,8 @@ cmd/orca/           CLI entrypoint + command registration
 internal/
   api/              HTTP/WebSocket API server
   banner/           ASCII art logo
+  breakdown/        Goal -> task breakdown
   config/           YAML config and defaults
-  decompose/        Goal -> task decomposition
   driver/           Pluggable AI tool driver interface
   evaluate/         Task complexity evaluation
   executor/         Batch task execution (RunBatch)

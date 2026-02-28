@@ -1,4 +1,5 @@
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
+import { TASK_STATUSES } from '../../../lib/phases'
 import { Button } from '../../Button'
 import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout'
 import { useTaskActions } from './useTaskActions'
@@ -7,12 +8,13 @@ export function PendingTaskActions() {
   const { task } = useTaskDetailContext()
   const actions = useTaskActions(task)
 
-  const showStart = task.status === 'planned'
+  const showStart = task.status === TASK_STATUSES.planned
   const showFeedback =
-    task.status === 'pending' && actions.requestPlanChangesExpanded
+    task.status === TASK_STATUSES.pending && actions.requestPlanChangesExpanded
   const showSelector =
     showStart ||
-    (task.status === 'pending' && (!actions.hasPlan || showFeedback))
+    (task.status === TASK_STATUSES.pending &&
+      (!actions.hasPlan || showFeedback))
 
   let actionButtons = null
   if (showStart) {
@@ -57,18 +59,18 @@ export function PendingTaskActions() {
             </Button>
           </span>
         )}
-        {actions.latestDecomposeProposals == null &&
-          !actions.hideDecomposeAction && (
+        {actions.latestBreakdownProposals == null &&
+          !actions.hideBreakdownAction && (
             <Button
               variant="default"
-              onClick={actions.handleDecomposeTask}
+              onClick={actions.handleBreakdownTask}
               disabled={
                 actions.planLoading ||
                 actions.phaseInProgress ||
-                actions.decomposing
+                actions.breakingDown
               }
             >
-              {actions.decomposing ? 'Breaking Down…' : 'Break Down'}
+              {actions.breakingDown ? 'Breaking down…' : 'Breakdown'}
             </Button>
           )}
       </>

@@ -2,6 +2,11 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Interaction, TaskReview } from '../../../types'
 import { controlClass } from '../../../lib/constants'
+import {
+  INTERACTION_STATUSES,
+  PHASES,
+  REVIEW_STATUSES,
+} from '../../../lib/phases'
 import type { usePlanEditor } from './usePlanEditor'
 import { Button } from '../../Button'
 
@@ -34,7 +39,10 @@ export function PlanPhaseSection({
   planEditor,
   planReviews,
 }: Props) {
-  if (interaction.phase !== 'plan' || interaction.status !== 'completed') {
+  if (
+    interaction.phase !== PHASES.plan ||
+    interaction.status !== INTERACTION_STATUSES.completed
+  ) {
     return null
   }
 
@@ -114,7 +122,7 @@ export function PlanPhaseSection({
               key={review.id}
               className={[
                 'rounded-md border p-4',
-                review.status === 'pending'
+                review.status === REVIEW_STATUSES.pending
                   ? 'border-amber-500/40 bg-amber-500/10'
                   : 'border-emerald-500/35 bg-emerald-500/10 opacity-80',
               ].join(' ')}

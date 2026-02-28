@@ -12,6 +12,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/banner"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -310,7 +311,7 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		cfg.Orchestrator.Phases = phaseConfigs
 	} else {
 		// Non-interactive: set all phases to first available tool
-		for _, phase := range []string{"explore", "plan", "run", "review", "merge"} {
+		for _, phase := range []string{interaction.PhaseExplore, interaction.PhasePlan, interaction.PhaseRun, interaction.PhaseReview, interaction.PhaseMerge} {
 			cfg.Orchestrator.Phases[phase] = config.PhaseConfig{Tool: available[0]}
 		}
 	}
@@ -343,7 +344,7 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 }
 
 func selectPhases(available []string, toolModels []toolModelInfo, existingCfg *config.Config) (map[string]config.PhaseConfig, error) {
-	phases := []string{"explore", "plan", "run", "review", "merge"}
+	phases := []string{interaction.PhaseExplore, interaction.PhasePlan, interaction.PhaseRun, interaction.PhaseReview, interaction.PhaseMerge}
 	phaseToolSelections := make(map[string]string, len(phases))
 	for _, phase := range phases {
 		phaseToolSelections[phase] = available[0]

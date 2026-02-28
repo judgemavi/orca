@@ -1,13 +1,9 @@
-export type TaskStatus =
-  | 'pending'
-  | 'planned'
-  | 'running'
-  | 'stopped'
-  | 'review'
-  | 'approved'
-  | 'decomposed'
-  | 'merged'
-  | 'failed'
+import type {
+  InteractionPhase,
+  InteractionStatus,
+  ReviewStatus,
+  TaskStatus,
+} from './lib/phases'
 
 export interface Task {
   id: string
@@ -26,7 +22,7 @@ export interface TaskReview {
   task_id: string
   interaction_id?: string
   feedback: string
-  status: 'pending' | 'addressed'
+  status: ReviewStatus
   created_at: string
   addressed_at?: string
 }
@@ -67,10 +63,10 @@ export interface ModelInfo {
 export interface Interaction {
   id: string
   task_id: string | null
-  phase: string
+  phase: InteractionPhase | string
   attempt: number
   tool: string
-  status: 'running' | 'completed' | 'failed'
+  status: InteractionStatus
   error?: string
   diff?: string
   exit_code?: number
@@ -91,7 +87,7 @@ export interface Operation {
   id: string
   type: string
   target_id: string
-  status: 'running' | 'completed' | 'failed'
+  status: InteractionStatus
   result?: string
   error?: string
   created_at: string
@@ -191,14 +187,14 @@ export type KnownWSEvent =
   | WSEventBase<'cleanup.completed', { removed: number }>
   | WSEventBase<'explore.failed', { error: string }>
   | WSEventBase<'explore.completed', { path: string }>
-  | WSEventBase<'ai-review.failed', { task_id: string; error: string }>
-  | WSEventBase<'ai-review.completed', AIReviewResult>
+  | WSEventBase<'ai_review.failed', { task_id: string; error: string }>
+  | WSEventBase<'ai_review.completed', AIReviewResult>
   | WSEventBase<
-      'decompose.started',
+      'breakdown.started',
       { task_id: string; session_id?: string; operation_id?: string }
     >
   | WSEventBase<
-      'decompose.failed',
+      'breakdown.failed',
       {
         task_id: string
         error: string
@@ -207,7 +203,7 @@ export type KnownWSEvent =
       }
     >
   | WSEventBase<
-      'decompose.completed',
+      'breakdown.completed',
       {
         task_id: string
         proposed: ProposedTask[]
@@ -217,7 +213,11 @@ export type KnownWSEvent =
       }
     >
   | WSEventBase<
-      'monitor_alert',
+      'breakdown.rejected',
+      { task_id: string; interaction_id: string; rejected: boolean }
+    >
+  | WSEventBase<
+      'monitor.alert',
       { type: string; task_id: string; message: string; timestamp: string }
     >
 
@@ -258,12 +258,13 @@ const KNOWN_WS_EVENT_TYPES = new Set<KnownWSEventType>([
   'cleanup.completed',
   'explore.failed',
   'explore.completed',
-  'ai-review.failed',
-  'ai-review.completed',
-  'decompose.started',
-  'decompose.failed',
-  'decompose.completed',
-  'monitor_alert',
+  'ai_review.failed',
+  'ai_review.completed',
+  'breakdown.started',
+  'breakdown.failed',
+  'breakdown.completed',
+  'breakdown.rejected',
+  'monitor.alert',
 ])
 
 function isKnownWSEventType(type: string): type is KnownWSEventType {

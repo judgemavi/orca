@@ -57,7 +57,7 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 	}
 
 	interactions := interaction.NewStore(db, ".orca/interactions")
-	writer, err := interactions.Begin(nil, "merge", "orca")
+	writer, err := interactions.Begin(nil, interaction.PhaseMerge, "orca")
 	if err != nil {
 		return fmt.Errorf("begin merge interaction: %w", err)
 	}
@@ -71,11 +71,11 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 		if _, err := store.Get(taskID); err != nil {
 			return "", nil, "", 0, err
 		}
-		toolName, d, err := cfg.ResolveToolForPhase("merge", "")
+		toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
 		if err != nil {
 			return "", nil, "", 0, err
 		}
-		model := cfg.ResolveModelForPhase("merge", "", d)
+		model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
 		return toolName, d, model, 10 * time.Minute, nil
 	})
 	merged, failed, err := ig.MergeBatch(taskIDs)

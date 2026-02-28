@@ -1,4 +1,5 @@
 import type { AIReviewResult, Interaction } from '../../../types'
+import { INTERACTION_STATUSES } from '../../../lib/phases'
 import { useInteractionDetailContext } from './InteractionDetailContext'
 
 interface Props {
@@ -30,7 +31,7 @@ export function AIReviewResultCard({
       </button>
     ) : null
 
-  if (ri.status === 'running') {
+  if (ri.status === INTERACTION_STATUSES.running) {
     return (
       <div className="rounded-lg bg-surface-alt p-2.5">
         <div className="flex items-center gap-2">
@@ -45,7 +46,7 @@ export function AIReviewResultCard({
     )
   }
 
-  if (ri.status === 'failed') {
+  if (ri.status === INTERACTION_STATUSES.failed) {
     return (
       <div className="rounded-lg border border-danger/30 bg-danger/10 p-2.5">
         <div className="flex items-center gap-2">

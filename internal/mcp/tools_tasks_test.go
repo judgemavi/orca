@@ -95,12 +95,12 @@ func TestToolHandlersTaskAliasesAndRemovals(t *testing.T) {
 	s := &Server{}
 	handlers := s.toolHandlers()
 
-	for _, name := range []string{"tasks_start", "tasks_stop", "tasks_resume", "tasks_run", "tasks_cancel"} {
+	for _, name := range []string{"tasks_start", "tasks_stop", "tasks_resume"} {
 		if _, ok := handlers[name]; !ok {
 			t.Fatalf("expected handler %q to exist", name)
 		}
 	}
-	for _, removed := range []string{"tasks_reopen", "task_reopen"} {
+	for _, removed := range []string{"tasks_reopen", "task_reopen", "tasks_run", "tasks_cancel"} {
 		if _, ok := handlers[removed]; ok {
 			t.Fatalf("expected handler %q to be removed", removed)
 		}

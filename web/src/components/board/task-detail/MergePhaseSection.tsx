@@ -1,6 +1,7 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
 import type { Interaction } from '../../../types'
 import { controlClass } from '../../../lib/constants'
+import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import type { useMergeHandler } from './useMergeHandler'
 import { Button } from '../../Button'
@@ -24,12 +25,12 @@ export function MergePhaseSection({
   isLatestFailed,
   merge,
 }: Props) {
-  if (interaction.phase !== 'merge') return null
+  if (interaction.phase !== PHASES.merge) return null
 
   return (
     <>
       {isLatestRunning &&
-        interaction.status === 'running' &&
+        interaction.status === INTERACTION_STATUSES.running &&
         merge.mergeProgress && (
           <div className="rounded-lg bg-accent/10 p-4 text-xs leading-5 text-accent">
             {merge.mergeProgress}
@@ -37,7 +38,7 @@ export function MergePhaseSection({
         )}
 
       {isLatestFailed &&
-        interaction.status === 'failed' &&
+        interaction.status === INTERACTION_STATUSES.failed &&
         merge.conflictError && (
           <div className="flex flex-col gap-2 rounded-lg bg-danger/10 p-4 text-danger">
             <div className="text-xs leading-5">

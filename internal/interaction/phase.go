@@ -3,10 +3,14 @@ package interaction
 import "github.com/jasjeetmavi/orca/internal/worker"
 
 const (
-	PhasePlan   = "plan"
-	PhaseRun    = "run"
-	PhaseRevise = "revise"
-	PhaseReview = "review"
+	PhasePlan      = "plan"
+	PhaseEvaluate  = "evaluate"
+	PhaseBreakdown = "breakdown"
+	PhaseRun       = "run"
+	PhaseRevise    = "revise"
+	PhaseReview    = "review"
+	PhaseMerge     = "merge"
+	PhaseExplore   = "explore"
 )
 
 type RunWithTrackingOption func(*runWithTrackingConfig)

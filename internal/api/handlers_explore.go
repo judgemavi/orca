@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 )
 
 // ========== Explore ==========
@@ -14,14 +15,14 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase("explore", "")
+	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	model := s.cfg.ResolveModelForPhase("explore", "", d)
+	model := s.cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
 
-	s.runAsyncHandler(w, "explore", map[string]string{"status": "exploring"}, func() {
+	s.runAsyncHandler(w, interaction.PhaseExplore, map[string]string{"status": "exploring"}, func() {
 		explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions)
 		outPath, err := explorer.Run()
 		if err != nil {

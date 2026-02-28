@@ -18,9 +18,10 @@ For every action:
 ## Status Model
 
 Primary flow: `pending → planned → running → review → approved → merged`
+Breakdown branch: `pending → broken_down` (when a parent task is split into child tasks).
 
-Stop path: `running → stopped` (via `tasks_cancel`). `stopped → running` (resume/restart via `tasks_run`) or `pending` (via `tasks_reopen`).
+Stop path: `running → stopped` (via `tasks_stop` / `tasks_cancel`). `stopped → running` (via `tasks_resume`).
 
-Failure path: `running → failed` (can return to `pending` via `tasks_reopen`).
+Failure path: `running → failed` (can return to `pending` via `tasks_update`).
 
 Write task descriptions with enough detail for a worker to execute without extra context.

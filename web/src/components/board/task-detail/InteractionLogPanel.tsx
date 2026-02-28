@@ -6,20 +6,12 @@ import {
   useInteractionsQuery,
   useInteractionStream,
 } from './useInteractions'
+import { INTERACTION_STATUSES, PHASE_LABELS } from '../../../lib/phases'
 
 interface Props {
   taskId: string
   interactionId: string
   onClose: () => void
-}
-
-const PHASE_LABELS: Record<string, string> = {
-  plan: 'Planning',
-  evaluate: 'Evaluation',
-  decompose: 'Breakdown',
-  run: 'Execution',
-  review: 'Review',
-  merge: 'Merge',
 }
 
 function formatTokenCount(value: number | undefined): string {
@@ -59,11 +51,14 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
   const stream = useInteractionStream(
     taskId,
     interactionId,
-    Boolean(selectedInteraction && selectedInteraction.status === 'running'),
+    Boolean(
+      selectedInteraction &&
+        selectedInteraction.status === INTERACTION_STATUSES.running,
+    ),
   )
 
   const content =
-    selectedInteraction?.status === 'running'
+    selectedInteraction?.status === INTERACTION_STATUSES.running
       ? stream.content || contentQuery.data?.content || ''
       : contentQuery.data?.content || ''
 
@@ -110,12 +105,12 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
               {!selectedInteraction
                 ? 'Interaction not found.'
                 : content ||
-                  (selectedInteraction.status === 'running'
+                  (selectedInteraction.status === INTERACTION_STATUSES.running
                     ? 'Waiting for streaming output...'
                     : 'No content.')}
             </pre>
 
-            {selectedInteraction?.status === 'failed' &&
+            {selectedInteraction?.status === INTERACTION_STATUSES.failed &&
               (selectedInteraction.error || contentQuery.data?.error) && (
                 <div className="mt-2 text-xs">
                   Error: {selectedInteraction.error || contentQuery.data?.error}

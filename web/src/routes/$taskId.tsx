@@ -173,7 +173,7 @@ function TaskDetailContent({
             >
               ← Back to tasks
             </Link>
-            {task.status !== 'running' && task.status !== 'merged' && task.status !== 'decomposed' && (
+            {task.status !== 'running' && task.status !== 'merged' && task.status !== 'broken_down' && (
               <button
                 type="button"
                 className="rounded border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"

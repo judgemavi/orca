@@ -163,7 +163,7 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 	_, err = interaction.RunWithTracking(
 		i.interactions,
 		&taskRef,
-		"merge",
+		interaction.PhaseMerge,
 		toolName,
 		adapter,
 		func() (*worker.Result, error) {

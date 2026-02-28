@@ -1,6 +1,7 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
 import type { ReactNode } from 'react'
 import type { Interaction } from '../../../types'
+import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
 import { useInteractionDetailContext } from './InteractionDetailContext'
 
 interface Props {
@@ -26,8 +27,8 @@ function formatCost(value: number | undefined): string {
 }
 
 function statusIcon(status: Interaction['status']) {
-  if (status === 'completed') return '✓'
-  if (status === 'failed') return '✗'
+  if (status === INTERACTION_STATUSES.completed) return '✓'
+  if (status === INTERACTION_STATUSES.failed) return '✗'
   return '●'
 }
 
@@ -51,17 +52,17 @@ function summarizeDiff(diff: string | undefined): string | null {
 
 function phaseBadgeTone(phase: string | undefined): string {
   const normalized = phase?.trim().toLowerCase()
-  if (normalized === 'plan')
+  if (normalized === PHASES.plan)
     return 'border-indigo-500/35 bg-indigo-500/15 text-indigo-300'
-  if (normalized === 'run')
+  if (normalized === PHASES.run)
     return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
-  if (normalized === 'review')
+  if (normalized === PHASES.review)
     return 'border-amber-500/35 bg-amber-500/15 text-amber-300'
-  if (normalized === 'evaluate')
+  if (normalized === PHASES.evaluate)
     return 'border-cyan-500/35 bg-cyan-500/15 text-cyan-300'
-  if (normalized === 'decompose')
+  if (normalized === PHASES.breakdown)
     return 'border-orange-500/35 bg-orange-500/15 text-orange-300'
-  if (normalized === 'merge')
+  if (normalized === PHASES.merge)
     return 'border-purple-500/35 bg-purple-500/15 text-purple-300'
   return 'border-slate-500/35 bg-slate-500/15 text-slate-300'
 }
@@ -79,7 +80,7 @@ export function InteractionEntry({
   const detailContext = useInteractionDetailContext()
   const activeLogId = detailContext?.activeLogId ?? null
   const onToggleLog = detailContext?.onToggleLog
-  const isRunning = interaction.status === 'running'
+  const isRunning = interaction.status === INTERACTION_STATUSES.running
   const phaseLabel = phase?.trim()
   const open = collapsible ? alwaysExpanded || expanded : true
   const diffSummary = showDiffSummary ? summarizeDiff(interaction.diff) : null
@@ -108,9 +109,9 @@ export function InteractionEntry({
               <span
                 className={[
                   'inline-flex h-4 w-4 items-center justify-center rounded-full border text-xs',
-                  interaction.status === 'completed'
+                  interaction.status === INTERACTION_STATUSES.completed
                     ? 'border-emerald-500 text-emerald-500'
-                    : interaction.status === 'failed'
+                    : interaction.status === INTERACTION_STATUSES.failed
                       ? 'border-danger text-danger'
                       : 'animate-pulse border-accent text-accent',
                 ].join(' ')}

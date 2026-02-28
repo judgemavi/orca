@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
@@ -46,17 +46,17 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 		parentTaskID = &taskID
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase("plan", args.Tool)
+	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhasePlan, args.Tool)
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase("plan", "", d)
+	model := s.config.ResolveModelForPhase(interaction.PhasePlan, "", d)
 
 	interactions := interaction.NewStore(s.db, ".orca/interactions")
-	decomposer := decompose.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions)
-	tasks, _, err := decomposer.Run(parentTaskID, goal)
+	breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions)
+	tasks, _, err := breaker.Run(parentTaskID, goal)
 	if err != nil {
-		return nil, fmt.Errorf("decompose: %w", err)
+		return nil, fmt.Errorf("breakdown: %w", err)
 	}
 
 	autoCreate := true
@@ -103,7 +103,7 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 		"count":    len(createdIDs),
 	}
 	if parentTaskID != nil {
-		if err := s.taskStore.Update(*parentTaskID, map[string]interface{}{"status": "decomposed"}); err != nil {
+		if err := s.taskStore.Update(*parentTaskID, map[string]interface{}{"status": "broken_down"}); err != nil {
 			return nil, fmt.Errorf("update parent task status: %w", err)
 		}
 		resp["parent_id"] = *parentTaskID
@@ -134,11 +134,11 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 		return nil, err
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase("plan", args.Tool)
+	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhasePlan, args.Tool)
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase("plan", args.Model, d)
+	model := s.config.ResolveModelForPhase(interaction.PhasePlan, args.Model, d)
 
 	interactions := interaction.NewStore(s.db, ".orca/interactions")
 	generator := planpkg.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions)
@@ -186,11 +186,11 @@ func (s *Server) HandleTasksPlanEvaluateTool(argsRaw json.RawMessage) (interface
 		return nil, err
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase("explore", args.Tool)
+	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhaseExplore, args.Tool)
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase("explore", args.Model, d)
+	model := s.config.ResolveModelForPhase(interaction.PhaseExplore, args.Model, d)
 
 	evaluator := evaluate.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions"))
 	var evaluationResult *evaluate.EvaluationResult

@@ -1,5 +1,10 @@
 import type { Interaction, TaskReview } from '../../../types'
-import { isRunLike } from '../../../lib/phases'
+import {
+  INTERACTION_STATUSES,
+  PHASES,
+  REVIEW_STATUSES,
+  isRunLike,
+} from '../../../lib/phases'
 import { AIReviewResultCard } from './AIReviewResultCard'
 
 type Props = {
@@ -16,7 +21,7 @@ export function ReviewPhaseSection({
   latestCompletedRunStartedAt,
 }: Props) {
   const showRunReviews = isRunLike(interaction.phase)
-  const showReviewInteraction = interaction.phase === 'review'
+  const showReviewInteraction = interaction.phase === PHASES.review
   const latestCompletedRunStartedAtMS = latestCompletedRunStartedAt
     ? Date.parse(latestCompletedRunStartedAt)
     : NaN
@@ -50,7 +55,7 @@ export function ReviewPhaseSection({
       )}
 
       {showRunReviews &&
-        interaction.status === 'completed' &&
+        interaction.status === INTERACTION_STATUSES.completed &&
         visibleRunReviews.length > 0 && (
           <div className="flex flex-col gap-2">
             {visibleRunReviews.map((review) => (
@@ -58,7 +63,7 @@ export function ReviewPhaseSection({
                 key={review.id}
                 className={[
                   'rounded-md border p-4',
-                  review.status === 'pending'
+                  review.status === REVIEW_STATUSES.pending
                     ? 'border-amber-500/40 bg-amber-500/10'
                     : 'border-emerald-500/35 bg-emerald-500/10',
                 ].join(' ')}
@@ -70,12 +75,14 @@ export function ReviewPhaseSection({
                   <span
                     className={[
                       'text-xs font-medium uppercase tracking-wide',
-                      review.status === 'pending'
+                      review.status === REVIEW_STATUSES.pending
                         ? 'text-amber-400'
                         : 'text-emerald-400',
                     ].join(' ')}
                   >
-                    {review.status === 'pending' ? 'Pending' : 'Addressed'}
+                    {review.status === REVIEW_STATUSES.pending
+                      ? 'Pending'
+                      : 'Addressed'}
                   </span>
                 </div>
                 <div className="whitespace-pre-wrap text-xs">

@@ -1,5 +1,5 @@
-// Package decompose uses an LLM to break a goal into a structured task list.
-package decompose
+// Package breakdown uses an LLM to break down a goal into a structured task list.
+package breakdown
 
 import (
 	"context"
@@ -21,7 +21,7 @@ type ProposedTask struct {
 	SuggestedTool    string `json:"suggested_tool"`
 }
 
-type Decomposer struct {
+type Breaker struct {
 	toolName     string
 	driver       driver.Driver
 	model        string
@@ -30,32 +30,32 @@ type Decomposer struct {
 	interactions *interaction.Store
 }
 
-func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Decomposer {
+func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Breaker {
 	var store *interaction.Store
 	if len(interactions) > 0 {
 		store = interactions[0]
 	}
-	return &Decomposer{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
+	return &Breaker{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
-func (d *Decomposer) Run(taskID *string, goal string) ([]ProposedTask, string, error) {
+func (b *Breaker) Run(taskID *string, goal string) ([]ProposedTask, string, error) {
 	contextSection := ""
-	if ctx := explore.LoadContext(d.repoDir); ctx != "" {
+	if ctx := explore.LoadContext(b.repoDir); ctx != "" {
 		contextSection = "## Codebase Context\n\n" + ctx + "\n\n"
 	}
-	prompt := fmt.Sprintf(prompts.Decompose, contextSection, goal)
+	prompt := fmt.Sprintf(prompts.Breakdown, contextSection, goal)
 
-	adapter := worker.NewAdapter(d.driver, d.model, d.timeout)
+	adapter := worker.NewAdapter(b.driver, b.model, b.timeout)
 
 	interactionID := ""
 	result, err := interaction.RunWithTracking(
-		d.interactions,
+		b.interactions,
 		taskID,
-		"decompose",
-		d.toolName,
+		interaction.PhaseBreakdown,
+		b.toolName,
 		adapter,
 		func() (*worker.Result, error) {
-			return adapter.Execute(context.Background(), "decompose", prompt, d.repoDir)
+			return adapter.Execute(context.Background(), interaction.PhaseBreakdown, prompt, b.repoDir)
 		},
 		interaction.WithOnBegin(func(w *interaction.Writer) {
 			interactionID = w.ID()
@@ -77,7 +77,7 @@ func (d *Decomposer) Run(taskID *string, goal string) ([]ProposedTask, string, e
 					exitCode = result.ExitCode
 					stderr = result.Stderr
 				}
-				opts = append(opts, interaction.WithError(fmt.Sprintf("decomposer exited %d: %s", exitCode, stderr)))
+				opts = append(opts, interaction.WithError(fmt.Sprintf("breaker exited %d: %s", exitCode, stderr)))
 			}
 			return status, opts
 		}),
@@ -91,10 +91,10 @@ func (d *Decomposer) Run(taskID *string, goal string) ([]ProposedTask, string, e
 		stderr = result.Stderr
 	}
 	if err != nil {
-		return nil, interactionID, fmt.Errorf("execute decomposer: %w", err)
+		return nil, interactionID, fmt.Errorf("execute breaker: %w", err)
 	}
 	if exitCode != 0 {
-		return nil, interactionID, fmt.Errorf("decomposer exited %d: %s", exitCode, stderr)
+		return nil, interactionID, fmt.Errorf("breaker exited %d: %s", exitCode, stderr)
 	}
 
 	output := stdout

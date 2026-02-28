@@ -1,4 +1,5 @@
 import type { Interaction, TaskEvaluation } from '../../../types'
+import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
 
 type ParsedTaskEvaluation = {
   complexity?: string
@@ -7,22 +8,13 @@ type ParsedTaskEvaluation = {
   reasoning: string
 }
 
-type RawTaskEvaluation = Partial<TaskEvaluation> & {
-  should_decompose?: boolean
-}
-
 function parseTaskEvaluation(
   qualityJSON: string | undefined,
 ): ParsedTaskEvaluation | null {
   if (!qualityJSON) return null
   try {
-    const parsed = JSON.parse(qualityJSON) as RawTaskEvaluation
-    const needsBreakdown =
-      typeof parsed.needs_breakdown === 'boolean'
-        ? parsed.needs_breakdown
-        : typeof parsed.should_decompose === 'boolean'
-          ? parsed.should_decompose
-          : null
+    const parsed = JSON.parse(qualityJSON) as Partial<TaskEvaluation>
+    const needsBreakdown = parsed.needs_breakdown
     if (
       typeof needsBreakdown !== 'boolean' ||
       typeof parsed.reasoning !== 'string'
@@ -59,8 +51,8 @@ type Props = {
 
 export function EvaluatePhaseSection({ interaction }: Props) {
   if (
-    interaction.phase !== 'evaluate' ||
-    interaction.status !== 'completed' ||
+    interaction.phase !== PHASES.evaluate ||
+    interaction.status !== INTERACTION_STATUSES.completed ||
     !interaction.quality_json
   ) {
     return null

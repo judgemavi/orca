@@ -21,7 +21,7 @@ func (s *Server) AddMonitorAlert(alert MonitorAlert) {
 	}
 	s.monitorMu.Unlock()
 
-	s.hub.Broadcast(Event{Type: "monitor_alert", Data: alert})
+	s.hub.Broadcast(Event{Type: "monitor.alert", Data: alert})
 }
 
 func (s *Server) handleMonitorAlerts(w http.ResponseWriter, r *http.Request) {

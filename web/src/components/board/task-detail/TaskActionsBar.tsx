@@ -1,4 +1,5 @@
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
+import { TASK_STATUSES } from '../../../lib/phases'
 import { Button } from '../../Button'
 import { ApprovedTaskActions } from './ApprovedTaskActions'
 import { FailedTaskActions } from './FailedTaskActions'
@@ -14,27 +15,33 @@ interface Props {
 export function TaskActionsBar({ onClose }: Props) {
   const { task } = useTaskDetailContext()
 
-  if (task.status === 'pending' || task.status === 'planned') {
+  if (
+    task.status === TASK_STATUSES.pending ||
+    task.status === TASK_STATUSES.planned
+  ) {
     return <PendingTaskActions />
   }
 
-  if (task.status === 'running') {
+  if (task.status === TASK_STATUSES.running) {
     return <RunningTaskActions />
   }
 
-  if (task.status === 'review') {
+  if (task.status === TASK_STATUSES.review) {
     return <ReviewTaskActions />
   }
 
-  if (task.status === 'approved') {
+  if (task.status === TASK_STATUSES.approved) {
     return <ApprovedTaskActions />
   }
 
-  if (task.status === 'failed' || task.status === 'stopped') {
+  if (
+    task.status === TASK_STATUSES.failed ||
+    task.status === TASK_STATUSES.stopped
+  ) {
     return <FailedTaskActions />
   }
 
-  if (task.status === 'merged') {
+  if (task.status === TASK_STATUSES.merged) {
     return (
       <TaskActionsLayout
         tools={[]}
@@ -53,7 +60,7 @@ export function TaskActionsBar({ onClose }: Props) {
     )
   }
 
-  if (task.status === 'decomposed') {
+  if (task.status === TASK_STATUSES.broken_down) {
     return (
       <TaskActionsLayout
         tools={[]}

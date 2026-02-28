@@ -1,4 +1,4 @@
-// Package evaluate determines whether a task needs decomposition into subtasks.
+// Package evaluate determines whether a task needs breakdown into subtasks.
 package evaluate
 
 import (
@@ -71,11 +71,11 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 	_, err := interaction.RunWithTracking(
 		e.interactions,
 		&taskRef,
-		"evaluate",
+		interaction.PhaseEvaluate,
 		e.toolName,
 		adapter,
 		func() (*worker.Result, error) {
-			return adapter.Execute(context.Background(), "evaluate", prompt, e.repoDir)
+			return adapter.Execute(context.Background(), interaction.PhaseEvaluate, prompt, e.repoDir)
 		},
 		interaction.WithAfterRun(func(result *worker.Result, _ error) {
 			if result != nil {
@@ -99,10 +99,7 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 				opts = append(opts, interaction.WithError(fmt.Sprintf("evaluator exited %d: %s", exitCode, stderr)))
 			} else {
 				if parseErr != nil {
-					evaluationResult = &EvaluationResult{
-						NeedsBreakdown:  false,
-						DescriptionHash: descriptionHash,
-					}
+					evaluationResult = &EvaluationResult{NeedsBreakdown: false, DescriptionHash: descriptionHash}
 				} else {
 					evaluationResult.DescriptionHash = descriptionHash
 				}
@@ -120,10 +117,7 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 	}
 
 	if parseErr != nil {
-		return &EvaluationResult{
-			NeedsBreakdown:  false,
-			DescriptionHash: descriptionHash,
-		}, nil
+		return &EvaluationResult{NeedsBreakdown: false, DescriptionHash: descriptionHash}, nil
 	}
 
 	evaluationResult.DescriptionHash = descriptionHash

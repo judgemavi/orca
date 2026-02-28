@@ -49,11 +49,11 @@ func (e *Explorer) Run() (string, error) {
 	result, err := interaction.RunWithTracking(
 		e.interactions,
 		nil,
-		"explore",
+		interaction.PhaseExplore,
 		e.toolName,
 		adapter,
 		func() (*worker.Result, error) {
-			return adapter.Execute(context.Background(), "explore", prompt, e.repoDir)
+			return adapter.Execute(context.Background(), interaction.PhaseExplore, prompt, e.repoDir)
 		},
 		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
 			status := "completed"

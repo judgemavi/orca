@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { api } from '../../../api'
 import { useToolModelSelection } from '../../../hooks/useToolModelSelection'
 import { useWebSocket } from '../../../hooks/useWebSocket'
+import { PHASES, TASK_STATUSES } from '../../../lib/phases'
 import { isKnownWSEvent } from '../../../types'
 
 type Args = {
@@ -51,7 +52,7 @@ export function useMergeHandler({
   }, [setMergeModel, setMergeTool, taskId])
 
   useEffect(() => {
-    if (taskStatus !== 'merged') return
+    if (taskStatus !== TASK_STATUSES.merged) return
     setMergeProgress(null)
     setConflictError(null)
     setConflictWorktreePath('')
@@ -100,9 +101,9 @@ export function useMergeHandler({
         } else if (evt.type === 'task.updated') {
           const status = 'status' in evt.data ? evt.data.status : ''
           if (
-            status === 'merged' ||
-            status === 'approved' ||
-            status === 'failed'
+            status === TASK_STATUSES.merged ||
+            status === TASK_STATUSES.approved ||
+            status === TASK_STATUSES.failed
           ) {
             setMergeProgress(null)
           }
@@ -139,6 +140,7 @@ export function useMergeHandler({
     conflictWorktreePath,
     showManualResolve,
     setShowManualResolve,
-    merging: isOperationRunning('merge', taskId) || mergeTaskMutation.isPending,
+    merging:
+      isOperationRunning(PHASES.merge, taskId) || mergeTaskMutation.isPending,
   }
 }

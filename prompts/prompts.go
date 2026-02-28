@@ -7,8 +7,8 @@ import _ "embed"
 //go:embed orchestrator.md
 var Orchestrator string
 
-//go:embed decompose.md
-var Decompose string
+//go:embed breakdown.md
+var Breakdown string
 
 //go:embed explore.md
 var Explore string

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -32,9 +32,9 @@ func RegisterPlan(root *cobra.Command, r *Registry) {
 		},
 		RunE: r.runPlan,
 	}
-	planCmd.Flags().String("tool", "", "Tool to use for decomposition")
+	planCmd.Flags().String("tool", "", "Tool to use for breakdown")
 	planCmd.Flags().Bool("auto", false, "Skip confirmation and create tasks immediately")
-	planCmd.Flags().String("task", "", "Decompose an existing task by ID (uses title+description as goal)")
+	planCmd.Flags().String("task", "", "Break down an existing task by ID (uses title+description as goal)")
 	root.AddCommand(planCmd)
 }
 
@@ -71,29 +71,29 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	var selectedTool string
 	var selectedDriver driver.Driver
 	if toolName != "" {
-		name, drv, err := cfg.ResolveToolForPhase("plan", toolName)
+		name, drv, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolName)
 		if err != nil {
 			return err
 		}
 		selectedTool = name
 		selectedDriver = drv
 	} else {
-		name, drv, err := cfg.ResolveToolForPhase("plan", "")
+		name, drv, err := cfg.ResolveToolForPhase(interaction.PhasePlan, "")
 		if err != nil {
 			return err
 		}
 		selectedTool = name
 		selectedDriver = drv
 	}
-	model := cfg.ResolveModelForPhase("plan", "", selectedDriver)
+	model := cfg.ResolveModelForPhase(interaction.PhasePlan, "", selectedDriver)
 
 	repoDir, _ := os.Getwd()
-	decomposer := decompose.New(selectedTool, selectedDriver, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
+	breaker := breakdown.New(selectedTool, selectedDriver, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
 
-	fmt.Printf("Decomposing: %s\n\n", goal)
-	tasks, _, err := decomposer.Run(parentTaskID, goal)
+	fmt.Printf("Breaking down: %s\n\n", goal)
+	tasks, _, err := breaker.Run(parentTaskID, goal)
 	if err != nil {
-		return fmt.Errorf("decompose: %w", err)
+		return fmt.Errorf("breakdown: %w", err)
 	}
 
 	fmt.Printf("Proposed %d tasks:\n\n", len(tasks))
@@ -151,7 +151,7 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	if parentTaskID != nil {
-		if err := store.Update(*parentTaskID, map[string]interface{}{"status": "decomposed"}); err != nil {
+		if err := store.Update(*parentTaskID, map[string]interface{}{"status": "broken_down"}); err != nil {
 			return fmt.Errorf("update parent task status: %w", err)
 		}
 		fmt.Printf("\nParent task: %s (%s)\n", *parentTaskID, parentTaskTitle)

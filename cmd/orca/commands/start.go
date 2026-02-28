@@ -15,10 +15,9 @@ import (
 
 func RegisterStart(root *cobra.Command, r *Registry) {
 	startCmd := &cobra.Command{
-		Use:     "start",
-		Aliases: []string{"run"},
-		Short:   "Start ready tasks (or specific task IDs)",
-		RunE:    r.runStart,
+		Use:   "start",
+		Short: "Start ready tasks (or specific task IDs)",
+		RunE:  r.runStart,
 	}
 	startCmd.Flags().Bool("no-merge", false, "Skip auto-merge after success")
 	root.AddCommand(startCmd)
