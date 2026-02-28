@@ -133,12 +133,12 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts Run
 			return nil, createdTaskIDs, fmt.Errorf("get task %s: %w", taskID, err)
 		}
 
-		toolName, d, err := e.resolveTaskToolConfig("run", opts.ToolOverride)
+		toolName, d, err := e.resolveTaskToolConfig(interaction.PhaseRun, opts.ToolOverride)
 		if err != nil {
 			e.closePreparedWriters(prepared)
 			return nil, createdTaskIDs, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 		}
-		model := e.config.ResolveModelForPhase("run", opts.ModelOverride, d)
+		model := e.config.ResolveModelForPhase(interaction.PhaseRun, opts.ModelOverride, d)
 		timeout := 10 * time.Minute
 		if parsed, parseErr := time.ParseDuration("600s"); parseErr == nil {
 			timeout = parsed
@@ -167,7 +167,7 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts Run
 		var writer *interaction.Writer
 		if e.interactions != nil {
 			taskRef := taskID
-			w, beginErr := e.interactions.Begin(&taskRef, "run", toolName)
+			w, beginErr := e.interactions.Begin(&taskRef, interaction.PhaseRun, toolName)
 			if beginErr != nil {
 				slog.Warn("begin interaction failed", "task_id", taskID, "err", beginErr)
 			} else {
@@ -428,11 +428,11 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		return nil, fmt.Errorf("task %s cannot resume without session_id", taskID)
 	}
 
-	toolName, d, err := e.resolveTaskToolConfig("run", opts.ToolOverride)
+	toolName, d, err := e.resolveTaskToolConfig(interaction.PhaseRun, opts.ToolOverride)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 	}
-	model := e.config.ResolveModelForPhase("run", opts.ModelOverride, d)
+	model := e.config.ResolveModelForPhase(interaction.PhaseRun, opts.ModelOverride, d)
 	timeout, _ := time.ParseDuration("600s")
 
 	wtPath := worktree.ResolveTaskDir(e.config.Project.WorktreeDir, taskID)
@@ -464,7 +464,11 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	if err != nil {
 		return nil, err
 	}
-	if resumeState.resumeSessionID == "" {
+	runPhase := interaction.PhaseRun
+	if resumeState.reviewID != "" {
+		runPhase = interaction.PhaseRevise
+	}
+	if resumeState.resumeSessionID == "" && strings.TrimSpace(resumeState.feedback) != "" {
 		prompt = strings.TrimSpace(prompt) + "\n\nReviewer feedback: " + resumeState.feedback
 	}
 	prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n" + strings.TrimSpace(prompts.ExecutorStyle) + "\n\n---\n\n" + prompt
@@ -498,11 +502,14 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	var writer *interaction.Writer
 	if e.interactions != nil {
 		taskRef := taskID
-		w, beginErr := e.interactions.Begin(&taskRef, "run", toolName)
+		w, beginErr := e.interactions.Begin(&taskRef, runPhase, toolName)
 		if beginErr != nil {
 			slog.Warn("begin interaction failed", "task_id", taskID, "run_id", runID, "err", beginErr)
 		} else {
 			writer = w
+			if runPhase == interaction.PhaseRevise && strings.TrimSpace(resumeState.feedback) != "" {
+				_ = writer.WriteString("Reviewer feedback:\n" + resumeState.feedback + "\n\n")
+			}
 		}
 	}
 	go e.captureOutput(outputCh, outputDone, map[string]*interaction.Writer{taskID: writer})

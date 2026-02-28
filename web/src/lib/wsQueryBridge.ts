@@ -5,7 +5,7 @@ import type { WSEvent, Task, Config, Interaction, KnownWSEvent } from '../types'
 import { isKnownWSEvent } from '../types'
 import { queryKeys } from './queryKeys'
 
-type TasksCache = { tasks: Task[] }
+type TasksCache = Task[]
 
 const INVALIDATE_EXACT: Record<string, readonly QueryKey[]> = {
   'session.created': [queryKeys.sessions],
@@ -46,11 +46,11 @@ function isInteractionData(data: unknown): data is Interaction {
 
 function upsertTask(qc: QueryClient, task: Task) {
   qc.setQueryData<TasksCache>(queryKeys.tasks, (old) => {
-    const tasks = old?.tasks ?? []
+    const tasks = old ?? []
     if (tasks.some((t) => t.id === task.id)) {
-      return { tasks: tasks.map((t) => (t.id === task.id ? task : t)) }
+      return tasks.map((t) => (t.id === task.id ? task : t))
     }
-    return { tasks: [...tasks, task] }
+    return [...tasks, task]
   })
 }
 
@@ -90,9 +90,9 @@ function handleKnownEvent(qc: QueryClient, event: KnownWSEvent): boolean {
 
     case 'task.deleted': {
       const id = event.data.id
-      qc.setQueryData<TasksCache>(queryKeys.tasks, (old) => ({
-        tasks: (old?.tasks ?? []).filter((t) => t.id !== id),
-      }))
+      qc.setQueryData<TasksCache>(queryKeys.tasks, (old) =>
+        (old ?? []).filter((t) => t.id !== id),
+      )
       return true
     }
 

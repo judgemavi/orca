@@ -34,7 +34,7 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
 	content := explore.LoadContext(s.repoDir)
-	jsonOK(w, map[string]string{"content": content})
+	jsonOK(w, content)
 }
 
 func (s *Server) handlePutContext(w http.ResponseWriter, r *http.Request) {
@@ -51,5 +51,5 @@ func (s *Server) handlePutContext(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, map[string]string{"path": outPath})
+	jsonOK(w, outPath)
 }

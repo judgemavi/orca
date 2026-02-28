@@ -15,6 +15,7 @@ import (
 // ========== Plan (Decompose) ==========
 
 type decomposeOperationResult struct {
+	TaskID         string                   `json:"task_id,omitempty"`
 	Goal           string                   `json:"goal,omitempty"`
 	SessionID      string                   `json:"session_id,omitempty"`
 	Proposed       []decompose.ProposedTask `json:"proposed,omitempty"`
@@ -299,10 +300,14 @@ func (s *Server) handlePlanReject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createTasksFromProposed(tasks []decompose.ProposedTask) ([]string, error) {
+	return s.createTasksFromProposedWithParent(tasks, "")
+}
+
+func (s *Server) createTasksFromProposedWithParent(tasks []decompose.ProposedTask, parentID string) ([]string, error) {
 	store := s.taskStore
 	createdIDs := make([]string, len(tasks))
 	for i, t := range tasks {
-		created, err := store.Create(t.Title, t.Description, "")
+		created, err := store.Create(t.Title, t.Description, parentID)
 		if err != nil {
 			return nil, fmt.Errorf("create task %d: %w", i+1, err)
 		}

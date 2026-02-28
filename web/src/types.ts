@@ -1,17 +1,20 @@
+export type TaskStatus =
+  | 'pending'
+  | 'planned'
+  | 'running'
+  | 'stopped'
+  | 'review'
+  | 'approved'
+  | 'decomposed'
+  | 'merged'
+  | 'failed'
+
 export interface Task {
   id: string
   title: string
   description: string
   parent_id: string | null
-  status:
-    | 'pending'
-    | 'planned'
-    | 'running'
-    | 'stopped'
-    | 'review'
-    | 'approved'
-    | 'merged'
-    | 'failed'
+  status: TaskStatus
   depends_on: string[]
   plan: string | null
   created_at: string
@@ -190,14 +193,28 @@ export type KnownWSEvent =
   | WSEventBase<'explore.completed', { path: string }>
   | WSEventBase<'ai-review.failed', { task_id: string; error: string }>
   | WSEventBase<'ai-review.completed', AIReviewResult>
-  | WSEventBase<'decompose.started', { session_id: string }>
+  | WSEventBase<
+      'decompose.started',
+      { task_id: string; session_id?: string; operation_id?: string }
+    >
   | WSEventBase<
       'decompose.failed',
-      { error: string; session_id: string; operation_id?: string }
+      {
+        task_id: string
+        error: string
+        session_id?: string
+        operation_id?: string
+      }
     >
   | WSEventBase<
       'decompose.completed',
-      { proposed: ProposedTask[]; session_id: string; operation_id?: string }
+      {
+        task_id: string
+        proposed: ProposedTask[]
+        interaction_id?: string
+        session_id?: string
+        operation_id?: string
+      }
     >
   | WSEventBase<
       'monitor_alert',

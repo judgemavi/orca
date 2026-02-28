@@ -15,14 +15,35 @@ import (
 func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
 		Goal       string `json:"goal"`
+		TaskID     string `json:"task_id"`
 		Tool       string `json:"tool"`
 		AutoCreate *bool  `json:"auto_create"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("breakdown: %w", err)
 	}
-	if strings.TrimSpace(args.Goal) == "" {
-		return nil, fmt.Errorf("goal is required")
+	hasGoal := strings.TrimSpace(args.Goal) != ""
+	hasTaskID := strings.TrimSpace(args.TaskID) != ""
+	if hasGoal && hasTaskID {
+		return nil, fmt.Errorf("provide either goal or task_id, not both")
+	}
+	if !hasGoal && !hasTaskID {
+		return nil, fmt.Errorf("either goal or task_id is required")
+	}
+
+	goal := args.Goal
+	var parentTaskID *string
+	if hasTaskID {
+		taskID, err := s.taskStore.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		parentTask, err := s.taskStore.Get(taskID)
+		if err != nil {
+			return nil, err
+		}
+		goal = parentTask.Title + "\n\n" + parentTask.Description
+		parentTaskID = &taskID
 	}
 
 	toolName, d, err := s.config.ResolveToolForPhase("plan", args.Tool)
@@ -33,7 +54,7 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 
 	interactions := interaction.NewStore(s.db, ".orca/interactions")
 	decomposer := decompose.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions)
-	tasks, _, err := decomposer.Run(nil, args.Goal)
+	tasks, _, err := decomposer.Run(parentTaskID, goal)
 	if err != nil {
 		return nil, fmt.Errorf("decompose: %w", err)
 	}
@@ -56,8 +77,12 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 	}
 
 	createdIDs := make([]string, len(tasks))
+	parentID := ""
+	if parentTaskID != nil {
+		parentID = *parentTaskID
+	}
 	for i, t := range tasks {
-		created, err := s.taskStore.Create(t.Title, t.Description, "")
+		created, err := s.taskStore.Create(t.Title, t.Description, parentID)
 		if err != nil {
 			return nil, fmt.Errorf("create task %d: %w", i+1, err)
 		}
@@ -72,11 +97,18 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 			}
 		}
 	}
-	return map[string]interface{}{
+	resp := map[string]interface{}{
 		"created":  true,
 		"task_ids": createdIDs,
 		"count":    len(createdIDs),
-	}, nil
+	}
+	if parentTaskID != nil {
+		if err := s.taskStore.Update(*parentTaskID, map[string]interface{}{"status": "decomposed"}); err != nil {
+			return nil, fmt.Errorf("update parent task status: %w", err)
+		}
+		resp["parent_id"] = *parentTaskID
+	}
+	return resp, nil
 }
 
 func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface{}, error) {

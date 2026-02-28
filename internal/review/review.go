@@ -52,78 +52,58 @@ func (r *Reviewer) Review(taskID, title, description, diff, userPrompt string) (
 	prompt := fmt.Sprintf(prompts.Review, title, description, diff, instructions)
 
 	adapter := worker.NewAdapter(r.driver, r.model, r.timeout)
-
-	var writer *interaction.Writer
-	if r.interactions != nil {
-		taskRef := taskID
-		w, beginErr := r.interactions.Begin(&taskRef, "review", r.toolName)
-		if beginErr == nil {
-			writer = w
-		}
-	}
 	var (
-		outputCh   chan worker.OutputLine
-		outputDone chan struct{}
+		stdout       string
+		exitCode     = -1
+		stderr       string
+		reviewResult *ReviewResult
+		parseErr     error
 	)
-	if writer != nil {
-		outputCh = make(chan worker.OutputLine, 256)
-		outputDone = make(chan struct{})
-		adapter.SetOutputChan(outputCh)
-		go func() {
-			defer close(outputDone)
-			for line := range outputCh {
-				if line.Stream == "raw" {
-					_ = writer.WriteString(line.Line + "\n")
+	taskRef := taskID
+	_, err := interaction.RunWithTracking(
+		r.interactions,
+		&taskRef,
+		"review",
+		r.toolName,
+		adapter,
+		func() (*worker.Result, error) {
+			return adapter.Execute(context.Background(), "review-"+taskID, prompt, r.repoDir)
+		},
+		interaction.WithAfterRun(func(result *worker.Result, runErr error) {
+			if result != nil {
+				stdout = result.Stdout
+				exitCode = result.ExitCode
+				stderr = result.Stderr
+			}
+			if runErr == nil && exitCode == 0 {
+				var resp reviewResponse
+				if parseErr = llm.ExtractJSON(stdout, &resp); parseErr == nil {
+					reviewResult = &ReviewResult{TaskID: taskID, Approved: resp.Approved, Feedback: resp.Feedback, Tool: r.toolName, Prompt: userPrompt}
 				}
 			}
-		}()
-	}
-
-	result, err := adapter.Execute(context.Background(), "review-"+taskID, prompt, r.repoDir)
-	if outputCh != nil {
-		close(outputCh)
-		<-outputDone
-	}
-	stdout := ""
-	exitCode := -1
-	stderr := ""
-	if result != nil {
-		stdout = result.Stdout
-		exitCode = result.ExitCode
-		stderr = result.Stderr
-	}
-	// Parse result before finishing interaction so we can store quality_json.
-	var reviewResult *ReviewResult
-	var parseErr error
-	if err == nil && exitCode == 0 {
-		var resp reviewResponse
-		if parseErr = llm.ExtractJSON(stdout, &resp); parseErr == nil {
-			reviewResult = &ReviewResult{TaskID: taskID, Approved: resp.Approved, Feedback: resp.Feedback, Tool: r.toolName, Prompt: userPrompt}
-		}
-	}
-
-	if writer != nil {
-		status := "completed"
-		opts := []interaction.FinishOption{}
-		if result != nil {
-			opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
-		}
-		if err != nil {
-			status = "failed"
-			opts = append(opts, interaction.WithError(err.Error()))
-		} else if exitCode != 0 {
-			status = "failed"
-			opts = append(opts, interaction.WithError(fmt.Sprintf("reviewer exited %d: %s", exitCode, stderr)))
-		} else if parseErr != nil {
-			status = "failed"
-			opts = append(opts, interaction.WithError(fmt.Sprintf("parse review JSON: %v", parseErr)))
-		} else if reviewResult != nil {
-			qualityBytes, _ := json.Marshal(reviewResult)
-			opts = append(opts, interaction.WithQuality(string(qualityBytes)))
-		}
-		_ = r.interactions.Finish(writer.ID(), status, opts...)
-		_ = writer.Close()
-	}
+		}),
+		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
+			status := "completed"
+			opts := []interaction.FinishOption{}
+			if result != nil {
+				opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
+			}
+			if runErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(runErr.Error()))
+			} else if exitCode != 0 {
+				status = "failed"
+				opts = append(opts, interaction.WithError(fmt.Sprintf("reviewer exited %d: %s", exitCode, stderr)))
+			} else if parseErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(fmt.Sprintf("parse review JSON: %v", parseErr)))
+			} else if reviewResult != nil {
+				qualityBytes, _ := json.Marshal(reviewResult)
+				opts = append(opts, interaction.WithQuality(string(qualityBytes)))
+			}
+			return status, opts
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("execute reviewer: %w", err)
 	}

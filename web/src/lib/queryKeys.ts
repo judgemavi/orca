@@ -1,5 +1,6 @@
 export const queryKeys = {
   tasks: ['tasks'] as const,
+  task: (id: string) => ['task', id] as const,
   config: ['config'] as const,
   sessions: ['sessions'] as const,
   status: ['status'] as const,

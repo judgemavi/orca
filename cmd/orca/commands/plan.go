@@ -15,9 +15,26 @@ import (
 )
 
 func RegisterPlan(root *cobra.Command, r *Registry) {
-	planCmd := &cobra.Command{Use: "breakdown [goal]", Short: "Break down a goal into tasks using an LLM", Args: cobra.MinimumNArgs(1), RunE: r.runPlan}
+	planCmd := &cobra.Command{
+		Use:   "breakdown [goal]",
+		Short: "Break down a goal into tasks using an LLM",
+		Args: func(cmd *cobra.Command, args []string) error {
+			taskID, _ := cmd.Flags().GetString("task")
+			hasTask := strings.TrimSpace(taskID) != ""
+			hasGoal := len(args) > 0
+			if hasTask && hasGoal {
+				return fmt.Errorf("provide either a goal or --task, not both")
+			}
+			if !hasTask && !hasGoal {
+				return fmt.Errorf("accepts 1 arg(s), received 0")
+			}
+			return nil
+		},
+		RunE: r.runPlan,
+	}
 	planCmd.Flags().String("tool", "", "Tool to use for decomposition")
 	planCmd.Flags().Bool("auto", false, "Skip confirmation and create tasks immediately")
+	planCmd.Flags().String("task", "", "Decompose an existing task by ID (uses title+description as goal)")
 	root.AddCommand(planCmd)
 }
 
@@ -29,8 +46,27 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	goal := strings.Join(args, " ")
+	store := task.NewStore(db)
 	toolName, _ := cmd.Flags().GetString("tool")
 	auto, _ := cmd.Flags().GetBool("auto")
+	taskArg, _ := cmd.Flags().GetString("task")
+	taskArg = strings.TrimSpace(taskArg)
+
+	var parentTaskID *string
+	var parentTaskTitle string
+	if taskArg != "" {
+		taskID, err := store.ResolveID(taskArg)
+		if err != nil {
+			return err
+		}
+		parentTask, err := store.Get(taskID)
+		if err != nil {
+			return err
+		}
+		goal = parentTask.Title + "\n\n" + parentTask.Description
+		parentTaskID = &taskID
+		parentTaskTitle = parentTask.Title
+	}
 
 	var selectedTool string
 	var selectedDriver driver.Driver
@@ -52,11 +88,10 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	model := cfg.ResolveModelForPhase("plan", "", selectedDriver)
 
 	repoDir, _ := os.Getwd()
-	store := task.NewStore(db)
 	decomposer := decompose.New(selectedTool, selectedDriver, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
 
 	fmt.Printf("Decomposing: %s\n\n", goal)
-	tasks, _, err := decomposer.Run(nil, goal)
+	tasks, _, err := decomposer.Run(parentTaskID, goal)
 	if err != nil {
 		return fmt.Errorf("decompose: %w", err)
 	}
@@ -93,8 +128,12 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	createdIDs := make([]string, len(tasks))
+	parentID := ""
+	if parentTaskID != nil {
+		parentID = *parentTaskID
+	}
 	for i, t := range tasks {
-		created, err := store.Create(t.Title, t.Description, "")
+		created, err := store.Create(t.Title, t.Description, parentID)
 		if err != nil {
 			return fmt.Errorf("create task %d: %w", i+1, err)
 		}
@@ -109,6 +148,15 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
+	}
+
+	if parentTaskID != nil {
+		if err := store.Update(*parentTaskID, map[string]interface{}{"status": "decomposed"}); err != nil {
+			return fmt.Errorf("update parent task status: %w", err)
+		}
+		fmt.Printf("\nParent task: %s (%s)\n", *parentTaskID, parentTaskTitle)
+		fmt.Printf("Created %d child tasks.\n", len(tasks))
+		return nil
 	}
 
 	fmt.Printf("\nCreated %d tasks.\n", len(tasks))

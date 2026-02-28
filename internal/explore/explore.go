@@ -46,36 +46,37 @@ func (e *Explorer) Run() (string, error) {
 		prompt += "\n\n## User Goal\n\n" + e.goal + "\n\nIncorporate this goal into your analysis - note what exists that supports it and what's missing."
 	}
 
-	var writer *interaction.Writer
-	if e.interactions != nil {
-		w, beginErr := e.interactions.Begin(nil, "explore", e.toolName)
-		if beginErr == nil {
-			writer = w
-		}
-	}
-	var (
-		outputCh   chan worker.OutputLine
-		outputDone chan struct{}
-	)
-	if writer != nil {
-		outputCh = make(chan worker.OutputLine, 256)
-		outputDone = make(chan struct{})
-		adapter.SetOutputChan(outputCh)
-		go func() {
-			defer close(outputDone)
-			for line := range outputCh {
-				if line.Stream == "raw" {
-					_ = writer.WriteString(line.Line + "\n")
-				}
+	result, err := interaction.RunWithTracking(
+		e.interactions,
+		nil,
+		"explore",
+		e.toolName,
+		adapter,
+		func() (*worker.Result, error) {
+			return adapter.Execute(context.Background(), "explore", prompt, e.repoDir)
+		},
+		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
+			status := "completed"
+			opts := []interaction.FinishOption{}
+			if result != nil {
+				opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
 			}
-		}()
-	}
-
-	result, err := adapter.Execute(context.Background(), "explore", prompt, e.repoDir)
-	if outputCh != nil {
-		close(outputCh)
-		<-outputDone
-	}
+			if runErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(runErr.Error()))
+			} else if result == nil || result.ExitCode != 0 {
+				status = "failed"
+				exitCode := -1
+				stderr := ""
+				if result != nil {
+					exitCode = result.ExitCode
+					stderr = result.Stderr
+				}
+				opts = append(opts, interaction.WithError(fmt.Sprintf("explorer exited %d: %s", exitCode, stderr)))
+			}
+			return status, opts
+		}),
+	)
 	stdout := ""
 	exitCode := -1
 	stderr := ""
@@ -83,22 +84,6 @@ func (e *Explorer) Run() (string, error) {
 		stdout = result.Stdout
 		exitCode = result.ExitCode
 		stderr = result.Stderr
-	}
-	if writer != nil {
-		status := "completed"
-		opts := []interaction.FinishOption{}
-		if result != nil {
-			opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
-		}
-		if err != nil {
-			status = "failed"
-			opts = append(opts, interaction.WithError(err.Error()))
-		} else if exitCode != 0 {
-			status = "failed"
-			opts = append(opts, interaction.WithError(fmt.Sprintf("explorer exited %d: %s", exitCode, stderr)))
-		}
-		_ = e.interactions.Finish(writer.ID(), status, opts...)
-		_ = writer.Close()
 	}
 	if err != nil {
 		return "", fmt.Errorf("execute explorer: %w", err)

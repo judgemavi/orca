@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import { api } from '../../../api'
+import { isRunLike } from '../../../lib/phases'
 import { queryKeys } from '../../../lib/queryKeys'
 import type { Interaction } from '../../../types'
 
@@ -17,16 +18,19 @@ export function selectByPhase(phase: string) {
       .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))
 }
 
+export function selectByRunLike(interactions: Interaction[]) {
+  return [...interactions]
+    .filter((i) => isRunLike(i.phase))
+    .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))
+}
+
 export function useInteractionsQuery<TSelected = Interaction[]>(
   taskId: string,
   options?: InteractionsSelect<TSelected>,
 ) {
   return useQuery({
     queryKey: queryKeys.taskInteractions(taskId),
-    queryFn: async () => {
-      const data = await api.listInteractions(taskId)
-      return data.interactions ?? []
-    },
+    queryFn: () => api.listInteractions(taskId),
     enabled: Boolean(taskId),
     staleTime: 0,
     refetchOnMount: 'always',

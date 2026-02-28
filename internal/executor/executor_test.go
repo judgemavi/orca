@@ -1,9 +1,12 @@
 package executor
 
 import (
+	"os"
 	"os/exec"
 	"testing"
 
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/testutil"
 )
@@ -72,5 +75,57 @@ func TestResumeTaskRequiresSessionID(t *testing.T) {
 	}
 	if updated.Status != "stopped" {
 		t.Fatalf("status = %q, want %q", updated.Status, "stopped")
+	}
+}
+
+func TestResolveResumeRunStateIncludesPendingReviewForFailedTask(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	e := &Executor{taskStore: store}
+
+	tk, err := store.Create("t1", "desc", "")
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := store.Update(tk.ID, map[string]interface{}{"status": "failed"}); err != nil {
+		t.Fatalf("set failed status: %v", err)
+	}
+	reviewID, err := store.AddReview(tk.ID, "Please fix edge-case handling", "")
+	if err != nil {
+		t.Fatalf("add review: %v", err)
+	}
+
+	d, ok := driver.Get("codex")
+	if !ok {
+		t.Fatal("driver codex not found")
+	}
+	wtPath := t.TempDir()
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatalf("create worktree path: %v", err)
+	}
+
+	state, err := e.resolveResumeRunState(tk.ID, "sess-123", d, "gpt-5-codex", wtPath, false)
+	if err != nil {
+		t.Fatalf("resolve resume state: %v", err)
+	}
+	if state.reviewID != reviewID {
+		t.Fatalf("reviewID = %q, want %q", state.reviewID, reviewID)
+	}
+	if state.feedback != "Please fix edge-case handling" {
+		t.Fatalf("feedback = %q", state.feedback)
+	}
+	if state.resumeSessionID != "sess-123" {
+		t.Fatalf("resumeSessionID = %q", state.resumeSessionID)
+	}
+	if len(state.args) == 0 {
+		t.Fatal("expected resume args for session-based revise")
+	}
+
+	phase := interaction.PhaseRun
+	if state.reviewID != "" {
+		phase = interaction.PhaseRevise
+	}
+	if phase != interaction.PhaseRevise {
+		t.Fatalf("phase = %q, want %q", phase, interaction.PhaseRevise)
 	}
 }

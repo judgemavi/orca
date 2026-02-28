@@ -1,44 +1,77 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../api'
 import { CreateTaskModal } from '../components/board/CreateTaskModal'
-import { TasksTable } from '../components/board/TasksTable'
-import {
-  TasksToolbar,
-  type TaskListFilter,
-} from '../components/board/TasksToolbar'
+import { TasksToolbar } from '../components/board/TasksToolbar'
 import { toast } from 'sonner'
-import { useConfigQuery } from '../hooks/queries/useConfig'
-import { useModelsQuery } from '../hooks/queries/useModels'
-import { useRunningOperations } from '../hooks/queries/useRunningOperations'
-import { useTasksQuery } from '../hooks/queries/useTasks'
+import {
+  useConfigQuery,
+  useModelsQuery,
+  useRunningOperations,
+  useTasksQuery,
+} from '../hooks/queries'
+import { createColumnHelper, flexRender, getCoreRowModel, getExpandedRowModel, useReactTable } from '@tanstack/react-table'
 import type { Task } from '../types'
 
-const STATUS_PRIORITY: Record<Task['status'], number> = {
-  running: 0,
-  stopped: 1,
-  review: 2,
-  failed: 3,
-  planned: 4,
-  pending: 5,
-  approved: 6,
-  merged: 7,
+type TaskNode = Task & { subRows?: TaskNode[] }
+
+function buildTaskTree(tasks: Task[]): TaskNode[] {
+  const map = new Map<string, TaskNode>()
+  for (const t of tasks) map.set(t.id, { ...t })
+
+  const roots: TaskNode[] = []
+  for (const node of map.values()) {
+    if (node.parent_id && map.has(node.parent_id)) {
+      const parent = map.get(node.parent_id)!
+        ; (parent.subRows ??= []).push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+  return roots
 }
 
-function taskMatchesFilter(task: Task, filter: TaskListFilter) {
-  if (filter === 'all') return true
-  if (filter === 'pending') return task.status === 'pending'
-  if (filter === 'planned') return task.status === 'planned'
-  if (filter === 'running') return task.status === 'running'
-  if (filter === 'review') return task.status === 'review'
-  if (filter === 'approved') return task.status === 'approved'
-  if (filter === 'merged') return task.status === 'merged'
-  if (filter === 'failed') return task.status === 'failed'
-  return true
-}
+const columnHelper = createColumnHelper<TaskNode>();
 
-export function TasksPage() {
+const columns = [
+  columnHelper.accessor('title', {
+    header: 'Task',
+    cell: ({ row, getValue }) => (
+      <div className="flex items-center" style={{ paddingLeft: `${row.depth * 1.5}rem` }}>
+        {row.getCanExpand() ? (
+          <button
+            onClick={row.getToggleExpandedHandler()}
+            className="mr-1.5 cursor-pointer text-muted-foreground"
+          >
+            {row.getIsExpanded() ? '▾' : '▸'}
+          </button>
+        ) : (
+          <span className="mr-1.5 w-3 inline-block" />
+        )}
+        {getValue()}
+      </div>
+    ),
+  }),
+  columnHelper.accessor('status', {
+    header: 'Status',
+    cell: (info) => info.getValue(),
+  }),
+  columnHelper.accessor('depends_on', {
+    header: 'Dependencies',
+    cell: (info) => info.getValue(),
+  }),
+  columnHelper.accessor('created_at', {
+    header: 'Created',
+    cell: (info) => info.getValue(),
+  }),
+  columnHelper.accessor('updated_at', {
+    header: 'Updated',
+    cell: (info) => info.getValue(),
+  }),
+]
+
+function TasksPage() {
   const tasksQuery = useTasksQuery()
   const configQuery = useConfigQuery()
   const allModelsQuery = useModelsQuery()
@@ -47,66 +80,11 @@ export function TasksPage() {
     mutationFn: (taskIds?: string[]) => api.startTasks(taskIds),
   })
 
-  const [showCreate, setShowCreate] = useState(false)
-  const [activeFilter, setActiveFilter] = useState<TaskListFilter>('all')
   const [search, setSearch] = useState('')
 
-  const tasks = tasksQuery.data?.tasks ?? []
+  const tasks = tasksQuery.data ?? []
   const loading = tasksQuery.isLoading || configQuery.isLoading
-  const configData = configQuery.data
-
   void allModelsQuery.data
-
-  const approvedTasks = useMemo(
-    () => tasks.filter((t) => t.status === 'approved'),
-    [tasks],
-  )
-
-  const pendingCount = useMemo(
-    () => tasks.filter((task) => task.status === 'pending').length,
-    [tasks],
-  )
-  const plannedCount = useMemo(
-    () => tasks.filter((task) => task.status === 'planned').length,
-    [tasks],
-  )
-  const runningCount = useMemo(
-    () => tasks.filter((task) => task.status === 'running').length,
-    [tasks],
-  )
-  const reviewCount = useMemo(
-    () => tasks.filter((task) => task.status === 'review').length,
-    [tasks],
-  )
-  const approvedCount = useMemo(
-    () => tasks.filter((task) => task.status === 'approved').length,
-    [tasks],
-  )
-  const mergedCount = useMemo(
-    () => tasks.filter((task) => task.status === 'merged').length,
-    [tasks],
-  )
-  const failedCount = useMemo(
-    () => tasks.filter((task) => task.status === 'failed').length,
-    [tasks],
-  )
-
-  const visibleTasks = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase()
-
-    return [...tasks]
-      .filter((task) => taskMatchesFilter(task, activeFilter))
-      .filter((task) =>
-        normalizedSearch
-          ? task.title.toLowerCase().includes(normalizedSearch)
-          : true,
-      )
-      .sort((a, b) => {
-        const byStatus = STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status]
-        if (byStatus !== 0) return byStatus
-        return Date.parse(b.updated_at) - Date.parse(a.updated_at)
-      })
-  }, [tasks, activeFilter, search])
 
   const startTasks = async (taskIds?: string[]) => {
     try {
@@ -128,67 +106,102 @@ export function TasksPage() {
   const merging = isRunning('merge')
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TasksToolbar
-          actionLoading={startTasksMutation.isPending}
-          startPending={startPending}
-          mergePending={merging}
-          hasApprovedTasks={approvedTasks.length > 0}
-          activeFilter={activeFilter}
-          search={search}
-          totalTasks={tasks.length}
-          pendingCount={pendingCount}
-          plannedCount={plannedCount}
-          runningCount={runningCount}
-          reviewCount={reviewCount}
-          approvedCount={approvedCount}
-          mergedCount={mergedCount}
-          failedCount={failedCount}
-          onStart={() => {
-            void startTasks()
-          }}
-          onMerge={() => {
-            void api.merge().catch((err: any) => {
-              toast.error(err?.message ?? 'Merge failed')
-            })
-          }}
-          onCreateTask={() => setShowCreate(true)}
-          onFilterChange={setActiveFilter}
-          onSearchChange={setSearch}
-        />
+    <TasksToolbar
+      tasks={tasks}
+      search={search}
+      loading={{
+        action: startTasksMutation.isPending,
+        start: startPending,
+        merge: merging,
+      }}
+      actions={{
+        onStart: () => {
+          void startTasks()
+        },
+        onMerge: () => {
+          void api.merge().catch((err: any) => {
+            toast.error(err?.message ?? 'Merge failed')
+          })
+        },
+      }}
+      onSearchChange={setSearch}
+    />
 
-        {tasks.length === 0 ? (
-          <div className="flex min-h-0 flex-1 items-center justify-center px-6">
-            <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-              <p className="text-sm">No tasks yet.</p>
-              <button
-                type="button"
-                onClick={() => setShowCreate(true)}
-                className="inline-flex items-center rounded-lg border border-accent bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent/90"
-              >
-                Create your first task →
-              </button>
-            </div>
-          </div>
-        ) : (
-          <TasksTable tasks={visibleTasks} />
-        )}
+  )
+}
+
+function Page() {
+  const { data: tasks } = useTasksQuery()
+
+  const data = buildTaskTree(tasks ?? [])
+
+  const table = useReactTable({
+    data,
+    columns,
+    getSubRows: (row) => row.subRows,
+    getCoreRowModel: getCoreRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
+    initialState: {
+      expanded: true, // expand all by default
+    },
+  })
+
+  if (!tasks || tasks.length === 0)
+    return (
+      <div className="flex flex-col flex-1 items-center gap-3 text-center self-center justify-self-center">
+        <p className="text-sm">No tasks yet.</p>
+        <CreateTaskModal />
       </div>
+    )
 
-      {showCreate && configData && (
-        <CreateTaskModal
-          config={configData}
-          onClose={() => setShowCreate(false)}
-          onCreated={() => {
-            setShowCreate(false)
-          }}
-        />
-      )}
-    </div>
+  return (
+    <>
+      <TasksPage />
+      <div className="p-2">
+        <table className='w-full'>
+          <thead className='[&_tr]:border-b'>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} className='hover:bg-muted/10 data-[state=selected]:bg-muted border-b transition-colors'>
+                {headerGroup.headers.map((header) => (
+                  <th key={header.id} className='text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0'>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody className='[&_tr:last-child]:border-0'>
+            {table.getRowModel().rows.map((row) => (
+
+              <tr key={row.id} className='hover:bg-muted/10 data-[state=selected]:bg-muted border-b transition-colors'>
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className='p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0'>
+                    {cell.column.id === 'title' ? (
+                      <Link key={row.id} to="/$taskId" className='block' params={{
+                        taskId: row.original.id,
+                      }}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </Link>
+                    ) :
+                      flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+
+            ))}
+          </tbody>
+
+        </table>
+      </div>
+    </>
   )
 }
 
 export const Route = createFileRoute('/')({
-  component: TasksPage,
+  component: Page,
 })

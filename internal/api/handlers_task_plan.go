@@ -1,13 +1,16 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/jasjeetmavi/orca/internal/decompose"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/plan"
 )
 
@@ -338,4 +341,295 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 	}(resolved, tk.Title, tk.Description)
+}
+
+// POST /api/v1/tasks/{id}/decompose
+func (s *Server) handleDecomposeTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	type decomposeReq struct {
+		Tool  string `json:"tool"`
+		Model string `json:"model"`
+	}
+	req, ok := decodeJSON[decomposeReq](w, r, true)
+	if !ok {
+		return
+	}
+
+	store := s.taskStore
+	taskID, ok := resolveTaskID(w, store, id)
+	if !ok {
+		return
+	}
+
+	tk, err := store.Get(taskID)
+	if err != nil {
+		jsonError(w, err, http.StatusNotFound)
+		return
+	}
+	if tk.Status != "pending" {
+		jsonError(w, "task must be in pending status to decompose", http.StatusBadRequest)
+		return
+	}
+
+	if running, runErr := s.interactions.IsRunning(&taskID, "decompose"); runErr != nil {
+		jsonError(w, runErr, http.StatusInternalServerError)
+		return
+	} else if running {
+		jsonError(w, "decompose already in progress", http.StatusConflict)
+		return
+	}
+
+	toolName, d, err := s.cfg.ResolveToolForPhase("plan", req.Tool)
+	if err != nil {
+		if strings.TrimSpace(req.Tool) != "" {
+			jsonError(w, err, http.StatusBadRequest)
+		} else {
+			jsonError(w, err, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	modelOverride := s.cfg.ResolveModelForPhase("plan", strings.TrimSpace(req.Model), d)
+	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
+		"data": map[string]string{
+			"task_id": taskID,
+			"status":  "started",
+		},
+	})
+
+	s.hub.Broadcast(Event{
+		Type: "decompose.started",
+		Data: map[string]string{
+			"task_id": taskID,
+		},
+	})
+
+	go func(taskID, title, description string) {
+		decomposer := decompose.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
+		proposed, interactionID, decomposeErr := decomposer.Run(&taskID, strings.TrimSpace(title+"\n\n"+description))
+		if decomposeErr != nil {
+			s.hub.Broadcast(Event{
+				Type: "decompose.failed",
+				Data: map[string]string{
+					"task_id": taskID,
+					"error":   decomposeErr.Error(),
+				},
+			})
+			return
+		}
+
+		resultBytes, _ := json.Marshal(decomposeOperationResult{
+			TaskID:   taskID,
+			Proposed: proposed,
+		})
+		if interactionID != "" {
+			if err := s.interactions.Finish(
+				interactionID,
+				"completed",
+				interaction.WithQuality(string(resultBytes)),
+			); err != nil {
+				s.hub.Broadcast(Event{
+					Type: "decompose.failed",
+					Data: map[string]string{
+						"task_id": taskID,
+						"error":   err.Error(),
+					},
+				})
+				return
+			}
+		}
+
+		data := map[string]interface{}{
+			"task_id":  taskID,
+			"proposed": proposed,
+		}
+		if interactionID != "" {
+			data["interaction_id"] = interactionID
+		}
+		s.hub.Broadcast(Event{
+			Type: "decompose.completed",
+			Data: data,
+		})
+	}(taskID, tk.Title, tk.Description)
+}
+
+// POST /api/v1/tasks/{id}/decompose/accept
+func (s *Server) handleAcceptDecompose(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	type acceptReq struct {
+		InteractionID string                   `json:"interaction_id"`
+		Tasks         []decompose.ProposedTask `json:"tasks"`
+	}
+	req, ok := decodeJSON[acceptReq](w, r, false)
+	if !ok {
+		return
+	}
+
+	taskID, ok := resolveTaskID(w, s.taskStore, id)
+	if !ok {
+		return
+	}
+	tk, err := s.taskStore.Get(taskID)
+	if err != nil {
+		jsonError(w, err, http.StatusNotFound)
+		return
+	}
+	if tk.Status != "pending" {
+		jsonError(w, "task must be in pending status to accept decompose", http.StatusBadRequest)
+		return
+	}
+
+	interactionID := strings.TrimSpace(req.InteractionID)
+	if interactionID == "" {
+		jsonError(w, "interaction_id required", http.StatusBadRequest)
+		return
+	}
+	in, err := s.interactions.Get(interactionID)
+	if err != nil {
+		jsonError(w, "decompose interaction not found", http.StatusNotFound)
+		return
+	}
+	if in.TaskID == nil || *in.TaskID != taskID || in.Phase != "decompose" || in.Status != "completed" {
+		jsonError(w, "interaction_id must reference a completed decompose interaction for this task", http.StatusBadRequest)
+		return
+	}
+
+	result, err := parseDecomposeOperationResult(in.QualityJSON)
+	if err != nil {
+		jsonError(w, "invalid decompose interaction result", http.StatusInternalServerError)
+		return
+	}
+	if result.Accepted || result.Rejected {
+		jsonError(w, "decompose interaction already finalized", http.StatusBadRequest)
+		return
+	}
+
+	proposed := result.Proposed
+	if req.Tasks != nil {
+		proposed = req.Tasks
+	}
+	if len(proposed) == 0 {
+		jsonError(w, "no proposed tasks to accept", http.StatusBadRequest)
+		return
+	}
+
+	createdIDs, err := s.createTasksFromProposedWithParent(proposed, taskID)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "decomposed"}); err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	result.TaskID = taskID
+	result.Accepted = true
+	result.Rejected = false
+	result.CreatedTaskIDs = createdIDs
+	resultBytes, _ := json.Marshal(result)
+	if err := s.interactions.Finish(interactionID, "completed", interaction.WithQuality(string(resultBytes))); err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	updatedParent, err := s.taskStore.Get(taskID)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	s.hub.Broadcast(Event{Type: "task.updated", Data: updatedParent})
+	for _, childID := range createdIDs {
+		child, getErr := s.taskStore.Get(childID)
+		if getErr != nil {
+			continue
+		}
+		s.hub.Broadcast(Event{Type: "task.updated", Data: child})
+	}
+
+	jsonOK(w, map[string]interface{}{
+		"task_id":        taskID,
+		"interaction_id": interactionID,
+		"created":        len(createdIDs),
+		"task_ids":       createdIDs,
+	})
+}
+
+// POST /api/v1/tasks/{id}/decompose/reject
+func (s *Server) handleRejectDecompose(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	type rejectReq struct {
+		InteractionID string `json:"interaction_id"`
+	}
+	req, ok := decodeJSON[rejectReq](w, r, false)
+	if !ok {
+		return
+	}
+
+	taskID, ok := resolveTaskID(w, s.taskStore, id)
+	if !ok {
+		return
+	}
+	interactionID := strings.TrimSpace(req.InteractionID)
+	if interactionID == "" {
+		jsonError(w, "interaction_id required", http.StatusBadRequest)
+		return
+	}
+	in, err := s.interactions.Get(interactionID)
+	if err != nil {
+		jsonError(w, "decompose interaction not found", http.StatusNotFound)
+		return
+	}
+	if in.TaskID == nil || *in.TaskID != taskID || in.Phase != "decompose" || in.Status != "completed" {
+		jsonError(w, "interaction_id must reference a completed decompose interaction for this task", http.StatusBadRequest)
+		return
+	}
+
+	result, err := parseDecomposeOperationResult(in.QualityJSON)
+	if err != nil {
+		jsonError(w, "invalid decompose interaction result", http.StatusInternalServerError)
+		return
+	}
+	if result.Accepted || result.Rejected {
+		jsonError(w, "decompose interaction already finalized", http.StatusBadRequest)
+		return
+	}
+
+	result.TaskID = taskID
+	result.Rejected = true
+	result.Accepted = false
+	result.Proposed = nil
+	result.CreatedTaskIDs = nil
+	resultBytes, _ := json.Marshal(result)
+	if err := s.interactions.Finish(interactionID, "completed", interaction.WithQuality(string(resultBytes))); err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	s.hub.Broadcast(Event{
+		Type: "decompose.rejected",
+		Data: map[string]interface{}{
+			"task_id":        taskID,
+			"interaction_id": interactionID,
+			"rejected":       true,
+		},
+	})
+
+	jsonOK(w, map[string]interface{}{
+		"task_id":        taskID,
+		"interaction_id": interactionID,
+		"rejected":       true,
+	})
 }

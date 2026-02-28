@@ -119,7 +119,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	jsonOK(w, map[string]interface{}{"sessions": out})
+	jsonOK(w, out)
 }
 
 func (s *Server) handleStartOrchestrator(w http.ResponseWriter, r *http.Request) {

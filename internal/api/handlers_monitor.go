@@ -34,5 +34,5 @@ func (s *Server) handleMonitorAlerts(w http.ResponseWriter, r *http.Request) {
 	copy(alerts, s.monitorAlerts)
 	s.monitorMu.Unlock()
 
-	jsonOK(w, map[string]interface{}{"alerts": alerts})
+	jsonOK(w, alerts)
 }

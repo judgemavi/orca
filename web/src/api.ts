@@ -8,6 +8,7 @@ import type {
   Config,
   Interaction,
   InteractionWithContent,
+  ProposedTask,
 } from './types'
 
 const BASE = '/api/v1'
@@ -64,6 +65,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     : (json as T)
 }
 
+function normalizePlanText(payload: unknown): string {
+  if (typeof payload === 'string') return payload
+  if (payload && typeof payload === 'object') {
+    const maybePlan = (payload as { plan?: unknown }).plan
+    if (typeof maybePlan === 'string') return maybePlan
+  }
+  return ''
+}
+
 function post<T>(path: string, body: unknown = {}): Promise<T> {
   return request<T>(path, { method: 'POST', body: JSON.stringify(body) })
 }
@@ -81,14 +91,15 @@ function del<T = void>(path: string): Promise<T> {
 }
 
 export const api = {
-  listTasks: () => request<{ tasks: Task[] }>('/tasks'),
+  listTasks: () => request<Task[]>('/tasks'),
+  getTask: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (data: Partial<Task>) => post<{ task: Task }>('/tasks', data),
   updateTask: (id: string, data: Partial<Task> & { session_id?: string }) =>
     patch<{ task: Task }>(`/tasks/${id}`, data),
-  deleteTask: (id: string) => del(`/tasks/${id}`),
+  deleteTask: (id: string) => del<string>(`/tasks/${id}`),
 
   listOperations: (params?: { target_id?: string; type?: string }) =>
-    request<{ operations: Operation[] }>(
+    request<Operation[]>(
       withQuery('/operations', {
         target_id: params?.target_id,
         type: params?.type,
@@ -120,10 +131,9 @@ export const api = {
             })
           : undefined,
     }),
-  getTaskReviews: (id: string) =>
-    request<{ reviews: TaskReview[] }>(`/tasks/${id}/reviews`),
+  getTaskReviews: (id: string) => request<TaskReview[]>(`/tasks/${id}/reviews`),
   listInteractions: (taskId: string) =>
-    request<{ interactions: Interaction[] }>(`/tasks/${taskId}/interactions`),
+    request<Interaction[]>(`/tasks/${taskId}/interactions`),
   getInteraction: (taskId: string, logId: string) =>
     request<InteractionWithContent>(
       `/tasks/${taskId}/interactions/${encodeURIComponent(logId)}`,
@@ -157,6 +167,29 @@ export const api = {
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),
+  decomposeTask: (id: string, tool?: string, model?: string) =>
+    post<{
+      task_id: string
+      status: string
+    }>(`/tasks/${id}/decompose`, {
+      ...(tool ? { tool } : {}),
+      ...(model ? { model } : {}),
+    }),
+  acceptDecompose: (id: string, interactionId: string, tasks?: ProposedTask[]) =>
+    post<{
+      created: number
+      task_ids: string[]
+      parent_id?: string
+    }>(`/tasks/${id}/decompose/accept`, {
+      interaction_id: interactionId,
+      ...(tasks ? { tasks } : {}),
+    }),
+  rejectDecompose: (id: string, interactionId: string) =>
+    post<{
+      rejected: boolean
+    }>(`/tasks/${id}/decompose/reject`, {
+      interaction_id: interactionId,
+    }),
   requestPlanChanges: (
     id: string,
     feedback: string,
@@ -173,13 +206,9 @@ export const api = {
   getConfig: () => request<Config>('/config'),
   updateConfig: (cfgPatch: Partial<Config>) => put<Config>('/config', cfgPatch),
   listModels: (tool?: string): Promise<Record<string, ModelInfo[]>> =>
-    request<{ tools: Record<string, ModelInfo[]> }>(
-      withQuery('/models', { tool }),
-    ).then((data) => data.tools ?? {}),
-  getTaskPlan: (taskId: string): Promise<string> =>
-    request<{ plan: string }>(`/tasks/${taskId}/plan`).then(
-      (data) => data.plan ?? '',
-    ),
+    request<Record<string, ModelInfo[]>>(withQuery('/models', { tool })),
+  getTaskPlan: async (taskId: string): Promise<string> =>
+    normalizePlanText(await request<unknown>(`/tasks/${taskId}/plan`)),
   saveTaskPlan: (taskId: string, plan: string): Promise<void> =>
     put<void>(`/tasks/${taskId}/plan`, { plan }),
   generateTaskPlan: (
@@ -189,8 +218,8 @@ export const api = {
   addDependency: (taskId: string, dependsOn: string) =>
     post(`/tasks/${taskId}/deps`, { depends_on: dependsOn }),
   listSessions: () =>
-    request<{
-      sessions: Array<{
+    request<
+      Array<{
         id: string
         type: string
         tool: string
@@ -199,6 +228,6 @@ export const api = {
         rows: number
         created_at: string
       }>
-    }>('/sessions'),
+    >('/sessions'),
   startOrchestrator: () => post<{ status: string }>('/orchestrator/start'),
 }

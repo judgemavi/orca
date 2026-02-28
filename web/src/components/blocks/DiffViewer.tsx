@@ -1,7 +1,7 @@
 import * as Tabs from '@radix-ui/react-tabs'
 import { useEffect, useMemo, useState } from 'react'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
-import { ActionButton } from '../common/ActionButton'
+import { Button } from '../Button'
 
 interface Props {
   data: {
@@ -151,7 +151,9 @@ export function DiffViewer({ data, onAction }: Props) {
       {actions.length > 0 && (
         <div className="flex justify-end gap-2">
           {actions.map((a) => (
-            <ActionButton key={a} label={a} onClick={() => onAction?.(a)} />
+            <Button key={a} variant="default" onClick={() => onAction?.(a)}>
+              {a}
+            </Button>
           ))}
         </div>
       )}

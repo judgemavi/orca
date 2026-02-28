@@ -516,3 +516,23 @@ func (s *Store) MarkStaleAsFailed() error {
 	}
 	return nil
 }
+
+// SupersedeReviewPhase marks prior review interactions as failed when a new revise rerun starts.
+func (s *Store) SupersedeReviewPhase(taskID string) error {
+	_, err := s.db.Exec(
+		`UPDATE task_interactions
+		 SET status = 'failed',
+		     error = CASE WHEN COALESCE(error, '') = '' THEN ? ELSE error END,
+		     finished_at = CASE WHEN finished_at IS NULL THEN ? ELSE finished_at END
+		 WHERE task_id = ?
+		   AND phase = 'review'
+		   AND status <> 'failed'`,
+		"superseded by revise rerun",
+		time.Now().UTC(),
+		taskID,
+	)
+	if err != nil {
+		return fmt.Errorf("supersede review interactions: %w", err)
+	}
+	return nil
+}

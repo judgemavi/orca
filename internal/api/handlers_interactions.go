@@ -44,7 +44,7 @@ func (s *Server) handleListInteractions(w http.ResponseWriter, r *http.Request) 
 		return filtered[i].StartedAt.Before(filtered[j].StartedAt)
 	})
 
-	jsonOK(w, map[string]interface{}{"interactions": filtered})
+	jsonOK(w, filtered)
 }
 
 func (s *Server) handleGetInteraction(w http.ResponseWriter, r *http.Request) {
@@ -306,5 +306,5 @@ func (s *Server) handleListRunningInteractions(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	jsonOK(w, map[string]interface{}{"operations": operations})
+	jsonOK(w, operations)
 }

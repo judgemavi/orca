@@ -1,26 +1,21 @@
 import { type FormEvent, useMemo, useState } from 'react'
-import { Dialog, DialogClose, DialogContent } from '@tiny-bits/react-dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTrigger,
+} from '@tiny-bits/react-dialog'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../../api'
 import { useCreateTaskForm } from '../../hooks/forms/useCreateTaskForm'
-import { useTasksQuery } from '../../hooks/queries/useTasks'
-import type { Config, Task } from '../../types'
-import { ActionButton } from '../common/ActionButton'
-
-interface Props {
-  config: Config
-  onClose: () => void
-  onCreated: () => void
-}
+import { useTasksQuery } from '../../hooks/queries'
+import type { Task } from '../../types'
+import { Button } from '../Button'
 
 const controlClass =
   'w-full rounded-md border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent'
 
-export function CreateTaskModal({
-  config: _config,
-  onClose,
-  onCreated,
-}: Props) {
+export function CreateTaskModal() {
   const createTaskMutation = useMutation({
     mutationFn: (data: Partial<Task>) => api.createTask(data),
   })
@@ -28,11 +23,8 @@ export function CreateTaskModal({
   const [error, setError] = useState('')
 
   const dependencyTasks = useMemo(
-    () =>
-      (tasksQuery.data?.tasks ?? []).filter(
-        (task) => task.status === 'pending',
-      ),
-    [tasksQuery.data?.tasks],
+    () => (tasksQuery.data ?? []).filter((task) => task.status === 'pending'),
+    [tasksQuery.data],
   )
 
   const form = useCreateTaskForm({}, async (values) => {
@@ -51,7 +43,6 @@ export function CreateTaskModal({
         ),
       )
     }
-    onCreated()
   })
 
   const handleSubmit = async (e: FormEvent) => {
@@ -64,14 +55,12 @@ export function CreateTaskModal({
   }
 
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose()
-      }}
-    >
-      <DialogContent className="z-100 m-0! flex! h-screen! w-screen! items-center! justify-center! overflow-y-auto! bg-black/60! p-4! backdrop-blur-sm!">
-        <div className="max-h-[90vh] w-120 max-w-[95vw] overflow-y-auto rounded-xl bg-surface-elevated text-foreground shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+    <Dialog modal>
+      <Button variant="primary" asChild>
+        <DialogTrigger>Create Task</DialogTrigger>
+      </Button>
+      <DialogContent className="dialog-content">
+        <div className="dialog-content-inner w-md">
           <div className="flex items-center justify-between px-5 py-4">
             <h2 className="text-base font-semibold">New Task</h2>
             <DialogClose
@@ -157,16 +146,17 @@ export function CreateTaskModal({
             {error && <p className="text-xs">{error}</p>}
 
             <div className="flex justify-end gap-2 pt-4">
-              <ActionButton variant="default" onClick={onClose} type="button">
-                Cancel
-              </ActionButton>
-              <ActionButton
+              <Button variant="default" asChild>
+                <DialogClose>Cancel</DialogClose>
+              </Button>
+
+              <Button
                 variant="primary"
                 type="submit"
                 disabled={createTaskMutation.isPending}
               >
                 {createTaskMutation.isPending ? 'Creating…' : 'Create Task'}
-              </ActionButton>
+              </Button>
             </div>
           </form>
         </div>

@@ -1,8 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import { useConfigQuery } from '../hooks/queries/useConfig'
-import { useModelsQuery } from '../hooks/queries/useModels'
+import { useConfigQuery, useModelsQuery } from '../hooks/queries'
 import type { Config } from '../types'
 
 type SectionId =

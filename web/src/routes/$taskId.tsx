@@ -11,20 +11,22 @@ import {
   TaskDetailProvider,
   useTaskDetailContext,
 } from '../context/TaskDetailContext'
+import { useDependencyManager } from '../hooks/useDependencyManager'
 import { useTaskForm } from '../hooks/forms/useTaskForm'
-import { useConfigQuery } from '../hooks/queries/useConfig'
-import { useModelsQuery } from '../hooks/queries/useModels'
 import { useMutation } from '@tanstack/react-query'
-import { useRunningOperations } from '../hooks/queries/useRunningOperations'
-import { useTasksQuery } from '../hooks/queries/useTasks'
+import {
+  useConfigQuery,
+  useModelsQuery,
+  useRunningOperations,
+  useTaskQuery,
+  useTasksQuery,
+} from '../hooks/queries'
 import { controlClass } from '../lib/constants'
 import type { Config, Task } from '../types'
 
 type TaskDetailContentProps = {
   task: Task
-  tasks: Task[]
   configData: Config
-  tools: string[]
   isRunning: (type: string, targetId?: string) => boolean
 }
 
@@ -32,15 +34,7 @@ type TaskDetailFormProps = {
   form: ReturnType<typeof useTaskForm>
   isEditable: boolean
   task: Task
-  tasksById: Map<string, Task>
-  dependencyChoices: Task[]
-  selectedDependencyId: string
-  setSelectedDependencyId: (value: string) => void
-  addingDependency: boolean
-  dependencyError: string | null
-  setDependencyError: (value: string | null) => void
   saving: boolean
-  handleAddDependency: () => Promise<void>
 }
 
 function formatRelativeTime(iso: string) {
@@ -54,14 +48,14 @@ function formatRelativeTime(iso: string) {
     unit: Intl.RelativeTimeFormatUnit
     inSeconds: number
   }> = [
-    { limit: 60, unit: 'second', inSeconds: 1 },
-    { limit: 3600, unit: 'minute', inSeconds: 60 },
-    { limit: 86400, unit: 'hour', inSeconds: 3600 },
-    { limit: 604800, unit: 'day', inSeconds: 86400 },
-    { limit: 2629800, unit: 'week', inSeconds: 604800 },
-    { limit: 31557600, unit: 'month', inSeconds: 2629800 },
-    { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
-  ]
+      { limit: 60, unit: 'second', inSeconds: 1 },
+      { limit: 3600, unit: 'minute', inSeconds: 60 },
+      { limit: 86400, unit: 'hour', inSeconds: 3600 },
+      { limit: 604800, unit: 'day', inSeconds: 86400 },
+      { limit: 2629800, unit: 'week', inSeconds: 604800 },
+      { limit: 31557600, unit: 'month', inSeconds: 2629800 },
+      { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
+    ]
 
   for (const range of ranges) {
     if (Math.abs(deltaSeconds) < range.limit) {
@@ -74,30 +68,10 @@ function formatRelativeTime(iso: string) {
 
 export function TaskDetailPage() {
   const { taskId } = useParams({ from: '/$taskId' })
-  const tasksQuery = useTasksQuery()
-  const configQuery = useConfigQuery()
-  const allModelsQuery = useModelsQuery()
+  const { data: task } = useTaskQuery(taskId)
+  const { data: configData } = useConfigQuery()
+
   const { isRunning } = useRunningOperations()
-
-  const tasks = tasksQuery.data?.tasks ?? []
-  const configData = configQuery.data
-  const modelsByTool = allModelsQuery.data ?? {}
-  const loading =
-    tasksQuery.isLoading || configQuery.isLoading || allModelsQuery.isLoading
-  const tools = useMemo(() => {
-    const fromConfig = Object.keys(modelsByTool)
-    return Array.from(new Set(fromConfig)).sort((a, b) => a.localeCompare(b))
-  }, [modelsByTool])
-
-  const task = tasks.find((item) => item.id === taskId)
-
-  if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
-      </div>
-    )
-  }
 
   if (!task || !configData) {
     return (
@@ -116,9 +90,7 @@ export function TaskDetailPage() {
   return (
     <TaskDetailContent
       task={task}
-      tasks={tasks}
       configData={configData}
-      tools={tools}
       isRunning={isRunning}
     />
   )
@@ -126,11 +98,14 @@ export function TaskDetailPage() {
 
 function TaskDetailContent({
   task,
-  tasks,
   configData,
-  tools,
   isRunning,
 }: TaskDetailContentProps) {
+  const { data: modelsByTool } = useModelsQuery()
+  const tools = useMemo(() => {
+    const fromConfig = Object.keys(modelsByTool ?? {})
+    return Array.from(new Set(fromConfig)).sort((a, b) => a.localeCompare(b))
+  }, [modelsByTool])
   const navigate = useNavigate()
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) =>
@@ -140,9 +115,6 @@ function TaskDetailContent({
     mutationFn: (id: string) => api.deleteTask(id),
   })
   const [saving, setSaving] = useState(false)
-  const [selectedDependencyId, setSelectedDependencyId] = useState('')
-  const [addingDependency, setAddingDependency] = useState(false)
-  const [dependencyError, setDependencyError] = useState<string | null>(null)
 
   const form = useTaskForm(
     {
@@ -176,43 +148,10 @@ function TaskDetailContent({
 
   const isEditable = task.status === 'pending'
 
-  const tasksById = useMemo(
-    () => new Map(tasks.map((item) => [item.id, item])),
-    [tasks],
-  )
-  const dependencyChoices = useMemo(
-    () =>
-      tasks
-        .filter(
-          (candidate) =>
-            candidate.id !== task.id &&
-            !(task.depends_on ?? []).includes(candidate.id),
-        )
-        .sort((a, b) => a.title.localeCompare(b.title)),
-    [task.depends_on, task.id, tasks],
-  )
-
-  const handleAddDependency = async () => {
-    if (!selectedDependencyId) {
-      setDependencyError('Select a task to add as a dependency.')
-      return
-    }
-    setDependencyError(null)
-    setAddingDependency(true)
-    try {
-      await api.addDependency(task.id, selectedDependencyId)
-      setSelectedDependencyId('')
-    } catch (err: any) {
-      setDependencyError(err?.message ?? 'Failed to add dependency')
-    } finally {
-      setAddingDependency(false)
-    }
-  }
-
   const handleDelete = async () => {
     try {
       await deleteMutation.mutateAsync(task.id)
-      void navigate({ to: '/' })
+      void navigate({ to: '/', search: {} })
     } catch (err: any) {
       alert(err?.message ?? 'Delete failed')
     }
@@ -234,7 +173,7 @@ function TaskDetailContent({
             >
               ← Back to tasks
             </Link>
-            {task.status !== 'running' && task.status !== 'merged' && (
+            {task.status !== 'running' && task.status !== 'merged' && task.status !== 'decomposed' && (
               <button
                 type="button"
                 className="rounded border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
@@ -246,21 +185,13 @@ function TaskDetailContent({
             )}
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-elevated">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow">
             <div className="shrink-0 px-4 pt-4">
               <TaskDetailForm
                 form={form}
                 isEditable={isEditable}
                 saving={saving}
                 task={task}
-                tasksById={tasksById}
-                dependencyChoices={dependencyChoices}
-                selectedDependencyId={selectedDependencyId}
-                setSelectedDependencyId={setSelectedDependencyId}
-                addingDependency={addingDependency}
-                dependencyError={dependencyError}
-                setDependencyError={setDependencyError}
-                handleAddDependency={handleAddDependency}
               />
             </div>
 
@@ -268,7 +199,7 @@ function TaskDetailContent({
 
             <TaskActionsBar
               onClose={() => {
-                void navigate({ to: '/' })
+                void navigate({ to: '/', search: {} })
               }}
             />
           </div>
@@ -283,14 +214,6 @@ function TaskDetailForm({
   isEditable,
   saving,
   task,
-  tasksById,
-  dependencyChoices,
-  selectedDependencyId,
-  setSelectedDependencyId,
-  addingDependency,
-  dependencyError,
-  setDependencyError,
-  handleAddDependency,
 }: TaskDetailFormProps) {
   const [isExpanded, setIsExpanded] = useState(isEditable)
 
@@ -299,8 +222,19 @@ function TaskDetailForm({
   }, [task.id, isEditable])
 
   const dependencies = task.depends_on ?? []
+  const {
+    dependencyChoices,
+    selectedDependencyId,
+    setSelectedDependencyId,
+    addingDependency,
+    dependencyError,
+    clearDependencyError,
+    handleAddDependency,
+  } = useDependencyManager(task.id, dependencies)
   const description = form.state.values.description.trim()
   const dependencyCount = dependencies.length
+
+  const { data: tasksResult } = useTasksQuery()
 
   return (
     <form
@@ -339,20 +273,21 @@ function TaskDetailForm({
               )}
               {!isExpanded && dependencyCount > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
-                  {dependencies.map((depId) => {
-                    const depTask = tasksById.get(depId)
-                    return (
-                      <span
-                        key={depId}
-                        className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-alt px-1.5 py-0.5 text-[11px]"
-                      >
-                        <span className="truncate">
-                          {depTask?.title || 'Unknown task'}
+                  {tasksResult &&
+                    dependencies.map((depId) => {
+                      const depTask = tasksResult.find((t) => t.id === depId)
+                      return (
+                        <span
+                          key={depId}
+                          className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-alt px-1.5 py-0.5 text-[11px]"
+                        >
+                          <span className="truncate">
+                            {depTask?.title || 'Unknown task'}
+                          </span>
+                          <span className="font-mono">{depId.slice(0, 6)}</span>
                         </span>
-                        <span className="font-mono">{depId.slice(0, 6)}</span>
-                      </span>
-                    )
-                  })}
+                      )
+                    })}
                 </div>
               )}
             </div>
@@ -415,20 +350,21 @@ function TaskDetailForm({
               Dependencies
               {dependencies.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {dependencies.map((depId) => {
-                    const depTask = tasksById.get(depId)
-                    return (
-                      <span
-                        key={depId}
-                        className="inline-flex items-center gap-2 rounded bg-surface-alt px-2 py-0.5 text-xs"
-                      >
-                        <span className="max-w-[280px] truncate">
-                          {depTask?.title || 'Unknown task'}
+                  {tasksResult &&
+                    dependencies.map((depId) => {
+                      const depTask = tasksResult.find((t) => t.id === depId)
+                      return (
+                        <span
+                          key={depId}
+                          className="inline-flex items-center gap-2 rounded bg-surface-alt px-2 py-0.5 text-xs"
+                        >
+                          <span className="max-w-[280px] truncate">
+                            {depTask?.title || 'Unknown task'}
+                          </span>
+                          <span className="font-mono">{depId.slice(0, 8)}</span>
                         </span>
-                        <span className="font-mono">{depId.slice(0, 8)}</span>
-                      </span>
-                    )
-                  })}
+                      )
+                    })}
                 </div>
               ) : (
                 <p className="text-xs font-normal">No dependencies</p>
@@ -442,7 +378,7 @@ function TaskDetailForm({
                         value={selectedDependencyId}
                         onChange={(e) => {
                           setSelectedDependencyId(e.target.value)
-                          if (dependencyError) setDependencyError(null)
+                          if (dependencyError) clearDependencyError()
                         }}
                         disabled={addingDependency}
                       >
@@ -501,23 +437,17 @@ function TaskTimelineLayout() {
   const { activeLogId, task, setActiveLogId } = useTaskDetailContext()
 
   return (
-    <div className="min-h-0 flex-1 p-4">
-      <div className="flex min-h-0 flex-1 gap-4">
-        <div className="min-h-0 flex-1 overflow-auto">
-          <TaskInteractionList taskId={task.id} />
-        </div>
-        {activeLogId && (
-          <div className="min-h-0 w-2/5 shrink-0">
-            <InteractionLogPanel
-              taskId={task.id}
-              interactionId={activeLogId}
-              onClose={() => {
-                setActiveLogId(null)
-              }}
-            />
-          </div>
-        )}
-      </div>
+    <div className="min-h-0 flex-1 overflow-auto p-4">
+      <TaskInteractionList taskId={task.id} />
+      {activeLogId && (
+        <InteractionLogPanel
+          taskId={task.id}
+          interactionId={activeLogId}
+          onClose={() => {
+            setActiveLogId(null)
+          }}
+        />
+      )}
     </div>
   )
 }

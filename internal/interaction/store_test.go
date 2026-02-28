@@ -109,3 +109,42 @@ func TestIsRunning(t *testing.T) {
 		t.Fatal("expected running interaction globally")
 	}
 }
+
+func TestSupersedeReviewPhase(t *testing.T) {
+	db := setupDB(t)
+	store := NewStore(db, filepath.Join(t.TempDir(), "logs"))
+
+	taskID := "task-1"
+	if _, err := db.Exec(`INSERT INTO tasks (id, title, status) VALUES (?, ?, 'review')`, taskID, "Task"); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+
+	w, err := store.Begin(&taskID, "review", "claude")
+	if err != nil {
+		t.Fatalf("begin review interaction: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close review interaction writer: %v", err)
+	}
+	if err := store.Finish(w.ID(), "completed"); err != nil {
+		t.Fatalf("finish review interaction: %v", err)
+	}
+
+	if err := store.SupersedeReviewPhase(taskID); err != nil {
+		t.Fatalf("supersede review phase: %v", err)
+	}
+
+	got, err := store.Get(w.ID())
+	if err != nil {
+		t.Fatalf("get superseded interaction: %v", err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("status=%q want failed", got.Status)
+	}
+	if got.Error == "" {
+		t.Fatal("expected superseded interaction to include an error message")
+	}
+	if got.FinishedAt == nil {
+		t.Fatal("expected superseded interaction to have finished_at")
+	}
+}

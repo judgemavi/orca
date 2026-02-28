@@ -58,71 +58,53 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 	}
 
 	adapter := worker.NewAdapter(g.driver, selectedModel, g.timeout)
-
-	var writer *interaction.Writer
-	if g.interactions != nil {
-		taskRef := taskID
-		w, beginErr := g.interactions.Begin(&taskRef, "plan", g.toolName)
-		if beginErr == nil {
-			writer = w
-		}
-	}
 	var (
-		outputCh   chan worker.OutputLine
-		outputDone chan struct{}
+		stdout        string
+		exitCode      = -1
+		stderr        string
+		generatedPlan string
+		blocked       bool
+		blockedReason string
 	)
-	if writer != nil {
-		outputCh = make(chan worker.OutputLine, 256)
-		outputDone = make(chan struct{})
-		adapter.SetOutputChan(outputCh)
-		go func() {
-			defer close(outputDone)
-			for line := range outputCh {
-				if line.Stream == "raw" {
-					_ = writer.WriteString(line.Line + "\n")
-				}
+	taskRef := taskID
+	_, err := interaction.RunWithTracking(
+		g.interactions,
+		&taskRef,
+		"plan",
+		g.toolName,
+		adapter,
+		func() (*worker.Result, error) {
+			return adapter.Execute(context.Background(), "plan", prompt, g.repoDir)
+		},
+		interaction.WithAfterRun(func(result *worker.Result, _ error) {
+			if result != nil {
+				stdout = result.Stdout
+				exitCode = result.ExitCode
+				stderr = result.Stderr
 			}
-		}()
-	}
-
-	result, err := adapter.Execute(context.Background(), "plan", prompt, g.repoDir)
-	if outputCh != nil {
-		close(outputCh)
-		<-outputDone
-	}
-	stdout := ""
-	exitCode := -1
-	stderr := ""
-	if result != nil {
-		stdout = result.Stdout
-		exitCode = result.ExitCode
-		stderr = result.Stderr
-	}
-
-	// Parse structured JSON response; fall back to raw text for backwards compat.
-	generatedPlan, blocked, blockedReason := parsePlanResponse(stdout)
-
-	if writer != nil {
-		status := "completed"
-		opts := []interaction.FinishOption{}
-		if result != nil {
-			opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
-		}
-		if err != nil {
-			status = "failed"
-			opts = append(opts, interaction.WithError(err.Error()))
-		} else if exitCode != 0 {
-			status = "failed"
-			opts = append(opts, interaction.WithError(fmt.Sprintf("planner exited %d: %s", exitCode, stderr)))
-		} else if blocked {
-			status = "failed"
-			opts = append(opts, interaction.WithError(fmt.Sprintf("planner blocked: %s", blockedReason)))
-		} else if generatedPlan != "" {
-			opts = append(opts, interaction.WithDiff(generatedPlan))
-		}
-		_ = g.interactions.Finish(writer.ID(), status, opts...)
-		_ = writer.Close()
-	}
+			generatedPlan, blocked, blockedReason = parsePlanResponse(stdout)
+		}),
+		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
+			status := "completed"
+			opts := []interaction.FinishOption{}
+			if result != nil {
+				opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
+			}
+			if runErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(runErr.Error()))
+			} else if exitCode != 0 {
+				status = "failed"
+				opts = append(opts, interaction.WithError(fmt.Sprintf("planner exited %d: %s", exitCode, stderr)))
+			} else if blocked {
+				status = "failed"
+				opts = append(opts, interaction.WithError(fmt.Sprintf("planner blocked: %s", blockedReason)))
+			} else if generatedPlan != "" {
+				opts = append(opts, interaction.WithDiff(generatedPlan))
+			}
+			return status, opts
+		}),
+	)
 	if err != nil {
 		return "", fmt.Errorf("execute planner: %w", err)
 	}

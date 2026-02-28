@@ -204,13 +204,17 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "breakdown",
-			Description: "Break down a goal into tasks using an LLM. Returns proposed tasks for review.",
+			Description: "Break down a goal into tasks using an LLM, or decompose an existing task into child subtasks. Returns proposed tasks for review.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"goal": map[string]interface{}{
 						"type":        "string",
 						"description": "The goal to decompose into tasks",
+					},
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional task ID to decompose. Uses task title+description as goal. Created subtasks will be children of this task.",
 					},
 					"tool": map[string]interface{}{
 						"type":        "string",
@@ -221,7 +225,6 @@ func (s *Server) toolDefinitions() []toolDef {
 						"description": "If true, create tasks immediately without confirmation (default: true for MCP)",
 					},
 				},
-				"required": []string{"goal"},
 			},
 		},
 		{

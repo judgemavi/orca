@@ -1,12 +1,11 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
 import type { ReactNode } from 'react'
 import type { Interaction } from '../../../types'
+import { useInteractionDetailContext } from './InteractionDetailContext'
 
 interface Props {
   interaction: Interaction
   phase?: string
-  activeLogId: string | null
-  onToggleLog: (id: string) => void
   collapsible?: boolean
   expanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
@@ -52,19 +51,24 @@ function summarizeDiff(diff: string | undefined): string | null {
 
 function phaseBadgeTone(phase: string | undefined): string {
   const normalized = phase?.trim().toLowerCase()
-  if (normalized === 'plan') return 'border-indigo-500/35 bg-indigo-500/15 text-indigo-300'
-  if (normalized === 'run') return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
-  if (normalized === 'review') return 'border-amber-500/35 bg-amber-500/15 text-amber-300'
-  if (normalized === 'evaluate') return 'border-cyan-500/35 bg-cyan-500/15 text-cyan-300'
-  if (normalized === 'merge') return 'border-purple-500/35 bg-purple-500/15 text-purple-300'
+  if (normalized === 'plan')
+    return 'border-indigo-500/35 bg-indigo-500/15 text-indigo-300'
+  if (normalized === 'run')
+    return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+  if (normalized === 'review')
+    return 'border-amber-500/35 bg-amber-500/15 text-amber-300'
+  if (normalized === 'evaluate')
+    return 'border-cyan-500/35 bg-cyan-500/15 text-cyan-300'
+  if (normalized === 'decompose')
+    return 'border-orange-500/35 bg-orange-500/15 text-orange-300'
+  if (normalized === 'merge')
+    return 'border-purple-500/35 bg-purple-500/15 text-purple-300'
   return 'border-slate-500/35 bg-slate-500/15 text-slate-300'
 }
 
 export function InteractionEntry({
   interaction,
   phase,
-  activeLogId,
-  onToggleLog,
   collapsible = false,
   expanded = false,
   onExpandedChange,
@@ -72,6 +76,9 @@ export function InteractionEntry({
   showDiffSummary = false,
   children,
 }: Props) {
+  const detailContext = useInteractionDetailContext()
+  const activeLogId = detailContext?.activeLogId ?? null
+  const onToggleLog = detailContext?.onToggleLog
   const isRunning = interaction.status === 'running'
   const phaseLabel = phase?.trim()
   const open = collapsible ? alwaysExpanded || expanded : true
@@ -141,26 +148,28 @@ export function InteractionEntry({
           </button>
         </Collapsible.Trigger>
 
-        <button
-          type="button"
-          className={[
-            'rounded border px-2 py-0.5 text-xs transition-colors hover:bg-surface',
-            activeLogId === interaction.id
-              ? 'border-accent bg-accent/15 text-accent'
-              : 'border-border-subtle',
-          ].join(' ')}
-          onClick={(event) => {
-            event.stopPropagation()
-            onToggleLog(interaction.id)
-          }}
-          aria-label={
-            activeLogId === interaction.id
-              ? 'Hide interaction log'
-              : 'Show interaction log'
-          }
-        >
-          {activeLogId === interaction.id ? 'log open' : 'log'}
-        </button>
+        {onToggleLog && (
+          <button
+            type="button"
+            className={[
+              'rounded border px-2 py-0.5 text-xs transition-colors hover:bg-surface',
+              activeLogId === interaction.id
+                ? 'border-accent bg-accent/15 text-accent'
+                : 'border-border-subtle',
+            ].join(' ')}
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleLog(interaction.id)
+            }}
+            aria-label={
+              activeLogId === interaction.id
+                ? 'Hide interaction log'
+                : 'Show interaction log'
+            }
+          >
+            {activeLogId === interaction.id ? 'log open' : 'log'}
+          </button>
+        )}
       </div>
 
       {children && (

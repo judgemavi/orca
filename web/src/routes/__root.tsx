@@ -1,70 +1,44 @@
 import { useCallback, useEffect, useState } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, Link, createRootRoute } from '@tanstack/react-router'
-import { Monitor, Moon, Settings, Sun } from 'lucide-react'
+import { Moon, Settings, Sun } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { handleWSEvent } from '../lib/wsQueryBridge'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { isKnownWSEvent } from '../types'
 import { OperationsIndicator } from '../components/common/OperationsIndicator'
-import { ConsolePanel } from '../components/console/ConsolePanel'
 import { api } from '../api'
 import { queryClient } from '../lib/queryClient'
+import { OrchestratorDialog } from '../components/OrchestratorDialog'
+import { Button } from '../components/Button'
 
 const RootLayout = () => {
-  const [orchestratorId, setOrchestratorId] = useState<string | null>(null)
-  const [themePreference, setThemePreference] = useState<
-    'light' | 'dark' | 'system'
-  >('system')
-  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('dark')
-
-  useEffect(() => {
-    const stored = localStorage.getItem('theme')
-    setThemePreference(
-      stored === 'light' || stored === 'dark' ? stored : 'system',
-    )
-  }, [])
-
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const applyTheme = () => {
-      const isDark =
-        themePreference === 'dark' ||
-        (themePreference === 'system' && media.matches)
-      document.documentElement.classList.toggle('dark', isDark)
-      setEffectiveTheme(isDark ? 'dark' : 'light')
-    }
-    applyTheme()
-    const onChange = () => {
-      if (themePreference === 'system') applyTheme()
-    }
-    media.addEventListener('change', onChange)
-    return () => media.removeEventListener('change', onChange)
-  }, [themePreference])
-
-  const ThemeIcon =
-    themePreference === 'light'
-      ? Sun
-      : themePreference === 'dark'
-        ? Moon
-        : Monitor
-
-  const cycleTheme = () => {
-    setThemePreference((current) => {
-      const next =
-        current === 'light' ? 'dark' : current === 'dark' ? 'system' : 'light'
-      if (next === 'system') localStorage.removeItem('theme')
-      else localStorage.setItem('theme', next)
-      return next
-    })
-  }
+  const [orchestratorId, setOrchestratorId] = useState<string>()
+  const [themePreference, setThemePreference] = useState<'light' | 'dark'>(
+    () => {
+      const saved = localStorage.getItem('theme')
+      if (saved === 'light' || saved === 'dark') return saved
+      return window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+    },
+  )
 
   useEffect(() => {
     api.listSessions().then((res) => {
-      const orch = (res.sessions ?? []).find((s) => s.type === 'orchestrator')
+      const orch = (res ?? []).find((s) => s.type === 'orchestrator')
       if (orch) setOrchestratorId(orch.id)
     })
   }, [])
+
+  const ThemeIcon = themePreference === 'light' ? Sun : Moon
+
+  useEffect(() => {
+    const root = document.documentElement
+    localStorage.setItem('theme', themePreference)
+    root.classList.remove(themePreference === 'light' ? 'dark' : 'light')
+    root.classList.add(themePreference)
+  }, [themePreference])
 
   useWebSocket(
     useCallback((event: Parameters<typeof handleWSEvent>[1]) => {
@@ -81,46 +55,44 @@ const RootLayout = () => {
         event.type === 'session.exited' &&
         event.data.type === 'orchestrator'
       ) {
-        setOrchestratorId(null)
+        setOrchestratorId(undefined)
       }
     }, []),
   )
 
+  const cycleTheme = () => {
+    setThemePreference((current) => {
+      const next = current === 'light' ? 'dark' : 'light'
+      return next
+    })
+  }
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4">
-        <Link
-          to="/"
-          className="px-3 py-1.5 text-sm font-medium text-foreground"
-        >
-          Orca
-        </Link>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={cycleTheme}
-            className="rounded border border-border-subtle bg-surface-alt p-1.5 hover:bg-surface"
-            aria-label="Toggle theme"
-          >
-            <ThemeIcon size={14} />
-          </button>
-          <Link
-            to="/config"
-            className="rounded border border-border-subtle bg-surface-alt p-1.5 hover:bg-surface"
-            aria-label="Open config"
-          >
-            <Settings size={14} />
+      <header className="bg-surface border-b border-border-subtle">
+        <div className='flex h-11 justify-between items-center gap-2 px-4 max-w-360 mx-auto'>
+          <Link to="/" className="px-3 py-1.5 text-sm font-medium">
+            Orca
           </Link>
           <OperationsIndicator />
+          <div className="flex items-center gap-2">
+            <Button onClick={cycleTheme} size="icon" aria-label="Toggle theme">
+              <ThemeIcon size={14} />
+            </Button>
+            <Button asChild size="icon">
+              <Link to="/config" className="btn-icon" aria-label="Open config">
+                <Settings size={14} />
+              </Link>
+            </Button>
+            <OrchestratorDialog orchestratorId={orchestratorId} />
+          </div>
         </div>
       </header>
 
-      <main className="flex flex-1 overflow-hidden pb-10.5">
+      <main className="flex flex-col flex-1 max-w-360 mx-auto w-full px-4">
         <Outlet />
       </main>
-
-      <ConsolePanel orchestratorId={orchestratorId} />
-      <Toaster theme={effectiveTheme} position="bottom-center" richColors />
+      <Toaster theme={themePreference} position="bottom-center" richColors />
     </div>
   )
 }

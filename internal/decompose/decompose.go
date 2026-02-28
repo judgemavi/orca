@@ -47,38 +47,41 @@ func (d *Decomposer) Run(taskID *string, goal string) ([]ProposedTask, string, e
 
 	adapter := worker.NewAdapter(d.driver, d.model, d.timeout)
 
-	var writer *interaction.Writer
 	interactionID := ""
-	if d.interactions != nil {
-		w, beginErr := d.interactions.Begin(taskID, "decompose", d.toolName)
-		if beginErr == nil {
-			writer = w
+	result, err := interaction.RunWithTracking(
+		d.interactions,
+		taskID,
+		"decompose",
+		d.toolName,
+		adapter,
+		func() (*worker.Result, error) {
+			return adapter.Execute(context.Background(), "decompose", prompt, d.repoDir)
+		},
+		interaction.WithOnBegin(func(w *interaction.Writer) {
 			interactionID = w.ID()
-		}
-	}
-	var (
-		outputCh   chan worker.OutputLine
-		outputDone chan struct{}
-	)
-	if writer != nil {
-		outputCh = make(chan worker.OutputLine, 256)
-		outputDone = make(chan struct{})
-		adapter.SetOutputChan(outputCh)
-		go func() {
-			defer close(outputDone)
-			for line := range outputCh {
-				if line.Stream == "raw" {
-					_ = writer.WriteString(line.Line + "\n")
-				}
+		}),
+		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
+			status := "completed"
+			opts := []interaction.FinishOption{}
+			if result != nil {
+				opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
 			}
-		}()
-	}
-
-	result, err := adapter.Execute(context.Background(), "decompose", prompt, d.repoDir)
-	if outputCh != nil {
-		close(outputCh)
-		<-outputDone
-	}
+			if runErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(runErr.Error()))
+			} else if result == nil || result.ExitCode != 0 {
+				status = "failed"
+				exitCode := -1
+				stderr := ""
+				if result != nil {
+					exitCode = result.ExitCode
+					stderr = result.Stderr
+				}
+				opts = append(opts, interaction.WithError(fmt.Sprintf("decomposer exited %d: %s", exitCode, stderr)))
+			}
+			return status, opts
+		}),
+	)
 	stdout := ""
 	exitCode := -1
 	stderr := ""
@@ -86,22 +89,6 @@ func (d *Decomposer) Run(taskID *string, goal string) ([]ProposedTask, string, e
 		stdout = result.Stdout
 		exitCode = result.ExitCode
 		stderr = result.Stderr
-	}
-	if writer != nil {
-		status := "completed"
-		opts := []interaction.FinishOption{}
-		if result != nil {
-			opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
-		}
-		if err != nil {
-			status = "failed"
-			opts = append(opts, interaction.WithError(err.Error()))
-		} else if exitCode != 0 {
-			status = "failed"
-			opts = append(opts, interaction.WithError(fmt.Sprintf("decomposer exited %d: %s", exitCode, stderr)))
-		}
-		_ = d.interactions.Finish(writer.ID(), status, opts...)
-		_ = writer.Close()
 	}
 	if err != nil {
 		return nil, interactionID, fmt.Errorf("execute decomposer: %w", err)

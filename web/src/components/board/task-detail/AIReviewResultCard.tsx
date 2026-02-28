@@ -1,30 +1,34 @@
 import type { AIReviewResult, Interaction } from '../../../types'
+import { useInteractionDetailContext } from './InteractionDetailContext'
 
 interface Props {
   interaction: Interaction
   dismissed?: boolean
-  activeLogId?: string | null
-  onToggleLog?: (id: string) => void
+  showLogButton?: boolean
 }
 
 export function AIReviewResultCard({
   interaction: ri,
   dismissed,
-  activeLogId,
-  onToggleLog,
+  showLogButton = false,
 }: Props) {
-  const logButton = onToggleLog ? (
-    <button
-      type="button"
-      className={[
-        'ml-auto text-[10px]',
-        activeLogId === ri.id ? 'text-accent' : 'text-muted',
-      ].join(' ')}
-      onClick={() => onToggleLog(ri.id)}
-    >
-      log
-    </button>
-  ) : null
+  const detailContext = useInteractionDetailContext()
+  const activeLogId = detailContext?.activeLogId ?? null
+  const onToggleLog = detailContext?.onToggleLog
+
+  const logButton =
+    showLogButton && onToggleLog ? (
+      <button
+        type="button"
+        className={[
+          'ml-auto text-[10px]',
+          activeLogId === ri.id ? 'text-accent' : 'text-muted',
+        ].join(' ')}
+        onClick={() => onToggleLog(ri.id)}
+      >
+        log
+      </button>
+    ) : null
 
   if (ri.status === 'running') {
     return (

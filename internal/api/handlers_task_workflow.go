@@ -91,6 +91,12 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
+		if s.interactions != nil {
+			if err := s.interactions.SupersedeReviewPhase(tk.ID); err != nil {
+				jsonError(w, err, http.StatusInternalServerError)
+				return
+			}
+		}
 		if err := store.Update(tk.ID, map[string]interface{}{"status": "running"}); err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
@@ -113,8 +119,9 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 		}(s.ctx, tk.ID)
 
 		jsonResponse(w, http.StatusAccepted, map[string]interface{}{
-			"status":  "running",
-			"task_id": tk.ID,
+			"status":   "running",
+			"task_id":  tk.ID,
+			"run_kind": "revise",
 		})
 	})(w, r)
 }
@@ -195,7 +202,7 @@ func (s *Server) handleListTaskReviews(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
-		jsonOK(w, map[string]interface{}{"reviews": reviews})
+		jsonOK(w, reviews)
 	})(w, r)
 }
 

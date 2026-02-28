@@ -34,7 +34,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, map[string]interface{}{"tasks": tasks})
+	jsonOK(w, tasks)
 }
 
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +172,7 @@ func (s *Server) handleGetReady(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, map[string]interface{}{"tasks": tasks})
+	jsonOK(w, tasks)
 }
 
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {

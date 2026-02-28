@@ -46,10 +46,6 @@
 }
 
 @layer base {
-  .shadow-elevated {
-    box-shadow: 0 2px 12px var(--t-shadow-color, rgba(0, 0, 0, 0.15));
-  }
-
   html,
   body,
   #root {
@@ -76,5 +72,19 @@
 
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-muted;
+  }
+
+  a {
+    @apply hover:underline hover:text-accent;
+  }
+}
+
+@layer components {
+  .dialog-content {
+    @apply text-foreground bg-surface-elevated fixed self-center justify-self-center max-w-[70vw] max-h-[80vh] rounded-xl shadow-lg overflow-hidden;
+  }
+
+  .dialog-content-inner {
+    @apply flex h-full flex-col bg-surface-elevated;
   }
 }

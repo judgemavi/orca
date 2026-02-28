@@ -303,58 +303,6 @@ func (r *Registry) runTaskResume(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runTaskReopen(cmd *cobra.Command, args []string) error {
-	db, store, err := r.openStoreOrErr()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	taskIDs := args
-	if len(taskIDs) == 0 {
-		taskIDs, err = pickTasks(store, "Failed tasks", statusFilter("failed"))
-		if err != nil {
-			return err
-		}
-	}
-
-	var reopened int
-	var lastReopenedID string
-	for _, arg := range taskIDs {
-		id, err := resolveTaskID(store, arg)
-		if err != nil {
-			errorf("%v", err)
-			continue
-		}
-
-		t, err := store.Get(id)
-		if err != nil {
-			errorf("get task %s: %v", short(id), err)
-			continue
-		}
-		if t.Status != "failed" {
-			errorf("task %s is %q, not %q", short(id), t.Status, "failed")
-			continue
-		}
-
-		if err := store.Update(id, map[string]interface{}{"status": "pending"}); err != nil {
-			errorf("reopen task %s: %v", short(id), err)
-			continue
-		}
-		reopened++
-		lastReopenedID = id
-	}
-
-	if reopened == 1 {
-		fmt.Printf("Reopened task %s -> pending\n", short(lastReopenedID))
-		return nil
-	}
-	if reopened > 1 {
-		fmt.Printf("Reopened %d tasks -> pending\n", reopened)
-	}
-	return nil
-}
-
 func (r *Registry) runTaskAddDep(cmd *cobra.Command, args []string) error {
 	db, store, err := r.openStoreOrErr()
 	if err != nil {

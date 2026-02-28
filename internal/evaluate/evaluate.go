@@ -60,77 +60,58 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 	}
 
 	adapter := worker.NewAdapter(e.driver, selectedModel, e.timeout)
-
-	var writer *interaction.Writer
-	if e.interactions != nil {
-		taskRef := taskID
-		w, beginErr := e.interactions.Begin(&taskRef, "evaluate", e.toolName)
-		if beginErr == nil {
-			writer = w
-		}
-	}
 	var (
-		outputCh   chan worker.OutputLine
-		outputDone chan struct{}
+		exitCode         = -1
+		stderr           string
+		output           string
+		evaluationResult = &EvaluationResult{NeedsBreakdown: false}
+		parseErr         error
 	)
-	if writer != nil {
-		outputCh = make(chan worker.OutputLine, 256)
-		outputDone = make(chan struct{})
-		adapter.SetOutputChan(outputCh)
-		go func() {
-			defer close(outputDone)
-			for line := range outputCh {
-				if line.Stream == "raw" {
-					_ = writer.WriteString(line.Line + "\n")
-				}
+	taskRef := taskID
+	_, err := interaction.RunWithTracking(
+		e.interactions,
+		&taskRef,
+		"evaluate",
+		e.toolName,
+		adapter,
+		func() (*worker.Result, error) {
+			return adapter.Execute(context.Background(), "evaluate", prompt, e.repoDir)
+		},
+		interaction.WithAfterRun(func(result *worker.Result, _ error) {
+			if result != nil {
+				output = result.Stdout
+				exitCode = result.ExitCode
+				stderr = result.Stderr
 			}
-		}()
-	}
-
-	result, err := adapter.Execute(context.Background(), "evaluate", prompt, e.repoDir)
-	if outputCh != nil {
-		close(outputCh)
-		<-outputDone
-	}
-	stdout := ""
-	exitCode := -1
-	stderr := ""
-	if result != nil {
-		stdout = result.Stdout
-		exitCode = result.ExitCode
-		stderr = result.Stderr
-	}
-	output := stdout
-	evaluationResult := &EvaluationResult{NeedsBreakdown: false}
-	parseErr := llm.ExtractJSON(output, evaluationResult)
-
-	if writer != nil {
-		status := "completed"
-		opts := []interaction.FinishOption{}
-		if result != nil {
-			opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
-		}
-		if err != nil {
-			status = "failed"
-			opts = append(opts, interaction.WithError(err.Error()))
-		} else if exitCode != 0 {
-			status = "failed"
-			opts = append(opts, interaction.WithError(fmt.Sprintf("evaluator exited %d: %s", exitCode, stderr)))
-		} else {
-			if parseErr != nil {
-				evaluationResult = &EvaluationResult{
-					NeedsBreakdown:  false,
-					DescriptionHash: descriptionHash,
-				}
+			parseErr = llm.ExtractJSON(output, evaluationResult)
+		}),
+		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
+			status := "completed"
+			opts := []interaction.FinishOption{}
+			if result != nil {
+				opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
+			}
+			if runErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(runErr.Error()))
+			} else if exitCode != 0 {
+				status = "failed"
+				opts = append(opts, interaction.WithError(fmt.Sprintf("evaluator exited %d: %s", exitCode, stderr)))
 			} else {
-				evaluationResult.DescriptionHash = descriptionHash
+				if parseErr != nil {
+					evaluationResult = &EvaluationResult{
+						NeedsBreakdown:  false,
+						DescriptionHash: descriptionHash,
+					}
+				} else {
+					evaluationResult.DescriptionHash = descriptionHash
+				}
+				qualityBytes, _ := json.Marshal(evaluationResult)
+				opts = append(opts, interaction.WithQuality(string(qualityBytes)))
 			}
-			qualityBytes, _ := json.Marshal(evaluationResult)
-			opts = append(opts, interaction.WithQuality(string(qualityBytes)))
-		}
-		_ = e.interactions.Finish(writer.ID(), status, opts...)
-		_ = writer.Close()
-	}
+			return status, opts
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("execute evaluator: %w", err)
 	}
