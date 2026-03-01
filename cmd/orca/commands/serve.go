@@ -1,11 +1,14 @@
 package commands
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/jasjeetmavi/orca/internal/api"
 	"github.com/jasjeetmavi/orca/internal/banner"
@@ -43,11 +46,6 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	sessionMgr := pty.NewSessionManager(db)
-	if n, err := sessionMgr.Reconcile(); err != nil {
-		warnf("mark stale sessions: %v", err)
-	} else if n > 0 {
-		warnf("marked %d stale sessions as exited", n)
-	}
 	defer sessionMgr.Cleanup()
 
 	hub := api.NewHub()
@@ -57,7 +55,11 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 	opts.Interactions = interaction.NewStore(db, ".orca/interactions")
 	store := task.NewStore(db)
 	wm := worktree.NewManager(repoDir, cfg.Project.WorktreeDir)
-	exec := executor.NewExecutor(db, store, wm, cfg, repoDir, opts, sessionMgr)
+	parentCtx := cmd.Context()
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	exec := executor.NewExecutor(parentCtx, db, store, wm, cfg, repoDir, opts, sessionMgr)
 	srv := api.NewServerWithHub(db, cfg, exec, repoDir, frontendFS, sessionMgr, hub)
 	defer srv.Shutdown()
 
@@ -66,6 +68,15 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 	defer ln.Close()
+	httpSrv := &http.Server{Handler: srv.Routes()}
+	go func() {
+		<-parentCtx.Done()
+		srv.Shutdown()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
+	}()
+
 	srv.LogStarted(addr)
 
 	banner.Print()
@@ -73,5 +84,12 @@ func (r *Registry) runServe(cmd *cobra.Command, args []string) error {
 	if startOrch, _ := cmd.Flags().GetBool("orchestrator"); startOrch {
 		srv.BootstrapOrchestrator()
 	}
-	return http.Serve(ln, srv.Routes())
+	err = httpSrv.Serve(ln)
+	if errors.Is(err, http.ErrServerClosed) && parentCtx.Err() != nil {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("serve http: %w", err)
+	}
+	return nil
 }

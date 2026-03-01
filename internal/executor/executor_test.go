@@ -1,15 +1,37 @@
 package executor
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/testutil"
 )
+
+func TestNewRunContextUsesParentCancellation(t *testing.T) {
+	parentCtx, cancelParent := context.WithCancel(context.Background())
+	e := NewExecutor(parentCtx, nil, nil, nil, nil, t.TempDir(), ExecutorOptions{})
+
+	runCtx, cancelRun := e.newRunContext()
+	defer cancelRun()
+
+	cancelParent()
+
+	select {
+	case <-runCtx.Done():
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("run context was not canceled after parent context cancellation")
+	}
+
+	if got, want := runCtx.Err(), context.Canceled; got != want {
+		t.Fatalf("run context err = %v, want %v", got, want)
+	}
+}
 
 func TestStopTaskReturnsErrorForNonRunningTask(t *testing.T) {
 	e := &Executor{

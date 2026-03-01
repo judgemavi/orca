@@ -61,6 +61,9 @@ func (e *Executor) streamPipe(ctx context.Context, info taskInfo, outputCh chan<
 	workerAdapter.SetCmdCallback(func(cmd *exec.Cmd) {
 		e.startProcess(info.taskID, cmd, "")
 	})
+	workerAdapter.SetSessionIDCallback(func(sessionID string) {
+		e.storeSessionID(info.taskID, sessionID)
+	})
 
 	var (
 		res     *worker.Result
@@ -175,7 +178,14 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	var rawOutput bytes.Buffer
 	var parsedText strings.Builder
 	var totalCost driver.Cost
-	sessionID := ""
+	observedSessionID := ""
+	persistSessionID := func(sessionID string) {
+		if sessionID == "" || sessionID == observedSessionID {
+			return
+		}
+		observedSessionID = sessionID
+		e.storeSessionID(info.taskID, sessionID)
+	}
 	scanner := bufio.NewScanner(sess.Pty)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	for scanner.Scan() {
@@ -216,13 +226,9 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 				totalCost.OutputTokens += event.Cost.OutputTokens
 				totalCost.TotalCost += event.Cost.TotalCost
 			}
-			if event.SessionID != "" {
-				sessionID = event.SessionID
-			}
+			persistSessionID(event.SessionID)
 		case driver.EventSession:
-			if event.SessionID != "" {
-				sessionID = event.SessionID
-			}
+			persistSessionID(event.SessionID)
 		}
 	}
 	streamErr := scanner.Err()
@@ -235,7 +241,6 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	result.InputTokens = totalCost.InputTokens
 	result.OutputTokens = totalCost.OutputTokens
 	result.TotalCost = totalCost.TotalCost
-	defer e.storeSessionID(info.taskID, sessionID)
 
 	if streamErr != nil {
 		slog.Warn("stream PTY failed", "task_id", info.taskID, "err", streamErr)

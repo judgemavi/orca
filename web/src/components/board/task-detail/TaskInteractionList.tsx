@@ -41,7 +41,8 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
   const latestCompletedId =
     [...interactions]
       .reverse()
-      .find((item) => item.status === INTERACTION_STATUSES.completed)?.id ?? null
+      .find((item) => item.status === INTERACTION_STATUSES.completed)?.id ??
+    null
 
   useEffect(() => {
     setExpandedInteractions(

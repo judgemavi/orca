@@ -11,7 +11,13 @@ import {
   useRunningOperations,
   useTasksQuery,
 } from '../hooks/queries'
-import { createColumnHelper, flexRender, getCoreRowModel, getExpandedRowModel, useReactTable } from '@tanstack/react-table'
+import {
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  getExpandedRowModel,
+  useReactTable,
+} from '@tanstack/react-table'
 import type { Task } from '../types'
 
 type TaskNode = Task & { subRows?: TaskNode[] }
@@ -24,7 +30,7 @@ function buildTaskTree(tasks: Task[]): TaskNode[] {
   for (const node of map.values()) {
     if (node.parent_id && map.has(node.parent_id)) {
       const parent = map.get(node.parent_id)!
-        ; (parent.subRows ??= []).push(node)
+      ;(parent.subRows ??= []).push(node)
     } else {
       roots.push(node)
     }
@@ -32,13 +38,16 @@ function buildTaskTree(tasks: Task[]): TaskNode[] {
   return roots
 }
 
-const columnHelper = createColumnHelper<TaskNode>();
+const columnHelper = createColumnHelper<TaskNode>()
 
 const columns = [
   columnHelper.accessor('title', {
     header: 'Task',
     cell: ({ row, getValue }) => (
-      <div className="flex items-center" style={{ paddingLeft: `${row.depth * 1.5}rem` }}>
+      <div
+        className="flex items-center"
+        style={{ paddingLeft: `${row.depth * 1.5}rem` }}
+      >
         {row.getCanExpand() ? (
           <button
             onClick={row.getToggleExpandedHandler()}
@@ -126,7 +135,6 @@ function TasksPage() {
       }}
       onSearchChange={setSearch}
     />
-
   )
 }
 
@@ -158,44 +166,62 @@ function Page() {
     <>
       <TasksPage />
       <div className="p-2">
-        <table className='w-full'>
-          <thead className='[&_tr]:border-b'>
+        <table className="w-full">
+          <thead className="[&_tr]:border-b">
             {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id} className='hover:bg-muted/10 data-[state=selected]:bg-muted border-b transition-colors'>
+              <tr
+                key={headerGroup.id}
+                className="hover:bg-muted/10 data-[state=selected]:bg-muted border-b transition-colors"
+              >
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id} className='text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0'>
+                  <th
+                    key={header.id}
+                    className="text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0"
+                  >
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </th>
                 ))}
               </tr>
             ))}
           </thead>
-          <tbody className='[&_tr:last-child]:border-0'>
+          <tbody className="[&_tr:last-child]:border-0">
             {table.getRowModel().rows.map((row) => (
-
-              <tr key={row.id} className='hover:bg-muted/10 data-[state=selected]:bg-muted border-b transition-colors'>
+              <tr
+                key={row.id}
+                className="hover:bg-muted/10 data-[state=selected]:bg-muted border-b transition-colors"
+              >
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className='p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0'>
+                  <td
+                    key={cell.id}
+                    className="p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0"
+                  >
                     {cell.column.id === 'title' ? (
-                      <Link key={row.id} to="/$taskId" className='block' params={{
-                        taskId: row.original.id,
-                      }}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      <Link
+                        key={row.id}
+                        to="/$taskId"
+                        className="block"
+                        params={{
+                          taskId: row.original.id,
+                        }}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
                       </Link>
-                    ) :
-                      flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    ) : (
+                      flexRender(cell.column.columnDef.cell, cell.getContext())
+                    )}
                   </td>
                 ))}
               </tr>
-
             ))}
           </tbody>
-
         </table>
       </div>
     </>

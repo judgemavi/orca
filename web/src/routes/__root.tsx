@@ -70,7 +70,7 @@ const RootLayout = () => {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <header className="bg-surface border-b border-border-subtle">
-        <div className='flex h-11 justify-between items-center gap-2 px-4 max-w-360 mx-auto'>
+        <div className="flex h-11 justify-between items-center gap-2 px-4 max-w-360 mx-auto">
           <Link to="/" className="px-3 py-1.5 text-sm font-medium">
             Orca
           </Link>

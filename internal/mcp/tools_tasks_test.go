@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"os/exec"
 	"reflect"
@@ -16,7 +17,7 @@ import (
 func TestHandleTasksStopTool(t *testing.T) {
 	db := testutil.DB(t)
 	store := task.NewStore(db)
-	exec := executor.NewExecutor(db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
+	exec := executor.NewExecutor(context.Background(), db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
 	s := &Server{taskStore: store, executor: exec}
 
 	tk, err := store.Create("t1", "desc", "")

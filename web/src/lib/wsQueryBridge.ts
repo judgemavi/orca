@@ -17,7 +17,13 @@ const INVALIDATE_EXACT: Record<string, readonly QueryKey[]> = {
   'merge.failed': [queryKeys.operations(), queryKeys.status],
 }
 
-const SIGNAL_PREFIXES = ['run.', 'breakdown.', 'cleanup.', 'explore.']
+const SIGNAL_PREFIXES = [
+  'run.',
+  'breakdown.',
+  'cleanup.',
+  'explore.',
+  'evaluate.',
+]
 
 function getTaskID(data: Record<string, unknown>): string | undefined {
   const taskID = data.task_id
@@ -52,6 +58,8 @@ function upsertTask(qc: QueryClient, task: Task) {
     }
     return [...tasks, task]
   })
+
+  qc.setQueryData<Task>(queryKeys.task(task.id), task)
 }
 
 function upsertInteraction(qc: QueryClient, interaction: Interaction) {
@@ -102,6 +110,9 @@ function handleKnownEvent(qc: QueryClient, event: KnownWSEvent): boolean {
 
     case 'plan.completed':
       qc.setQueryData(queryKeys.taskPlan(event.data.task_id), event.data.plan)
+      void qc.invalidateQueries({
+        queryKey: queryKeys.task(event.data.task_id),
+      })
       return true
 
     case 'interaction.started':

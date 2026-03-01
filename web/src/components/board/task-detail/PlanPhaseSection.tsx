@@ -46,6 +46,8 @@ export function PlanPhaseSection({
     return null
   }
 
+  const nonEditablePlanMarkdown = planEditor.planDraft || interaction.diff
+
   return (
     <>
       {isEditableLatestPlan && (
@@ -107,10 +109,10 @@ export function PlanPhaseSection({
         </div>
       )}
 
-      {!isEditableLatestPlan && interaction.diff && (
+      {!isEditableLatestPlan && nonEditablePlanMarkdown && (
         <div className="prose prose-invert prose-sm max-h-[300px] max-w-none overflow-auto rounded-lg bg-surface p-4 text-xs">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {interaction.diff}
+            {nonEditablePlanMarkdown}
           </ReactMarkdown>
         </div>
       )}

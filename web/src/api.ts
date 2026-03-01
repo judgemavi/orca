@@ -172,7 +172,11 @@ export const api = {
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),
-  acceptBreakdown: (id: string, interactionId: string, tasks?: ProposedTask[]) =>
+  acceptBreakdown: (
+    id: string,
+    interactionId: string,
+    tasks?: ProposedTask[],
+  ) =>
     post<{
       created: number
       task_ids: string[]

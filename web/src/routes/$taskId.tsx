@@ -48,14 +48,14 @@ function formatRelativeTime(iso: string) {
     unit: Intl.RelativeTimeFormatUnit
     inSeconds: number
   }> = [
-      { limit: 60, unit: 'second', inSeconds: 1 },
-      { limit: 3600, unit: 'minute', inSeconds: 60 },
-      { limit: 86400, unit: 'hour', inSeconds: 3600 },
-      { limit: 604800, unit: 'day', inSeconds: 86400 },
-      { limit: 2629800, unit: 'week', inSeconds: 604800 },
-      { limit: 31557600, unit: 'month', inSeconds: 2629800 },
-      { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
-    ]
+    { limit: 60, unit: 'second', inSeconds: 1 },
+    { limit: 3600, unit: 'minute', inSeconds: 60 },
+    { limit: 86400, unit: 'hour', inSeconds: 3600 },
+    { limit: 604800, unit: 'day', inSeconds: 86400 },
+    { limit: 2629800, unit: 'week', inSeconds: 604800 },
+    { limit: 31557600, unit: 'month', inSeconds: 2629800 },
+    { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
+  ]
 
   for (const range of ranges) {
     if (Math.abs(deltaSeconds) < range.limit) {
@@ -173,16 +173,18 @@ function TaskDetailContent({
             >
               ← Back to tasks
             </Link>
-            {task.status !== 'running' && task.status !== 'merged' && task.status !== 'broken_down' && (
-              <button
-                type="button"
-                className="rounded border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
-                onClick={() => void handleDelete()}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-              </button>
-            )}
+            {task.status !== 'running' &&
+              task.status !== 'merged' &&
+              task.status !== 'broken_down' && (
+                <button
+                  type="button"
+                  className="rounded border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
+                  onClick={() => void handleDelete()}
+                  disabled={deleteMutation.isPending}
+                >
+                  {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow">

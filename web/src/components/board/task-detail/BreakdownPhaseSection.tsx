@@ -8,7 +8,9 @@ type ParsedBreakdown = {
   proposed: ProposedTask[]
 }
 
-function parseBreakdownResult(qualityJSON: string | undefined): ParsedBreakdown {
+function parseBreakdownResult(
+  qualityJSON: string | undefined,
+): ParsedBreakdown {
   if (!qualityJSON) {
     return { accepted: false, rejected: false, proposed: [] }
   }

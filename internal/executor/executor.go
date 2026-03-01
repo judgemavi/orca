@@ -89,6 +89,7 @@ type ExecutorOptions struct {
 // Executor orchestrates task execution: worktree creation, parallel worker
 // spawning, result collection, and artifact storage.
 type Executor struct {
+	parentCtx  context.Context
 	db         *state.DB
 	taskStore  *task.Store
 	worktrees  *worktree.Manager
@@ -252,12 +253,17 @@ func (e *Executor) resolveTaskToolConfig(phase string, override string) (string,
 
 // NewExecutor creates an Executor wired to DB, task store, worktree manager,
 // config, and repo directory.
-func NewExecutor(db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg *config.Config, repoDir string, opts ExecutorOptions, sessionMgr ...*pty.SessionManager) *Executor {
+func NewExecutor(parentCtx context.Context, db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg *config.Config, repoDir string, opts ExecutorOptions, sessionMgr ...*pty.SessionManager) *Executor {
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+
 	var mgr *pty.SessionManager
 	if len(sessionMgr) > 0 {
 		mgr = sessionMgr[0]
 	}
 	return &Executor{
+		parentCtx:     parentCtx,
 		db:            db,
 		taskStore:     taskStore,
 		worktrees:     wm,
@@ -272,6 +278,14 @@ func NewExecutor(db *state.DB, taskStore *task.Store, wm *worktree.Manager, cfg 
 		doneHook:      opts.DoneHook,
 		broadcastHook: opts.BroadcastHook,
 	}
+}
+
+func (e *Executor) newRunContext() (context.Context, context.CancelFunc) {
+	parentCtx := e.parentCtx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	return context.WithCancel(parentCtx)
 }
 
 // Worktrees returns the underlying worktree manager.
@@ -341,7 +355,7 @@ func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error
 
 	runID := uuid.New().String()
 	e.runID = runID
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := e.newRunContext()
 	e.cancel = cancel
 	e.runCtx = ctx
 	defer func() {

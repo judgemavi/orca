@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,7 @@ import (
 func TestHandleStopTaskReturns400ForNonRunningTask(t *testing.T) {
 	db := testutil.DB(t)
 	store := task.NewStore(db)
-	exec := executor.NewExecutor(db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
+	exec := executor.NewExecutor(context.Background(), db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
 
 	srv := &Server{
 		taskStore: store,
@@ -42,7 +43,7 @@ func TestHandleStopTaskReturns400ForNonRunningTask(t *testing.T) {
 func TestHandleStopTaskReturnsStoppedTaskOnSuccess(t *testing.T) {
 	db := testutil.DB(t)
 	store := task.NewStore(db)
-	exec := executor.NewExecutor(db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
+	exec := executor.NewExecutor(context.Background(), db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
 
 	srv := &Server{
 		taskStore: store,
@@ -81,7 +82,7 @@ func TestHandleStopTaskReturnsStoppedTaskOnSuccess(t *testing.T) {
 func TestHandleCancelTaskAliasStillWorks(t *testing.T) {
 	db := testutil.DB(t)
 	store := task.NewStore(db)
-	exec := executor.NewExecutor(db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
+	exec := executor.NewExecutor(context.Background(), db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
 
 	srv := &Server{
 		taskStore: store,
@@ -110,7 +111,7 @@ func TestHandleCancelTaskAliasStillWorks(t *testing.T) {
 func TestHandleResumeTaskReturns400ForNonStoppedTask(t *testing.T) {
 	db := testutil.DB(t)
 	store := task.NewStore(db)
-	exec := executor.NewExecutor(db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
+	exec := executor.NewExecutor(context.Background(), db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
 
 	srv := &Server{
 		taskStore: store,
@@ -135,7 +136,7 @@ func TestHandleResumeTaskReturns400ForNonStoppedTask(t *testing.T) {
 func TestHandleResumeTaskReturns400WithoutSessionID(t *testing.T) {
 	db := testutil.DB(t)
 	store := task.NewStore(db)
-	exec := executor.NewExecutor(db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
+	exec := executor.NewExecutor(context.Background(), db, store, nil, nil, t.TempDir(), executor.ExecutorOptions{})
 
 	srv := &Server{
 		taskStore: store,

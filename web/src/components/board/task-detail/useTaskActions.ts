@@ -337,8 +337,12 @@ export function useTaskActions(task: Task) {
     isOperationRunning(PHASES.run, task.id)
   const runningBusy = runningInProgress || startTaskMutation.isPending
   const pendingPhaseInProgress =
-    planInteractions.some((item) => item.status === INTERACTION_STATUSES.running) ||
-    evaluateInteractions.some((item) => item.status === INTERACTION_STATUSES.running) ||
+    planInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    ) ||
+    evaluateInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    ) ||
     breakdownInteractions.some(
       (item) => item.status === INTERACTION_STATUSES.running,
     ) ||
@@ -350,11 +354,15 @@ export function useTaskActions(task: Task) {
     breakingDown ||
     breakdownTaskMutation.isPending
   const reviewPhaseInProgress =
-    reviewInteractions.some((item) => item.status === INTERACTION_STATUSES.running) ||
+    reviewInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    ) ||
     isOperationRunning(PHASES.review, task.id) ||
     aiReviewMutation.isPending
   const approvedPhaseInProgress =
-    mergeInteractions.some((item) => item.status === INTERACTION_STATUSES.running) ||
+    mergeInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    ) ||
     isOperationRunning(PHASES.merge, task.id) ||
     mergeTaskMutation.isPending
 

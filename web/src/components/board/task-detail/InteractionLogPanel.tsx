@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Dialog, DialogContent } from '@tiny-bits/react-dialog'
+import * as Dialog from '@radix-ui/react-dialog'
 
 import {
   useInteractionContent,
@@ -77,66 +77,72 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
     : 'Interaction Log'
 
   return (
-    <Dialog
+    <Dialog.Root
       open
       onOpenChange={(open) => {
         if (!open) onClose()
       }}
     >
-      <DialogContent className="z-100 m-0! flex! h-screen! w-screen! items-center! justify-center! overflow-y-auto! bg-black/60! p-4! backdrop-blur-sm!">
-        <section className="flex h-[80vh] w-[70vw] max-w-5xl flex-col rounded-xl bg-surface-elevated text-foreground shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
-          <header className="flex items-center justify-between border-b border-border-subtle px-5 py-4">
-            <div className="text-base font-semibold">{title}</div>
-            <button
-              type="button"
-              className="rounded px-1.5 py-1 text-sm transition-colors hover:bg-surface-alt"
-              onClick={onClose}
-              aria-label="Close log dialog"
-            >
-              ✕
-            </button>
-          </header>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-100 bg-black/60 backdrop-blur-sm" />
+        <Dialog.Content className="fixed inset-0 z-100 flex items-center justify-center p-4">
+          <section className="flex h-[80vh] w-[70vw] max-w-5xl flex-col rounded-xl bg-surface-elevated text-foreground shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+            <header className="flex items-center justify-between border-b border-border-subtle px-5 py-4">
+              <Dialog.Title className="text-base font-semibold">
+                {title}
+              </Dialog.Title>
+              <Dialog.Close
+                className="rounded px-1.5 py-1 text-sm transition-colors hover:bg-surface-alt"
+                aria-label="Close log dialog"
+              >
+                ✕
+              </Dialog.Close>
+            </header>
 
-          <div className="min-h-0 flex-1 px-4 pb-4">
-            <pre
-              ref={logBodyRef}
-              className="h-full overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed text-foreground"
-            >
-              {!selectedInteraction
-                ? 'Interaction not found.'
-                : content ||
-                  (selectedInteraction.status === INTERACTION_STATUSES.running
-                    ? 'Waiting for streaming output...'
-                    : 'No content.')}
-            </pre>
+            <div className="min-h-0 flex-1 px-4 pb-4">
+              <pre
+                ref={logBodyRef}
+                className="h-full overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed text-foreground"
+              >
+                {!selectedInteraction
+                  ? 'Interaction not found.'
+                  : content ||
+                    (selectedInteraction.status === INTERACTION_STATUSES.running
+                      ? 'Waiting for streaming output...'
+                      : 'No content.')}
+              </pre>
 
-            {selectedInteraction?.status === INTERACTION_STATUSES.failed &&
-              (selectedInteraction.error || contentQuery.data?.error) && (
-                <div className="mt-2 text-xs">
-                  Error: {selectedInteraction.error || contentQuery.data?.error}
-                </div>
+              {selectedInteraction?.status === INTERACTION_STATUSES.failed &&
+                (selectedInteraction.error || contentQuery.data?.error) && (
+                  <div className="mt-2 text-xs">
+                    Error:{' '}
+                    {selectedInteraction.error || contentQuery.data?.error}
+                  </div>
+                )}
+            </div>
+
+            <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border-subtle px-5 py-3 text-xs text-muted">
+              <span>
+                Tokens: {formatTokenCount(selectedInteraction?.input_tokens)} in
+                / {formatTokenCount(selectedInteraction?.output_tokens)} out
+              </span>
+              <span>
+                Cost: {formatCost(selectedInteraction?.estimated_cost)}
+              </span>
+              <span>
+                Duration:{' '}
+                {formatDuration(
+                  contentQuery.data?.duration_ms ??
+                    selectedInteraction?.duration_ms,
+                )}
+              </span>
+              {stream.isStreaming && (
+                <span className="text-emerald-500">Streaming</span>
               )}
-          </div>
-
-          <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border-subtle px-5 py-3 text-xs text-muted">
-            <span>
-              Tokens: {formatTokenCount(selectedInteraction?.input_tokens)} in /{' '}
-              {formatTokenCount(selectedInteraction?.output_tokens)} out
-            </span>
-            <span>Cost: {formatCost(selectedInteraction?.estimated_cost)}</span>
-            <span>
-              Duration:{' '}
-              {formatDuration(
-                contentQuery.data?.duration_ms ??
-                  selectedInteraction?.duration_ms,
-              )}
-            </span>
-            {stream.isStreaming && (
-              <span className="text-emerald-500">Streaming</span>
-            )}
-          </footer>
-        </section>
-      </DialogContent>
-    </Dialog>
+            </footer>
+          </section>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }

@@ -29,6 +29,7 @@ type Worker interface {
 	SetModel(string)
 	SetTaskTitle(string)
 	SetOutputChan(chan<- OutputLine)
+	SetSessionIDCallback(func(string))
 }
 
 // Result holds the output of a completed worker execution.
@@ -65,6 +66,8 @@ type Adapter struct {
 	CmdCallback func(*exec.Cmd)
 	// OutputChan receives live worker output lines.
 	OutputChan chan<- OutputLine
+	// SessionIDCallback receives observed session IDs during stream parsing.
+	SessionIDCallback func(string)
 }
 
 // --- private helpers ---
@@ -159,10 +162,16 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 				}
 				if event.SessionID != "" {
 					sessionID = event.SessionID
+					if a.SessionIDCallback != nil {
+						a.SessionIDCallback(event.SessionID)
+					}
 				}
 			case driver.EventSession:
 				if event.SessionID != "" {
 					sessionID = event.SessionID
+					if a.SessionIDCallback != nil {
+						a.SessionIDCallback(event.SessionID)
+					}
 				}
 			}
 		}
@@ -328,3 +337,6 @@ func (a *Adapter) SetTaskTitle(title string) { a.TaskTitle = title }
 
 // SetOutputChan sets the live output stream channel.
 func (a *Adapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }
+
+// SetSessionIDCallback sets the callback for observed session IDs.
+func (a *Adapter) SetSessionIDCallback(cb func(string)) { a.SessionIDCallback = cb }
