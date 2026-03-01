@@ -18,6 +18,8 @@ Breakdown branch: `pending → broken_down` (when a parent task is split into ch
 Stop path: `running → stopped` (via `tasks_stop`); `stopped → running` (resume via `tasks_resume`).
 Failure path: `running → failed`.
 
+Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cancel workers, mark in-flight interactions failed, set run-phase tasks to stopped). On next launch, automatic startup recovery detects and resets any stale state left by hard kills (SIGKILL, OOM, power loss).
+
 ## Features
 
 - Tool-agnostic worker execution via pluggable drivers
@@ -161,6 +163,7 @@ internal/
   procutil/         Process/git utilities
   pty/              Interactive terminal sessions
   quality/          Quality gates
+  recovery/         Startup recovery + graceful shutdown
   review/           Review flows
   state/            SQLite migrations + watcher
   task/             Task store + dependency graph
