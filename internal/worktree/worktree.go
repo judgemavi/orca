@@ -36,6 +36,9 @@ type Manager struct {
 // NewManager creates a worktree manager rooted at the given repo, storing
 // worktrees under worktreeDir.
 func NewManager(repoDir, worktreeDir string) *Manager {
+	if !filepath.IsAbs(worktreeDir) {
+		worktreeDir = filepath.Join(repoDir, worktreeDir)
+	}
 	return &Manager{
 		repoDir:     repoDir,
 		worktreeDir: worktreeDir,
@@ -87,6 +90,11 @@ func FormatBranchName(taskID, title string) string {
 // ResolveTaskDir finds the actual worktree directory path for a taskID,
 // handling both old (task-{id}) and new (task-{id}--{slug}) formats.
 func ResolveTaskDir(worktreeDir, taskID string) string {
+	if !filepath.IsAbs(worktreeDir) {
+		if abs, err := filepath.Abs(worktreeDir); err == nil {
+			worktreeDir = abs
+		}
+	}
 	exact := filepath.Join(worktreeDir, "task-"+taskID)
 	if _, err := os.Stat(exact); err == nil {
 		return exact
@@ -255,51 +263,6 @@ func (m *Manager) DiskUsage() (int64, error) {
 	return total, err
 }
 
-// Diff returns the combined staged + unstaged diff for a task's worktree.
-func (m *Manager) Diff(taskID string) (string, error) {
-	worktreePath := ResolveTaskDir(m.worktreeDir, taskID)
-
-	unstaged, err := m.gitOutput("-C", worktreePath, "diff", "HEAD")
-	if err != nil {
-		return "", fmt.Errorf("git diff HEAD: %w", err)
-	}
-
-	staged, err := m.gitOutput("-C", worktreePath, "diff", "--cached")
-	if err != nil {
-		return "", fmt.Errorf("git diff --cached: %w", err)
-	}
-
-	if staged == "" {
-		return unstaged, nil
-	}
-	if unstaged == "" {
-		return staged, nil
-	}
-	return unstaged + "\n" + staged, nil
-}
-
-// DiffStat returns the list of changed file paths in a task's worktree.
-func (m *Manager) DiffStat(taskID string) ([]string, error) {
-	worktreePath := ResolveTaskDir(m.worktreeDir, taskID)
-
-	out, err := m.gitOutput("-C", worktreePath, "diff", "HEAD", "--name-only")
-	if err != nil {
-		return nil, fmt.Errorf("git diff --name-only: %w", err)
-	}
-
-	if out == "" {
-		return nil, nil
-	}
-
-	var files []string
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line != "" {
-			files = append(files, line)
-		}
-	}
-	return files, nil
-}
-
 // EnsureIntegrationBranch creates the named branch from HEAD if it doesn't
 // already exist. No-op if the branch exists.
 func (m *Manager) EnsureIntegrationBranch(branchName string) error {
@@ -326,18 +289,6 @@ func (m *Manager) gitCmd(args ...string) error {
 		return fmt.Errorf("%s: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// gitOutput runs a git command and returns its stdout.
-func (m *Manager) gitOutput(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = m.repoDir
-
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmtExecErr(err)
-	}
-	return string(out), nil
 }
 
 // fmtExecErr extracts stderr from an exec.ExitError if available.

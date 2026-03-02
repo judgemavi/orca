@@ -23,14 +23,9 @@ type TaskChange struct {
 	TaskID string
 }
 
-type SprintChange struct {
-	Type     ChangeType
-	SprintID string
-}
-
-type OperationChange struct {
-	Type        ChangeType
-	OperationID string
+type InteractionChange struct {
+	Type          ChangeType
+	InteractionID string
 }
 
 type SessionChange struct {
@@ -44,25 +39,22 @@ type WatcherOpts struct {
 }
 
 type WatcherCallbacks struct {
-	OnTaskChange      func([]TaskChange)
-	OnSprintChange    func([]SprintChange)
-	OnOperationChange func([]OperationChange)
-	OnSessionChange   func([]SessionChange)
+	OnTaskChange        func([]TaskChange)
+	OnInteractionChange func([]InteractionChange)
+	OnSessionChange     func([]SessionChange)
 }
 
 // Watcher polls db_version and emits typed table changes.
 type Watcher struct {
-	db             *DB
-	lastVersion    int64
-	lastTasks      map[string]time.Time // taskID -> last known updated_at
-	lastSprints    map[string]string    // sprintID -> status
-	lastOperations map[string]string    // operationID -> status
-	lastSessions   map[string]string    // sessionID -> status
+	db               *DB
+	lastVersion      int64
+	lastTasks        map[string]time.Time // taskID -> last known updated_at
+	lastInteractions map[string]string    // interactionID -> status
+	lastSessions     map[string]string    // sessionID -> status
 
-	onTaskChange      func([]TaskChange)
-	onSprintChange    func([]SprintChange)
-	onOperationChange func([]OperationChange)
-	onSessionChange   func([]SessionChange)
+	onTaskChange        func([]TaskChange)
+	onInteractionChange func([]InteractionChange)
+	onSessionChange     func([]SessionChange)
 
 	opts WatcherOpts
 }
@@ -73,17 +65,15 @@ func NewWatcher(db *DB, callbacks WatcherCallbacks, opts WatcherOpts) *Watcher {
 		opts.Interval = 500 * time.Millisecond
 	}
 	return &Watcher{
-		db:                db,
-		lastVersion:       -1,
-		lastTasks:         make(map[string]time.Time),
-		lastSprints:       make(map[string]string),
-		lastOperations:    make(map[string]string),
-		lastSessions:      make(map[string]string),
-		onTaskChange:      callbacks.OnTaskChange,
-		onSprintChange:    callbacks.OnSprintChange,
-		onOperationChange: callbacks.OnOperationChange,
-		onSessionChange:   callbacks.OnSessionChange,
-		opts:              opts,
+		db:                  db,
+		lastVersion:         -1,
+		lastTasks:           make(map[string]time.Time),
+		lastInteractions:    make(map[string]string),
+		lastSessions:        make(map[string]string),
+		onTaskChange:        callbacks.OnTaskChange,
+		onInteractionChange: callbacks.OnInteractionChange,
+		onSessionChange:     callbacks.OnSessionChange,
+		opts:                opts,
 	}
 }
 
@@ -119,14 +109,9 @@ func (w *Watcher) poll() {
 		log.Printf("watcher poll: snapshot tasks: %v", err)
 		return
 	}
-	currentSprints, err := w.snapshotStatusTable(`SELECT id, status FROM sprints`)
+	currentInteractions, err := w.snapshotStatusTable(`SELECT id, status FROM task_interactions`)
 	if err != nil {
-		log.Printf("watcher poll: snapshot sprints: %v", err)
-		return
-	}
-	currentOperations, err := w.snapshotStatusTable(`SELECT id, status FROM operations`)
-	if err != nil {
-		log.Printf("watcher poll: snapshot operations: %v", err)
+		log.Printf("watcher poll: snapshot interactions: %v", err)
 		return
 	}
 	currentSessions, err := w.snapshotStatusTable(`SELECT id, status FROM sessions`)
@@ -138,38 +123,30 @@ func (w *Watcher) poll() {
 	// First observation initializes state without emitting synthetic events.
 	if w.lastVersion == -1 {
 		w.lastTasks = currentTasks
-		w.lastSprints = currentSprints
-		w.lastOperations = currentOperations
+		w.lastInteractions = currentInteractions
 		w.lastSessions = currentSessions
 		w.lastVersion = version
 		return
 	}
 
 	taskChanges := diffTaskSnapshots(w.lastTasks, currentTasks)
-	sprintChanges := diffStatusSnapshots(w.lastSprints, currentSprints, func(changeType ChangeType, id string) SprintChange {
-		return SprintChange{Type: changeType, SprintID: id}
-	})
-	operationChanges := diffStatusSnapshots(w.lastOperations, currentOperations, func(changeType ChangeType, id string) OperationChange {
-		return OperationChange{Type: changeType, OperationID: id}
+	interactionChanges := diffStatusSnapshots(w.lastInteractions, currentInteractions, func(changeType ChangeType, id string) InteractionChange {
+		return InteractionChange{Type: changeType, InteractionID: id}
 	})
 	sessionChanges := diffStatusSnapshots(w.lastSessions, currentSessions, func(changeType ChangeType, id string) SessionChange {
 		return SessionChange{Type: changeType, SessionID: id}
 	})
 
 	w.lastTasks = currentTasks
-	w.lastSprints = currentSprints
-	w.lastOperations = currentOperations
+	w.lastInteractions = currentInteractions
 	w.lastSessions = currentSessions
 	w.lastVersion = version
 
 	if len(taskChanges) > 0 && w.onTaskChange != nil {
 		w.onTaskChange(taskChanges)
 	}
-	if len(sprintChanges) > 0 && w.onSprintChange != nil {
-		w.onSprintChange(sprintChanges)
-	}
-	if len(operationChanges) > 0 && w.onOperationChange != nil {
-		w.onOperationChange(operationChanges)
+	if len(interactionChanges) > 0 && w.onInteractionChange != nil {
+		w.onInteractionChange(interactionChanges)
 	}
 	if len(sessionChanges) > 0 && w.onSessionChange != nil {
 		w.onSessionChange(sessionChanges)

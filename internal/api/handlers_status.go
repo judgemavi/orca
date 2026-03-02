@@ -2,9 +2,6 @@ package api
 
 import (
 	"net/http"
-
-	"github.com/jasjeetmavi/orca/internal/cost"
-	"github.com/jasjeetmavi/orca/internal/explore"
 )
 
 // ========== Status ==========
@@ -18,42 +15,52 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		counts[t.Status]++
 	}
 
-	active, _ := s.planner.GetActive()
-	ct := cost.NewTracker(s.db)
-	projectTotal, _ := ct.ProjectTotal()
-	contextExists := explore.LoadContext(s.repoDir) != ""
-	stale, _ := explore.IsStale(s.repoDir)
-	age := explore.ContextAge(s.repoDir)
+	projectTotal, _ := s.interactions.ProjectTotal()
+	runningInteractions, _ := s.interactions.ListByStatus("running")
+	contextExists := false
+	lastSyncedCommit := ""
+	currentCommit := ""
+	syncNeeded := false
+	commitsBehind := 0
+	contextStale := false
+	memoryTotal := 0
+	memoryStaleCount := 0
+
+	if s.memoryStore != nil {
+		if syncStatus, err := s.newMemorySyncer(s.memoryStore).Status(); err == nil && syncStatus != nil {
+			lastSyncedCommit = syncStatus.LastSyncedCommit
+			currentCommit = syncStatus.CurrentCommit
+			syncNeeded = syncStatus.SyncNeeded
+			commitsBehind = syncStatus.CommitsBehind
+			contextStale = contextStale || syncStatus.ContextStale
+		}
+		if health, err := s.memoryStore.BuildHealthSummary(); err == nil && health != nil {
+			memoryTotal = health.TotalEntries
+			memoryStaleCount = health.StaleCount
+		}
+	}
+	contextExists = memoryTotal > 0
+	contextStale = contextStale || memoryStaleCount > 0
 
 	status := map[string]interface{}{
 		"project":             s.cfg.Project.Name,
 		"total_tasks":         len(tasks),
 		"pending":             counts["pending"],
-		"in_progress":         counts["in_sprint"] + counts["running"],
+		"in_progress":         counts["running"],
 		"completed":           counts["completed"],
 		"failed":              counts["failed"],
 		"context_exists":      contextExists,
-		"context_stale":       stale,
-		"context_age_minutes": int(age.Minutes()),
+		"context_stale":       contextStale,
+		"context_age_minutes": 0,
 		"total_cost":          projectTotal,
-		"budget":              s.cfg.Orchestrator.CostBudget,
-	}
-
-	if active != nil {
-		status["active_sprint"] = map[string]string{
-			"id":     active.ID,
-			"status": active.Status,
-		}
+		"running_operations":  len(runningInteractions),
+		"last_synced_commit":  lastSyncedCommit,
+		"current_commit":      currentCommit,
+		"sync_needed":         syncNeeded,
+		"commits_behind":      commitsBehind,
+		"memory_total":        memoryTotal,
+		"memory_stale_count":  memoryStaleCount,
 	}
 
 	jsonOK(w, status)
-}
-
-// ========== Plan Sprint (standalone route) ==========
-
-// This is the handler used by POST /api/v1/sprints/plan
-// It's also called from routeSprintByID when the sub-path is "plan"
-// but we already handle it above. Let's alias it for the mux entry:
-func init() {
-	// no-op; planSprint is called via routeSprintByID
 }

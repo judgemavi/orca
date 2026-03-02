@@ -113,19 +113,13 @@ func TestWatcherDetectsCrossConnectionStatusTableMutations(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	sprintCh := make(chan []SprintChange, 16)
-	operationCh := make(chan []OperationChange, 16)
+	interactionCh := make(chan []InteractionChange, 16)
 	sessionCh := make(chan []SessionChange, 16)
 	watcher := NewWatcher(db, WatcherCallbacks{
-		OnSprintChange: func(changes []SprintChange) {
-			copied := make([]SprintChange, len(changes))
+		OnInteractionChange: func(changes []InteractionChange) {
+			copied := make([]InteractionChange, len(changes))
 			copy(copied, changes)
-			sprintCh <- copied
-		},
-		OnOperationChange: func(changes []OperationChange) {
-			copied := make([]OperationChange, len(changes))
-			copy(copied, changes)
-			operationCh <- copied
+			interactionCh <- copied
 		},
 		OnSessionChange: func(changes []SessionChange) {
 			copied := make([]SessionChange, len(changes))
@@ -149,7 +143,7 @@ func TestWatcherDetectsCrossConnectionStatusTableMutations(t *testing.T) {
 		}
 	})
 
-	assertNoStatusChangeOnStartup(t, sprintCh, operationCh, sessionCh)
+	assertNoStatusChangeOnStartup(t, interactionCh, sessionCh)
 
 	raw, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -157,33 +151,18 @@ func TestWatcherDetectsCrossConnectionStatusTableMutations(t *testing.T) {
 	}
 	defer raw.Close()
 
-	if _, err := raw.Exec(`INSERT INTO sprints (id, status) VALUES (?, ?)`, "sp-1", "planning"); err != nil {
-		t.Fatalf("insert sprint via second connection: %v", err)
-	}
-	waitForSprintChange(t, sprintCh, SprintChange{Type: ChangeCreated, SprintID: "sp-1"}, 1500*time.Millisecond)
-
-	if _, err := raw.Exec(`UPDATE sprints SET status = ? WHERE id = ?`, "running", "sp-1"); err != nil {
-		t.Fatalf("update sprint via second connection: %v", err)
-	}
-	waitForSprintChange(t, sprintCh, SprintChange{Type: ChangeUpdated, SprintID: "sp-1"}, 1500*time.Millisecond)
-
-	if _, err := raw.Exec(`DELETE FROM sprints WHERE id = ?`, "sp-1"); err != nil {
-		t.Fatalf("delete sprint via second connection: %v", err)
-	}
-	waitForSprintChange(t, sprintCh, SprintChange{Type: ChangeDeleted, SprintID: "sp-1"}, 1500*time.Millisecond)
-
 	if _, err := raw.Exec(
-		`INSERT INTO operations (id, type, target_id, status) VALUES (?, ?, ?, ?)`,
-		"op-1", "sprint_start", "sp-1", "running",
+		`INSERT INTO task_interactions (id, phase, tool, log_path, status) VALUES (?, ?, ?, ?, ?)`,
+		"op-1", "run", "claude", ".orca/interactions/_project/run-1-op-1.log", "running",
 	); err != nil {
 		t.Fatalf("insert operation via second connection: %v", err)
 	}
-	waitForOperationChange(t, operationCh, OperationChange{Type: ChangeCreated, OperationID: "op-1"}, 1500*time.Millisecond)
+	waitForInteractionChange(t, interactionCh, InteractionChange{Type: ChangeCreated, InteractionID: "op-1"}, 1500*time.Millisecond)
 
-	if _, err := raw.Exec(`UPDATE operations SET status = ? WHERE id = ?`, "completed", "op-1"); err != nil {
+	if _, err := raw.Exec(`UPDATE task_interactions SET status = ? WHERE id = ?`, "completed", "op-1"); err != nil {
 		t.Fatalf("update operation via second connection: %v", err)
 	}
-	waitForOperationChange(t, operationCh, OperationChange{Type: ChangeUpdated, OperationID: "op-1"}, 1500*time.Millisecond)
+	waitForInteractionChange(t, interactionCh, InteractionChange{Type: ChangeUpdated, InteractionID: "op-1"}, 1500*time.Millisecond)
 
 	if _, err := raw.Exec(
 		`INSERT INTO sessions (id, type, tool, pid, status) VALUES (?, ?, ?, ?, ?)`,
@@ -222,27 +201,7 @@ func waitForChange(t *testing.T, changeCh <-chan []TaskChange, want TaskChange, 
 	}
 }
 
-func waitForSprintChange(t *testing.T, changeCh <-chan []SprintChange, want SprintChange, timeout time.Duration) {
-	t.Helper()
-
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
-	for {
-		select {
-		case batch := <-changeCh:
-			for _, got := range batch {
-				if got == want {
-					return
-				}
-			}
-		case <-timer.C:
-			t.Fatalf("timed out waiting for change %+v", want)
-		}
-	}
-}
-
-func waitForOperationChange(t *testing.T, changeCh <-chan []OperationChange, want OperationChange, timeout time.Duration) {
+func waitForInteractionChange(t *testing.T, changeCh <-chan []InteractionChange, want InteractionChange, timeout time.Duration) {
 	t.Helper()
 
 	timer := time.NewTimer(timeout)
@@ -284,8 +243,7 @@ func waitForSessionChange(t *testing.T, changeCh <-chan []SessionChange, want Se
 
 func assertNoStatusChangeOnStartup(
 	t *testing.T,
-	sprintCh <-chan []SprintChange,
-	operationCh <-chan []OperationChange,
+	interactionCh <-chan []InteractionChange,
 	sessionCh <-chan []SessionChange,
 ) {
 	t.Helper()
@@ -294,10 +252,8 @@ func assertNoStatusChangeOnStartup(
 	defer timer.Stop()
 
 	select {
-	case got := <-sprintCh:
-		t.Fatalf("unexpected startup sprint callback: %+v", got)
-	case got := <-operationCh:
-		t.Fatalf("unexpected startup operation callback: %+v", got)
+	case got := <-interactionCh:
+		t.Fatalf("unexpected startup interaction callback: %+v", got)
 	case got := <-sessionCh:
 		t.Fatalf("unexpected startup session callback: %+v", got)
 	case <-timer.C:

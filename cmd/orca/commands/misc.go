@@ -1,13 +1,14 @@
 package commands
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/orchestrator"
 	"github.com/spf13/cobra"
 )
@@ -21,14 +22,9 @@ func RegisterMisc(root *cobra.Command, r *Registry, opts MiscOptions) {
 	root.AddCommand(newModelsCmd(r, opts))
 	root.AddCommand(newCleanupCmd(r))
 
-	logCmd := &cobra.Command{Use: "log", Short: "Show sprint history", RunE: r.runLog}
-	logCmd.Flags().Bool("all", false, "Show all sprints (default: last 10)")
-	root.AddCommand(logCmd)
-
 	logsCmd := &cobra.Command{Use: "logs", Short: "Show application logs", RunE: r.runLogs}
 	logsCmd.Flags().String("level", "", "Filter by level: debug|info|warn|error")
 	logsCmd.Flags().String("task", "", "Filter by task ID")
-	logsCmd.Flags().String("sprint", "", "Filter by sprint ID")
 	logsCmd.Flags().String("since", "", "Show logs since duration ago (e.g. 30m, 2h)")
 	logsCmd.Flags().Int("tail", 50, "Show last N matching lines")
 	logsCmd.Flags().BoolP("follow", "f", false, "Stream new matching lines")
@@ -41,7 +37,7 @@ func RegisterMisc(root *cobra.Command, r *Registry, opts MiscOptions) {
 	root.AddCommand(newStatusCmd(r))
 
 	costsCmd := &cobra.Command{Use: "costs", Short: "Show cost tracking summary", RunE: r.runCosts}
-	costsCmd.Flags().String("sprint", "", "Show costs for specific sprint (prefix ID)")
+	costsCmd.Flags().String("run", "", "Show costs for specific run (prefix ID)")
 	root.AddCommand(costsCmd)
 
 	opsCmd := &cobra.Command{Use: "ops", Short: "List tracked operations", RunE: r.runOps}
@@ -59,14 +55,41 @@ func (r *Registry) runOps(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	if err := ensureOperationsTable(db); err != nil {
-		return fmt.Errorf("ensure operations table: %w", err)
-	}
 	includeAll, _ := cmd.Flags().GetBool("all")
-	ops, err := listOperations(db, includeAll)
+	query := `SELECT id, phase, task_id, status, started_at, finished_at, error FROM task_interactions`
+	if !includeAll {
+		query += ` WHERE status = 'running' OR COALESCE(finished_at, started_at) >= datetime('now', '-5 minutes')`
+	}
+	query += ` ORDER BY started_at DESC`
+
+	rows, err := db.Query(query)
 	if err != nil {
 		return fmt.Errorf("list operations: %w", err)
 	}
+	defer rows.Close()
+
+	type opRow struct {
+		id         string
+		phase      string
+		taskID     sql.NullString
+		status     string
+		startedAt  time.Time
+		finishedAt sql.NullTime
+		errText    sql.NullString
+	}
+
+	ops := make([]opRow, 0)
+	for rows.Next() {
+		var op opRow
+		if err := rows.Scan(&op.id, &op.phase, &op.taskID, &op.status, &op.startedAt, &op.finishedAt, &op.errText); err != nil {
+			return fmt.Errorf("scan operation: %w", err)
+		}
+		ops = append(ops, op)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read operations: %w", err)
+	}
+
 	if len(ops) == 0 {
 		if includeAll {
 			fmt.Println("No operations recorded.")
@@ -77,81 +100,29 @@ func (r *Registry) runOps(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, op := range ops {
-		var elapsed time.Duration
-		if op.Status == "running" {
-			elapsed = time.Since(op.CreatedAt)
-		} else {
-			elapsed = op.UpdatedAt.Sub(op.CreatedAt)
+		elapsed := time.Since(op.startedAt)
+		if op.status != "running" && op.finishedAt.Valid {
+			elapsed = op.finishedAt.Time.Sub(op.startedAt)
 		}
 		if elapsed < 0 {
 			elapsed = 0
+		} else {
+			elapsed = elapsed.Round(time.Second)
 		}
 
-		target := op.TargetID
+		target := ""
+		if op.taskID.Valid {
+			target = op.taskID.String
+		}
 		if strings.TrimSpace(target) == "" {
 			target = "-"
 		} else {
 			target = short(target)
 		}
 
-		fmt.Printf("%-8s %-14s target=%-8s elapsed=%-8s status=%s\n", short(op.ID), op.Type, target, elapsed.Round(time.Second), op.Status)
-		if op.Error != "" {
-			fmt.Printf("  error: %s\n", op.Error)
-		}
-	}
-	return nil
-}
-
-func (r *Registry) runLog(cmd *cobra.Command, args []string) error {
-	db, _, err := r.openStoreOrErr()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	showAll, _ := cmd.Flags().GetBool("all")
-	query := `SELECT id, status, created_at, completed_at FROM sprints ORDER BY created_at DESC`
-	if !showAll {
-		query += ` LIMIT 10`
-	}
-
-	rows, err := db.Query(query)
-	if err != nil {
-		return fmt.Errorf("query sprints: %w", err)
-	}
-	defer rows.Close()
-
-	type sprintRow struct {
-		id          string
-		status      string
-		createdAt   time.Time
-		completedAt *time.Time
-	}
-	var sprints []sprintRow
-	for rows.Next() {
-		var sr sprintRow
-		if err := rows.Scan(&sr.id, &sr.status, &sr.createdAt, &sr.completedAt); err != nil {
-			return fmt.Errorf("scan sprint: %w", err)
-		}
-		sprints = append(sprints, sr)
-	}
-
-	if len(sprints) == 0 {
-		fmt.Println("No sprints yet.")
-		return nil
-	}
-
-	for _, s := range sprints {
-		var total, completed, failed int
-		db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE sprint_id = ?`, s.id).Scan(&total)
-		db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status = 'approved'`, s.id).Scan(&completed)
-		db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE sprint_id = ? AND status = 'failed'`, s.id).Scan(&failed)
-
-		fmt.Printf("Sprint %s  %s  %s\n", short(s.id), s.status, s.createdAt.Format("2006-01-02 15:04"))
-		if failed > 0 {
-			fmt.Printf("  %d/%d tasks succeeded, %d failed\n", completed, total, failed)
-		} else {
-			fmt.Printf("  %d/%d tasks succeeded\n", completed, total)
+		fmt.Printf("%-8s %-14s target=%-8s elapsed=%-8s status=%s\n", short(op.id), op.phase, target, elapsed, op.status)
+		if op.errText.Valid && strings.TrimSpace(op.errText.String) != "" {
+			fmt.Printf("  error: %s\n", op.errText.String)
 		}
 	}
 	return nil
@@ -168,7 +139,7 @@ func (r *Registry) runOrc(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolve orca binary: %w", err)
 	}
 
-	_, cfg, _, _, err := r.loadRuntimeOrErr()
+	_, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -178,13 +149,16 @@ func (r *Registry) runOrc(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write mcp config: %w", err)
 	}
 
-	_, toolCfg, err := orchestrator.ResolveSupervisorTool(cfg)
+	toolName, d, model, err := orchestrator.ResolveSupervisorTool(cfg)
 	if err != nil {
 		return fmt.Errorf("resolve supervisor tool: %w", err)
 	}
+	if d == nil {
+		return fmt.Errorf("resolve supervisor tool %q: nil driver", toolName)
+	}
 
-	launchArgs := orchestrator.BuildLaunchArgs(toolCfg, mcpConfigPath)
-	c := exec.Command(toolCfg.Binary, launchArgs...)
+	launchArgs := orchestrator.BuildLaunchArgs(d, model, mcpConfigPath)
+	c := exec.Command(d.Binary(), launchArgs...)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -193,31 +167,31 @@ func (r *Registry) runOrc(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runCosts(cmd *cobra.Command, args []string) error {
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, _, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	ct := cost.NewTracker(db)
-	sprintFlag, _ := cmd.Flags().GetString("sprint")
+	ct := interaction.NewStore(db, ".orca/interactions")
+	runFlag, _ := cmd.Flags().GetString("run")
 
-	if sprintFlag != "" {
-		var sprintID string
-		err := db.QueryRow(`SELECT id FROM sprints WHERE id LIKE ? ORDER BY created_at DESC LIMIT 1`, sprintFlag+"%").Scan(&sprintID)
+	if runFlag != "" {
+		var runID string
+		err := db.QueryRow(`SELECT DISTINCT run_id FROM task_interactions WHERE run_id LIKE ? ORDER BY started_at DESC LIMIT 1`, runFlag+"%").Scan(&runID)
 		if err != nil {
-			return fmt.Errorf("no sprint matching %q", sprintFlag)
+			return fmt.Errorf("no run matching %q", runFlag)
 		}
 
-		total, _ := ct.SprintTotal(sprintID)
-		fmt.Printf("Sprint %s costs: $%.2f\n\n", short(sprintID), total)
+		total, _ := ct.RunTotal(runID)
+		fmt.Printf("Run %s costs: $%.2f\n\n", short(runID), total)
 
-		summary, err := ct.SprintSummary(sprintID)
+		summary, err := ct.RunSummary(runID)
 		if err != nil {
 			return err
 		}
 		if len(summary) == 0 {
-			fmt.Println("No cost data recorded for this sprint.")
+			fmt.Println("No cost data recorded for this run.")
 			return nil
 		}
 
@@ -231,7 +205,7 @@ func (r *Registry) runCosts(cmd *cobra.Command, args []string) error {
 	projectTotal, _ := ct.ProjectTotal()
 	if projectTotal == 0 {
 		var count int
-		db.QueryRow(`SELECT COUNT(*) FROM costs`).Scan(&count)
+		db.QueryRow(`SELECT COUNT(*) FROM task_interactions`).Scan(&count)
 		if count == 0 {
 			fmt.Println("No cost data recorded yet.")
 			return nil
@@ -248,34 +222,26 @@ func (r *Registry) runCosts(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	rows, err := db.Query(`SELECT s.id, COALESCE(SUM(c.estimated_cost), 0), COUNT(DISTINCT c.task_id)
-		 FROM sprints s
-		 LEFT JOIN costs c ON c.sprint_id = s.id
-		 GROUP BY s.id
-		 ORDER BY s.created_at DESC
+	rows, err := db.Query(`SELECT run_id, COALESCE(SUM(estimated_cost), 0), COUNT(DISTINCT task_id)
+		 FROM task_interactions
+		 WHERE run_id IS NOT NULL
+		 GROUP BY run_id
+		 ORDER BY MIN(started_at) DESC
 		 LIMIT 10`)
 	if err == nil {
 		defer rows.Close()
-		fmt.Println("\nRecent sprints:")
+		fmt.Println("\nRecent runs:")
 		for rows.Next() {
 			var id string
-			var sprintCost float64
+			var runCost float64
 			var taskCount int
-			if err := rows.Scan(&id, &sprintCost, &taskCount); err != nil {
+			if err := rows.Scan(&id, &runCost, &taskCount); err != nil {
 				continue
 			}
-			if sprintCost > 0 {
-				fmt.Printf("  Sprint %s  $%.2f  (%d tasks)\n", short(id), sprintCost, taskCount)
+			if runCost > 0 {
+				fmt.Printf("  Run %s  $%.2f  (%d tasks)\n", short(id), runCost, taskCount)
 			}
 		}
-	}
-
-	budget := cfg.Orchestrator.CostBudget
-	if budget > 0 {
-		remaining, _ := ct.BudgetRemaining(budget)
-		fmt.Printf("\nBudget: $%.2f  remaining: $%.2f\n", budget, remaining)
-	} else {
-		fmt.Println("\nBudget: unlimited")
 	}
 
 	return nil

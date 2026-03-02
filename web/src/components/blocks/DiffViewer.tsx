@@ -1,6 +1,7 @@
+import * as Tabs from '@radix-ui/react-tabs'
 import { useEffect, useMemo, useState } from 'react'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
-import { ActionButton } from '../common/ActionButton'
+import { Button } from '../Button'
 
 interface Props {
   data: {
@@ -67,52 +68,92 @@ function splitDiffByFile(raw: string): Record<string, string> {
 }
 
 export function DiffViewer({ data, onAction }: Props) {
-  const [activeFile, setActiveFile] = useState(0)
   const filesChanged = data?.files_changed ?? []
   const actions = data?.actions ?? []
-  const diffByFile = useMemo(() => splitDiffByFile(data?.diff ?? ''), [data?.diff])
-  const activeFileIndex = Math.min(activeFile, Math.max(filesChanged.length - 1, 0))
-  const selectedFile = filesChanged[activeFileIndex]
-  const selectedDiff = selectedFile ? (diffByFile[selectedFile] ?? data?.diff ?? '') : (data?.diff ?? '')
-  const { oldValue, newValue } = useMemo(() => parseDiff(selectedDiff), [selectedDiff])
+  const diffByFile = useMemo(
+    () => splitDiffByFile(data?.diff ?? ''),
+    [data?.diff],
+  )
+  const [activeFile, setActiveFile] = useState(filesChanged[0] ?? '')
 
   useEffect(() => {
-    setActiveFile(0)
+    setActiveFile(filesChanged[0] ?? '')
   }, [data?.task_id, data?.diff])
 
+  const selectedDiff = activeFile
+    ? (diffByFile[activeFile] ?? data?.diff ?? '')
+    : (data?.diff ?? '')
+  const { oldValue, newValue } = useMemo(
+    () => parseDiff(selectedDiff),
+    [selectedDiff],
+  )
+
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-900 p-4">
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
       <div className="text-sm font-semibold">{data?.title}</div>
-      {filesChanged.length > 1 && (
-        <div className="flex gap-1 border-b border-slate-700 pb-2">
-          {filesChanged.map((f, i) => (
-            <button
-              key={f}
-              className={`rounded px-2.5 py-1 font-mono text-xs ${i === activeFileIndex ? 'bg-slate-800 font-semibold text-slate-100' : 'text-slate-400 hover:bg-slate-800'}`}
-              onClick={() => setActiveFile(i)}
-              type="button"
-            >
-              {f.split('/').pop()}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="overflow-hidden rounded-md border border-slate-700">
-        <ReactDiffViewer
-          oldValue={oldValue}
-          newValue={newValue}
-          splitView={false}
-          compareMethod={DiffMethod.LINES}
-          useDarkTheme={false}
-          styles={{
-            contentText: { fontFamily: 'var(--font-mono)', fontSize: '12px' },
-          }}
-        />
-      </div>
+      <Tabs.Root value={activeFile} onValueChange={setActiveFile}>
+        {filesChanged.length > 1 && (
+          <Tabs.List className="flex gap-1 border-b border-border pb-2">
+            {filesChanged.map((f) => (
+              <Tabs.Trigger
+                key={f}
+                value={f}
+                className="rounded px-2.5 py-1 font-mono text-xs data-[state=active]:bg-slate-800 data-[state=active]:font-semibold data-[state=active]:text-slate-100 data-[state=inactive]:text-slate-400 data-[state=inactive]:hover:bg-slate-800"
+              >
+                {f.split('/').pop()}
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
+        )}
+        {filesChanged.map((f) => (
+          <Tabs.Content
+            key={f}
+            value={f}
+            forceMount={filesChanged.length <= 1 ? true : undefined}
+          >
+            <div className="overflow-hidden rounded-md border border-border">
+              <ReactDiffViewer
+                oldValue={oldValue}
+                newValue={newValue}
+                splitView={false}
+                compareMethod={DiffMethod.LINES}
+                useDarkTheme={false}
+                styles={{
+                  contentText: {
+                    fontFamily:
+                      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    fontSize: '12px',
+                  },
+                }}
+              />
+            </div>
+          </Tabs.Content>
+        ))}
+        {filesChanged.length === 0 && (
+          <div className="overflow-hidden rounded-md border border-border">
+            <ReactDiffViewer
+              oldValue={oldValue}
+              newValue={newValue}
+              splitView={false}
+              compareMethod={DiffMethod.LINES}
+              useDarkTheme={false}
+              styles={{
+                contentText: {
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  fontSize: '12px',
+                },
+              }}
+            />
+          </div>
+        )}
+      </Tabs.Root>
       {actions.length > 0 && (
         <div className="flex justify-end gap-2">
           {actions.map((a) => (
-            <ActionButton key={a} label={a} onClick={() => onAction?.(a)} />
+            <Button key={a} variant="default" onClick={() => onAction?.(a)}>
+              {a}
+            </Button>
           ))}
         </div>
       )}

@@ -7,11 +7,11 @@ import (
 )
 
 func (s *Store) SetPlan(id, content string) error {
-	return s.Update(id, map[string]interface{}{"plan": content})
+	return s.Update(id, UpdateFields{Plan: Ptr(content)})
 }
 
 func (s *Store) SetSessionID(id, sessionID string) error {
-	return s.Update(id, map[string]interface{}{"session_id": sessionID})
+	return s.Update(id, UpdateFields{SessionID: Ptr(sessionID)})
 }
 
 func (s *Store) GetPlan(id string) (string, error) {

@@ -3,94 +3,116 @@ package review
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/llm"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
 
-// ReviewResult holds the outcome of a single task review.
 type ReviewResult struct {
 	TaskID   string `json:"task_id"`
 	Approved bool   `json:"approved"`
 	Feedback string `json:"feedback"`
 	Tool     string `json:"tool"`
+	Prompt   string `json:"prompt,omitempty"`
 }
 
-// ReviewInput is the data needed to review a single task.
-type ReviewInput struct {
-	TaskID      string `json:"task_id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Diff        string `json:"diff"`
-}
-
-// Reviewer runs headless code reviews against diffs.
 type Reviewer struct {
-	toolCfg config.ToolConfig
-	repoDir string
+	toolName     string
+	driver       driver.Driver
+	model        string
+	timeout      time.Duration
+	repoDir      string
+	interactions *interaction.Store
 }
 
-// New creates a Reviewer with the given tool config and repo directory.
-func New(toolCfg config.ToolConfig, repoDir string) *Reviewer {
-	return &Reviewer{toolCfg: toolCfg, repoDir: repoDir}
+func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Reviewer {
+	var store *interaction.Store
+	if len(interactions) > 0 {
+		store = interactions[0]
+	}
+	return &Reviewer{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
-// reviewResponse is the JSON shape we expect from the LLM.
 type reviewResponse struct {
 	Approved bool   `json:"approved"`
 	Feedback string `json:"feedback"`
 }
 
-// Review runs a code review on a single task diff.
-func (r *Reviewer) Review(taskID, title, description, diff string) (*ReviewResult, error) {
-	prompt := fmt.Sprintf(prompts.Review, title, description, diff)
-
-	adapter, err := worker.NewAdapter(r.toolCfg)
-	if err != nil {
-		return nil, fmt.Errorf("create adapter: %w", err)
+func (r *Reviewer) Review(taskID, title, description, diff, userPrompt string) (*ReviewResult, error) {
+	instructions := "No additional instructions."
+	if userPrompt != "" {
+		instructions = userPrompt
 	}
+	prompt := fmt.Sprintf(prompts.Review, title, description, diff, instructions)
 
-	result, err := adapter.Execute(context.Background(), "review-"+taskID, prompt, r.repoDir)
+	adapter := worker.NewAdapter(r.driver, r.model, r.timeout)
+	var (
+		stdout       string
+		exitCode     = -1
+		stderr       string
+		reviewResult *ReviewResult
+		parseErr     error
+	)
+	taskRef := taskID
+	_, err := interaction.RunWithTracking(
+		r.interactions,
+		&taskRef,
+		"review",
+		r.toolName,
+		adapter,
+		func() (*worker.Result, error) {
+			return adapter.Execute(context.Background(), "review-"+taskID, prompt, r.repoDir)
+		},
+		interaction.WithAfterRun(func(result *worker.Result, runErr error) {
+			if result != nil {
+				stdout = result.Stdout
+				exitCode = result.ExitCode
+				stderr = result.Stderr
+			}
+			if runErr == nil && exitCode == 0 {
+				var resp reviewResponse
+				if parseErr = llm.ExtractJSON(stdout, &resp); parseErr == nil {
+					reviewResult = &ReviewResult{TaskID: taskID, Approved: resp.Approved, Feedback: resp.Feedback, Tool: r.toolName, Prompt: userPrompt}
+				}
+			}
+		}),
+		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
+			status := "completed"
+			opts := []interaction.FinishOption{}
+			if result != nil {
+				opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
+			}
+			if runErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(runErr.Error()))
+			} else if exitCode != 0 {
+				status = "failed"
+				opts = append(opts, interaction.WithError(fmt.Sprintf("reviewer exited %d: %s", exitCode, stderr)))
+			} else if parseErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(fmt.Sprintf("parse review JSON: %v", parseErr)))
+			} else if reviewResult != nil {
+				qualityBytes, _ := json.Marshal(reviewResult)
+				opts = append(opts, interaction.WithQuality(string(qualityBytes)))
+			}
+			return status, opts
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("execute reviewer: %w", err)
 	}
-
-	if result.ExitCode != 0 {
-		return nil, fmt.Errorf("reviewer exited %d: %s", result.ExitCode, result.Stderr)
+	if exitCode != 0 {
+		return nil, fmt.Errorf("reviewer exited %d: %s", exitCode, stderr)
+	}
+	if parseErr != nil {
+		return nil, fmt.Errorf("parse review JSON: %w\nraw output:\n%s", parseErr, stdout)
 	}
 
-	var resp reviewResponse
-	output := result.Stdout
-	if err := llm.ExtractJSON(output, &resp); err != nil {
-		return nil, fmt.Errorf("parse review JSON: %w\nraw output:\n%s", err, output)
-	}
-
-	return &ReviewResult{
-		TaskID:   taskID,
-		Approved: resp.Approved,
-		Feedback: resp.Feedback,
-		Tool:     r.toolCfg.Binary,
-	}, nil
-}
-
-// ReviewBatch reviews multiple tasks sequentially.
-func (r *Reviewer) ReviewBatch(tasks []ReviewInput) ([]ReviewResult, error) {
-	results := make([]ReviewResult, 0, len(tasks))
-	for _, t := range tasks {
-		res, err := r.Review(t.TaskID, t.Title, t.Description, t.Diff)
-		if err != nil {
-			results = append(results, ReviewResult{
-				TaskID:   t.TaskID,
-				Approved: false,
-				Feedback: fmt.Sprintf("review error: %v", err),
-				Tool:     r.toolCfg.Binary,
-			})
-			continue
-		}
-		results = append(results, *res)
-	}
-	return results, nil
+	return reviewResult, nil
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 func TestCreate(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	task, err := store.Create("Do something", "A description", "", "")
+	task, err := store.Create("Do something", "A description", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -30,30 +29,16 @@ func TestCreate(t *testing.T) {
 		t.Errorf("status = %q, want %q", task.Status, "pending")
 	}
 
-	task2, err := store.Create("Another task", "", "", "claude")
+	_, err = store.Create("Another task", "", "")
 	if err != nil {
-		t.Fatalf("create with tool: %v", err)
-	}
-	if task2.AssignedTool != "claude" {
-		t.Errorf("assigned_tool = %q, want %q", task2.AssignedTool, "claude")
-	}
-
-	if err := store.Update(task2.ID, map[string]interface{}{"model": "claude-3-7-sonnet"}); err != nil {
-		t.Fatalf("set model: %v", err)
-	}
-	updated, err := store.Get(task2.ID)
-	if err != nil {
-		t.Fatalf("get after model update: %v", err)
-	}
-	if updated.Model != "claude-3-7-sonnet" {
-		t.Errorf("model = %q, want %q", updated.Model, "claude-3-7-sonnet")
+		t.Fatalf("create second task: %v", err)
 	}
 }
 
 func TestGet(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	created, err := store.Create("Get me", "desc", "", "codex")
+	created, err := store.Create("Get me", "desc", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -71,9 +56,6 @@ func TestGet(t *testing.T) {
 	if got.Description != "desc" {
 		t.Errorf("description = %q, want %q", got.Description, "desc")
 	}
-	if got.AssignedTool != "codex" {
-		t.Errorf("assigned_tool = %q, want %q", got.AssignedTool, "codex")
-	}
 	if got.Status != "pending" {
 		t.Errorf("status = %q, want %q", got.Status, "pending")
 	}
@@ -82,16 +64,15 @@ func TestGet(t *testing.T) {
 func TestUpdate(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	created, err := store.Create("Original", "", "", "")
+	created, err := store.Create("Original", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	err = store.Update(created.ID, map[string]interface{}{
-		"title":  "Updated",
-		"status": "running",
-		"model":  "gpt-5",
-		"plan":   "1. do a\n2. do b",
+	err = store.Update(created.ID, UpdateFields{
+		Title:  Ptr("Updated"),
+		Status: Ptr("running"),
+		Plan:   Ptr("1. do a\n2. do b"),
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -107,15 +88,12 @@ func TestUpdate(t *testing.T) {
 	if got.Status != "running" {
 		t.Errorf("status = %q, want %q", got.Status, "running")
 	}
-	if got.Model != "gpt-5" {
-		t.Errorf("model = %q, want %q", got.Model, "gpt-5")
-	}
 	if got.Plan != "1. do a\n2. do b" {
 		t.Errorf("plan = %q, want %q", got.Plan, "1. do a\n2. do b")
 	}
 
 	// Update non-existent ID
-	err = store.Update("nonexistent-id-that-does-not-exist-x", map[string]interface{}{"title": "nope"})
+	err = store.Update("nonexistent-id-that-does-not-exist-x", UpdateFields{Title: Ptr("nope")})
 	if err == nil {
 		t.Fatal("expected error for non-existent ID")
 	}
@@ -124,163 +102,10 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
-func TestPhaseConfig_CreateAndGet(t *testing.T) {
-	store := NewStore(testutil.DB(t))
-
-	created, err := store.Create("Phase config", "", "", "codex")
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	pc := PhaseConfigMap{
-		UseDefaults: false,
-		Phases: map[string]PhaseOverride{
-			"plan":   {Tool: "claude", Model: "claude-sonnet-4-6"},
-			"sprint": {Tool: "codex", Model: "gpt-5-codex"},
-			"review": {Tool: "claude", Model: "claude-opus-4-6"},
-		},
-	}
-	if err := store.Update(created.ID, map[string]interface{}{"phase_config": pc}); err != nil {
-		t.Fatalf("update phase_config: %v", err)
-	}
-
-	got, err := store.Get(created.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.PhaseConfig == nil {
-		t.Fatal("phase_config = nil, want non-nil")
-	}
-	if !reflect.DeepEqual(*got.PhaseConfig, pc) {
-		t.Fatalf("phase_config = %#v, want %#v", *got.PhaseConfig, pc)
-	}
-}
-
-func TestPhaseConfig_NullIsBackwardCompat(t *testing.T) {
-	store := NewStore(testutil.DB(t))
-
-	created, err := store.Create("No phase config", "", "", "codex")
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	got, err := store.Get(created.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.PhaseConfig != nil {
-		t.Fatalf("phase_config = %#v, want nil", got.PhaseConfig)
-	}
-	if got.AssignedTool != "codex" {
-		t.Fatalf("assigned_tool = %q, want %q", got.AssignedTool, "codex")
-	}
-}
-
-func TestPhaseConfig_UseDefaultsTrue(t *testing.T) {
-	store := NewStore(testutil.DB(t))
-
-	created, err := store.Create("Use defaults", "", "", "")
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	pc := PhaseConfigMap{
-		UseDefaults: true,
-		Phases: map[string]PhaseOverride{
-			"sprint": {Tool: "codex"},
-		},
-	}
-	if err := store.Update(created.ID, map[string]interface{}{"phase_config": pc}); err != nil {
-		t.Fatalf("update phase_config: %v", err)
-	}
-
-	got, err := store.Get(created.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.PhaseConfig == nil {
-		t.Fatal("phase_config = nil, want non-nil")
-	}
-	if !got.PhaseConfig.UseDefaults {
-		t.Fatal("phase_config.use_defaults = false, want true")
-	}
-}
-
-func TestPhaseConfig_Update(t *testing.T) {
-	store := NewStore(testutil.DB(t))
-
-	created, err := store.Create("Update phase config", "", "", "")
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	initial := PhaseConfigMap{
-		Phases: map[string]PhaseOverride{
-			"sprint": {Tool: "claude", Model: "claude-sonnet-4-6"},
-		},
-	}
-	if err := store.Update(created.ID, map[string]interface{}{"phase_config": initial}); err != nil {
-		t.Fatalf("set initial phase_config: %v", err)
-	}
-
-	updatedPC := PhaseConfigMap{
-		Phases: map[string]PhaseOverride{
-			"sprint": {Tool: "codex", Model: "gpt-5-codex"},
-			"review": {Tool: "claude", Model: "claude-opus-4-6"},
-		},
-	}
-	if err := store.Update(created.ID, map[string]interface{}{"phase_config": updatedPC}); err != nil {
-		t.Fatalf("update phase_config: %v", err)
-	}
-
-	got, err := store.Get(created.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.PhaseConfig == nil {
-		t.Fatal("phase_config = nil, want non-nil")
-	}
-	if !reflect.DeepEqual(*got.PhaseConfig, updatedPC) {
-		t.Fatalf("phase_config = %#v, want %#v", *got.PhaseConfig, updatedPC)
-	}
-}
-
-func TestPhaseConfig_ClearWithNull(t *testing.T) {
-	store := NewStore(testutil.DB(t))
-
-	created, err := store.Create("Clear phase config", "", "", "codex")
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	pc := PhaseConfigMap{
-		Phases: map[string]PhaseOverride{
-			"sprint": {Tool: "claude"},
-		},
-	}
-	if err := store.Update(created.ID, map[string]interface{}{"phase_config": pc}); err != nil {
-		t.Fatalf("set phase_config: %v", err)
-	}
-	if err := store.Update(created.ID, map[string]interface{}{"phase_config": nil}); err != nil {
-		t.Fatalf("clear phase_config: %v", err)
-	}
-
-	got, err := store.Get(created.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.PhaseConfig != nil {
-		t.Fatalf("phase_config = %#v, want nil after clear", got.PhaseConfig)
-	}
-	if got.AssignedTool != "codex" {
-		t.Fatalf("assigned_tool = %q, want %q", got.AssignedTool, "codex")
-	}
-}
-
 func TestResolveID(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	created, err := store.Create("Resolve me", "", "", "")
+	created, err := store.Create("Resolve me", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -317,15 +142,15 @@ func TestResolveID(t *testing.T) {
 func TestGetReady(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	a, err := store.Create("Task A", "", "", "")
+	a, err := store.Create("Task A", "", "")
 	if err != nil {
 		t.Fatalf("create A: %v", err)
 	}
-	b, err := store.Create("Task B", "", "", "")
+	b, err := store.Create("Task B", "", "")
 	if err != nil {
 		t.Fatalf("create B: %v", err)
 	}
-	c, err := store.Create("Task C", "", "", "")
+	c, err := store.Create("Task C", "", "")
 	if err != nil {
 		t.Fatalf("create C: %v", err)
 	}
@@ -333,6 +158,11 @@ func TestGetReady(t *testing.T) {
 	// C depends on A
 	if err := store.AddDependency(c.ID, a.ID); err != nil {
 		t.Fatalf("add dep: %v", err)
+	}
+	for _, id := range []string{a.ID, b.ID, c.ID} {
+		if err := store.Update(id, UpdateFields{Status: Ptr("planned")}); err != nil {
+			t.Fatalf("set %s planned: %v", id, err)
+		}
 	}
 
 	ready, err := store.GetReady()
@@ -347,8 +177,8 @@ func TestGetReady(t *testing.T) {
 		t.Errorf("C should not be ready (blocked by A)")
 	}
 
-	// Merge A → C should become ready
-	if err := store.Update(a.ID, map[string]interface{}{"status": "merged"}); err != nil {
+	// Merge A -> C should become ready
+	if err := store.Update(a.ID, UpdateFields{Status: Ptr("merged")}); err != nil {
 		t.Fatalf("merge A: %v", err)
 	}
 
@@ -365,11 +195,11 @@ func TestGetReady(t *testing.T) {
 func TestAddRemoveDependency(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	a, err := store.Create("Task A", "", "", "")
+	a, err := store.Create("Task A", "", "")
 	if err != nil {
 		t.Fatalf("create A: %v", err)
 	}
-	b, err := store.Create("Task B", "", "", "")
+	b, err := store.Create("Task B", "", "")
 	if err != nil {
 		t.Fatalf("create B: %v", err)
 	}
@@ -402,7 +232,7 @@ func TestAddRemoveDependency(t *testing.T) {
 func TestUpdateDependenciesCycleValidation(t *testing.T) {
 	t.Run("NoDeps", func(t *testing.T) {
 		store := NewStore(testutil.DB(t))
-		a, err := store.Create("Task A", "", "", "")
+		a, err := store.Create("Task A", "", "")
 		if err != nil {
 			t.Fatalf("create A: %v", err)
 		}
@@ -413,15 +243,15 @@ func TestUpdateDependenciesCycleValidation(t *testing.T) {
 
 	t.Run("LinearChain", func(t *testing.T) {
 		store := NewStore(testutil.DB(t))
-		a, err := store.Create("Task A", "", "", "")
+		a, err := store.Create("Task A", "", "")
 		if err != nil {
 			t.Fatalf("create A: %v", err)
 		}
-		b, err := store.Create("Task B", "", "", "")
+		b, err := store.Create("Task B", "", "")
 		if err != nil {
 			t.Fatalf("create B: %v", err)
 		}
-		c, err := store.Create("Task C", "", "", "")
+		c, err := store.Create("Task C", "", "")
 		if err != nil {
 			t.Fatalf("create C: %v", err)
 		}
@@ -436,11 +266,11 @@ func TestUpdateDependenciesCycleValidation(t *testing.T) {
 
 	t.Run("DirectCycle", func(t *testing.T) {
 		store := NewStore(testutil.DB(t))
-		a, err := store.Create("Task A", "", "", "")
+		a, err := store.Create("Task A", "", "")
 		if err != nil {
 			t.Fatalf("create A: %v", err)
 		}
-		b, err := store.Create("Task B", "", "", "")
+		b, err := store.Create("Task B", "", "")
 		if err != nil {
 			t.Fatalf("create B: %v", err)
 		}
@@ -462,15 +292,15 @@ func TestUpdateDependenciesCycleValidation(t *testing.T) {
 
 	t.Run("IndirectCycle", func(t *testing.T) {
 		store := NewStore(testutil.DB(t))
-		a, err := store.Create("Task A", "", "", "")
+		a, err := store.Create("Task A", "", "")
 		if err != nil {
 			t.Fatalf("create A: %v", err)
 		}
-		b, err := store.Create("Task B", "", "", "")
+		b, err := store.Create("Task B", "", "")
 		if err != nil {
 			t.Fatalf("create B: %v", err)
 		}
-		c, err := store.Create("Task C", "", "", "")
+		c, err := store.Create("Task C", "", "")
 		if err != nil {
 			t.Fatalf("create C: %v", err)
 		}
@@ -495,19 +325,19 @@ func TestUpdateDependenciesCycleValidation(t *testing.T) {
 
 	t.Run("Diamond", func(t *testing.T) {
 		store := NewStore(testutil.DB(t))
-		a, err := store.Create("Task A", "", "", "")
+		a, err := store.Create("Task A", "", "")
 		if err != nil {
 			t.Fatalf("create A: %v", err)
 		}
-		b, err := store.Create("Task B", "", "", "")
+		b, err := store.Create("Task B", "", "")
 		if err != nil {
 			t.Fatalf("create B: %v", err)
 		}
-		c, err := store.Create("Task C", "", "", "")
+		c, err := store.Create("Task C", "", "")
 		if err != nil {
 			t.Fatalf("create C: %v", err)
 		}
-		d, err := store.Create("Task D", "", "", "")
+		d, err := store.Create("Task D", "", "")
 		if err != nil {
 			t.Fatalf("create D: %v", err)
 		}
@@ -527,11 +357,11 @@ func TestUpdateDependenciesCycleValidation(t *testing.T) {
 func TestDelete(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	a, err := store.Create("Task A", "", "", "")
+	a, err := store.Create("Task A", "", "")
 	if err != nil {
 		t.Fatalf("create A: %v", err)
 	}
-	b, err := store.Create("Task B", "", "", "")
+	b, err := store.Create("Task B", "", "")
 	if err != nil {
 		t.Fatalf("create B: %v", err)
 	}
@@ -562,14 +392,14 @@ func TestDelete(t *testing.T) {
 func TestDeleteBlockedByStatus(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	tk, err := store.Create("Task", "", "", "")
+	tk, err := store.Create("Task", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	// Running and merged tasks cannot be deleted.
 	for _, status := range []string{"running", "merged"} {
-		if err := store.Update(tk.ID, map[string]interface{}{"status": status}); err != nil {
+		if err := store.Update(tk.ID, UpdateFields{Status: Ptr(status)}); err != nil {
 			t.Fatalf("set %s: %v", status, err)
 		}
 		if err := store.Delete(tk.ID); err == nil {
@@ -578,12 +408,12 @@ func TestDeleteBlockedByStatus(t *testing.T) {
 	}
 
 	// Deletable statuses should work.
-	for _, status := range []string{"pending", "in_sprint", "review", "approved", "failed"} {
-		tk, err := store.Create("Task "+status, "", "", "")
+	for _, status := range []string{"pending", "review", "approved", "failed", "stopped"} {
+		tk, err := store.Create("Task "+status, "", "")
 		if err != nil {
 			t.Fatalf("create %s: %v", status, err)
 		}
-		if err := store.Update(tk.ID, map[string]interface{}{"status": status}); err != nil {
+		if err := store.Update(tk.ID, UpdateFields{Status: Ptr(status)}); err != nil {
 			t.Fatalf("set %s: %v", status, err)
 		}
 		if err := store.Delete(tk.ID); err != nil {
@@ -595,7 +425,7 @@ func TestDeleteBlockedByStatus(t *testing.T) {
 func TestSetAndGetPlan(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	tk, err := store.Create("Task with plan", "", "", "")
+	tk, err := store.Create("Task with plan", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -625,7 +455,7 @@ func TestSetAndGetPlan(t *testing.T) {
 func TestTaskReviewsLifecycle(t *testing.T) {
 	store := NewStore(testutil.DB(t))
 
-	tk, err := store.Create("Task with review", "", "", "")
+	tk, err := store.Create("Task with review", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -638,11 +468,11 @@ func TestTaskReviewsLifecycle(t *testing.T) {
 		t.Fatalf("pending review error = %v, want sql.ErrNoRows", err)
 	}
 
-	firstReviewID, err := store.AddReview(tk.ID, "first feedback")
+	firstReviewID, err := store.AddReview(tk.ID, "first feedback", "")
 	if err != nil {
 		t.Fatalf("add first review: %v", err)
 	}
-	secondReviewID, err := store.AddReview(tk.ID, "second feedback")
+	secondReviewID, err := store.AddReview(tk.ID, "second feedback", "")
 	if err != nil {
 		t.Fatalf("add second review: %v", err)
 	}
@@ -718,7 +548,7 @@ func BenchmarkListWithDependencies(b *testing.B) {
 	const taskCount = 300
 	tasks := make([]*Task, 0, taskCount)
 	for i := 0; i < taskCount; i++ {
-		tk, err := store.Create(fmt.Sprintf("Task %d", i), "", "", "")
+		tk, err := store.Create(fmt.Sprintf("Task %d", i), "", "")
 		if err != nil {
 			b.Fatalf("create task %d: %v", i, err)
 		}

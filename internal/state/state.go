@@ -1,11 +1,11 @@
-// Package state manages SQLite persistence for tasks, sprints, artifacts, and exploration context.
+// Package state manages SQLite persistence for tasks and interaction context.
 package state
 
 import (
 	"database/sql"
 	"fmt"
-
 	_ "github.com/mattn/go-sqlite3"
+	"strings"
 )
 
 // DB wraps a SQLite connection with Orca-specific operations.
@@ -73,8 +73,14 @@ func (db *DB) migrate() error {
 			return err
 		}
 		if !applied {
-			if _, err := tx.Exec(m.sql); err != nil {
-				return err
+			if m.apply != nil {
+				if err := m.apply(tx); err != nil {
+					return err
+				}
+			} else {
+				if _, err := tx.Exec(m.sql); err != nil {
+					return err
+				}
 			}
 		}
 		if _, err := tx.Exec(
@@ -102,6 +108,7 @@ func (db *DB) currentMigrationVersion(tx *sql.Tx) (int, error) {
 type migration struct {
 	version   int
 	sql       string
+	apply     func(tx *sql.Tx) error
 	isApplied func(tx *sql.Tx) (bool, error)
 }
 
@@ -112,133 +119,34 @@ var migrations = []migration{
 		isApplied: schemaV1Applied,
 	},
 	{
-		version: 2,
-		sql:     `ALTER TABLE tasks ADD COLUMN model TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "tasks", "model")
-		},
+		version:   2,
+		sql:       schemaV2,
+		isApplied: schemaV2Applied,
 	},
 	{
-		version: 3,
-		sql:     `ALTER TABLE tasks ADD COLUMN plan TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "tasks", "plan")
-		},
+		version:   3,
+		sql:       schemaV3,
+		isApplied: schemaV3Applied,
 	},
 	{
-		version: 4,
-		sql:     `ALTER TABLE tasks ADD COLUMN session_id TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "tasks", "session_id")
-		},
+		version:   4,
+		sql:       schemaV4,
+		isApplied: schemaV4Applied,
 	},
 	{
-		version: 5,
-		sql: `
-CREATE TABLE IF NOT EXISTS meta (
-	key   TEXT PRIMARY KEY,
-	value TEXT NOT NULL
-);
-
-INSERT OR IGNORE INTO meta (key, value) VALUES ('db_version', '0');
-
-CREATE TRIGGER IF NOT EXISTS tasks_version_insert
-AFTER INSERT ON tasks
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS tasks_version_update
-AFTER UPDATE ON tasks
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS tasks_version_delete
-AFTER DELETE ON tasks
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasTable(tx, "meta")
-		},
+		version:   5,
+		sql:       schemaV5,
+		isApplied: schemaV5Applied,
 	},
 	{
-		version: 6,
-		sql: `
-CREATE TRIGGER IF NOT EXISTS sprints_version_insert
-AFTER INSERT ON sprints
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS sprints_version_update
-AFTER UPDATE ON sprints
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS sprints_version_delete
-AFTER DELETE ON sprints
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS operations_version_insert
-AFTER INSERT ON operations
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS operations_version_update
-AFTER UPDATE ON operations
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS sessions_version_insert
-AFTER INSERT ON sessions
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-
-CREATE TRIGGER IF NOT EXISTS sessions_version_update
-AFTER UPDATE ON sessions
-BEGIN
-	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
-END;
-`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			var count int
-			err := tx.QueryRow(
-				`SELECT COUNT(1) FROM sqlite_master WHERE type='trigger' AND name='sprints_version_insert'`,
-			).Scan(&count)
-			return count > 0, err
-		},
+		version:   6,
+		apply:     schemaV6Apply,
+		isApplied: schemaV6Applied,
 	},
 	{
-		version: 7,
-		sql:     `ALTER TABLE tasks ADD COLUMN phase_config TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "tasks", "phase_config")
-		},
-	},
-	{
-		version: 8,
-		sql:     `ALTER TABLE artifacts ADD COLUMN quality_json TEXT`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			return hasColumn(tx, "artifacts", "quality_json")
-		},
-	},
-	{
-		version: 9,
-		sql:     `UPDATE tasks SET status = 'approved' WHERE status = 'completed'`,
-		isApplied: func(tx *sql.Tx) (bool, error) {
-			var count int
-			err := tx.QueryRow(`SELECT COUNT(*) FROM tasks WHERE status = 'completed'`).Scan(&count)
-			return count == 0, err
-		},
+		version:   7,
+		apply:     schemaV7Apply,
+		isApplied: schemaV7Applied,
 	},
 }
 
@@ -258,10 +166,7 @@ func schemaV1Applied(tx *sql.Tx) (bool, error) {
 		"tasks",
 		"task_deps",
 		"task_reviews",
-		"sprints",
-		"artifacts",
-		"costs",
-		"operations",
+		"task_interactions",
 		"sessions",
 	}
 	for _, table := range tables {
@@ -276,11 +181,395 @@ func schemaV1Applied(tx *sql.Tx) (bool, error) {
 	return true, nil
 }
 
+func schemaV2Applied(tx *sql.Tx) (bool, error) {
+	return hasColumn(tx, "task_reviews", "interaction_id")
+}
+
+func schemaV3Applied(tx *sql.Tx) (bool, error) {
+	return hasTable(tx, "config")
+}
+
+func schemaV4Applied(tx *sql.Tx) (bool, error) {
+	return hasTable(tx, "memory_entries")
+}
+
+func schemaV5Applied(tx *sql.Tx) (bool, error) {
+	tableExists, err := hasTable(tx, "explore_context")
+	if err != nil {
+		return false, err
+	}
+	if !tableExists {
+		return false, nil
+	}
+
+	insertTrigger, err := hasTrigger(tx, "explore_context_version_insert")
+	if err != nil {
+		return false, err
+	}
+	if !insertTrigger {
+		return false, nil
+	}
+
+	updateTrigger, err := hasTrigger(tx, "explore_context_version_update")
+	if err != nil {
+		return false, err
+	}
+	return updateTrigger, nil
+}
+
+func schemaV6Applied(tx *sql.Tx) (bool, error) {
+	hasSourceType, err := hasColumn(tx, "memory_entries", "source_type")
+	if err != nil {
+		return false, err
+	}
+	if !hasSourceType {
+		return false, nil
+	}
+	return hasTable(tx, "memory_file_associations")
+}
+
+func schemaV7Applied(tx *sql.Tx) (bool, error) {
+	hasTasksFTS, err := hasTable(tx, "tasks_fts")
+	if err != nil {
+		return false, err
+	}
+	if !hasTasksFTS {
+		return false, nil
+	}
+	hasTaskFileAssociations, err := hasTable(tx, "task_file_associations")
+	if err != nil {
+		return false, err
+	}
+	if !hasTaskFileAssociations {
+		return false, nil
+	}
+	hasCoveredAtCommit, err := hasColumn(tx, "memory_entries", "covered_at_commit")
+	if err != nil {
+		return false, err
+	}
+	if !hasCoveredAtCommit {
+		return false, nil
+	}
+	return hasColumn(tx, "memory_entries", "stale")
+}
+
+func schemaV6Apply(tx *sql.Tx) error {
+	hasKnowledgeTable, err := hasTable(tx, "knowledge_entries")
+	if err != nil {
+		return err
+	}
+	hasMemoryTable, err := hasTable(tx, "memory_entries")
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+DROP TRIGGER IF EXISTS memory_version_insert;
+DROP TRIGGER IF EXISTS memory_version_update;
+DROP TABLE IF EXISTS memory_fts;
+DROP TABLE IF EXISTS knowledge_fts;
+`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+CREATE TABLE memory_entries_new (
+	id                    TEXT PRIMARY KEY,
+	content               TEXT NOT NULL,
+	category              TEXT NOT NULL CHECK(category IN ('pattern','pitfall','preference','convention','architecture','dependency')),
+	tags                  TEXT NOT NULL DEFAULT '[]',
+	source_task_id        TEXT REFERENCES tasks(id),
+	source_interaction_id TEXT REFERENCES task_interactions(id),
+	confidence            REAL NOT NULL DEFAULT 1.0,
+	provenance_hash       TEXT NOT NULL,
+	superseded_by         TEXT REFERENCES memory_entries_new(id),
+	source_type           TEXT NOT NULL DEFAULT 'retro' CHECK(source_type IN ('retro','explore')),
+	created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`); err != nil {
+		return err
+	}
+
+	if hasMemoryTable {
+		if _, err := tx.Exec(`
+INSERT INTO memory_entries_new (
+	id,
+	content,
+	category,
+	tags,
+	source_task_id,
+	source_interaction_id,
+	confidence,
+	provenance_hash,
+	superseded_by,
+	source_type,
+	created_at,
+	updated_at
+)
+SELECT
+	id,
+	content,
+	category,
+	tags,
+	source_task_id,
+	source_interaction_id,
+	confidence,
+	provenance_hash,
+	superseded_by,
+	'retro',
+	created_at,
+	updated_at
+FROM memory_entries;
+`); err != nil {
+			return err
+		}
+	}
+	if hasKnowledgeTable {
+		if _, err := tx.Exec(`
+INSERT OR IGNORE INTO memory_entries_new (
+	id,
+	content,
+	category,
+	tags,
+	source_task_id,
+	source_interaction_id,
+	confidence,
+	provenance_hash,
+	superseded_by,
+	source_type,
+	created_at,
+	updated_at
+)
+SELECT
+	id,
+	content,
+	category,
+	tags,
+	source_task_id,
+	source_interaction_id,
+	confidence,
+	provenance_hash,
+	superseded_by,
+	'retro',
+	created_at,
+	updated_at
+FROM knowledge_entries;
+`); err != nil {
+			return err
+		}
+	}
+
+	if hasMemoryTable {
+		if _, err := tx.Exec(`DROP TABLE memory_entries;`); err != nil {
+			return err
+		}
+	}
+	if hasKnowledgeTable {
+		if _, err := tx.Exec(`DROP TABLE knowledge_entries;`); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`ALTER TABLE memory_entries_new RENAME TO memory_entries;`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+CREATE INDEX IF NOT EXISTS idx_memory_category ON memory_entries(category);
+CREATE INDEX IF NOT EXISTS idx_memory_source_task ON memory_entries(source_task_id);
+CREATE INDEX IF NOT EXISTS idx_memory_superseded ON memory_entries(superseded_by);
+
+CREATE TRIGGER IF NOT EXISTS memory_version_insert
+AFTER INSERT ON memory_entries
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_version_update
+AFTER UPDATE ON memory_entries
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+	id UNINDEXED,
+	content,
+	tags,
+	tokenize='porter'
+);
+
+INSERT INTO memory_fts (id, content, tags)
+SELECT id, content, tags FROM memory_entries;
+
+CREATE TABLE IF NOT EXISTS memory_file_associations (
+	memory_id TEXT NOT NULL REFERENCES memory_entries(id) ON DELETE CASCADE,
+	file_path TEXT NOT NULL,
+	PRIMARY KEY (memory_id, file_path)
+);
+CREATE INDEX IF NOT EXISTS idx_mfa_file_path ON memory_file_associations(file_path);
+
+CREATE TRIGGER IF NOT EXISTS memory_file_associations_version_insert
+AFTER INSERT ON memory_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_file_associations_version_update
+AFTER UPDATE ON memory_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_file_associations_version_delete
+AFTER DELETE ON memory_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+INSERT OR IGNORE INTO meta (key, value) VALUES ('last_synced_commit', '');
+`); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func schemaV7Apply(tx *sql.Tx) error {
+	hasTaskDescription, err := hasColumn(tx, "tasks", "description")
+	if err != nil {
+		return err
+	}
+	if !hasTaskDescription {
+		if _, err := tx.Exec(`ALTER TABLE tasks ADD COLUMN description TEXT NOT NULL DEFAULT '';`); err != nil {
+			return err
+		}
+	}
+	hasTaskPlan, err := hasColumn(tx, "tasks", "plan")
+	if err != nil {
+		return err
+	}
+	if !hasTaskPlan {
+		if _, err := tx.Exec(`ALTER TABLE tasks ADD COLUMN plan TEXT;`); err != nil {
+			return err
+		}
+	}
+
+	hasCoveredAtCommit, err := hasColumn(tx, "memory_entries", "covered_at_commit")
+	if err != nil {
+		return err
+	}
+	if !hasCoveredAtCommit {
+		if _, err := tx.Exec(`ALTER TABLE memory_entries ADD COLUMN covered_at_commit TEXT NOT NULL DEFAULT '';`); err != nil {
+			return err
+		}
+	}
+
+	hasStale, err := hasColumn(tx, "memory_entries", "stale")
+	if err != nil {
+		return err
+	}
+	if !hasStale {
+		if _, err := tx.Exec(`ALTER TABLE memory_entries ADD COLUMN stale INTEGER NOT NULL DEFAULT 0;`); err != nil {
+			return err
+		}
+	}
+
+	coveredAtCommit := ""
+	_ = tx.QueryRow(`SELECT value FROM meta WHERE key = 'last_synced_commit'`).Scan(&coveredAtCommit)
+	coveredAtCommit = strings.TrimSpace(coveredAtCommit)
+	if coveredAtCommit != "" {
+		if _, err := tx.Exec(
+			`UPDATE memory_entries
+			 SET covered_at_commit = ?
+			 WHERE covered_at_commit = '' OR covered_at_commit IS NULL`,
+			coveredAtCommit,
+		); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.Exec(`
+CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+	id UNINDEXED,
+	title,
+	description,
+	plan,
+	tokenize='porter'
+);
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_insert
+AFTER INSERT ON tasks
+BEGIN
+	INSERT INTO tasks_fts (id, title, description, plan)
+	VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.plan, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_update
+AFTER UPDATE ON tasks
+BEGIN
+	DELETE FROM tasks_fts WHERE id = old.id;
+	INSERT INTO tasks_fts (id, title, description, plan)
+	VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.plan, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_delete
+AFTER DELETE ON tasks
+BEGIN
+	DELETE FROM tasks_fts WHERE id = old.id;
+END;
+
+DELETE FROM tasks_fts;
+INSERT INTO tasks_fts (id, title, description, plan)
+SELECT id, COALESCE(title, ''), COALESCE(description, ''), COALESCE(plan, '')
+FROM tasks;
+
+CREATE TABLE IF NOT EXISTS task_file_associations (
+	task_id   TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+	file_path TEXT NOT NULL,
+	PRIMARY KEY (task_id, file_path)
+);
+CREATE INDEX IF NOT EXISTS idx_tfa_file_path ON task_file_associations(file_path);
+
+CREATE TRIGGER IF NOT EXISTS task_file_associations_version_insert
+AFTER INSERT ON task_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS task_file_associations_version_update
+AFTER UPDATE ON task_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS task_file_associations_version_delete
+AFTER DELETE ON task_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+`); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func hasTable(tx *sql.Tx, table string) (bool, error) {
 	var count int
 	if err := tx.QueryRow(
 		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`,
 		table,
+	).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func hasTrigger(tx *sql.Tx, trigger string) (bool, error) {
+	var count int
+	if err := tx.QueryRow(
+		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'trigger' AND name = ?`,
+		trigger,
 	).Scan(&count); err != nil {
 		return false, err
 	}
@@ -315,17 +604,21 @@ func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
 }
 
 const schemaV1 = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+	version    INTEGER PRIMARY KEY,
+	applied_at DATETIME NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
-	id          TEXT PRIMARY KEY,
-	title       TEXT NOT NULL,
-	description TEXT,
-	prompt      TEXT,
-	parent_id   TEXT REFERENCES tasks(id),
-	status      TEXT NOT NULL DEFAULT 'pending',
-	assigned_tool TEXT,
-	sprint_id   TEXT,
-	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+	id            TEXT PRIMARY KEY,
+	title         TEXT NOT NULL,
+	description   TEXT,
+	plan          TEXT,
+	session_id    TEXT,
+	parent_id     TEXT REFERENCES tasks(id),
+	status        TEXT NOT NULL DEFAULT 'pending',
+	created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS task_deps (
@@ -343,46 +636,33 @@ CREATE TABLE IF NOT EXISTS task_reviews (
 	addressed_at DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS sprints (
-	id           TEXT PRIMARY KEY,
-	status       TEXT NOT NULL DEFAULT 'planning',
-	created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-	completed_at DATETIME
-);
-
-CREATE TABLE IF NOT EXISTS artifacts (
-	id          TEXT PRIMARY KEY,
-	task_id     TEXT NOT NULL REFERENCES tasks(id),
-	sprint_id   TEXT NOT NULL REFERENCES sprints(id),
-	diff        TEXT,
-	stdout      TEXT,
-	stderr      TEXT,
-	exit_code   INTEGER,
-	duration_ms INTEGER,
-	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS costs (
+CREATE TABLE IF NOT EXISTS task_interactions (
 	id             TEXT PRIMARY KEY,
-	sprint_id      TEXT REFERENCES sprints(id),
 	task_id        TEXT REFERENCES tasks(id),
+	phase          TEXT NOT NULL,
+	attempt        INTEGER NOT NULL DEFAULT 1,
+	run_id         TEXT,
 	tool           TEXT NOT NULL,
+	model          TEXT,
+	log_path       TEXT NOT NULL,
+	status         TEXT NOT NULL DEFAULT 'running',
+	error          TEXT,
+	diff           TEXT,
+	exit_code      INTEGER,
+	duration_ms    INTEGER,
+	quality_json   TEXT,
 	input_tokens   INTEGER DEFAULT 0,
 	output_tokens  INTEGER DEFAULT 0,
 	estimated_cost REAL DEFAULT 0.0,
-	created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+	started_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+	finished_at    DATETIME
 );
 
-CREATE TABLE IF NOT EXISTS operations (
-	id         TEXT PRIMARY KEY,
-	type       TEXT NOT NULL,
-	target_id  TEXT NOT NULL,
-	status     TEXT NOT NULL DEFAULT 'running',
-	result     TEXT,
-	error      TEXT,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+CREATE INDEX IF NOT EXISTS idx_interactions_task_phase
+	ON task_interactions(task_id, phase);
+
+CREATE INDEX IF NOT EXISTS idx_interactions_status
+	ON task_interactions(status);
 
 CREATE TABLE IF NOT EXISTS sessions (
 	id          TEXT PRIMARY KEY,
@@ -398,4 +678,125 @@ CREATE TABLE IF NOT EXISTS sessions (
 	created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
 	exited_at   DATETIME
 );
+
+CREATE TABLE IF NOT EXISTS meta (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO meta (key, value) VALUES ('db_version', '0');
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_insert
+AFTER INSERT ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_update
+AFTER UPDATE ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_version_delete
+AFTER DELETE ON tasks
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS interactions_version_insert
+AFTER INSERT ON task_interactions
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS interactions_version_update
+AFTER UPDATE ON task_interactions
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_version_insert
+AFTER INSERT ON sessions
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_version_update
+AFTER UPDATE ON sessions
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+`
+
+const schemaV2 = `
+ALTER TABLE task_reviews ADD COLUMN interaction_id TEXT REFERENCES task_interactions(id);
+`
+
+const schemaV3 = `
+CREATE TABLE IF NOT EXISTS config (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+`
+
+const schemaV4 = `
+CREATE TABLE IF NOT EXISTS memory_entries (
+	id                    TEXT PRIMARY KEY,
+	content               TEXT NOT NULL,
+	category              TEXT NOT NULL CHECK(category IN ('pattern','pitfall','preference','convention')),
+	tags                  TEXT NOT NULL DEFAULT '[]',
+	source_task_id        TEXT REFERENCES tasks(id),
+	source_interaction_id TEXT REFERENCES task_interactions(id),
+	confidence            REAL NOT NULL DEFAULT 1.0,
+	provenance_hash       TEXT NOT NULL,
+	superseded_by         TEXT REFERENCES memory_entries(id),
+	created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_category ON memory_entries(category);
+CREATE INDEX IF NOT EXISTS idx_memory_source_task ON memory_entries(source_task_id);
+CREATE INDEX IF NOT EXISTS idx_memory_superseded ON memory_entries(superseded_by);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+	id UNINDEXED,
+	content,
+	tags,
+	tokenize='porter'
+);
+
+-- db_version triggers
+CREATE TRIGGER IF NOT EXISTS memory_version_insert
+AFTER INSERT ON memory_entries
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_version_update
+AFTER UPDATE ON memory_entries
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+`
+
+const schemaV5 = `
+CREATE TABLE IF NOT EXISTS explore_context (
+	id         INTEGER PRIMARY KEY CHECK (id = 1),
+	content    TEXT NOT NULL,
+	hash       TEXT NOT NULL,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER IF NOT EXISTS explore_context_version_insert
+AFTER INSERT ON explore_context
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS explore_context_version_update
+AFTER UPDATE ON explore_context
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
 `

@@ -7,7 +7,7 @@ import (
 
 // MonitorAlert is a transient monitor event emitted by runtime safeguards.
 type MonitorAlert struct {
-	Type      string    `json:"type"` // "stuck", "budget", "conflict"
+	Type      string    `json:"type"` // "stuck", "conflict"
 	TaskID    string    `json:"task_id"`
 	Message   string    `json:"message"`
 	Timestamp time.Time `json:"timestamp"`
@@ -21,7 +21,7 @@ func (s *Server) AddMonitorAlert(alert MonitorAlert) {
 	}
 	s.monitorMu.Unlock()
 
-	s.hub.Broadcast(Event{Type: "monitor_alert", Data: alert})
+	s.hub.Broadcast(Event{Type: "monitor.alert", Data: alert})
 }
 
 func (s *Server) handleMonitorAlerts(w http.ResponseWriter, r *http.Request) {
@@ -34,5 +34,5 @@ func (s *Server) handleMonitorAlerts(w http.ResponseWriter, r *http.Request) {
 	copy(alerts, s.monitorAlerts)
 	s.monitorMu.Unlock()
 
-	jsonOK(w, map[string]interface{}{"alerts": alerts})
+	jsonOK(w, alerts)
 }

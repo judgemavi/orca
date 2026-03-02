@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strings"
 )
 
 // Routes returns the HTTP handler with all API routes and middleware.
@@ -10,56 +9,80 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	// Tasks
-	mux.HandleFunc("/api/v1/tasks", s.routeTasks)
-	mux.HandleFunc("/api/v1/tasks/ready", s.handleGetReady)
-	mux.HandleFunc("/api/v1/tasks/", s.routeTaskByID)
-	mux.HandleFunc("/api/tasks/", s.routeTaskByID)
-	mux.HandleFunc("/api/v1/models", s.handleListModels)
-	mux.HandleFunc("/api/v1/cleanup", s.handleCleanup)
+	mux.HandleFunc("GET /api/v1/tasks", s.handleListTasks)
+	mux.HandleFunc("POST /api/v1/tasks", s.handleCreateTask)
+	mux.HandleFunc("GET /api/v1/tasks/ready", s.handleGetReady)
+	mux.HandleFunc("POST /api/v1/tasks/start", s.handleRunTasks)
+	mux.HandleFunc("GET /api/v1/tasks/{id}", s.handleGetTask)
+	mux.HandleFunc("PATCH /api/v1/tasks/{id}", s.handleUpdateTask)
+	mux.HandleFunc("DELETE /api/v1/tasks/{id}", s.handleDeleteTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/deps", s.handleAddDep)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/merge", s.handleMergeTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/stop", s.handleStopTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/cancel", s.handleStopTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/resume", s.handleResumeTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/approve", s.handleApproveTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/approve-plan", s.handleApprovePlan)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/request-changes", s.handleRequestChanges)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/request-plan-changes", s.handleRequestPlanChanges)
+	mux.HandleFunc("GET /api/v1/tasks/{id}/reviews", s.handleListTaskReviews)
+	mux.HandleFunc("GET /api/v1/tasks/{id}/interactions", s.handleListInteractions)
+	mux.HandleFunc("GET /api/v1/tasks/{id}/interactions/{interactionID}", s.handleGetInteraction)
+	mux.HandleFunc("GET /api/v1/tasks/{id}/interactions/{interactionID}/stream", s.handleStreamInteraction)
+	mux.HandleFunc("GET /api/v1/tasks/{id}/plan", s.handleGetTaskPlan)
+	mux.HandleFunc("PUT /api/v1/tasks/{id}/plan", s.handlePutTaskPlan)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/plan/generate", s.handleGenerateTaskPlan)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/evaluate", s.handleEvaluateTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/breakdown", s.handleBreakdownTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/breakdown/accept", s.handleAcceptBreakdown)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/breakdown/reject", s.handleRejectBreakdown)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/ai-review", s.handleAIReview)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/retro", s.handleRetroTask)
 
-	// Sprints
-	mux.HandleFunc("/api/v1/sprints", s.routeSprints)
-	mux.HandleFunc("/api/v1/sprints/active", s.handleGetActiveSprint)
-	mux.HandleFunc("/api/v1/sprints/plan", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.handlePlanSprint(w, r)
-	})
-	mux.HandleFunc("/api/v1/sprints/assign", s.handleSprintAssign)
-	mux.HandleFunc("/api/v1/sprints/unassign", s.handleSprintUnassign)
-	mux.HandleFunc("/api/v1/sprints/", s.routeSprintByID)
+	// Memory
+	mux.HandleFunc("GET /api/v1/memory", s.handleListMemory)
+	mux.HandleFunc("GET /api/v1/memory/query", s.handleQueryMemory)
+	mux.HandleFunc("GET /api/v1/memory/{id}", s.handleGetMemory)
+	mux.HandleFunc("PATCH /api/v1/memory/{id}", s.handleUpdateMemory)
+	mux.HandleFunc("DELETE /api/v1/memory/{id}", s.handleDeleteMemory)
+	mux.HandleFunc("POST /api/v1/memory/sync", s.handleSyncMemory)
+	mux.HandleFunc("POST /api/v1/memory/refresh", s.handleRefreshMemory)
+
+	mux.HandleFunc("GET /api/v1/models", s.handleListModels)
+	mux.HandleFunc("POST /api/v1/cleanup", s.handleCleanup)
 
 	// Merge
-	mux.HandleFunc("/api/v1/merge", s.handleMerge)
+	mux.HandleFunc("POST /api/v1/merge", s.handleMerge)
 
 	// Explore
-	mux.HandleFunc("/api/v1/explore", s.handleExplore)
-	mux.HandleFunc("/api/v1/explore/context", s.routeExploreContext)
+	mux.HandleFunc("POST /api/v1/explore", s.handleExplore)
+	mux.HandleFunc("GET /api/v1/explore/context", s.handleGetContext)
+	mux.HandleFunc("PUT /api/v1/explore/context", s.handlePutContext)
 
 	// Plan
-	mux.HandleFunc("/api/v1/plan", s.handlePlan)
-	mux.HandleFunc("/api/v1/plan/accept", s.handlePlanAccept)
-	mux.HandleFunc("/api/v1/plan/reject", s.handlePlanReject)
-	mux.HandleFunc("/api/v1/operations", s.handleListOperations)
+	mux.HandleFunc("POST /api/v1/plan", s.handlePlan)
+	mux.HandleFunc("POST /api/v1/plan/accept", s.handlePlanAccept)
+	mux.HandleFunc("POST /api/v1/plan/reject", s.handlePlanReject)
+	mux.HandleFunc("GET /api/v1/operations", s.handleListRunningInteractions)
 
 	// Costs, Config, Status
-	mux.HandleFunc("/api/v1/costs", s.handleCosts)
-	mux.HandleFunc("/api/v1/config", s.routeConfig)
-	mux.HandleFunc("/api/v1/status", s.handleStatus)
-	mux.HandleFunc("/api/v1/monitor/alerts", s.handleMonitorAlerts)
+	mux.HandleFunc("GET /api/v1/costs", s.handleCosts)
+	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
+	mux.HandleFunc("PUT /api/v1/config", s.handleUpdateConfig)
+	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
+	mux.HandleFunc("GET /api/v1/monitor/alerts", s.handleMonitorAlerts)
 
 	// WebSocket
-	mux.HandleFunc("/api/v1/ws", s.hub.ServeWS)
-	mux.HandleFunc("/api/v1/terminal/", s.handleTerminalWS)
+	mux.HandleFunc("GET /api/v1/ws", s.hub.ServeWS)
+	mux.HandleFunc("GET /api/v1/terminal/{sessionID}", s.handleTerminalWS)
 
 	// Sessions
-	mux.HandleFunc("/api/v1/sessions", s.routeSessions)
-	mux.HandleFunc("/api/v1/sessions/", s.routeSessionByID)
+	mux.HandleFunc("GET /api/v1/sessions", s.handleListSessions)
+	mux.HandleFunc("POST /api/v1/sessions", s.handleCreateSession)
+	mux.HandleFunc("DELETE /api/v1/sessions/{sessionID}", s.handleKillSession)
 
 	// Orchestrator
-	mux.HandleFunc("/api/v1/orchestrator/start", s.handleStartOrchestrator)
+	mux.HandleFunc("POST /api/v1/orchestrator/start", s.handleStartOrchestrator)
 
 	// Frontend served under /ui/ with SPA fallback for client-side routing.
 	if s.frontendFS != nil {
@@ -87,207 +110,4 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	return logMiddleware(corsMiddleware(mux))
-}
-
-// --- routing helpers ---
-
-func (s *Server) routeTasks(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleListTasks(w, r)
-	case http.MethodPost:
-		s.handleCreateTask(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeTaskByID(w http.ResponseWriter, r *http.Request) {
-	id := extractPathParam(r.URL.Path, "/api/v1/tasks/")
-	if id == r.URL.Path {
-		id = extractPathParam(r.URL.Path, "/api/tasks/")
-	}
-	if id == "" {
-		jsonError(w, "missing task id", http.StatusBadRequest)
-		return
-	}
-
-	parts := strings.Split(id, "/")
-	taskID := parts[0]
-	if taskID == "" {
-		jsonError(w, "missing task id", http.StatusBadRequest)
-		return
-	}
-
-	if len(parts) > 1 {
-		switch parts[1] {
-		case "deps":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			s.handleAddDep(w, r, taskID)
-		case "merge":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			s.handleMergeTask(w, r, taskID)
-		case "reopen":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			s.handleReopenTask(w, r, taskID)
-		case "approve":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			if r.Method != http.MethodPost {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			s.handleApproveTask(w, r, taskID)
-		case "request-changes":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			if r.Method != http.MethodPost {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			s.handleRequestChanges(w, r, taskID)
-		case "reviews":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			s.handleListTaskReviews(w, r, taskID)
-		case "plan":
-			if len(parts) == 2 {
-				switch r.Method {
-				case http.MethodGet:
-					s.handleGetTaskPlan(w, r, taskID)
-				case http.MethodPut:
-					s.handlePutTaskPlan(w, r, taskID)
-				default:
-					http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				}
-				return
-			}
-			if len(parts) == 3 && parts[2] == "generate" {
-				s.handleGenerateTaskPlan(w, r, taskID)
-				return
-			}
-			http.NotFound(w, r)
-		case "evaluate":
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			if r.Method != http.MethodPost {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			s.handleEvaluateTask(w, r, taskID)
-		default:
-			http.NotFound(w, r)
-		}
-		return
-	}
-
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetTask(w, r, taskID)
-	case http.MethodPatch:
-		s.handleUpdateTask(w, r, taskID)
-	case http.MethodDelete:
-		s.handleDeleteTask(w, r, taskID)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeSprints(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleListSprints(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeSprintByID(w http.ResponseWriter, r *http.Request) {
-	id := extractPathParam(r.URL.Path, "/api/v1/sprints/")
-	if id == "" {
-		jsonError(w, "missing sprint id", http.StatusBadRequest)
-		return
-	}
-
-	parts := strings.SplitN(id, "/", 2)
-	if len(parts) == 2 {
-		switch parts[1] {
-		case "start":
-			s.handleStartSprint(w, r, parts[0])
-		case "cancel":
-			s.handleCancelSprint(w, r, parts[0])
-		case "reset":
-			s.handleResetSprint(w, r, parts[0])
-		case "review":
-			s.routeSprintReview(w, r, parts[0])
-		case "plan":
-			s.handlePlanSprint(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-		return
-	}
-
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetSprint(w, r, id)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeSprintReview(w http.ResponseWriter, r *http.Request, sprintID string) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetReview(w, r, sprintID)
-	case http.MethodPost:
-		s.handlePostReview(w, r, sprintID)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeExploreContext(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetContext(w, r)
-	case http.MethodPut:
-		s.handlePutContext(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeConfig(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetConfig(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func extractPathParam(path, prefix string) string {
-	return strings.TrimPrefix(path, prefix)
 }

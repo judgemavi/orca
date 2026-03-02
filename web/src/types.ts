@@ -1,22 +1,17 @@
+import type {
+  InteractionPhase,
+  InteractionStatus,
+  ReviewStatus,
+  TaskStatus,
+} from './lib/phases'
+
 export interface Task {
   id: string
   title: string
   description: string
-  prompt: string
   parent_id: string | null
-  status:
-    | 'pending'
-    | 'in_sprint'
-    | 'running'
-    | 'review'
-    | 'approved'
-    | 'merged'
-    | 'failed'
-  assigned_tool: string | null
-  sprint_id: string | null
+  status: TaskStatus
   depends_on: string[]
-  model: string | null
-  phase_config: PhaseConfigMap | null
   plan: string | null
   created_at: string
   updated_at: string
@@ -25,28 +20,11 @@ export interface Task {
 export interface TaskReview {
   id: string
   task_id: string
+  interaction_id?: string
   feedback: string
-  status: 'pending' | 'addressed'
+  status: ReviewStatus
   created_at: string
-  addressed_at: string | null
-}
-
-export interface Sprint {
-  id: string
-  status: 'planning' | 'running' | 'completed' | 'failed'
-  task_ids: string[]
-  created_at: string
-  completed_at: string | null
-}
-
-export interface PhaseOverride {
-  tool?: string
-  model?: string
-}
-
-export interface PhaseConfigMap {
-  use_defaults: boolean
-  phases?: Record<string, PhaseOverride>
+  addressed_at?: string
 }
 
 export interface Config {
@@ -55,24 +33,25 @@ export interface Config {
     integration_branch: string
     worktree_dir: string
   }
-  defaults?: { tool?: string; model?: string }
-  tools: Record<
-    string,
-    {
-      binary: string
-      mode: string
-      timeout: string
-      model?: string
-      models?: string[]
-    }
-  >
+  tools: string[]
+  validation: { commands: string[] }
   workers: { max_parallel: number }
   orchestrator: {
-    cost_budget: number
-    supervisor_tool?: string
-    supervisor_model?: string
-    phases?: Record<string, PhaseOverride>
+    supervisor_tool: string
+    supervisor_model: string
+    phases: Record<string, { tool: string; model: string }>
   }
+  monitor: {
+    stuck_check_interval: string
+    max_stuck_cycles: number
+    conflict_check_interval: string
+  }
+  quality: {
+    enabled: boolean
+    scope_check: boolean
+    test_delta: boolean
+  }
+  logging: { level: string; file: string; max_size: string }
 }
 
 export interface ModelInfo {
@@ -81,27 +60,84 @@ export interface ModelInfo {
   provider: string
 }
 
-export interface ReviewArtifact {
-  task_id: string
-  title: string
-  status: string
-  diff: string
-  files: string[]
-  duration_ms: number
-  quality?: QualityResult
+export interface Interaction {
+  id: string
+  task_id: string | null
+  phase: InteractionPhase | string
+  attempt: number
+  tool: string
+  status: InteractionStatus
+  error?: string
+  diff?: string
+  exit_code?: number
+  duration_ms?: number
+  input_tokens: number
+  output_tokens: number
+  estimated_cost: number
+  quality_json?: string
+  started_at: string
+  finished_at: string | null
 }
 
-export interface TaskResult {
+export interface InteractionWithContent extends Interaction {
+  content: string
+}
+
+export interface Operation {
+  id: string
+  type: string
+  target_id: string
+  status: InteractionStatus
+  result?: string
+  error?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AIReviewResult {
   task_id: string
-  tool_name: string
-  status: 'completed' | 'failed'
+  approved: boolean
+  feedback: string
+  tool: string
+  prompt?: string
+}
+
+export interface TaskEvaluation {
+  complexity?: string
+  needs_breakdown: boolean
+  confidence: number
+  reasoning: string
+  suggested_subtask_count: number
+  description_hash?: string
+}
+
+interface WSEventBase<TType extends string, TData> {
+  type: TType
+  timestamp: string
+  data: TData
+}
+
+export interface SessionEventData {
+  id: string
+  type: string
+  tool: string
+  task_id: string
   exit_code: number
-  diff: string
-  files_changed: string[]
-  stdout: string
-  stderr: string
-  duration_ms: number
-  worktree_path: string
+  status?: string
+}
+
+export interface MergeFailedEventData {
+  task_id?: string
+  error: string
+  conflict?: boolean
+  worktree_path?: string
+}
+
+export interface MergeProgressEventData {
+  task_id: string
+  message?: string
+  status?: string
+  error?: string
 }
 
 export interface ProposedTask {
@@ -111,201 +147,232 @@ export interface ProposedTask {
   suggested_tool: string
 }
 
-export interface Operation {
+export type MemoryCategory =
+  | 'pattern'
+  | 'pitfall'
+  | 'preference'
+  | 'convention'
+  | 'architecture'
+  | 'dependency'
+
+export type MemorySourceType = 'retro' | 'explore'
+
+export interface MemoryEntry {
   id: string
-  type: string
-  target_id: string
-  status: 'running' | 'completed' | 'failed'
-  result?: string
-  error?: string
+  content: string
+  category: MemoryCategory
+  tags: string[]
+  confidence: number
+  source_type: MemorySourceType
+  file_paths?: string[]
+  covered_at_commit?: string
+  stale?: boolean
+  source_task_id?: string
+  source_interaction_id?: string
+  provenance_hash: string
+  superseded_by?: string
   created_at: string
   updated_at: string
 }
 
-export interface ToolSummary {
-  tool: string
-  input_tokens: number
-  output_tokens: number
-  cost: number
+export interface MemoryUsedByTask {
+  task_id: string
+  title: string
+  status: string
 }
 
-export interface ReviewResult {
-  task_id: string
-  approved: boolean
-  feedback: string
-  tool: string
+export interface MemoryEntryDetail {
+  entry: MemoryEntry
+  used_by_tasks: MemoryUsedByTask[]
+  supersedes?: string[]
+}
+
+export interface MemoryQueryResult {
+  entry: MemoryEntry
+  used_by_tasks: MemoryUsedByTask[]
+}
+
+export interface ListMemoryParams {
+  category?: MemoryCategory
+  tag?: string
+  source_type?: MemorySourceType
+  file_path?: string
+  stale?: boolean
+  covered_before?: string
+  q?: string
+  limit?: number
+}
+
+export interface UpdateMemoryInput {
+  content?: string
+  confidence?: number
+  category?: MemoryCategory
+}
+
+export interface MemorySyncResult {
+  last_commit: string
+  new_commit: string
+  commit_count: number
+  affected_files: string[]
+  flagged_entries: number
+  stale_entries: number
+  superseded_count: number
+  classifications: Record<string, string>
+  context_updated: boolean
+  context_stale: boolean
+}
+
+export interface MemoryRefreshResult {
+  entry_id?: string
+  updated: number
+  skipped: number
+  commit: string
 }
 
 export interface ProjectStatus {
-  project_name: string
-  task_counts: Record<string, number>
-  active_sprint: { id: string; status: string } | null
+  project: string
+  total_tasks: number
+  pending: number
+  in_progress: number
+  completed: number
+  failed: number
   context_exists: boolean
-  context_stale?: boolean
-  context_age_minutes?: number
+  context_stale: boolean
+  context_age_minutes: number
   total_cost: number
-  budget: number
-  budget_remaining: number
+  running_operations: number
+  last_synced_commit: string
+  current_commit: string
+  sync_needed: boolean
+  commits_behind: number
+  memory_total: number
+  memory_stale_count: number
 }
 
-export interface QualityScope {
-  task_id: string
-  files_changed: number
-  lines_changed: number
-  flags: string[]
-  excessive: boolean
-}
-
-export interface QualityTestDelta {
-  new_failures: string[]
-  new_passes: string[]
-  unchanged: string[]
-  test_count_delta: number
-}
-
-export interface QualityResult {
-  scope?: QualityScope
-  test_delta?: QualityTestDelta
-  alignment?: { aligned: boolean; reason: string }
-}
-
-export interface MonitorAlert {
-  type: 'stuck' | 'budget' | 'conflict'
-  task_id: string
-  message: string
-  timestamp: string
-}
-
-export interface WorktreeInfo {
-  task_id: string
-  branch: string
-  age_hours: number
-}
-
-export interface WorktreeStatus {
-  worktrees: WorktreeInfo[]
-  total_disk_bytes: number
-}
-
-export interface PTYSession {
-  id: string
-  type: 'orchestrator' | 'worker'
-  tool: string
-  task_id: string
-  cols: number
-  rows: number
-  created_at: string
-}
-
-export type Block =
-  | { type: 'text'; data: { content: string } }
-  | { type: 'task_card'; data: { task: Task; actions: string[] } }
-  | { type: 'task_list'; data: { tasks: Task[]; actions: string[] } }
-  | {
-      type: 'plan_proposal'
-      data: {
-        goal: string
-        proposed_tasks: ProposedTask[]
-        actions: string[]
+export type KnownWSEvent =
+  | WSEventBase<'task.created', Task>
+  | WSEventBase<'task.updated', Task | { id: string }>
+  | WSEventBase<'task.deleted', { id: string }>
+  | WSEventBase<'config.updated', Config>
+  | WSEventBase<'plan.generating', { task_id: string }>
+  | WSEventBase<'plan.failed', { task_id: string; error: string }>
+  | WSEventBase<'plan.completed', { task_id: string; plan: string }>
+  | WSEventBase<'evaluate.started', { task_id: string }>
+  | WSEventBase<
+      'evaluate.completed',
+      { task_id: string; evaluation: TaskEvaluation }
+    >
+  | WSEventBase<'evaluate.failed', { task_id: string; error: string }>
+  | WSEventBase<'merge.started', { task_id?: string; mode?: string }>
+  | WSEventBase<'merge.progress', MergeProgressEventData>
+  | WSEventBase<'merge.failed', MergeFailedEventData>
+  | WSEventBase<
+      'merge.completed',
+      Task | { merged: string[]; failed: string[] }
+    >
+  | WSEventBase<'interaction.started', Interaction | { id: string }>
+  | WSEventBase<'interaction.updated', Interaction | { id: string }>
+  | WSEventBase<'interaction.completed', Interaction | { id: string }>
+  | WSEventBase<'interaction.failed', Interaction | { id: string }>
+  | WSEventBase<'session.created', SessionEventData>
+  | WSEventBase<'session.exited', SessionEventData>
+  | WSEventBase<
+      'worker.output',
+      { task_id: string; stream: string; line: string; ts: string }
+    >
+  | WSEventBase<'worker.done', { task_id: string; exit_code: number }>
+  | WSEventBase<'worker.output.end', { task_id: string; ts: string }>
+  | WSEventBase<'run.failed', { error: string; task_ids?: string[] }>
+  | WSEventBase<'run.completed', { results?: unknown; task_ids: string[] }>
+  | WSEventBase<'cleanup.started', Record<string, never>>
+  | WSEventBase<'cleanup.progress', { removed: string }>
+  | WSEventBase<'cleanup.completed', { removed: number }>
+  | WSEventBase<'explore.failed', { error: string }>
+  | WSEventBase<'explore.completed', { path: string }>
+  | WSEventBase<'ai_review.failed', { task_id: string; error: string }>
+  | WSEventBase<'ai_review.completed', AIReviewResult>
+  | WSEventBase<
+      'breakdown.started',
+      { task_id: string; session_id?: string; operation_id?: string }
+    >
+  | WSEventBase<
+      'breakdown.failed',
+      {
+        task_id: string
+        error: string
         session_id?: string
-        proposal_id?: string
         operation_id?: string
       }
-    }
-  | {
-      type: 'sprint_progress'
-      data: { sprint_id: string; tasks: SprintTaskStatus[] }
-    }
-  | {
-      type: 'sprint_result'
-      data: {
-        sprint_id: string
-        results: TaskResultSummary[]
-        actions: string[]
-      }
-    }
-  | {
-      type: 'diff_viewer'
-      data: {
+    >
+  | WSEventBase<
+      'breakdown.completed',
+      {
         task_id: string
-        title: string
-        diff: string
-        files_changed: string[]
-        actions: string[]
+        proposed: ProposedTask[]
+        interaction_id?: string
+        session_id?: string
+        operation_id?: string
       }
-    }
-  | {
-      type: 'review_result'
-      data: { reviews: ReviewResultDisplay[]; actions: string[] }
-    }
-  | {
-      type: 'cost_card'
-      data: {
-        scope: string
-        total: number
-        budget: number
-        remaining: number
-        tools: ToolSummary[]
-      }
-    }
-  | { type: 'status_card'; data: ProjectStatus }
-  | {
-      type: 'escalation'
-      data: { message: string; task_id: string; actions: string[] }
-    }
-  | {
-      type: 'merge_result'
-      data: { merged: TaskSummary[]; failed: TaskSummary[] }
-    }
-  | { type: 'help'; data: { commands: CommandHelp[] } }
+    >
+  | WSEventBase<
+      'breakdown.rejected',
+      { task_id: string; interaction_id: string; rejected: boolean }
+    >
+  | WSEventBase<
+      'monitor.alert',
+      { type: string; task_id: string; message: string; timestamp: string }
+    >
 
-export interface SprintTaskStatus {
-  task_id: string
-  title: string
-  tool_name: string
-  status: string
-  duration_ms: number
-  progress_pct: number
+type KnownWSEventType = KnownWSEvent['type']
+
+export type UnknownWSEvent = WSEventBase<string, Record<string, unknown>>
+
+export type WSEvent = KnownWSEvent | UnknownWSEvent
+
+const KNOWN_WS_EVENT_TYPES = new Set<KnownWSEventType>([
+  'task.created',
+  'task.updated',
+  'task.deleted',
+  'config.updated',
+  'plan.generating',
+  'plan.failed',
+  'plan.completed',
+  'evaluate.started',
+  'evaluate.completed',
+  'evaluate.failed',
+  'merge.started',
+  'merge.progress',
+  'merge.failed',
+  'merge.completed',
+  'interaction.started',
+  'interaction.updated',
+  'interaction.completed',
+  'interaction.failed',
+  'session.created',
+  'session.exited',
+  'worker.output',
+  'worker.done',
+  'worker.output.end',
+  'run.failed',
+  'run.completed',
+  'cleanup.started',
+  'cleanup.progress',
+  'cleanup.completed',
+  'explore.failed',
+  'explore.completed',
+  'ai_review.failed',
+  'ai_review.completed',
+  'breakdown.started',
+  'breakdown.failed',
+  'breakdown.completed',
+  'breakdown.rejected',
+  'monitor.alert',
+])
+
+function isKnownWSEventType(type: string): type is KnownWSEventType {
+  return KNOWN_WS_EVENT_TYPES.has(type as KnownWSEventType)
 }
 
-export interface TaskResultSummary {
-  task_id: string
-  title: string
-  status: string
-  tool_name: string
-  duration_ms: number
-  files_changed: string[]
-  diff_preview: string
-  has_full_diff: boolean
-}
-
-export interface ReviewResultDisplay {
-  task_id: string
-  title: string
-  approved: boolean
-  feedback: string
-  tool: string
-}
-
-export interface TaskSummary {
-  task_id: string
-  title: string
-}
-
-export interface CommandHelp {
-  command: string
-  description: string
-}
-
-export interface WSEvent {
-  type: string
-  timestamp: string
-  data: Record<string, unknown>
-}
-
-export interface WorkerOutputEvent {
-  task_id: string
-  stream: 'stdout' | 'stderr'
-  line: string
-  ts: string
+export function isKnownWSEvent(event: WSEvent): event is KnownWSEvent {
+  return isKnownWSEventType(event.type)
 }

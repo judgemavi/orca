@@ -1,64 +1,69 @@
-import type { useTaskForm } from '../../../hooks/forms/useTaskForm'
-import type { ReviewArtifact, Task } from '../../../types'
-import { ActionButton } from '../../common/ActionButton'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext'
+import { TASK_STATUSES } from '../../../lib/phases'
+import { Button } from '../../Button'
+import { ApprovedTaskActions } from './ApprovedTaskActions'
+import { FailedTaskActions } from './FailedTaskActions'
+import { MergedTaskActions } from './MergedTaskActions'
+import { PendingTaskActions } from './PendingTaskActions'
+import { ReviewTaskActions } from './ReviewTaskActions'
+import { RunningTaskActions } from './RunningTaskActions'
+import { TaskActionsLayout } from './TaskActionsLayout'
 
 interface Props {
-  task: Task
-  artifact: ReviewArtifact | null
-  isEditable: boolean
-  isDeletable: boolean
-  deleting: boolean
-  saving: boolean
-  merging: boolean
-  conflictError: string | null
-  form: ReturnType<typeof useTaskForm>
-  onDelete: () => void
-  onMerge: () => void
   onClose: () => void
 }
 
-export function TaskActionsBar({
-  task,
-  artifact,
-  isEditable,
-  isDeletable,
-  deleting,
-  saving,
-  merging,
-  conflictError,
-  form,
-  onDelete,
-  onMerge,
-  onClose,
-}: Props) {
-  return (
-    <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
-      {isDeletable ? (
-        <ActionButton variant="danger" onClick={onDelete} disabled={deleting}>
-          {deleting ? 'Deleting…' : 'Delete'}
-        </ActionButton>
-      ) : (
-        <div />
-      )}
-      <div className="flex gap-2">
-        {task.status === 'approved' && artifact?.diff && (
-          <ActionButton variant="primary" onClick={onMerge} disabled={merging}>
-            {merging ? 'Merging…' : conflictError ? 'Retry Merge' : 'Merge'}
-          </ActionButton>
-        )}
-        <ActionButton variant="default" onClick={onClose} type="button">
-          Close
-        </ActionButton>
-        {isEditable && (
-          <form.Subscribe selector={(state) => state.isDirty}>
-            {(isDirty) => (
-              <ActionButton variant="primary" type="submit" disabled={saving || !isDirty}>
-                {saving ? 'Saving…' : 'Save'}
-              </ActionButton>
-            )}
-          </form.Subscribe>
-        )}
-      </div>
-    </div>
-  )
+export function TaskActionsBar({ onClose }: Props) {
+  const { task } = useTaskDetailContext()
+
+  if (
+    task.status === TASK_STATUSES.pending ||
+    task.status === TASK_STATUSES.planned
+  ) {
+    return <PendingTaskActions />
+  }
+
+  if (task.status === TASK_STATUSES.running) {
+    return <RunningTaskActions />
+  }
+
+  if (task.status === TASK_STATUSES.review) {
+    return <ReviewTaskActions />
+  }
+
+  if (task.status === TASK_STATUSES.approved) {
+    return <ApprovedTaskActions />
+  }
+
+  if (
+    task.status === TASK_STATUSES.failed ||
+    task.status === TASK_STATUSES.stopped
+  ) {
+    return <FailedTaskActions />
+  }
+
+  if (task.status === TASK_STATUSES.merged) {
+    return <MergedTaskActions onClose={onClose} />
+  }
+
+  if (task.status === TASK_STATUSES.broken_down) {
+    return (
+      <TaskActionsLayout
+        tools={[]}
+        actionTool=""
+        actionModel=""
+        actionModels={[]}
+        actionModelsFetching={false}
+        onToolChange={() => {}}
+        onModelChange={() => {}}
+        actions={
+          <Button variant="default" onClick={onClose} type="button">
+            Close
+          </Button>
+        }
+      />
+    )
+  }
+
+  return null
 }

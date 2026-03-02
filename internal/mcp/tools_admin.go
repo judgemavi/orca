@@ -12,19 +12,28 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/cost"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/logging"
+	"github.com/jasjeetmavi/orca/internal/model"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
 func (s *Server) HandleExploreTool(_ json.RawMessage) (interface{}, error) {
-	_, toolCfg, err := s.cfg.ResolvePhaseToolConfig("explore")
+	toolName, d, err := s.config.ResolveToolForPhase("explore", "")
 	if err != nil {
 		return nil, err
 	}
+	model := s.config.ResolveModelForPhase("explore", "", d)
 
-	explorer := explore.New(toolCfg, s.repoDir)
+	memStore, err := s.getMemoryStore()
+	if err != nil {
+		return nil, err
+	}
+	explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions")).
+		WithMemory(memStore).
+		WithSyncer(s.newMemorySyncer(memStore))
 	outPath, err := explorer.Run()
 	if err != nil {
 		return nil, err
@@ -32,20 +41,78 @@ func (s *Server) HandleExploreTool(_ json.RawMessage) (interface{}, error) {
 	return map[string]interface{}{"path": outPath}, nil
 }
 
+func (s *Server) HandleConfigGetTool(argsRaw json.RawMessage) (interface{}, error) {
+	if _, err := parseArgs[struct{}](argsRaw); err != nil {
+		return nil, fmt.Errorf("config_get: %w", err)
+	}
+	return s.config, nil
+}
+
+func (s *Server) HandleModelsListTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		Tool string `json:"tool"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("models_list: %w", err)
+	}
+	if s.config == nil {
+		return nil, fmt.Errorf("models listing not configured")
+	}
+
+	requestedTool := strings.TrimSpace(args.Tool)
+	if requestedTool != "" {
+		d, ok := driver.Get(requestedTool)
+		if !ok {
+			return nil, fmt.Errorf("tool %q not found", requestedTool)
+		}
+		return map[string][]model.Model{
+			requestedTool: model.FromDriver(requestedTool, d),
+		}, nil
+	}
+
+	return model.AllFromConfig(s.config), nil
+}
+
+func (s *Server) HandleConfigUpdateTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		Patch json.RawMessage `json:"patch"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("config_update: %w", err)
+	}
+	if len(args.Patch) == 0 {
+		return nil, fmt.Errorf("config_update: patch is required")
+	}
+
+	cfg, err := config.UpdateFromDB(s.db.DB, args.Patch)
+	if err != nil {
+		return nil, fmt.Errorf("config_update: %w", err)
+	}
+	s.config = cfg
+	if s.onEvent != nil {
+		s.onEvent("config.updated", cfg)
+	}
+	return cfg, nil
+}
+
 func (s *Server) HandleExploreStatusTool(_ json.RawMessage) (interface{}, error) {
-	exists := explore.LoadContext(s.repoDir) != ""
-	stale, err := explore.IsStale(s.repoDir)
+	store, err := s.getMemoryStore()
 	if err != nil {
 		return nil, fmt.Errorf("explore status: %w", err)
 	}
-	ageMinutes := int(explore.ContextAge(s.repoDir) / time.Minute)
-	if ageMinutes < 0 {
-		ageMinutes = 0
+	exists := false
+	stale := false
+	if health, err := store.BuildHealthSummary(); err == nil && health != nil {
+		exists = health.TotalEntries > 0
+		stale = health.StaleCount > 0
+	}
+	if status, err := s.newMemorySyncer(store).Status(); err == nil && status != nil {
+		stale = stale || status.ContextStale
 	}
 	return map[string]interface{}{
 		"exists":      exists,
 		"stale":       stale,
-		"age_minutes": ageMinutes,
+		"age_minutes": 0,
 	}, nil
 }
 
@@ -57,7 +124,7 @@ func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}
 	if err != nil {
 		return nil, fmt.Errorf("worktree_cleanup: %w", err)
 	}
-	if s.cfg == nil {
+	if s.config == nil {
 		return nil, fmt.Errorf("worktree cleanup not configured")
 	}
 
@@ -66,7 +133,7 @@ func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}
 		maxAgeHours = 168
 	}
 	maxAge := time.Duration(maxAgeHours) * time.Hour
-	wm := worktree.NewManager(s.repoDir, s.cfg.Project.WorktreeDir)
+	wm := worktree.NewManager(s.repoDir, s.config.Project.WorktreeDir)
 
 	if args.DryRun {
 		list, err := wm.ListWithAge()
@@ -97,10 +164,10 @@ func (s *Server) HandleWorktreeCleanupTool(argsRaw json.RawMessage) (interface{}
 }
 
 func (s *Server) HandleWorktreeStatusTool(_ json.RawMessage) (interface{}, error) {
-	if s.cfg == nil {
+	if s.config == nil {
 		return nil, fmt.Errorf("worktree status not configured")
 	}
-	wm := worktree.NewManager(s.repoDir, s.cfg.Project.WorktreeDir)
+	wm := worktree.NewManager(s.repoDir, s.config.Project.WorktreeDir)
 
 	listWithAge, err := wm.ListWithAge()
 	if err != nil {
@@ -135,44 +202,18 @@ func (s *Server) HandleWorktreeStatusTool(_ json.RawMessage) (interface{}, error
 	}, nil
 }
 
-func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, error) {
-	args, err := parseArgs[struct {
-		SprintID string `json:"sprint_id"`
-	}](argsRaw)
-	if err != nil {
-		return nil, fmt.Errorf("budget_status: %w", err)
+func (s *Server) HandleCostStatusTool(argsRaw json.RawMessage) (interface{}, error) {
+	if _, err := parseArgs[struct{}](argsRaw); err != nil {
+		return nil, fmt.Errorf("cost_status: %w", err)
 	}
-	if s.planner == nil || s.planner.DB() == nil {
+	if s.db == nil {
 		return nil, fmt.Errorf("cost tracking not configured")
 	}
 
-	tracker := cost.NewTracker(s.planner.DB())
-	budget := s.cfg.Orchestrator.CostBudget
-	if strings.TrimSpace(args.SprintID) != "" {
-		total, err := tracker.SprintTotal(args.SprintID)
-		if err != nil {
-			return nil, fmt.Errorf("sprint total: %w", err)
-		}
-		tools, err := tracker.SprintSummary(args.SprintID)
-		if err != nil {
-			return nil, fmt.Errorf("sprint summary: %w", err)
-		}
-		return map[string]interface{}{
-			"sprint_id":  args.SprintID,
-			"total_cost": total,
-			"budget":     budget,
-			"remaining":  budget - total,
-			"tools":      tools,
-		}, nil
-	}
-
+	tracker := interaction.NewStore(s.db, ".orca/interactions")
 	total, err := tracker.ProjectTotal()
 	if err != nil {
 		return nil, fmt.Errorf("project total: %w", err)
-	}
-	remaining, err := tracker.BudgetRemaining(budget)
-	if err != nil {
-		return nil, fmt.Errorf("budget remaining: %w", err)
 	}
 	tools, err := tracker.ProjectSummary()
 	if err != nil {
@@ -180,8 +221,6 @@ func (s *Server) HandleBudgetStatusTool(argsRaw json.RawMessage) (interface{}, e
 	}
 	return map[string]interface{}{
 		"total_cost": total,
-		"budget":     budget,
-		"remaining":  remaining,
 		"tools":      tools,
 	}, nil
 }
@@ -197,13 +236,13 @@ func (s *Server) HandleQualityResultsTool(argsRaw json.RawMessage) (interface{},
 	if taskID == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
-	if s.planner == nil || s.planner.DB() == nil {
+	if s.db == nil {
 		return nil, fmt.Errorf("database not configured")
 	}
 
 	var qualityJSON sql.NullString
-	err = s.planner.DB().QueryRow(
-		`SELECT quality_json FROM artifacts WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`,
+	err = s.db.QueryRow(
+		`SELECT quality_json FROM task_interactions WHERE task_id = ? AND phase = 'run' ORDER BY started_at DESC LIMIT 1`,
 		taskID,
 	).Scan(&qualityJSON)
 	if err == sql.ErrNoRows {
@@ -232,11 +271,10 @@ func (s *Server) HandleQualityResultsTool(argsRaw json.RawMessage) (interface{},
 
 func (s *Server) HandleLogEventTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		Level    string         `json:"level"`
-		Message  string         `json:"message"`
-		TaskID   string         `json:"task_id"`
-		SprintID string         `json:"sprint_id"`
-		Attrs    map[string]any `json:"attrs"`
+		Level   string         `json:"level"`
+		Message string         `json:"message"`
+		TaskID  string         `json:"task_id"`
+		Attrs   map[string]any `json:"attrs"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("log_event: %w", err)
@@ -255,9 +293,6 @@ func (s *Server) HandleLogEventTool(argsRaw json.RawMessage) (interface{}, error
 	if taskID := strings.TrimSpace(args.TaskID); taskID != "" {
 		kv = append(kv, "task_id", taskID)
 	}
-	if sprintID := strings.TrimSpace(args.SprintID); sprintID != "" {
-		kv = append(kv, "sprint_id", sprintID)
-	}
 	if len(args.Attrs) > 0 {
 		keys := make([]string, 0, len(args.Attrs))
 		for key := range args.Attrs {
@@ -275,12 +310,11 @@ func (s *Server) HandleLogEventTool(argsRaw json.RawMessage) (interface{}, error
 
 func (s *Server) HandleLogQueryTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		Level    string `json:"level"`
-		TaskID   string `json:"task_id"`
-		SprintID string `json:"sprint_id"`
-		Since    string `json:"since"`
-		Limit    int    `json:"limit"`
-		Pattern  string `json:"pattern"`
+		Level   string `json:"level"`
+		TaskID  string `json:"task_id"`
+		Since   string `json:"since"`
+		Limit   int    `json:"limit"`
+		Pattern string `json:"pattern"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("log_query: %w", err)
@@ -299,13 +333,12 @@ func (s *Server) HandleLogQueryTool(argsRaw json.RawMessage) (interface{}, error
 		return nil, fmt.Errorf("log_query since: %w", err)
 	}
 
-	entries, err := logging.Query(resolveLogPath(s.repoDir, s.cfg), logging.Filter{
-		Level:    strings.ToLower(strings.TrimSpace(args.Level)),
-		TaskID:   strings.TrimSpace(args.TaskID),
-		SprintID: strings.TrimSpace(args.SprintID),
-		Since:    since,
-		Pattern:  strings.TrimSpace(args.Pattern),
-		Limit:    args.Limit,
+	entries, err := logging.Query(resolveLogPath(s.repoDir, s.config), logging.Filter{
+		Level:   strings.ToLower(strings.TrimSpace(args.Level)),
+		TaskID:  strings.TrimSpace(args.TaskID),
+		Since:   since,
+		Pattern: strings.TrimSpace(args.Pattern),
+		Limit:   args.Limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("query logs: %w", err)

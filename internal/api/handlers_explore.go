@@ -1,11 +1,12 @@
 package api
 
 import (
-	"encoding/json"
-	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 )
 
 // ========== Explore ==========
@@ -15,45 +16,46 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, toolCfg, err := s.cfg.ResolvePhaseToolConfig("explore")
+	hasTrackedCode, err := explore.HasTrackedCode(s.repoDir)
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-
-	opID := ""
-	opID = s.startAsyncOp(
-		w,
-		"explore",
-		"",
-		"explore",
-		nil,
-		map[string]string{"status": "exploring"},
-		func() {
-			explorer := explore.New(toolCfg, s.repoDir)
-			outPath, err := explorer.Run()
-			if err != nil {
-				if opErr := s.ops.Fail(opID, err.Error()); opErr != nil {
-					slog.Error("mark explore operation failed", "operation_id", opID, "err", opErr)
-				}
-				s.hub.Broadcast(Event{Type: "explore.failed", Data: map[string]string{"error": err.Error()}})
-				return
-			}
-			resultBytes, _ := json.Marshal(map[string]string{"path": outPath})
-			if err := s.ops.Complete(opID, string(resultBytes)); err != nil {
-				slog.Debug("complete explore operation failed", "operation_id", opID, "err", err)
-			}
-			s.hub.Broadcast(Event{Type: "explore.completed", Data: map[string]string{"path": outPath}})
-		},
-	)
-	if opID == "" {
+	if !hasTrackedCode {
+		jsonOK(w, map[string]string{
+			"status":  "skipped",
+			"message": explore.NoTrackedCodeMessage,
+		})
 		return
 	}
+
+	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	model := s.cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
+
+	s.runAsyncHandler(w, interaction.PhaseExplore, map[string]string{"status": "exploring"}, func() {
+		memoryStore := s.memoryStore
+		if memoryStore == nil && s.db != nil {
+			memoryStore = memory.NewStore(s.db)
+		}
+		explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions).
+			WithMemory(memoryStore).
+			WithSyncer(s.newMemorySyncer(memoryStore))
+		outPath, err := explorer.Run()
+		if err != nil {
+			s.hub.Broadcast(Event{Type: "explore.failed", Data: map[string]string{"error": err.Error()}})
+			return
+		}
+		s.hub.Broadcast(Event{Type: "explore.completed", Data: map[string]string{"path": outPath}})
+	})
 }
 
 func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
 	content := explore.LoadContext(s.repoDir)
-	jsonOK(w, map[string]string{"content": content})
+	jsonOK(w, content)
 }
 
 func (s *Server) handlePutContext(w http.ResponseWriter, r *http.Request) {
@@ -70,5 +72,5 @@ func (s *Server) handlePutContext(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, map[string]string{"path": outPath})
+	jsonOK(w, outPath)
 }

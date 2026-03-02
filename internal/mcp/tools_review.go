@@ -4,136 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
+	"time"
 
+	"github.com/jasjeetmavi/orca/internal/executor"
+	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
+	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/review"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
-
-func (s *Server) HandleReviewGetTool(argsRaw json.RawMessage) (interface{}, error) {
-	args, err := parseArgs[struct {
-		SprintID string `json:"sprint_id"`
-	}](argsRaw)
-	if err != nil {
-		return nil, fmt.Errorf("review_get: %w", err)
-	}
-	if strings.TrimSpace(args.SprintID) == "" {
-		return nil, fmt.Errorf("sprint_id is required")
-	}
-
-	sp, err := s.planner.Get(args.SprintID)
-	if err != nil {
-		return nil, err
-	}
-
-	type artifact struct {
-		TaskID     string   `json:"task_id"`
-		Title      string   `json:"title"`
-		Status     string   `json:"status"`
-		Diff       string   `json:"diff,omitempty"`
-		Files      []string `json:"files,omitempty"`
-		Stdout     string   `json:"stdout,omitempty"`
-		Stderr     string   `json:"stderr,omitempty"`
-		ExitCode   *int     `json:"exit_code,omitempty"`
-		DurationMs int64    `json:"duration_ms"`
-	}
-
-	artifacts := make([]artifact, 0, len(sp.TaskIDs))
-	for _, taskID := range sp.TaskIDs {
-		t, err := s.planner.GetTask(taskID)
-		if err != nil {
-			continue
-		}
-
-		a := artifact{TaskID: taskID, Title: t.Title, Status: t.Status}
-		var diff, stdout, stderr string
-		var exitCode int
-		var durationMs int64
-		artErr := s.planner.DB().QueryRow(
-			`SELECT diff, stdout, stderr, exit_code, duration_ms FROM artifacts WHERE task_id = ? AND sprint_id = ? ORDER BY rowid DESC LIMIT 1`,
-			taskID, args.SprintID,
-		).Scan(&diff, &stdout, &stderr, &exitCode, &durationMs)
-
-		if artErr == nil {
-			a.Diff = diff
-			a.Stdout = stdout
-			a.Stderr = stderr
-			a.ExitCode = &exitCode
-			a.DurationMs = durationMs
-			for _, line := range strings.Split(diff, "\n") {
-				if strings.HasPrefix(line, "+++ b/") {
-					a.Files = append(a.Files, strings.TrimPrefix(line, "+++ b/"))
-				}
-			}
-		}
-		artifacts = append(artifacts, a)
-	}
-	return map[string]interface{}{"sprint_id": args.SprintID, "artifacts": artifacts}, nil
-}
-
-func (s *Server) HandleReviewSprintTool(argsRaw json.RawMessage) (interface{}, error) {
-	args, err := parseArgs[struct {
-		SprintID string `json:"sprint_id"`
-	}](argsRaw)
-	if err != nil {
-		return nil, fmt.Errorf("review_sprint: %w", err)
-	}
-	if strings.TrimSpace(args.SprintID) == "" {
-		return nil, fmt.Errorf("sprint_id is required")
-	}
-
-	sp, err := s.planner.Get(args.SprintID)
-	if err != nil {
-		return nil, err
-	}
-
-	reviewers := make(map[string]*review.Reviewer)
-	results := make([]review.ReviewResult, 0, len(sp.TaskIDs))
-	for _, taskID := range sp.TaskIDs {
-		t, err := s.planner.GetTask(taskID)
-		if err != nil || t.Status != "approved" {
-			continue
-		}
-
-		var diff string
-		if err := s.planner.DB().QueryRow(
-			`SELECT diff FROM artifacts WHERE task_id = ? AND sprint_id = ?`,
-			taskID, args.SprintID,
-		).Scan(&diff); err != nil || strings.TrimSpace(diff) == "" {
-			continue
-		}
-
-		toolName, toolCfg, err := s.cfg.ResolveToolForPhase(t, "review", "")
-		if err != nil {
-			results = append(results, review.ReviewResult{
-				TaskID:   taskID,
-				Approved: false,
-				Feedback: fmt.Sprintf("review tool resolution error: %v", err),
-			})
-			continue
-		}
-
-		key := toolName + "\x00" + toolCfg.Model
-		reviewer, ok := reviewers[key]
-		if !ok {
-			reviewer = review.New(toolCfg, s.repoDir)
-			reviewers[key] = reviewer
-		}
-
-		res, err := reviewer.Review(taskID, t.Title, t.Description, diff)
-		if err != nil {
-			results = append(results, review.ReviewResult{
-				TaskID:   taskID,
-				Approved: false,
-				Feedback: fmt.Sprintf("review error: %v", err),
-				Tool:     toolCfg.Binary,
-			})
-			continue
-		}
-		results = append(results, *res)
-	}
-	return map[string]interface{}{"sprint_id": args.SprintID, "results": results}, nil
-}
 
 func (s *Server) HandleTasksApproveTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
@@ -146,12 +26,12 @@ func (s *Server) HandleTasksApproveTool(argsRaw json.RawMessage) (interface{}, e
 		return nil, fmt.Errorf("task_id is required")
 	}
 
-	taskID, err := s.store.ResolveID(args.TaskID)
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
 	if err != nil {
 		return nil, err
 	}
 
-	t, err := s.store.Get(taskID)
+	t, err := s.taskStore.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -159,21 +39,19 @@ func (s *Server) HandleTasksApproveTool(argsRaw json.RawMessage) (interface{}, e
 		return nil, fmt.Errorf("task must be in review status to approve")
 	}
 
-	if err := s.store.Update(taskID, map[string]interface{}{"status": "approved"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("approved")}); err != nil {
 		return nil, err
-	}
-	if t.SprintID != "" {
-		if _, err := s.planner.CompleteSprintIfDone(t.SprintID); err != nil {
-			slog.Warn("check sprint completion after approve failed", "sprint_id", t.SprintID, "err", err)
-		}
 	}
 	return map[string]interface{}{"task_id": taskID, "status": "approved"}, nil
 }
 
 func (s *Server) HandleTasksRequestChangesTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		TaskID   string `json:"task_id"`
-		Feedback string `json:"feedback"`
+		TaskID        string `json:"task_id"`
+		Feedback      string `json:"feedback"`
+		InteractionID string `json:"interaction_id"`
+		Tool          string `json:"tool"`
+		Model         string `json:"model"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("tasks_request_changes: %w", err)
@@ -185,12 +63,15 @@ func (s *Server) HandleTasksRequestChangesTool(argsRaw json.RawMessage) (interfa
 	if feedback == "" {
 		return nil, fmt.Errorf("feedback is required")
 	}
+	interactionID := strings.TrimSpace(args.InteractionID)
+	tool := strings.TrimSpace(args.Tool)
+	model := strings.TrimSpace(args.Model)
 
-	taskID, err := s.store.ResolveID(args.TaskID)
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
 	if err != nil {
 		return nil, err
 	}
-	t, err := s.store.Get(taskID)
+	t, err := s.taskStore.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -198,19 +79,230 @@ func (s *Server) HandleTasksRequestChangesTool(argsRaw json.RawMessage) (interfa
 		return nil, fmt.Errorf("task must be in review status to request changes")
 	}
 
-	if _, err := s.store.AddReview(taskID, feedback); err != nil {
+	if _, err := s.taskStore.AddReview(taskID, feedback, interactionID); err != nil {
 		return nil, err
 	}
-	if err := s.store.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 		return nil, err
 	}
 
-	if err := s.executor.RunSingle(context.Background(), taskID); err != nil {
+	if err := s.executor.RunSingleWithOpts(context.Background(), taskID, executor.RunOpts{
+		ToolOverride:  tool,
+		ModelOverride: model,
+	}); err != nil {
 		return nil, err
 	}
-	updated, err := s.store.Get(taskID)
+	updated, err := s.taskStore.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{"task_id": taskID, "status": updated.Status}, nil
+}
+
+func (s *Server) HandleTasksApprovePlanTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		TaskID string `json:"task_id"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_approve_plan: %w", err)
+	}
+	if strings.TrimSpace(args.TaskID) == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
+	if err != nil {
+		return nil, err
+	}
+
+	t, err := s.taskStore.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != "pending" {
+		return nil, fmt.Errorf("task must be in pending status to approve plan")
+	}
+	if strings.TrimSpace(t.Plan) == "" {
+		return nil, fmt.Errorf("task must have a plan to approve")
+	}
+
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("planned")}); err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"task_id": taskID, "status": "planned"}, nil
+}
+
+func (s *Server) HandleTasksRequestPlanChangesTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		TaskID        string `json:"task_id"`
+		Feedback      string `json:"feedback"`
+		InteractionID string `json:"interaction_id"`
+		Tool          string `json:"tool"`
+		Model         string `json:"model"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_request_plan_changes: %w", err)
+	}
+	if strings.TrimSpace(args.TaskID) == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+	feedback := strings.TrimSpace(args.Feedback)
+	if feedback == "" {
+		return nil, fmt.Errorf("feedback is required")
+	}
+	interactionID := strings.TrimSpace(args.InteractionID)
+	if interactionID == "" {
+		return nil, fmt.Errorf("interaction_id is required")
+	}
+	tool := strings.TrimSpace(args.Tool)
+	model := strings.TrimSpace(args.Model)
+
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
+	if err != nil {
+		return nil, err
+	}
+
+	t, err := s.taskStore.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != "pending" {
+		return nil, fmt.Errorf("task must be in pending status to request plan changes")
+	}
+	if strings.TrimSpace(t.Plan) == "" {
+		return nil, fmt.Errorf("task must have a plan before requesting changes")
+	}
+
+	interactions := interaction.NewStore(s.db, ".orca/interactions")
+	in, err := interactions.Get(interactionID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid interaction_id")
+	}
+	if in.TaskID == nil || *in.TaskID != taskID || in.Phase != "plan" || in.Status != "completed" {
+		return nil, fmt.Errorf("interaction_id must reference a completed plan interaction for this task")
+	}
+
+	running, err := interactions.IsRunning(&taskID, "plan")
+	if err != nil {
+		return nil, err
+	}
+	if running {
+		return nil, fmt.Errorf("plan generation already in progress")
+	}
+
+	toolName, d, err := s.config.ResolveToolForPhase("plan", tool)
+	if err != nil {
+		return nil, err
+	}
+	modelName := s.config.ResolveModelForPhase("plan", model, d)
+
+	reviewID, err := s.taskStore.AddReview(taskID, feedback, interactionID)
+	if err != nil {
+		return nil, err
+	}
+
+	description := strings.TrimSpace(t.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
+	memStore := memory.NewStore(s.db)
+	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, s.repoDir, interactions).
+		WithMemory(memStore).
+		WithTaskStore(s.taskStore).
+		WithSyncer(s.newMemorySyncer(memStore))
+	planContent, err := generator.Generate(taskID, t.Title, description)
+	if err != nil {
+		return nil, fmt.Errorf("generate plan: %w", err)
+	}
+	if err := s.taskStore.SetPlan(taskID, planContent); err != nil {
+		return nil, fmt.Errorf("save plan: %w", err)
+	}
+	if err := s.taskStore.AddressReview(reviewID); err != nil {
+		return nil, fmt.Errorf("address plan review: %w", err)
+	}
+
+	updated, err := s.taskStore.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"task_id": taskID, "status": updated.Status}, nil
+}
+
+func (s *Server) HandleTasksReviewsTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		TaskID string `json:"task_id"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("tasks_reviews: %w", err)
+	}
+	if strings.TrimSpace(args.TaskID) == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.taskStore.ListReviews(taskID)
+}
+
+func (s *Server) HandleAIReviewTool(argsRaw json.RawMessage) (interface{}, error) {
+	args, err := parseArgs[struct {
+		TaskID string `json:"task_id"`
+		Tool   string `json:"tool"`
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
+	}](argsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("ai_review: %w", err)
+	}
+	if strings.TrimSpace(args.TaskID) == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.taskStore.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != "review" {
+		return nil, fmt.Errorf("task must be in review status, got %q", t.Status)
+	}
+
+	toolName, d, err := s.config.ResolveToolForPhase("review", args.Tool)
+	if err != nil {
+		return nil, err
+	}
+	model := s.config.ResolveModelForPhase("review", args.Model, d)
+
+	interactionStore := interaction.NewStore(s.db, ".orca/interactions")
+	runInteractions, err := interactionStore.ListByPhase(taskID, "run")
+	if err != nil {
+		return nil, fmt.Errorf("list run interactions: %w", err)
+	}
+	var diff string
+	for i := len(runInteractions) - 1; i >= 0; i-- {
+		if runInteractions[i].Status == "completed" && runInteractions[i].Diff != "" {
+			diff = runInteractions[i].Diff
+			break
+		}
+	}
+	if diff == "" {
+		return nil, fmt.Errorf("no completed run interaction with diff found")
+	}
+
+	reviewer := review.New(toolName, d, model, 10*time.Minute, s.repoDir, interactionStore)
+	userPrompt := strings.TrimSpace(args.Prompt)
+	result, err := reviewer.Review(taskID, t.Title, t.Description, diff, userPrompt)
+	if err != nil {
+		return nil, fmt.Errorf("review failed: %w", err)
+	}
+
+	return map[string]interface{}{
+		"task_id":  taskID,
+		"approved": result.Approved,
+		"feedback": result.Feedback,
+		"tool":     result.Tool,
+	}, nil
 }

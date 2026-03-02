@@ -4,54 +4,100 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/breakdown"
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
 
 func RegisterPlan(root *cobra.Command, r *Registry) {
-	planCmd := &cobra.Command{Use: "breakdown [goal]", Short: "Break down a goal into tasks using an LLM", Args: cobra.MinimumNArgs(1), RunE: r.runPlan}
-	planCmd.Flags().String("tool", "", "Tool to use for decomposition")
+	planCmd := &cobra.Command{
+		Use:   "breakdown [goal]",
+		Short: "Break down a goal into tasks using an LLM",
+		Args: func(cmd *cobra.Command, args []string) error {
+			taskID, _ := cmd.Flags().GetString("task")
+			hasTask := strings.TrimSpace(taskID) != ""
+			hasGoal := len(args) > 0
+			if hasTask && hasGoal {
+				return fmt.Errorf("provide either a goal or --task, not both")
+			}
+			if !hasTask && !hasGoal {
+				return fmt.Errorf("accepts 1 arg(s), received 0")
+			}
+			return nil
+		},
+		RunE: r.runPlan,
+	}
+	planCmd.Flags().String("tool", "", "Tool to use for breakdown")
 	planCmd.Flags().Bool("auto", false, "Skip confirmation and create tasks immediately")
+	planCmd.Flags().String("task", "", "Break down an existing task by ID (uses title+description as goal)")
 	root.AddCommand(planCmd)
 }
 
 func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
 	goal := strings.Join(args, " ")
+	store := task.NewStore(db)
 	toolName, _ := cmd.Flags().GetString("tool")
 	auto, _ := cmd.Flags().GetBool("auto")
+	taskArg, _ := cmd.Flags().GetString("task")
+	taskArg = strings.TrimSpace(taskArg)
 
-	var toolCfg config.ToolConfig
-	if toolName != "" {
-		tc, ok := cfg.Tools[toolName]
-		if !ok {
-			return fmt.Errorf("tool %q not found in config", toolName)
+	var parentTaskID *string
+	var parentTaskTitle string
+	if taskArg != "" {
+		taskID, err := store.ResolveID(taskArg)
+		if err != nil {
+			return err
 		}
-		toolCfg = tc
-	} else {
-		for _, tc := range cfg.Tools {
-			toolCfg = tc
-			break
+		parentTask, err := store.Get(taskID)
+		if err != nil {
+			return err
 		}
+		goal = parentTask.Title + "\n\n" + parentTask.Description
+		parentTaskID = &taskID
+		parentTaskTitle = parentTask.Title
 	}
 
-	repoDir, _ := os.Getwd()
-	store := task.NewStore(db)
-	d := decompose.New(toolCfg, repoDir)
+	var selectedTool string
+	var selectedDriver driver.Driver
+	if toolName != "" {
+		name, drv, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolName)
+		if err != nil {
+			return err
+		}
+		selectedTool = name
+		selectedDriver = drv
+	} else {
+		name, drv, err := cfg.ResolveToolForPhase(interaction.PhasePlan, "")
+		if err != nil {
+			return err
+		}
+		selectedTool = name
+		selectedDriver = drv
+	}
+	model := cfg.ResolveModelForPhase(interaction.PhasePlan, "", selectedDriver)
 
-	fmt.Printf("Decomposing: %s\n\n", goal)
-	tasks, err := d.Run(goal)
+	repoDir, _ := os.Getwd()
+	breaker := breakdown.New(selectedTool, selectedDriver, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+		WithMemory(memory.NewStore(db)).
+		WithTaskStore(store).
+		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))
+
+	fmt.Printf("Breaking down: %s\n\n", goal)
+	tasks, _, err := breaker.Run(parentTaskID, goal)
 	if err != nil {
-		return fmt.Errorf("decompose: %w", err)
+		return fmt.Errorf("breakdown: %w", err)
 	}
 
 	fmt.Printf("Proposed %d tasks:\n\n", len(tasks))
@@ -86,8 +132,12 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	createdIDs := make([]string, len(tasks))
+	parentID := ""
+	if parentTaskID != nil {
+		parentID = *parentTaskID
+	}
 	for i, t := range tasks {
-		created, err := store.Create(t.Title, t.Description, "", t.SuggestedTool)
+		created, err := store.Create(t.Title, t.Description, parentID)
 		if err != nil {
 			return fmt.Errorf("create task %d: %w", i+1, err)
 		}
@@ -102,6 +152,15 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
+	}
+
+	if parentTaskID != nil {
+		if err := store.Update(*parentTaskID, task.UpdateFields{Status: task.Ptr("broken_down")}); err != nil {
+			return fmt.Errorf("update parent task status: %w", err)
+		}
+		fmt.Printf("\nParent task: %s (%s)\n", *parentTaskID, parentTaskTitle)
+		fmt.Printf("Created %d child tasks.\n", len(tasks))
+		return nil
 	}
 
 	fmt.Printf("\nCreated %d tasks.\n", len(tasks))

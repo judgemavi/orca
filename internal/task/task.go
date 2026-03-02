@@ -1,8 +1,7 @@
-// Package task handles task CRUD, dependency graph, and sprint batching.
+// Package task handles task CRUD and dependency graph.
 package task
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -12,51 +11,58 @@ import (
 )
 
 type Task struct {
-	ID           string          `json:"id"`
-	Title        string          `json:"title"`
-	Description  string          `json:"description"`
-	Prompt       string          `json:"prompt,omitempty"`
-	Model        string          `json:"model,omitempty"`
-	PhaseConfig  *PhaseConfigMap `json:"phase_config,omitempty"`
-	Plan         string          `json:"plan,omitempty"`
-	SessionID    string          `json:"session_id,omitempty"`
-	ParentID     string          `json:"parent_id,omitempty"`
-	Status       string          `json:"status"`
-	AssignedTool string          `json:"assigned_tool,omitempty"`
-	SprintID     string          `json:"sprint_id,omitempty"`
-	DependsOn    []string        `json:"depends_on"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-}
-
-type PhaseOverride struct {
-	Tool  string `json:"tool,omitempty"`
-	Model string `json:"model,omitempty"`
-}
-
-type PhaseConfigMap struct {
-	UseDefaults bool                     `json:"use_defaults"`
-	Phases      map[string]PhaseOverride `json:"phases,omitempty"` // keys: "plan", "sprint", "review"
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Plan        string    `json:"plan,omitempty"`
+	SessionID   string    `json:"session_id,omitempty"`
+	ParentID    string    `json:"parent_id,omitempty"`
+	Status      string    `json:"status"`
+	DependsOn   []string  `json:"depends_on"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type TaskReview struct {
-	ID          string     `json:"id"`
-	TaskID      string     `json:"task_id"`
-	Feedback    string     `json:"feedback"`
-	Status      string     `json:"status"` // "pending" | "addressed"
-	CreatedAt   time.Time  `json:"created_at"`
-	AddressedAt *time.Time `json:"addressed_at,omitempty"`
+	ID            string     `json:"id"`
+	TaskID        string     `json:"task_id"`
+	InteractionID *string    `json:"interaction_id,omitempty"`
+	Feedback      string     `json:"feedback"`
+	Status        string     `json:"status"` // "pending" | "addressed"
+	CreatedAt     time.Time  `json:"created_at"`
+	AddressedAt   *time.Time `json:"addressed_at,omitempty"`
+}
+
+type UpdateFields struct {
+	Title       *string
+	Description *string
+	Plan        *string
+	Status      *string
+	SessionID   *string
+}
+
+func Ptr[T any](value T) *T {
+	return &value
 }
 
 type Store struct {
 	db *state.DB
 }
 
+var deletableStatuses = map[string]bool{
+	"pending":  true,
+	"planned":  true,
+	"review":   true,
+	"approved": true,
+	"failed":   true,
+	"stopped":  true,
+}
+
 func NewStore(db *state.DB) *Store {
 	return &Store{db: db}
 }
 
-func (s *Store) Create(title, description, parentID, assignedTool string) (*Task, error) {
+func (s *Store) Create(title, description, parentID string) (*Task, error) {
 	id := uuid.New().String()
 	now := time.Now().UTC()
 
@@ -65,35 +71,29 @@ func (s *Store) Create(title, description, parentID, assignedTool string) (*Task
 		parent = &parentID
 	}
 
-	var tool *string
-	if assignedTool != "" {
-		tool = &assignedTool
-	}
-
 	_, err := s.db.Exec(
-		`INSERT INTO tasks (id, title, description, parent_id, assigned_tool, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
-		id, title, description, parent, tool, now, now,
+		`INSERT INTO tasks (id, title, description, parent_id, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+		id, title, description, parent, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create task: %w", err)
 	}
 
 	return &Task{
-		ID:           id,
-		Title:        title,
-		Description:  description,
-		ParentID:     parentID,
-		AssignedTool: assignedTool,
-		Status:       "pending",
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:          id,
+		Title:       title,
+		Description: description,
+		ParentID:    parentID,
+		Status:      "pending",
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}, nil
 }
 
 func (s *Store) Get(id string) (*Task, error) {
 	t, err := s.scanTask(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, plan, session_id, parent_id, status, created_at, updated_at
 		 FROM tasks WHERE id = ?`, id,
 	)
 	if err != nil {
@@ -110,47 +110,49 @@ func (s *Store) Get(id string) (*Task, error) {
 
 func (s *Store) List() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, plan, session_id, parent_id, status, created_at, updated_at
 		 FROM tasks ORDER BY created_at`,
 	)
 }
 
 func (s *Store) ListByStatus(status string) ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT id, title, description, prompt, model, phase_config, plan, session_id, parent_id, status, assigned_tool, sprint_id, created_at, updated_at
+		`SELECT id, title, description, plan, session_id, parent_id, status, created_at, updated_at
 		 FROM tasks WHERE status = ? ORDER BY created_at`, status,
 	)
 }
 
-func (s *Store) ListByParent(parentID string) ([]*Task, error) {
-	tasks, err := s.List()
-	if err != nil {
-		return nil, err
-	}
-
-	filtered := make([]*Task, 0, len(tasks))
-	for _, t := range tasks {
-		if t.ParentID == parentID {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered, nil
-}
-
-func (s *Store) Update(id string, fields map[string]interface{}) error {
-	if len(fields) == 0 {
+func (s *Store) Update(id string, fields UpdateFields) error {
+	if fields.Title == nil &&
+		fields.Description == nil &&
+		fields.Plan == nil &&
+		fields.Status == nil &&
+		fields.SessionID == nil {
 		return nil
 	}
-	if err := normalizePhaseConfigField(fields); err != nil {
-		return err
+
+	setClauses := make([]string, 0, 6)
+	args := make([]interface{}, 0, 7)
+	if fields.Title != nil {
+		setClauses = append(setClauses, "title = ?")
+		args = append(args, *fields.Title)
 	}
-
-	setClauses := make([]string, 0, len(fields)+1)
-	args := make([]interface{}, 0, len(fields)+2)
-
-	for col, val := range fields {
-		setClauses = append(setClauses, col+" = ?")
-		args = append(args, val)
+	if fields.Description != nil {
+		setClauses = append(setClauses, "description = ?")
+		args = append(args, *fields.Description)
+	}
+	if fields.Plan != nil {
+		setClauses = append(setClauses, "plan = ?")
+		args = append(args, *fields.Plan)
+	}
+	if fields.Status != nil {
+		setClauses = append(setClauses, "status = ?")
+		args = append(args, *fields.Status)
+	}
+	if fields.SessionID != nil {
+		argsVal := nullableString(*fields.SessionID)
+		setClauses = append(setClauses, "session_id = ?")
+		args = append(args, argsVal)
 	}
 
 	setClauses = append(setClauses, "updated_at = ?")
@@ -172,12 +174,12 @@ func (s *Store) Update(id string, fields map[string]interface{}) error {
 	return nil
 }
 
-var deletableStatuses = map[string]bool{
-	"pending":   true,
-	"in_sprint": true,
-	"review":    true,
-	"approved":  true,
-	"failed":    true,
+func nullableString(value string) interface{} {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func (s *Store) Delete(id string) error {
@@ -204,8 +206,7 @@ func (s *Store) Delete(id string) error {
 		desc string
 	}{
 		{`DELETE FROM task_reviews WHERE task_id = ?`, "reviews"},
-		{`DELETE FROM costs WHERE task_id = ?`, "costs"},
-		{`DELETE FROM artifacts WHERE task_id = ?`, "artifacts"},
+		{`DELETE FROM task_interactions WHERE task_id = ?`, "interactions"},
 		{`DELETE FROM task_deps WHERE task_id = ?`, "deps"},
 	} {
 		if _, err := s.db.Exec(q.sql, id); err != nil {
@@ -247,29 +248,4 @@ func (s *Store) ResolveID(prefix string) (string, error) {
 	default:
 		return "", fmt.Errorf("ambiguous prefix %q matches %d tasks", prefix, len(ids))
 	}
-}
-
-func normalizePhaseConfigField(fields map[string]interface{}) error {
-	v, ok := fields["phase_config"]
-	if !ok || v == nil {
-		return nil
-	}
-
-	var data []byte
-	var err error
-	switch pc := v.(type) {
-	case PhaseConfigMap:
-		data, err = json.Marshal(pc)
-	case *PhaseConfigMap:
-		data, err = json.Marshal(pc)
-	case map[string]interface{}:
-		data, err = json.Marshal(pc)
-	default:
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("marshal phase_config: %w", err)
-	}
-	fields["phase_config"] = string(data)
-	return nil
 }

@@ -4,16 +4,16 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worker"
 )
 
-// NewExecutorOptions builds sprint executor hooks that broadcast worker and task
+// NewExecutorOptions builds executor hooks that broadcast worker and task
 // lifecycle events through the API websocket hub.
-func NewExecutorOptions(db *state.DB, hub *Hub) sprint.ExecutorOptions {
-	return sprint.ExecutorOptions{
+func NewExecutorOptions(db *state.DB, hub *Hub) executor.ExecutorOptions {
+	return executor.ExecutorOptions{
 		OutputHook: func(line worker.OutputLine) {
 			hub.Broadcast(Event{
 				Type: "worker.output",

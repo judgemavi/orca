@@ -6,8 +6,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +46,7 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -58,7 +60,7 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("manual explore: %w", err)
 		}
-		fmt.Printf("Context written to %s (from %s)\n", outPath, manualPath)
+		fmt.Printf("Context stored in %s (from %s)\n", outPath, manualPath)
 		return nil
 	}
 	if useStdin {
@@ -70,26 +72,41 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("stdin explore: %w", err)
 		}
-		fmt.Printf("Context written to %s (from stdin)\n", outPath)
+		fmt.Printf("Context stored in %s (from stdin)\n", outPath)
+		return nil
+	}
+
+	hasTrackedCode, err := explore.HasTrackedCode(repoDir)
+	if err != nil {
+		return fmt.Errorf("inspect tracked files: %w", err)
+	}
+	if !hasTrackedCode {
+		fmt.Println(explore.NoTrackedCodeMessage)
 		return nil
 	}
 
 	toolName, _ := cmd.Flags().GetString("tool")
-	var toolCfg config.ToolConfig
+	var selectedTool string
+	var d driver.Driver
 	if toolName != "" {
-		tc, ok := cfg.Tools[toolName]
-		if !ok {
-			return fmt.Errorf("tool %q not found in config", toolName)
+		var err error
+		selectedTool, d, err = cfg.ResolveToolForPhase(interaction.PhaseExplore, toolName)
+		if err != nil {
+			return err
 		}
-		toolCfg = tc
 	} else {
-		for _, tc := range cfg.Tools {
-			toolCfg = tc
-			break
+		var err error
+		selectedTool, d, err = cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
+		if err != nil {
+			return err
 		}
 	}
+	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
 
-	explorer := explore.New(toolCfg, repoDir)
+	memoryStore := memory.NewStore(db)
+	explorer := explore.New(selectedTool, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+		WithMemory(memoryStore).
+		WithSyncer(newConfiguredMemorySyncer(cfg, memoryStore, db, repoDir))
 	if explore.LoadContext(repoDir) != "" {
 		if stale, err := explore.IsStale(repoDir); err == nil && stale {
 			fmt.Println("Note: existing context was stale (codebase changed since last explore). Refreshing...")
@@ -101,7 +118,7 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("explore: %w", err)
 	}
 
-	fmt.Println("Exploration complete. Context written to .orca/context.md")
+	fmt.Println("Exploration complete. Context stored in .orca/state.db (table: explore_context)")
 	return nil
 }
 

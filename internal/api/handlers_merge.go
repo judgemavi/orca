@@ -1,16 +1,15 @@
 package api
 
 import (
-	"database/sql"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
@@ -18,73 +17,59 @@ import (
 // ========== Merge ==========
 
 // POST /api/v1/tasks/{id}/merge
-func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	type mergeReq struct {
-		Mode string `json:"mode"` // "" (default), "auto"
+		Mode  string `json:"mode"` // "" (default), "auto"
+		Tool  string `json:"tool"`
+		Model string `json:"model"`
 	}
 	req, ok := decodeJSON[mergeReq](w, r, true)
 	if !ok {
 		return
 	}
 
-	store := s.taskStore
-	resolved, ok := resolveTaskID(w, store, id)
-	if !ok {
-		return
-	}
-	var err error
+	s.withTaskValidation("only approved tasks can be merged", []string{"approved"}, func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
+		store := s.taskStore
 
-	tk, err := store.Get(resolved)
-	if err != nil {
-		jsonError(w, err, http.StatusNotFound)
-		return
-	}
-	if tk.Status != "approved" {
-		jsonError(w, "only approved tasks can be merged", http.StatusBadRequest)
-		return
-	}
-
-	// Check that all dependencies are merged first.
-	for _, depID := range tk.DependsOn {
-		dep, err := store.Get(depID)
-		if err != nil {
-			jsonError(w, fmt.Sprintf("failed to check dependency %s: %v", depID[:8], err), http.StatusInternalServerError)
-			return
+		// Check that all dependencies are merged first.
+		for _, depID := range tk.DependsOn {
+			dep, err := store.Get(depID)
+			if err != nil {
+				jsonError(w, fmt.Sprintf("failed to check dependency %s: %v", depID[:8], err), http.StatusInternalServerError)
+				return
+			}
+			if dep.Status != "merged" {
+				jsonError(w, fmt.Sprintf("dependency %q (%s) must be merged first", dep.Title, dep.ID[:8]), http.StatusBadRequest)
+				return
+			}
 		}
-		if dep.Status != "merged" {
-			jsonError(w, fmt.Sprintf("dependency %q (%s) must be merged first", dep.Title, dep.ID[:8]), http.StatusBadRequest)
-			return
-		}
-	}
 
-	ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
-	mode := strings.TrimSpace(req.Mode)
-	opID := ""
-	opID = s.startAsyncOp(
-		w,
-		"merge",
-		resolved,
-		"merge",
-		map[string]interface{}{"operation_id": "", "task_id": resolved},
-		map[string]string{"operation_id": ""},
-		func() {
-			taskID := resolved
-			operationID := opID
+		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
+		ig.OnPostMerge = func(id string) {
+			if err := s.runPostMergeRetro(id); err != nil {
+				slog.Warn("post-merge retro failed", "task_id", id, "err", err)
+			}
+			if _, err := s.runPostMergeSync([]string{id}); err != nil {
+				slog.Warn("post-merge sync failed", "task_id", id, "err", err)
+			}
+		}
+		mode := strings.TrimSpace(req.Mode)
+		s.runAsyncHandler(w, interaction.PhaseMerge, map[string]string{"status": "merging"}, func() {
+			taskID := tk.ID
 
 			s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
-				"operation_id": operationID,
-				"task_id":      taskID,
-				"mode":         mode,
+				"task_id": taskID,
+				"mode":    mode,
 			}})
 
 			var mergeErr error
 			if mode == "auto" {
-				ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (config.ToolConfig, error) {
-					return s.resolveToolConfigForTask(id)
+				ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (string, driver.Driver, string, time.Duration, error) {
+					return s.resolveToolConfigForTask(id, req.Tool, req.Model)
 				})
 				s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]string{
 					"task_id": taskID,
@@ -95,13 +80,9 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 				mergeErr = ig.MergeAndValidate(taskID)
 			}
 			if mergeErr != nil {
-				if opErr := s.ops.Fail(operationID, mergeErr.Error()); opErr != nil {
-					slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
-				}
 				failData := map[string]interface{}{
-					"operation_id": operationID,
-					"task_id":      taskID,
-					"error":        mergeErr.Error(),
+					"task_id": taskID,
+					"error":   mergeErr.Error(),
 				}
 				if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
 					failData["conflict"] = true
@@ -111,52 +92,38 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request, id stri
 				return
 			}
 
-			if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
-				if opErr := s.ops.Fail(operationID, err.Error()); opErr != nil {
-					slog.Error("mark merge operation failed", "operation_id", operationID, "err", opErr)
-				}
+			if err := store.Update(taskID, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
 				s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
-					"operation_id": operationID,
-					"task_id":      taskID,
-					"error":        err.Error(),
+					"task_id": taskID,
+					"error":   err.Error(),
 				}})
 				return
 			}
-			s.completeSprintIfNeeded(tk.SprintID)
 			if err := s.executor.Worktrees().Remove(taskID); err != nil {
 				slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
 			}
 
 			updated, getErr := store.Get(taskID)
 			if getErr != nil {
-				slog.Warn("load task after merge failed", "task_id", taskID, "err", getErr)
 				updated = &task.Task{ID: taskID, Status: "merged"}
-			}
-			resultBytes, _ := json.Marshal(updated)
-			if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-				slog.Debug("complete merge operation failed", "operation_id", operationID, "err", err)
 			}
 			s.hub.Broadcast(Event{Type: "merge.completed", Data: updated})
 			s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
-		},
-	)
-	if opID == "" {
-		return
-	}
+		})
+	})(w, r)
 }
 
-func (s *Server) resolveToolConfigForTask(taskID string) (config.ToolConfig, error) {
-	store := s.taskStore
-	t, err := store.Get(taskID)
-	if err != nil {
-		return config.ToolConfig{}, err
+func (s *Server) resolveToolConfigForTask(taskID string, toolOverride string, modelOverride string) (string, driver.Driver, string, time.Duration, error) {
+	if _, err := s.taskStore.Get(taskID); err != nil {
+		return "", nil, "", 0, err
 	}
 
-	_, toolCfg, err := s.cfg.ResolveToolForPhase(t, "merge", "")
+	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseMerge, toolOverride)
 	if err != nil {
-		return config.ToolConfig{}, err
+		return "", nil, "", 0, err
 	}
-	return toolCfg, nil
+	model := s.cfg.ResolveModelForPhase(interaction.PhaseMerge, modelOverride, d)
+	return toolName, d, model, 10 * time.Minute, nil
 }
 
 func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
@@ -164,45 +131,31 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := decodeJSON[struct {
-		SprintID string `json:"sprint_id"`
-	}](w, r, true)
-
-	sprintID := req.SprintID
-	if sprintID == "" {
-		err := s.db.QueryRow(
-			`SELECT id FROM sprints WHERE status IN ('completed', 'failed') ORDER BY completed_at DESC LIMIT 1`,
-		).Scan(&sprintID)
-		if err == sql.ErrNoRows {
-			jsonError(w, "no completed sprints to merge", http.StatusNotFound)
-			return
-		}
-		if err != nil {
-			jsonError(w, err, http.StatusInternalServerError)
-			return
-		}
+	if _, ok := decodeJSON[map[string]interface{}](w, r, true); !ok {
+		return
 	}
 
-	if _, err := s.ops.GetByTarget("global", "merge"); err == nil {
+	if running, err := s.interactions.IsRunning(nil, interaction.PhaseMerge); err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	} else if running {
 		jsonError(w, "merge already in progress", http.StatusConflict)
 		return
-	} else if !errors.Is(err, sql.ErrNoRows) {
+	}
+
+	store := s.taskStore
+	approved, err := store.ListByStatus("approved")
+	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 
-	sp, err := s.planner.Get(sprintID)
-	if err != nil {
-		jsonError(w, err, http.StatusNotFound)
-		return
-	}
-
-	var taskIDs []string
-	for _, id := range sp.TaskIDs {
-		t, err := s.planner.GetTask(id)
-		if err == nil && t.Status == "approved" {
-			taskIDs = append(taskIDs, id)
-		}
+	// Build task lookup and collect IDs.
+	taskByID := make(map[string]*task.Task, len(approved))
+	taskIDs := make([]string, 0, len(approved))
+	for _, tk := range approved {
+		taskByID[tk.ID] = tk
+		taskIDs = append(taskIDs, tk.ID)
 	}
 
 	if len(taskIDs) == 0 {
@@ -210,72 +163,86 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opID := ""
-	opID = s.startAsyncOp(
-		w,
-		"merge",
-		"global",
-		"merge",
-		map[string]interface{}{"operation_id": ""},
-		map[string]string{"operation_id": ""},
-		func() {
-			operationID := opID
-			ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
-			store := s.taskStore
-			merged := make([]string, 0, len(taskIDs))
-			failed := make([]string, 0)
+	// Topo-sort: deps before dependents, input (creation) order as tiebreak.
+	taskIDs = task.TopoSort(taskIDs, func(id string) []string {
+		if tk, ok := taskByID[id]; ok {
+			return tk.DependsOn
+		}
+		return nil
+	})
 
-			s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{
-				"operation_id": operationID,
-			}})
+	s.runAsyncHandler(w, interaction.PhaseMerge, map[string]string{"status": "merging"}, func() {
+		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
+		ig.OnPostMerge = func(id string) {
+			if err := s.runPostMergeRetro(id); err != nil {
+				slog.Warn("post-merge retro failed", "task_id", id, "err", err)
+			}
+		}
+		merged := make([]string, 0, len(taskIDs))
+		failed := make([]string, 0)
+		failedSet := make(map[string]bool)
 
-			for _, taskID := range taskIDs {
-				err := ig.MergeAndValidate(taskID)
-				if err != nil {
-					failed = append(failed, taskID)
-					s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
-						"operation_id": operationID,
-						"task_id":      taskID,
-						"status":       "failed",
-						"error":        err.Error(),
-					}})
+		s.hub.Broadcast(Event{Type: "merge.started", Data: map[string]interface{}{}})
+
+		for _, taskID := range taskIDs {
+			// Skip if any in-batch dependency failed.
+			if tk, ok := taskByID[taskID]; ok {
+				skipped := false
+				for _, depID := range tk.DependsOn {
+					if failedSet[depID] {
+						failed = append(failed, taskID)
+						failedSet[taskID] = true
+						s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
+							"task_id": taskID,
+							"status":  "skipped",
+							"error":   fmt.Sprintf("dependency %s failed to merge", depID[:8]),
+						}})
+						skipped = true
+						break
+					}
+				}
+				if skipped {
 					continue
 				}
+			}
 
-				merged = append(merged, taskID)
-				if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
-					slog.Warn("set task merged failed", "task_id", taskID, "err", err)
-				}
-				if err := s.executor.Worktrees().Remove(taskID); err != nil {
-					slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
-				}
-				if updated, err := store.Get(taskID); err == nil {
-					s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
-				}
-
+			err := ig.MergeAndValidate(taskID)
+			if err != nil {
+				failed = append(failed, taskID)
+				failedSet[taskID] = true
 				s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
-					"operation_id": operationID,
-					"task_id":      taskID,
-					"status":       "merged",
+					"task_id": taskID,
+					"status":  "failed",
+					"error":   err.Error(),
 				}})
+				continue
 			}
 
-			resultBytes, _ := json.Marshal(map[string]interface{}{
-				"merged": merged,
-				"failed": failed,
-			})
-			if err := s.ops.Complete(operationID, string(resultBytes)); err != nil {
-				slog.Debug("complete merge operation failed", "operation_id", operationID, "err", err)
+			merged = append(merged, taskID)
+			if err := store.Update(taskID, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
+				slog.Warn("set task merged failed", "task_id", taskID, "err", err)
+			}
+			if err := s.executor.Worktrees().Remove(taskID); err != nil {
+				slog.Warn("cleanup worktree after merge failed", "task_id", taskID, "err", err)
+			}
+			if updated, err := store.Get(taskID); err == nil {
+				s.hub.Broadcast(Event{Type: "task.updated", Data: updated})
 			}
 
-			s.hub.Broadcast(Event{Type: "merge.completed", Data: map[string]interface{}{
-				"operation_id": operationID,
-				"merged":       merged,
-				"failed":       failed,
+			s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]interface{}{
+				"task_id": taskID,
+				"status":  "merged",
 			}})
-		},
-	)
-	if opID == "" {
-		return
-	}
+		}
+		if len(merged) > 0 {
+			if _, err := s.runPostMergeSync(merged); err != nil {
+				slog.Warn("post-merge sync failed", "merged_count", len(merged), "err", err)
+			}
+		}
+
+		s.hub.Broadcast(Event{Type: "merge.completed", Data: map[string]interface{}{
+			"merged": merged,
+			"failed": failed,
+		}})
+	})
 }

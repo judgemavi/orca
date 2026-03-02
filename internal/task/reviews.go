@@ -8,11 +8,15 @@ import (
 	"github.com/google/uuid"
 )
 
-func (s *Store) AddReview(taskID, feedback string) (string, error) {
+func (s *Store) AddReview(taskID, feedback, interactionID string) (string, error) {
 	id := uuid.New().String()
+	var interactionIDValue interface{}
+	if interactionID != "" {
+		interactionIDValue = interactionID
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO task_reviews (id, task_id, feedback, status) VALUES (?, ?, ?, 'pending')`,
-		id, taskID, feedback,
+		`INSERT INTO task_reviews (id, task_id, interaction_id, feedback, status) VALUES (?, ?, ?, ?, 'pending')`,
+		id, taskID, interactionIDValue, feedback,
 	)
 	if err != nil {
 		return "", fmt.Errorf("add task review: %w", err)
@@ -50,7 +54,7 @@ func (s *Store) AddressReview(reviewID string) error {
 
 func (s *Store) ListReviews(taskID string) ([]TaskReview, error) {
 	rows, err := s.db.Query(
-		`SELECT id, task_id, feedback, status, created_at, addressed_at
+		`SELECT id, task_id, interaction_id, feedback, status, created_at, addressed_at
 		 FROM task_reviews
 		 WHERE task_id = ?
 		 ORDER BY created_at`,
@@ -64,10 +68,12 @@ func (s *Store) ListReviews(taskID string) ([]TaskReview, error) {
 	var reviews []TaskReview
 	for rows.Next() {
 		var review TaskReview
+		var interactionID sql.NullString
 		var addressedAt sql.NullTime
 		if err := rows.Scan(
 			&review.ID,
 			&review.TaskID,
+			&interactionID,
 			&review.Feedback,
 			&review.Status,
 			&review.CreatedAt,
@@ -77,6 +83,9 @@ func (s *Store) ListReviews(taskID string) ([]TaskReview, error) {
 		}
 		if addressedAt.Valid {
 			review.AddressedAt = &addressedAt.Time
+		}
+		if interactionID.Valid {
+			review.InteractionID = &interactionID.String
 		}
 		reviews = append(reviews, review)
 	}

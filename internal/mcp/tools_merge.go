@@ -1,64 +1,54 @@
 package mcp
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/jasjeetmavi/orca/internal/integrator"
+	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 func (s *Server) HandleMergeTool(_ json.RawMessage) (interface{}, error) {
-	var sprintID string
-	err := s.planner.DB().QueryRow(
-		`SELECT id FROM sprints WHERE status IN ('completed', 'failed') ORDER BY completed_at DESC LIMIT 1`,
-	).Scan(&sprintID)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("no completed sprint to merge")
-	}
+	approved, err := s.taskStore.ListByStatus("approved")
 	if err != nil {
 		return nil, err
 	}
-
-	sp, err := s.planner.Get(sprintID)
-	if err != nil {
-		return nil, err
-	}
-
-	taskIDs := make([]string, 0, len(sp.TaskIDs))
-	for _, id := range sp.TaskIDs {
-		t, err := s.planner.GetTask(id)
-		if err == nil && t.Status == "approved" {
-			taskIDs = append(taskIDs, id)
-		}
+	taskIDs := make([]string, 0, len(approved))
+	for _, t := range approved {
+		taskIDs = append(taskIDs, t.ID)
 	}
 	if len(taskIDs) == 0 {
 		return nil, fmt.Errorf("no approved tasks to merge")
 	}
 
-	ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
+	ig := integrator.New(s.repoDir, s.config.Project.IntegrationBranch, s.config.Validation.Commands, interaction.NewStore(s.db, ".orca/interactions"))
+	ig.OnPostMerge = func(taskID string) {
+		_ = s.runPostMergeRetro(taskID)
+	}
+	ig.OnPostMergeBatchComplete = func(taskIDs []string) {
+		if len(taskIDs) == 0 {
+			return
+		}
+		_, _ = s.runPostMergeSync(taskIDs)
+	}
 	merged, failed, err := ig.MergeBatch(taskIDs)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, id := range merged {
-		if err := s.store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+		if err := s.taskStore.Update(id, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
 			return nil, fmt.Errorf("mark merged for %s: %w", id, err)
 		}
 		if err := s.executor.Worktrees().Remove(id); err != nil {
 		}
 	}
 
-	if sprintID != "" {
-		_, _ = s.planner.CompleteSprintIfDone(sprintID)
-	}
-
 	return map[string]interface{}{
-		"sprint_id": sprintID,
-		"merged":    merged,
-		"failed":    failed,
+		"merged": merged,
+		"failed": failed,
 	}, nil
 }
 
@@ -72,11 +62,11 @@ func (s *Server) HandleTasksMergeTool(argsRaw json.RawMessage) (interface{}, err
 	if strings.TrimSpace(args.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
-	taskID, err := s.store.ResolveID(args.TaskID)
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
 	if err != nil {
 		return nil, err
 	}
-	t, err := s.store.Get(taskID)
+	t, err := s.taskStore.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,16 +74,17 @@ func (s *Server) HandleTasksMergeTool(argsRaw json.RawMessage) (interface{}, err
 		return nil, fmt.Errorf("task %s is %q, only approved tasks can be merged", taskID, t.Status)
 	}
 
-	ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands)
+	ig := integrator.New(s.repoDir, s.config.Project.IntegrationBranch, s.config.Validation.Commands, interaction.NewStore(s.db, ".orca/interactions"))
+	ig.OnPostMerge = func(taskID string) {
+		_ = s.runPostMergeRetro(taskID)
+		_, _ = s.runPostMergeSync([]string{taskID})
+	}
 	if err := ig.MergeAndValidate(taskID); err != nil {
 		return nil, fmt.Errorf("merge task %s: %w", taskID, err)
 	}
-	if err := s.store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
 		return nil, err
 	}
 	_ = s.executor.Worktrees().Remove(taskID)
-	if t.SprintID != "" {
-		_, _ = s.planner.CompleteSprintIfDone(t.SprintID)
-	}
 	return map[string]interface{}{"task_id": taskID, "status": "merged"}, nil
 }

@@ -1,9 +1,36 @@
-Analyze this codebase and produce a concise context document in markdown. Include:
+Analyze this codebase and produce a concise context document in markdown.
 
-1. **Project overview** — what this project does, in 1-2 sentences
-2. **Directory structure** — top-level layout with brief descriptions
-3. **Key patterns** — architecture style, naming conventions, error handling patterns
-4. **Dependencies** — major external deps and what they're used for
-5. **Build/test** — how to build and test the project
+Focus on what another developer (or AI agent) needs to contribute effectively:
 
-Keep it under 500 lines. Focus on what another developer (or AI agent) needs to know to contribute effectively.
+1. **Project overview** — what this does, in 1-2 sentences
+2. **Architecture** — how the system is structured, key modules and their relationships
+3. **Conventions** — naming patterns, error handling style, file organization, anything non-obvious
+4. **Non-standard tooling** — only note build/test/task runners if the project uses something beyond the standard for its stack (e.g. Taskfile, Makefile, custom scripts). Skip if it's just `go test` / `npm test` / etc.
+
+Skip:
+- The `.orca/` directory (runtime orchestration state, not project code)
+- Any files/directories listed in `.gitignore` (treat them as non-existent for this context)
+- Directory tree listings (the filesystem is always available)
+- Dependency lists (the package manager already tracks these)
+- Boilerplate explanations of standard tooling
+
+Keep it under 300 lines. Prioritize insight over completeness.
+
+Output format:
+1. A short "Project Summary" section (5-10 lines max) with stack, architecture style, and key conventions.
+2. Any additional context sections you consider high-signal.
+3. A `## Memory Extraction` section (JSON array only) with discrete, self-contained entries.
+
+## Memory Extraction
+
+After the context document, add a section exactly titled `## Memory Extraction` and include a JSON array only:
+
+```json
+[{"content":"...","category":"architecture|dependency|pattern|convention","tags":["..."],"confidence":0.95,"file_paths":["path/to/file"]}]
+```
+
+Rules:
+- Use repo-root-relative `file_paths`.
+- Exclude paths that are not tracked by git.
+- Each entry must be understandable on its own without requiring other entries.
+- Return `[]` when there is no durable memory to add.

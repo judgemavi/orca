@@ -1,14 +1,13 @@
 package commands
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/integrator"
-	"github.com/jasjeetmavi/orca/internal/ops"
-	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -20,7 +19,7 @@ func RegisterMerge(root *cobra.Command, r *Registry) {
 }
 
 func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
-	db, cfg, planner, _, err := r.loadRuntimeOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -28,29 +27,15 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
-	var sprintID string
-	err = db.QueryRow(`SELECT id FROM sprints WHERE status IN ('completed', 'failed') ORDER BY completed_at DESC LIMIT 1`).Scan(&sprintID)
-	if err == sql.ErrNoRows {
-		fmt.Println("No completed sprints to merge")
-		return nil
-	}
+	store := task.NewStore(db)
+	tasks, err := store.List()
 	if err != nil {
-		return fmt.Errorf("query sprint: %w", err)
+		return fmt.Errorf("list tasks: %w", err)
 	}
-
-	s, err := planner.Get(sprintID)
-	if err != nil {
-		return fmt.Errorf("get sprint: %w", err)
-	}
-
 	var taskIDs []string
-	for _, id := range s.TaskIDs {
-		t, err := planner.GetTask(id)
-		if err != nil {
-			return fmt.Errorf("get task %s: %w", id, err)
-		}
+	for _, t := range tasks {
 		if t.Status == "approved" {
-			taskIDs = append(taskIDs, id)
+			taskIDs = append(taskIDs, t.ID)
 		}
 	}
 	if len(taskIDs) == 0 {
@@ -61,7 +46,7 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 	if dryRun {
 		fmt.Println("Dry run — would merge:")
 		for _, id := range taskIDs {
-			t, _ := planner.GetTask(id)
+			t, _ := store.Get(id)
 			title := id
 			if t != nil {
 				title = t.Title
@@ -71,22 +56,39 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := ops.WithOperation(db, "merge", sprintID, func() error {
-		fmt.Printf("merge.started sprint=%s\n", short(sprintID))
+	interactions := interaction.NewStore(db, ".orca/interactions")
+	return interaction.Wrap(interactions, nil, interaction.PhaseMerge, "orca", func(writer *interaction.Writer) error {
+		fmt.Println("merge.started")
 
 		repoDir, _ := os.Getwd()
-		ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands)
-		store := task.NewStore(db)
-		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (config.ToolConfig, error) {
-			t, err := store.Get(taskID)
-			if err != nil {
-				return config.ToolConfig{}, err
+		ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands, interactions)
+		ig.OnPostMerge = func(taskID string) {
+			if retroErr := runPostMergeRetro(cfg, db, repoDir, taskID); retroErr != nil {
+				recordPostMergeFailure(interactions, taskID, "retro", retroErr)
+				warnf("post-merge retro failed for task %s: %v (retry: orca tasks retro %s)", short(taskID), retroErr, taskID)
 			}
-			_, tc, err := cfg.ResolveToolForPhase(t, "merge", "")
-			if err != nil {
-				return config.ToolConfig{}, err
+		}
+		ig.OnPostMergeBatchComplete = func(mergedTaskIDs []string) {
+			if len(mergedTaskIDs) == 0 {
+				return
 			}
-			return tc, nil
+			if _, syncErr := runPostMergeSync(cfg, db, repoDir); syncErr != nil {
+				for _, taskID := range mergedTaskIDs {
+					recordPostMergeFailure(interactions, taskID, "sync", syncErr)
+				}
+				warnf("post-merge memory sync failed: %v (retry: orca memory sync)", syncErr)
+			}
+		}
+		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
+			if _, err := store.Get(taskID); err != nil {
+				return "", nil, "", 0, err
+			}
+			toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
+			if err != nil {
+				return "", nil, "", 0, err
+			}
+			model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
+			return toolName, d, model, 10 * time.Minute, nil
 		})
 		merged, failed, err := ig.MergeBatch(taskIDs)
 		if err != nil {
@@ -95,28 +97,19 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 
 		for _, id := range merged {
 			fmt.Printf("merge.progress task=%s status=merged\n", short(id))
-			if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+			_ = writer.WriteString(fmt.Sprintf("merge.progress task=%s status=merged\n", id))
+			if err := store.Update(id, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
 				warnf("set task %s merged: %v", short(id), err)
 			}
 			fmt.Printf("  ✓ Merged task-%s\n", short(id))
 		}
 		for _, id := range failed {
 			fmt.Printf("merge.progress task=%s status=failed\n", short(id))
+			_ = writer.WriteString(fmt.Sprintf("merge.progress task=%s status=failed\n", id))
 			fmt.Printf("  ✗ Failed task-%s\n", short(id))
 		}
-		fmt.Printf("merge.completed sprint=%s\n", short(sprintID))
+		fmt.Println("merge.completed")
 		fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failed))
 		return nil
-	}); err != nil {
-		return err
-	}
-
-	// Complete sprint if all tasks are now merged (or none remain).
-	if done, err := sprint.TryComplete(db, sprintID); err != nil {
-		warnf("check sprint completion: %v", err)
-	} else if done {
-		fmt.Printf("Sprint %s completed\n", short(sprintID))
-	}
-
-	return nil
+	})
 }

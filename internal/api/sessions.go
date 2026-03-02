@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/pty"
@@ -30,36 +29,6 @@ type sessionDTO struct {
 	Cols      uint16 `json:"cols"`
 	Rows      uint16 `json:"rows"`
 	CreatedAt string `json:"created_at"`
-}
-
-func (s *Server) routeSessions(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleListSessions(w, r)
-	case http.MethodPost:
-		s.handleCreateSession(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) routeSessionByID(w http.ResponseWriter, r *http.Request) {
-	id := extractPathParam(r.URL.Path, "/api/v1/sessions/")
-	if id == "" {
-		jsonError(w, "missing session id", http.StatusBadRequest)
-		return
-	}
-	id = strings.SplitN(id, "/", 2)[0]
-	if id == "" {
-		jsonError(w, "missing session id", http.StatusBadRequest)
-		return
-	}
-	switch r.Method {
-	case http.MethodDelete:
-		s.handleKillSession(w, r, id)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
 }
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +119,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	jsonOK(w, map[string]interface{}{"sessions": out})
+	jsonOK(w, out)
 }
 
 func (s *Server) handleStartOrchestrator(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +134,8 @@ func (s *Server) handleStartOrchestrator(w http.ResponseWriter, r *http.Request)
 	jsonOK(w, map[string]string{"status": "started"})
 }
 
-func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("sessionID")
 	if s.sessionMgr == nil {
 		jsonError(w, "session manager unavailable", http.StatusServiceUnavailable)
 		return

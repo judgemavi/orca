@@ -70,14 +70,14 @@ func (s *Store) UpdateDependencies(taskID string, deps []string) error {
 	return nil
 }
 
-// GetReady returns all pending tasks whose deps are all merged (or have no deps).
+// GetReady returns all planned tasks whose deps are all merged (or have no deps).
 // Tasks with deps that are only "completed" but not yet merged are NOT ready —
 // the dependent task needs the dep's code in the integration branch.
 func (s *Store) GetReady() ([]*Task, error) {
 	return s.queryTasks(
-		`SELECT t.id, t.title, t.description, t.prompt, t.model, t.phase_config, t.plan, t.session_id, t.parent_id, t.status, t.assigned_tool, t.sprint_id, t.created_at, t.updated_at
+		`SELECT t.id, t.title, t.description, t.plan, t.session_id, t.parent_id, t.status, t.created_at, t.updated_at
 		 FROM tasks t
-		 WHERE t.status = 'pending'
+		 WHERE t.status = 'planned'
 		   AND NOT EXISTS (
 		     SELECT 1 FROM task_deps d
 		     JOIN tasks dep ON dep.id = d.depends_on
@@ -85,41 +85,6 @@ func (s *Store) GetReady() ([]*Task, error) {
 		   )
 		 ORDER BY t.created_at`,
 	)
-}
-
-// DepsMetOrInSprint returns true if all of the task's dependencies are merged.
-// Tasks in the same sprint are NOT considered met — deps must be merged into
-// the integration branch so worktrees have the actual code.
-func (s *Store) DepsMetOrInSprint(taskID, sprintID string) (bool, []string, error) {
-	rows, err := s.db.Query(
-		`SELECT d.depends_on, dep.status, dep.sprint_id
-		 FROM task_deps d
-		 JOIN tasks dep ON dep.id = d.depends_on
-		 WHERE d.task_id = ?`,
-		taskID,
-	)
-	if err != nil {
-		return false, nil, fmt.Errorf("query deps: %w", err)
-	}
-	defer rows.Close()
-
-	var unmet []string
-	for rows.Next() {
-		var depID, depStatus string
-		var depSprintID *string
-		if err := rows.Scan(&depID, &depStatus, &depSprintID); err != nil {
-			return false, nil, fmt.Errorf("scan deps: %w", err)
-		}
-		_ = depSprintID // no longer used — only merged status counts
-		if depStatus != "merged" {
-			unmet = append(unmet, depID)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, nil, fmt.Errorf("iterate deps: %w", err)
-	}
-
-	return len(unmet) == 0, unmet, nil
 }
 
 func (s *Store) loadDepsForTasks(tasks []*Task) (map[string][]string, error) {

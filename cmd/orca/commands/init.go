@@ -7,11 +7,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/banner"
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/model"
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/explore"
+	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -75,28 +79,85 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := runInitAutoExplore(cwd, &cfg); err != nil {
+		warnf("initial explore failed: %v", err)
+		fmt.Println("Init will continue. You can run `orca explore` later.")
+	}
+
 	fmt.Printf("\n✓ Orca initialized in %s\n\n", cwd)
 	fmt.Println("Getting started:")
 	fmt.Println("  orca explore                      Analyze codebase for context")
 	fmt.Println("  orca tasks add \"task title\"        Add a task")
 	fmt.Println("  orca tasks list                     View all tasks")
 	fmt.Println("  orca breakdown \"goal\"             Break down a goal into tasks")
-	fmt.Println("  orca sprint plan                  Select tasks for a sprint")
-	fmt.Println("  orca sprint start                 Execute the sprint")
-	fmt.Println("  orca sprint review                Review completed work")
+	fmt.Println("  orca start                        Start ready tasks")
+	fmt.Println("  orca review approve <task-id>     Approve reviewed work")
 	fmt.Println("  orca merge                        Merge approved tasks")
-	fmt.Println("  orca run                          Do all of the above in one shot")
 	fmt.Println("  orca status                       Show project overview")
 	fmt.Println("  orca serve                        Open web UI")
 	fmt.Println("  orca orc                          Launch orchestrator (autopilot)")
 	return nil
 }
 
+func runInitAutoExplore(repoDir string, cfg *config.Config) error {
+	if cfg == nil {
+		fmt.Println("Skipping initial exploration (no config available).")
+		return nil
+	}
+	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
+	if err != nil {
+		fmt.Printf("Skipping initial exploration: %v\n", err)
+		return nil
+	}
+	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
+
+	hasTrackedCode, err := explore.HasTrackedCode(repoDir)
+	if err != nil {
+		return fmt.Errorf("inspect tracked files: %w", err)
+	}
+	if !hasTrackedCode {
+		fmt.Printf("Skipping initial exploration: %s\n", explore.NoTrackedCodeMessage)
+		return nil
+	}
+
+	dbPath := filepath.Join(repoDir, ".orca", "state.db")
+	db, err := state.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open state db for init explore: %w", err)
+	}
+	defer db.Close()
+
+	memoryStore := memory.NewStore(db)
+	beforeSeeded, _ := memoryStore.List(memory.ListOpts{Tag: "explore-seed"})
+
+	fmt.Println("Running initial codebase exploration...")
+	explorer := explore.New(toolName, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+		WithMemory(memoryStore).
+		WithSyncer(newConfiguredMemorySyncer(cfg, memoryStore, db, repoDir))
+
+	outPath, err := explorer.Run()
+	if err != nil {
+		return fmt.Errorf("auto explore: %w", err)
+	}
+
+	contextSize := len(strings.TrimSpace(explore.LoadContext(repoDir)))
+	afterSeeded, _ := memoryStore.List(memory.ListOpts{Tag: "explore-seed"})
+	seededDelta := len(afterSeeded) - len(beforeSeeded)
+	if seededDelta < 0 {
+		seededDelta = 0
+	}
+
+	fmt.Printf("Initial exploration complete: context=%d bytes, memory seeded=%d, stored=%s\n", contextSize, seededDelta, outPath)
+	return nil
+}
+
 func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {
 	orcaDir := filepath.Join(cwd, ".orca")
+	dbPath := filepath.Join(orcaDir, "state.db")
 
 	var existingCfg *config.Config
-	if _, err := os.Stat(orcaDir); err == nil {
+	if loaded, loadErr := loadConfigFromDBPath(dbPath); loadErr == nil && loaded != nil {
+		existingCfg = loaded
 		fmt.Println("Orca already initialized. Run 'orca config' to view settings.")
 		reinit := yes
 		if !yes {
@@ -107,22 +168,10 @@ func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {
 		if !reinit {
 			return nil, false, nil
 		}
-		cfgPath := filepath.Join(orcaDir, "orca.yaml")
-		if loaded, loadErr := config.Load(cfgPath); loadErr == nil {
-			existingCfg = loaded
-		}
 	}
 
 	if _, err := os.Stat(filepath.Join(cwd, ".git")); os.IsNotExist(err) {
-		initRepo := yes
-		if !yes {
-			if err := huh.NewConfirm().Title("No git repository found").Description("Orca requires a git repo. Initialize one?").Affirmative("Yes").Negative("No").Value(&initRepo).Run(); err != nil {
-				return nil, false, err
-			}
-		}
-		if !initRepo {
-			return nil, false, fmt.Errorf("orca init requires a git repository")
-		}
+		fmt.Println("Initializing git repository...")
 		gitInit := exec.Command("git", "init")
 		gitInit.Dir = cwd
 		if err := gitInit.Run(); err != nil {
@@ -134,6 +183,11 @@ func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {
 	headCheck.Dir = cwd
 	if err := headCheck.Run(); err != nil {
 		fmt.Println("Git repo has no commits. Creating initial commit...")
+		// Ensure .orca/ is gitignored BEFORE staging so `git add -A`
+		// doesn't pick up orca.log or other runtime files.
+		if err := ensureOrcaIgnored(cwd); err != nil {
+			return nil, false, err
+		}
 		addCmd := exec.Command("git", "add", "-A")
 		addCmd.Dir = cwd
 		if err := addCmd.Run(); err != nil {
@@ -162,7 +216,13 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		for i, name := range detected {
 			preSelected := true
 			if existingCfg != nil {
-				_, preSelected = existingCfg.Tools[name]
+				preSelected = false
+				for _, enabled := range existingCfg.Tools {
+					if enabled == name {
+						preSelected = true
+						break
+					}
+				}
 			}
 			toolOpts[i] = huh.NewOption(name, name).Selected(preSelected)
 		}
@@ -183,27 +243,19 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 
 	var toolModels []toolModelInfo
 	for _, name := range available {
-		if tc, ok := cfg.Tools[name]; ok {
-			ms := model.FromConfig(name, tc)
-			ids := make([]string, len(ms))
-			for i, m := range ms {
-				ids[i] = m.ID
-			}
-			toolModels = append(toolModels, toolModelInfo{name: name, models: ids})
+		if d, ok := driver.Get(name); ok {
+			toolModels = append(toolModels, toolModelInfo{name: name, models: d.Models()})
 		}
 	}
 
 	projectName := filepath.Base(cwd)
 	integrationBranch := "orca/integration"
 	maxParallelStr := "3"
-	defaultTool := available[0]
 	supervisorTool := available[0]
 	supervisorModel := ""
-	costBudget := "0"
 	validationCmd := ""
 	qualityScopeCheck := true
 	qualityTestDelta := true
-	qualityAlignment := false
 
 	if existingCfg != nil {
 		if existingCfg.Project.Name != "" {
@@ -214,18 +266,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		}
 		if existingCfg.Workers.MaxParallel > 0 {
 			maxParallelStr = strconv.Itoa(existingCfg.Workers.MaxParallel)
-		}
-		if existingCfg.Defaults.Tool != "" {
-			foundDefaultTool := false
-			for _, name := range available {
-				if name == existingCfg.Defaults.Tool {
-					foundDefaultTool = true
-					break
-				}
-			}
-			if foundDefaultTool {
-				defaultTool = existingCfg.Defaults.Tool
-			}
 		}
 		if existingCfg.Orchestrator.SupervisorTool != "" {
 			foundSupervisorTool := false
@@ -240,53 +280,17 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			}
 		}
 		supervisorModel = existingCfg.Orchestrator.SupervisorModel
-		costBudget = strconv.FormatFloat(existingCfg.Orchestrator.CostBudget, 'f', -1, 64)
 		if len(existingCfg.Validation.Commands) > 0 {
 			validationCmd = existingCfg.Validation.Commands[0]
 		}
 		qualityScopeCheck = existingCfg.Quality.ScopeCheck
 		qualityTestDelta = existingCfg.Quality.TestDelta
-		qualityAlignment = existingCfg.Quality.AlignmentCheck
 	}
 
 	if !yes {
-		defaultToolOpts := make([]huh.Option[string], len(available))
-		for i, name := range available {
-			defaultToolOpts[i] = huh.NewOption(name, name)
-		}
-
-		type modelBinding struct {
-			name  string
-			value string
-		}
-		modelBindings := make([]*modelBinding, 0, len(toolModels))
-		var modelFields []huh.Field
-		for _, tm := range toolModels {
-			if len(tm.models) == 0 {
-				continue
-			}
-			defaultModel := tm.models[0]
-			if existingCfg != nil {
-				if tc, ok := existingCfg.Tools[tm.name]; ok && tc.Model != "" {
-					defaultModel = tc.Model
-				}
-			}
-			mb := &modelBinding{name: tm.name, value: defaultModel}
-			modelBindings = append(modelBindings, mb)
-			opts := make([]huh.Option[string], len(tm.models))
-			for i, m := range tm.models {
-				opts[i] = huh.NewOption(m, m)
-			}
-			modelFields = append(modelFields, huh.NewSelect[string]().
-				Title(fmt.Sprintf("Default model for %s", tm.name)).
-				Options(opts...).
-				Value(&mb.value))
-		}
-
 		qualityOpts := []huh.Option[string]{
 			huh.NewOption("Scope check", "scope").Selected(qualityScopeCheck),
 			huh.NewOption("Test delta", "test").Selected(qualityTestDelta),
-			huh.NewOption("LLM alignment check", "alignment").Selected(qualityAlignment),
 		}
 		var qualitySelected []string
 
@@ -294,7 +298,6 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			huh.NewGroup(
 				huh.NewInput().Title("Project name").Value(&projectName),
 				huh.NewInput().Title("Integration branch").Value(&integrationBranch),
-				huh.NewSelect[string]().Title("Default tool").Options(defaultToolOpts...).Value(&defaultTool),
 				huh.NewInput().Title("Max parallel workers").Value(&maxParallelStr).
 					Validate(func(v string) error {
 						n, err := strconv.Atoi(v)
@@ -306,14 +309,9 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			),
 		}
 
-		if len(modelFields) > 0 {
-			groups = append(groups, huh.NewGroup(modelFields...))
-		}
-
 		groups = append(groups,
 			huh.NewGroup(
 				huh.NewInput().Title("Validation command").Description("Test command to run after integration (leave empty to skip)").Placeholder("e.g. go test ./...").Value(&validationCmd),
-				huh.NewInput().Title("Cost budget (USD)").Description("0 = unlimited").Value(&costBudget),
 				huh.NewMultiSelect[string]().Title("Quality gates").Options(qualityOpts...).Value(&qualitySelected),
 			),
 		)
@@ -354,34 +352,27 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 			}
 		}
 
-		phaseConfigs, err := selectPhases(defaultTool, available, toolModels, existingCfg)
+		phaseConfigs, err := selectPhases(available, toolModels, existingCfg)
 		if err != nil {
 			return config.Config{}, "", err
 		}
 
 		qualityScopeCheck = false
 		qualityTestDelta = false
-		qualityAlignment = false
 		for _, v := range qualitySelected {
 			switch v {
 			case "scope":
 				qualityScopeCheck = true
 			case "test":
 				qualityTestDelta = true
-			case "alignment":
-				qualityAlignment = true
 			}
 		}
 
-		for _, mb := range modelBindings {
-			if tc, ok := cfg.Tools[mb.name]; ok {
-				tc.Model = mb.value
-				cfg.Tools[mb.name] = tc
-			}
-		}
-
-		if len(phaseConfigs) > 0 {
-			cfg.Orchestrator.Phases = phaseConfigs
+		cfg.Orchestrator.Phases = phaseConfigs
+	} else {
+		// Non-interactive: set all phases to first available tool
+		for _, phase := range []string{interaction.PhaseExplore, interaction.PhasePlan, interaction.PhaseRun, interaction.PhaseReview, interaction.PhaseMerge, interaction.PhaseRetro} {
+			cfg.Orchestrator.Phases[phase] = config.PhaseConfig{Tool: available[0]}
 		}
 	}
 
@@ -393,41 +384,30 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	cfg.Project.Name = projectName
 	cfg.Project.IntegrationBranch = integrationBranch
 	cfg.Workers.MaxParallel = maxParallel
-	cfg.Defaults.Tool = defaultTool
+	cfg.Tools = append([]string(nil), available...)
 	cfg.Orchestrator.SupervisorTool = supervisorTool
 	cfg.Orchestrator.SupervisorModel = supervisorModel
-
-	budget, _ := strconv.ParseFloat(costBudget, 64)
-	cfg.Orchestrator.CostBudget = budget
 
 	if validationCmd != "" {
 		cfg.Validation.Commands = []string{validationCmd}
 	}
 
-	cfg.Quality.Enabled = qualityScopeCheck || qualityTestDelta || qualityAlignment
+	cfg.Quality.Enabled = qualityScopeCheck || qualityTestDelta
 	cfg.Quality.ScopeCheck = qualityScopeCheck
 	cfg.Quality.TestDelta = qualityTestDelta
-	cfg.Quality.AlignmentCheck = qualityAlignment
 
-	enabledTools := make(map[string]config.ToolConfig)
-	for _, name := range available {
-		if tc, ok := cfg.Tools[name]; ok {
-			enabledTools[name] = tc
-		}
+	if len(cfg.Tools) == 0 {
+		return config.Config{}, "", fmt.Errorf("at least one tool must be enabled")
 	}
-	if len(enabledTools) == 0 {
-		return config.Config{}, "", fmt.Errorf("none of the selected tools are present in config defaults")
-	}
-	cfg.Tools = enabledTools
 
 	return cfg, integrationBranch, nil
 }
 
-func selectPhases(defaultTool string, available []string, toolModels []toolModelInfo, existingCfg *config.Config) (map[string]config.PhaseConfig, error) {
-	phases := []string{"explore", "plan", "sprint", "review", "merge"}
+func selectPhases(available []string, toolModels []toolModelInfo, existingCfg *config.Config) (map[string]config.PhaseConfig, error) {
+	phases := []string{interaction.PhaseExplore, interaction.PhasePlan, interaction.PhaseRun, interaction.PhaseReview, interaction.PhaseMerge, interaction.PhaseRetro}
 	phaseToolSelections := make(map[string]string, len(phases))
 	for _, phase := range phases {
-		phaseToolSelections[phase] = ""
+		phaseToolSelections[phase] = available[0]
 		if existingCfg != nil {
 			if pc, ok := existingCfg.Orchestrator.Phases[phase]; ok && pc.Tool != "" {
 				phaseToolSelections[phase] = pc.Tool
@@ -444,9 +424,9 @@ func selectPhases(defaultTool string, available []string, toolModels []toolModel
 	for i, phase := range phases {
 		pb := &phaseToolBinding{phase: phase, value: phaseToolSelections[phase]}
 		phaseBindings[i] = pb
-		opts := []huh.Option[string]{huh.NewOption(fmt.Sprintf("(default: %s)", defaultTool), "")}
-		for _, name := range available {
-			opts = append(opts, huh.NewOption(name, name))
+		opts := make([]huh.Option[string], len(available))
+		for j, name := range available {
+			opts[j] = huh.NewOption(name, name)
 		}
 		phaseFields = append(phaseFields, huh.NewSelect[string]().
 			Title(fmt.Sprintf("%s phase tool", phase)).
@@ -459,9 +439,6 @@ func selectPhases(defaultTool string, available []string, toolModels []toolModel
 
 	phaseModelSelections := make(map[string]string, len(phases))
 	for _, pb := range phaseBindings {
-		if pb.value == "" {
-			continue
-		}
 		phaseModelSelections[pb.phase] = ""
 		if existingCfg != nil {
 			if pc, ok := existingCfg.Orchestrator.Phases[pb.phase]; ok {
@@ -491,9 +468,6 @@ func selectPhases(defaultTool string, available []string, toolModels []toolModel
 
 	phaseConfigs := make(map[string]config.PhaseConfig)
 	for _, pb := range phaseBindings {
-		if pb.value == "" {
-			continue
-		}
 		phaseConfigs[pb.phase] = config.PhaseConfig{
 			Tool:  pb.value,
 			Model: phaseModelSelections[pb.phase],
@@ -508,20 +482,24 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 	if err := os.MkdirAll(orcaDir, 0755); err != nil {
 		return fmt.Errorf("create .orca directory: %w", err)
 	}
-	cfgPath := filepath.Join(orcaDir, "orca.yaml")
 	dbPath := filepath.Join(orcaDir, "state.db")
-
-	if err := cfg.SaveAnnotated(cfgPath); err != nil {
+	db, err := state.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer db.Close()
+	if err := cfg.SaveToDB(db.DB); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		db, err := state.Open(dbPath)
-		if err != nil {
-			return fmt.Errorf("create database: %w", err)
-		}
-		db.Close()
+	// Write .gitignore BEFORE creating the integration branch so the branch
+	// fork point already includes the ignore entry. Without this, checking out
+	// the integration branch (or creating worktrees from it) would lose the
+	// .gitignore change because it was never committed.
+	if err := ensureOrcaIgnored(cwd); err != nil {
+		return err
 	}
+	commitGitignore(cwd)
 
 	branchCmd := exec.Command("git", "branch", integrationBranch)
 	branchCmd.Dir = cwd
@@ -533,14 +511,49 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 		}
 	}
 
-	if err := ensureOrcaIgnored(cwd); err != nil {
-		return err
-	}
 	return nil
 }
 
+// commitGitignore stages and commits .gitignore so the change is part of
+// the branch history before any integration branch is forked from it.
+// It also removes any .orca/ files from the index — .gitignore only
+// prevents untracked files from being added; already-tracked files must
+// be explicitly removed.
+func commitGitignore(cwd string) {
+	addCmd := exec.Command("git", "add", ".gitignore")
+	addCmd.Dir = cwd
+	if addCmd.Run() != nil {
+		return
+	}
+	// Untrack .orca/ if it crept into the index (error is expected when
+	// nothing is tracked — just ignore it).
+	rmCmd := exec.Command("git", "rm", "-r", "--cached", "--quiet", ".orca/")
+	rmCmd.Dir = cwd
+	_ = rmCmd.Run()
+
+	commitCmd := exec.Command("git", "commit", "-m", "chore: add .orca/ to .gitignore")
+	commitCmd.Dir = cwd
+	_ = commitCmd.Run()
+}
+
+// loadConfigFromDBPath returns the persisted config, or nil if no config row exists.
+func loadConfigFromDBPath(dbPath string) (*config.Config, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, err
+	}
+	db, err := state.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	if !config.ExistsInDB(db.DB) {
+		return nil, nil
+	}
+	return config.LoadFromDB(db.DB)
+}
+
 func detectTools() []string {
-	candidates := []string{"claude", "codex", "aider"}
+	candidates := driver.Available()
 	var found []string
 	for _, name := range candidates {
 		if _, err := exec.LookPath(name); err == nil {
@@ -557,7 +570,7 @@ func ensureOrcaIgnored(cwd string) error {
 		return fmt.Errorf("read .gitignore: %w", err)
 	}
 
-	entries := []string{".orca/worktrees/", ".orca/*.db", ".orca/*.db-wal", ".orca/*.db-shm", ".orca/orca.log*"}
+	entries := []string{".orca/"}
 	var needed []string
 	for _, e := range entries {
 		if !containsIgnoreEntry(existing, e) {

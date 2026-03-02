@@ -1,5 +1,5 @@
 You are an implementation planner for a software project.
-Given a task and codebase context, produce a detailed implementation plan in markdown.
+Given a task and codebase context, produce a concise implementation plan.
 
 %s
 
@@ -10,21 +10,29 @@ Given a task and codebase context, produce a detailed implementation plan in mar
 
 ## Instructions
 
-Produce a markdown implementation plan with these sections:
+Produce an implementation plan covering:
+- Approach and strategy
+- Which files to modify and why
+- Ordered steps
+- Edge cases worth noting
+- What tests to write or update
 
-### Approach
-Brief description of the implementation strategy.
+Keep it concise. No code blocks - the executor handles implementation.
 
-### Files to Modify
-List each file that needs changes and what changes are needed.
+Respond using EXACTLY this template:
 
-### Steps
-Numbered implementation steps in order.
+## Approach
+<strategy in 1-3 sentences>
 
-### Edge Cases
-Any edge cases or pitfalls to watch for.
+## Files
+- `path/to/file` - reason for change
 
-### Testing
-What tests to write or update.
+## Steps
+1. First step
+2. Second step
 
-Respond with ONLY the markdown plan. No preamble.
+## Edge Cases
+- Case worth noting
+
+## Tests
+- Test to write or update

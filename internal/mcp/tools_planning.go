@@ -4,52 +4,65 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/decompose"
+	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
+	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
 		Goal       string `json:"goal"`
+		TaskID     string `json:"task_id"`
 		Tool       string `json:"tool"`
 		AutoCreate *bool  `json:"auto_create"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("breakdown: %w", err)
 	}
-	if strings.TrimSpace(args.Goal) == "" {
-		return nil, fmt.Errorf("goal is required")
+	hasGoal := strings.TrimSpace(args.Goal) != ""
+	hasTaskID := strings.TrimSpace(args.TaskID) != ""
+	if hasGoal && hasTaskID {
+		return nil, fmt.Errorf("provide either goal or task_id, not both")
+	}
+	if !hasGoal && !hasTaskID {
+		return nil, fmt.Errorf("either goal or task_id is required")
 	}
 
-	var (
-		toolCfg config.ToolConfig
-		found   bool
-	)
-	if args.Tool != "" {
-		tc, ok := s.cfg.Tools[args.Tool]
-		if !ok {
-			return nil, fmt.Errorf("tool %q not found in config", args.Tool)
+	goal := args.Goal
+	var parentTaskID *string
+	if hasTaskID {
+		taskID, err := s.taskStore.ResolveID(args.TaskID)
+		if err != nil {
+			return nil, err
 		}
-		toolCfg = tc
-		found = true
-	} else {
-		for _, tc := range s.cfg.Tools {
-			toolCfg = tc
-			found = true
-			break
+		parentTask, err := s.taskStore.Get(taskID)
+		if err != nil {
+			return nil, err
 		}
-	}
-	if !found {
-		return nil, fmt.Errorf("no tools configured")
+		goal = parentTask.Title + "\n\n" + parentTask.Description
+		parentTaskID = &taskID
 	}
 
-	d := decompose.New(toolCfg, s.repoDir)
-	tasks, err := d.Run(args.Goal)
+	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhasePlan, args.Tool)
 	if err != nil {
-		return nil, fmt.Errorf("decompose: %w", err)
+		return nil, err
+	}
+	model := s.config.ResolveModelForPhase(interaction.PhasePlan, "", d)
+
+	interactions := interaction.NewStore(s.db, ".orca/interactions")
+	memStore := memory.NewStore(s.db)
+	breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions).
+		WithMemory(memStore).
+		WithTaskStore(s.taskStore).
+		WithSyncer(s.newMemorySyncer(memStore))
+	tasks, _, err := breaker.Run(parentTaskID, goal)
+	if err != nil {
+		return nil, fmt.Errorf("breakdown: %w", err)
 	}
 
 	autoCreate := true
@@ -70,8 +83,12 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 	}
 
 	createdIDs := make([]string, len(tasks))
+	parentID := ""
+	if parentTaskID != nil {
+		parentID = *parentTaskID
+	}
 	for i, t := range tasks {
-		created, err := s.store.Create(t.Title, t.Description, "", t.SuggestedTool)
+		created, err := s.taskStore.Create(t.Title, t.Description, parentID)
 		if err != nil {
 			return nil, fmt.Errorf("create task %d: %w", i+1, err)
 		}
@@ -80,17 +97,24 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 	for i, t := range tasks {
 		for _, depIdx := range t.DependsOnIndices {
 			if depIdx >= 0 && depIdx < len(createdIDs) {
-				if err := s.store.AddDependency(createdIDs[i], createdIDs[depIdx]); err != nil {
+				if err := s.taskStore.AddDependency(createdIDs[i], createdIDs[depIdx]); err != nil {
 					return nil, fmt.Errorf("add dependency %q -> %q: %w", createdIDs[i], createdIDs[depIdx], err)
 				}
 			}
 		}
 	}
-	return map[string]interface{}{
+	resp := map[string]interface{}{
 		"created":  true,
 		"task_ids": createdIDs,
 		"count":    len(createdIDs),
-	}, nil
+	}
+	if parentTaskID != nil {
+		if err := s.taskStore.Update(*parentTaskID, task.UpdateFields{Status: task.Ptr("broken_down")}); err != nil {
+			return nil, fmt.Errorf("update parent task status: %w", err)
+		}
+		resp["parent_id"] = *parentTaskID
+	}
+	return resp, nil
 }
 
 func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -107,43 +131,29 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 		return nil, fmt.Errorf("task_id is required")
 	}
 
-	taskID, err := s.store.ResolveID(args.TaskID)
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
 	if err != nil {
 		return nil, err
 	}
-	t, err := s.store.Get(taskID)
+	t, err := s.taskStore.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
 
-	toolName := args.Tool
-	if toolName == "" {
-		toolName = t.AssignedTool
+	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhasePlan, args.Tool)
+	if err != nil {
+		return nil, err
 	}
-	if toolName == "" {
-		toolName = s.cfg.Defaults.Tool
-	}
-	if toolName == "" {
-		for name := range s.cfg.Tools {
-			toolName = name
-			break
-		}
-	}
-	if toolName == "" {
-		return nil, fmt.Errorf("no tools configured")
-	}
-	toolCfg, ok := s.cfg.Tools[toolName]
-	if !ok {
-		return nil, fmt.Errorf("tool %q not found in config", toolName)
-	}
+	model := s.config.ResolveModelForPhase(interaction.PhasePlan, args.Model, d)
 
-	generator := planpkg.New(toolCfg, s.repoDir)
+	interactions := interaction.NewStore(s.db, ".orca/interactions")
+	memStore := memory.NewStore(s.db)
+	generator := planpkg.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions).
+		WithMemory(memStore).
+		WithTaskStore(s.taskStore).
+		WithSyncer(s.newMemorySyncer(memStore))
 	var planContent string
-	if args.Model != "" {
-		planContent, err = generator.GenerateWithModel(t.Title, t.Description, args.Model)
-	} else {
-		planContent, err = generator.Generate(t.Title, t.Description)
-	}
+	planContent, err = generator.Generate(taskID, t.Title, t.Description)
 	if err != nil {
 		return nil, fmt.Errorf("generate plan: %w", err)
 	}
@@ -153,7 +163,7 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 		save = *args.Save
 	}
 	if save {
-		if err := s.store.SetPlan(taskID, planContent); err != nil {
+		if err := s.taskStore.SetPlan(taskID, planContent); err != nil {
 			return nil, fmt.Errorf("save plan: %w", err)
 		}
 	}
@@ -177,43 +187,28 @@ func (s *Server) HandleTasksPlanEvaluateTool(argsRaw json.RawMessage) (interface
 		return nil, fmt.Errorf("task_id is required")
 	}
 
-	taskID, err := s.store.ResolveID(args.TaskID)
+	taskID, err := s.taskStore.ResolveID(args.TaskID)
 	if err != nil {
 		return nil, err
 	}
-	t, err := s.store.Get(taskID)
+	t, err := s.taskStore.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
 
-	toolName := args.Tool
-	if toolName == "" {
-		toolName = t.AssignedTool
+	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhaseExplore, args.Tool)
+	if err != nil {
+		return nil, err
 	}
-	if toolName == "" {
-		toolName = s.cfg.Defaults.Tool
-	}
-	if toolName == "" {
-		for name := range s.cfg.Tools {
-			toolName = name
-			break
-		}
-	}
-	if toolName == "" {
-		return nil, fmt.Errorf("no tools configured")
-	}
-	toolCfg, ok := s.cfg.Tools[toolName]
-	if !ok {
-		return nil, fmt.Errorf("tool %q not found in config", toolName)
-	}
+	model := s.config.ResolveModelForPhase(interaction.PhaseExplore, args.Model, d)
 
-	evaluator := evaluate.New(toolCfg, s.repoDir)
+	memStore := memory.NewStore(s.db)
+	evaluator := evaluate.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions")).
+		WithMemory(memStore).
+		WithTaskStore(s.taskStore).
+		WithSyncer(s.newMemorySyncer(memStore))
 	var evaluationResult *evaluate.EvaluationResult
-	if args.Model != "" {
-		evaluationResult, err = evaluator.EvaluateWithModel(t.Title, t.Description, args.Model)
-	} else {
-		evaluationResult, err = evaluator.Evaluate(t.Title, t.Description)
-	}
+	evaluationResult, err = evaluator.Evaluate(taskID, t.Title, t.Description)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate plan: %w", err)
 	}

@@ -1,110 +1,232 @@
-// Package explore runs a headless agent to analyze a codebase and produce a context file.
+// Package explore runs a headless agent to analyze a codebase and persist context in SQLite.
 package explore
 
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/llm"
+	"github.com/jasjeetmavi/orca/internal/memory"
+	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
 
-const contextFile = ".orca/context.md"
+const stateDBFile = ".orca/state.db"
+const exploreContextRowID = 1
+const NoTrackedCodeMessage = "No meaningful tracked source files found. Add source files first, then run explore."
 
-// Explorer runs a tool headlessly to map a codebase.
 type Explorer struct {
-	toolCfg config.ToolConfig
-	repoDir string
-	goal    string
+	toolName     string
+	driver       driver.Driver
+	model        string
+	timeout      time.Duration
+	repoDir      string
+	goal         string
+	interactions *interaction.Store
+	memory       *memory.Store
+	syncer       *memory.Syncer
 }
 
-// New creates an Explorer with the given tool config and repo directory.
-func New(toolCfg config.ToolConfig, repoDir string) *Explorer {
-	return &Explorer{toolCfg: toolCfg, repoDir: repoDir}
+var nonCodeTrackedFiles = map[string]struct{}{
+	".gitignore":        {},
+	".gitattributes":    {},
+	".gitmodules":       {},
+	".editorconfig":     {},
+	"LICENSE":           {},
+	"LICENSE.md":        {},
+	"LICENSE.txt":       {},
+	"README":            {},
+	"README.md":         {},
+	"README.txt":        {},
+	"go.mod":            {},
+	"go.sum":            {},
+	"package.json":      {},
+	"package-lock.json": {},
+	"pnpm-lock.yaml":    {},
+	"yarn.lock":         {},
+	"bun.lock":          {},
+	"bun.lockb":         {},
+	"Cargo.toml":        {},
+	"Cargo.lock":        {},
+	"pyproject.toml":    {},
+	"requirements.txt":  {},
+	"Pipfile":           {},
+	"Pipfile.lock":      {},
+	"Gemfile":           {},
+	"Gemfile.lock":      {},
+	"composer.json":     {},
+	"composer.lock":     {},
 }
 
-// WithGoal sets an optional user goal to guide exploration context.
-func (e *Explorer) WithGoal(goal string) *Explorer {
-	e.goal = goal
+func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Explorer {
+	var store *interaction.Store
+	if len(interactions) > 0 {
+		store = interactions[0]
+	}
+	return &Explorer{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
+}
+
+func (e *Explorer) WithMemory(store *memory.Store) *Explorer {
+	e.memory = store
 	return e
 }
 
-// Run executes the exploration and writes results to .orca/context.md.
-func (e *Explorer) Run() (string, error) {
-	adapter, err := worker.NewAdapter(e.toolCfg)
+func (e *Explorer) WithSyncer(syncer *memory.Syncer) *Explorer {
+	e.syncer = syncer
+	return e
+}
+
+// HasTrackedCode reports whether git tracks at least one meaningful source file.
+// It excludes Orca runtime state (.orca/) and common config/documentation-only files.
+func HasTrackedCode(repoDir string) (bool, error) {
+	cmd := exec.Command("git", "ls-files")
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("create adapter: %w", err)
+		return false, err
 	}
 
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for _, line := range lines {
+		file := strings.TrimSpace(line)
+		if file == "" {
+			continue
+		}
+		if isIgnoredForTrackedCodeCheck(file) {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func isIgnoredForTrackedCodeCheck(file string) bool {
+	if strings.HasPrefix(file, ".orca/") || file == ".orca" {
+		return true
+	}
+	base := filepath.Base(file)
+	_, ignore := nonCodeTrackedFiles[base]
+	return ignore
+}
+
+func (e *Explorer) Run() (string, error) {
+	if e.syncer != nil {
+		if _, err := e.syncer.Sync(); err != nil {
+			return "", fmt.Errorf("sync memory: %w", err)
+		}
+	}
+
+	adapter := worker.NewAdapter(e.driver, e.model, e.timeout)
+
 	prompt := prompts.Explore
+	if e.memory != nil {
+		entries, err := e.memory.List(memory.ListOpts{})
+		if err == nil && len(entries) > 0 {
+			prompt += "\n\n## Existing Project Memory\n\n" + buildExistingMemorySection(entries)
+		}
+	}
 	if e.goal != "" {
 		prompt += "\n\n## User Goal\n\n" + e.goal + "\n\nIncorporate this goal into your analysis - note what exists that supports it and what's missing."
 	}
 
-	result, err := adapter.Execute(context.Background(), "explore", prompt, e.repoDir)
+	result, err := interaction.RunWithTracking(
+		e.interactions,
+		nil,
+		interaction.PhaseExplore,
+		e.toolName,
+		adapter,
+		func() (*worker.Result, error) {
+			return adapter.Execute(context.Background(), interaction.PhaseExplore, prompt, e.repoDir)
+		},
+		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
+			status := "completed"
+			opts := []interaction.FinishOption{}
+			if result != nil {
+				opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
+			}
+			if runErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(runErr.Error()))
+			} else if result == nil || result.ExitCode != 0 {
+				status = "failed"
+				exitCode := -1
+				stderr := ""
+				if result != nil {
+					exitCode = result.ExitCode
+					stderr = result.Stderr
+				}
+				opts = append(opts, interaction.WithError(fmt.Sprintf("explorer exited %d: %s", exitCode, stderr)))
+			}
+			return status, opts
+		}),
+	)
+	stdout := ""
+	exitCode := -1
+	stderr := ""
+	if result != nil {
+		stdout = result.Stdout
+		exitCode = result.ExitCode
+		stderr = result.Stderr
+	}
 	if err != nil {
 		return "", fmt.Errorf("execute explorer: %w", err)
 	}
-
-	if result.ExitCode != 0 {
-		return "", fmt.Errorf("explorer exited %d: stderr=%s stdout=%s",
-			result.ExitCode, truncate(result.Stderr, 500), truncate(result.Stdout, 500))
+	if exitCode != 0 {
+		return "", fmt.Errorf("explorer exited %d: stderr=%s stdout=%s", exitCode, truncate(stderr, 500), truncate(stdout, 500))
 	}
 
-	// Extract text based on the tool's configured output mode.
-	content := worker.ExtractOutput(e.toolCfg.Output, result.Stdout, e.repoDir)
+	content := strings.TrimSpace(stdout)
+	seedEntries, _ := extractMemoryExtraction(content)
+	contextContent := stripMemoryExtractionSection(content)
 
-	outPath := filepath.Join(e.repoDir, contextFile)
-	if err := os.WriteFile(outPath, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("write context: %w", err)
+	outPath, err := persistContext(e.repoDir, contextContent)
+	if err != nil {
+		return "", err
 	}
-	hash, _ := hashFileTree(e.repoDir)
-	if hash != "" {
-		_ = os.WriteFile(filepath.Join(e.repoDir, ".orca/context.hash"), []byte(hash), 0644)
+	if e.memory != nil {
+		if err := e.seedMemory(contextContent, seedEntries); err != nil {
+			return "", err
+		}
 	}
-
 	return outPath, nil
 }
 
-// ContextPath returns the expected context file path for a repo.
-func ContextPath(repoDir string) string {
-	return filepath.Join(repoDir, contextFile)
+func LoadContext(repoDir string) string {
+	dbPath := filepath.Join(repoDir, stateDBFile)
+	if info, err := os.Stat(dbPath); err == nil && !info.IsDir() {
+		db, err := openStateDB(repoDir)
+		if err == nil {
+			defer db.Close()
+			return LoadContextFromDB(db)
+		}
+	}
+	return ""
 }
 
-// LoadContext reads the context file if it exists. Returns empty string if not found.
-func LoadContext(repoDir string) string {
-	data, err := os.ReadFile(ContextPath(repoDir))
+func LoadContextFromDB(db *state.DB) string {
+	content, err := loadContextFromDB(db)
 	if err != nil {
 		return ""
 	}
-	return string(data)
+	return content
 }
 
-// WriteManualContext writes user-provided content to the context file.
 func WriteManualContext(repoDir, content string) (string, error) {
-	outPath := ContextPath(repoDir)
-	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-		return "", fmt.Errorf("create dir: %w", err)
-	}
-	if err := os.WriteFile(outPath, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("write context: %w", err)
-	}
-	hash, _ := hashFileTree(repoDir)
-	if hash != "" {
-		_ = os.WriteFile(filepath.Join(repoDir, ".orca/context.hash"), []byte(hash), 0644)
-	}
-	return outPath, nil
+	return persistContext(repoDir, content)
 }
 
-// WriteManualContextFromFile copies a file's contents to the context file.
 func WriteManualContextFromFile(repoDir, sourcePath string) (string, error) {
 	data, err := os.ReadFile(sourcePath)
 	if err != nil {
@@ -113,31 +235,56 @@ func WriteManualContextFromFile(repoDir, sourcePath string) (string, error) {
 	return WriteManualContext(repoDir, string(data))
 }
 
-// IsStale returns true if the codebase file tree has changed since exploration.
-// Returns false if no hash file exists (never explored = not stale, just missing).
 func IsStale(repoDir string) (bool, error) {
-	hashPath := filepath.Join(repoDir, ".orca/context.hash")
-	stored, err := os.ReadFile(hashPath)
+	dbPath := filepath.Join(repoDir, stateDBFile)
+	if _, err := os.Stat(dbPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	db, err := openStateDB(repoDir)
 	if err != nil {
+		return false, nil
+	}
+	defer db.Close()
+
+	stored, err := loadContextHashFromDB(db)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(stored) == "" {
 		return false, nil
 	}
 	current, err := hashFileTree(repoDir)
 	if err != nil {
 		return false, err
 	}
-	return strings.TrimSpace(string(stored)) != current, nil
+	return strings.TrimSpace(stored) != current, nil
 }
 
-// ContextAge returns how old the context file is. Returns 0 if not found.
 func ContextAge(repoDir string) time.Duration {
-	info, err := os.Stat(ContextPath(repoDir))
+	dbPath := filepath.Join(repoDir, stateDBFile)
+	if _, err := os.Stat(dbPath); err != nil {
+		return 0
+	}
+	db, err := openStateDB(repoDir)
 	if err != nil {
 		return 0
 	}
-	return time.Since(info.ModTime())
+	defer db.Close()
+
+	updatedAt, err := loadContextUpdatedAtFromDB(db)
+	if err != nil || updatedAt.IsZero() {
+		return 0
+	}
+	age := time.Since(updatedAt)
+	if age < 0 {
+		return 0
+	}
+	return age
 }
 
-// truncate returns s cut to maxLen, appending "..." if truncated.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -145,7 +292,6 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// hashFileTree returns a sha256 hex digest of `git ls-files` output in repoDir.
 func hashFileTree(repoDir string) (string, error) {
 	cmd := exec.Command("git", "ls-files")
 	cmd.Dir = repoDir
@@ -155,4 +301,383 @@ func hashFileTree(repoDir string) (string, error) {
 	}
 	h := sha256.Sum256(out)
 	return hex.EncodeToString(h[:]), nil
+}
+
+func persistContext(repoDir, content string) (string, error) {
+	hash, _ := hashFileTree(repoDir)
+	if err := writeContextToDB(repoDir, content, hash); err != nil {
+		return "", err
+	}
+	return stateDBFile, nil
+}
+
+func loadContextFromDB(db *state.DB) (string, error) {
+	if db == nil {
+		return "", nil
+	}
+	var content string
+	err := db.QueryRow(`SELECT content FROM explore_context WHERE id = ?`, exploreContextRowID).Scan(&content)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	if strings.TrimSpace(content) == "" {
+		return "", nil
+	}
+	return content, nil
+}
+
+func loadContextHashFromDB(db *state.DB) (string, error) {
+	if db == nil {
+		return "", nil
+	}
+	var hash string
+	err := db.QueryRow(`SELECT hash FROM explore_context WHERE id = ?`, exploreContextRowID).Scan(&hash)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(hash), nil
+}
+
+func loadContextUpdatedAtFromDB(db *state.DB) (time.Time, error) {
+	if db == nil {
+		return time.Time{}, nil
+	}
+	var updatedAt time.Time
+	err := db.QueryRow(`SELECT updated_at FROM explore_context WHERE id = ?`, exploreContextRowID).Scan(&updatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil
+		}
+		return time.Time{}, err
+	}
+	return updatedAt.UTC(), nil
+}
+
+func writeContextToDB(repoDir, content, hash string) error {
+	dbPath := filepath.Join(repoDir, stateDBFile)
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return fmt.Errorf("create db dir: %w", err)
+	}
+	db, err := openStateDB(repoDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec(
+		`REPLACE INTO explore_context (id, content, hash, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+		exploreContextRowID,
+		content,
+		hash,
+	)
+	return err
+}
+
+func openStateDB(repoDir string) (*state.DB, error) {
+	db, err := state.Open(filepath.Join(repoDir, stateDBFile))
+	if err != nil {
+		return nil, fmt.Errorf("open db: %w", err)
+	}
+	return db, nil
+}
+
+type extractedMemoryEntry struct {
+	Content    string   `json:"content"`
+	Category   string   `json:"category"`
+	Tags       []string `json:"tags"`
+	Confidence float64  `json:"confidence"`
+	FilePaths  []string `json:"file_paths"`
+}
+
+func extractMemoryExtraction(output string) ([]extractedMemoryEntry, error) {
+	section := memoryExtractionSection(output)
+	if section == "" {
+		return nil, nil
+	}
+	var entries []extractedMemoryEntry
+	found, err := llm.TryExtractJSON(section, &entries)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+	for i := range entries {
+		entries[i].Content = strings.TrimSpace(entries[i].Content)
+		entries[i].Category = strings.ToLower(strings.TrimSpace(entries[i].Category))
+		entries[i].Tags = normalizeStrings(entries[i].Tags)
+		entries[i].FilePaths = normalizeStrings(entries[i].FilePaths)
+	}
+	return entries, nil
+}
+
+func stripMemoryExtractionSection(output string) string {
+	marker := "## Memory Extraction"
+	idx := strings.LastIndex(strings.ToLower(output), strings.ToLower(marker))
+	if idx == -1 {
+		return strings.TrimSpace(output)
+	}
+	return strings.TrimSpace(output[:idx])
+}
+
+func memoryExtractionSection(output string) string {
+	marker := "## Memory Extraction"
+	idx := strings.LastIndex(strings.ToLower(output), strings.ToLower(marker))
+	if idx == -1 {
+		return ""
+	}
+	return strings.TrimSpace(output[idx+len(marker):])
+}
+
+func buildExistingMemorySection(entries []*memory.Entry) string {
+	if len(entries) == 0 {
+		return "(none)"
+	}
+	lines := make([]string, 0, len(entries)*2)
+	maxEntries := len(entries)
+	if maxEntries > 40 {
+		maxEntries = 40
+	}
+	for i := 0; i < maxEntries; i++ {
+		entry := entries[i]
+		lines = append(lines, fmt.Sprintf("- [%s] %s", strings.TrimSpace(entry.Category), strings.TrimSpace(entry.Content)))
+		if len(entry.FilePaths) > 0 {
+			lines = append(lines, fmt.Sprintf("  files: %s", strings.Join(entry.FilePaths, ", ")))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (e *Explorer) seedMemory(contextContent string, entries []extractedMemoryEntry) error {
+	if e.memory == nil {
+		return nil
+	}
+	tracked, err := trackedFileSet(e.repoDir)
+	if err != nil {
+		tracked = map[string]struct{}{}
+	}
+
+	existingSummaries, err := e.memory.List(memory.ListOpts{Tag: "project-summary"})
+	if err != nil {
+		return err
+	}
+	existingSeeds, err := e.memory.List(memory.ListOpts{Tag: "explore-seed"})
+	if err != nil {
+		return err
+	}
+	coveredAtCommit, _ := currentHeadCommit(e.repoDir)
+	summaryID := ""
+	summaryContent := buildProjectSummary(contextContent)
+	if summaryContent != "" {
+		provenanceHash := hashProjectSummary(contextContent, summaryContent)
+		duplicate, dupErr := e.memory.GetByProvenanceHash(provenanceHash)
+		if dupErr != nil {
+			return dupErr
+		}
+		if duplicate != nil && strings.TrimSpace(duplicate.SupersededBy) == "" {
+			summaryID = duplicate.ID
+			if updateErr := e.memory.Update(duplicate.ID, memory.UpdateFields{
+				CoveredAtCommit: memory.Ptr(coveredAtCommit),
+				Stale:           memory.Ptr(false),
+			}); updateErr != nil {
+				return updateErr
+			}
+		} else {
+			summaryEntry := &memory.Entry{
+				Content:         summaryContent,
+				Category:        "architecture",
+				Tags:            []string{"project-summary"},
+				SourceType:      "explore",
+				CoveredAtCommit: coveredAtCommit,
+				Confidence:      0.95,
+				ProvenanceHash:  provenanceHash,
+			}
+			if err := e.memory.Create(summaryEntry); err != nil {
+				return err
+			}
+			summaryID = summaryEntry.ID
+		}
+	}
+
+	createdSeedIDs := make([]string, 0, len(entries))
+	for _, extracted := range entries {
+		if strings.TrimSpace(extracted.Content) == "" {
+			continue
+		}
+		switch extracted.Category {
+		case "architecture", "dependency", "pattern", "convention":
+		default:
+			continue
+		}
+		confidence := extracted.Confidence
+		if confidence <= 0 {
+			confidence = 0.95
+		}
+		tags := append(normalizeStrings(extracted.Tags), "explore-seed")
+		tags = normalizeStrings(tags)
+		filePaths := filterTrackedFilePaths(extracted.FilePaths, tracked)
+		provenanceHash := hashExploreSeed(contextContent, extracted.Content, extracted.Category, filePaths)
+		hasHash, err := e.memory.HasProvenanceHash(provenanceHash)
+		if err != nil {
+			return err
+		}
+		if hasHash {
+			continue
+		}
+		entry := &memory.Entry{
+			Content:         extracted.Content,
+			Category:        extracted.Category,
+			Tags:            tags,
+			SourceType:      "explore",
+			FilePaths:       filePaths,
+			CoveredAtCommit: coveredAtCommit,
+			Confidence:      confidence,
+			ProvenanceHash:  provenanceHash,
+		}
+		if err := e.memory.Create(entry); err != nil {
+			return err
+		}
+		createdSeedIDs = append(createdSeedIDs, entry.ID)
+	}
+
+	if summaryID != "" {
+		for _, existing := range existingSummaries {
+			if existing.ID == summaryID {
+				continue
+			}
+			if err := e.memory.Supersede(existing.ID, summaryID); err != nil {
+				return err
+			}
+		}
+	}
+
+	replacementSeedID := ""
+	if len(createdSeedIDs) > 0 {
+		replacementSeedID = createdSeedIDs[0]
+	} else if summaryID != "" {
+		replacementSeedID = summaryID
+	}
+	if replacementSeedID != "" {
+		for _, existing := range existingSeeds {
+			if existing.ID == replacementSeedID {
+				continue
+			}
+			if err := e.memory.Supersede(existing.ID, replacementSeedID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func trackedFileSet(repoDir string) (map[string]struct{}, error) {
+	cmd := exec.Command("git", "ls-files")
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	tracked := make(map[string]struct{})
+	for _, line := range strings.Split(string(out), "\n") {
+		path := strings.TrimSpace(line)
+		if path == "" {
+			continue
+		}
+		tracked[path] = struct{}{}
+	}
+	return tracked, nil
+}
+
+func currentHeadCommit(repoDir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func filterTrackedFilePaths(paths []string, tracked map[string]struct{}) []string {
+	if len(paths) == 0 || len(tracked) == 0 {
+		return nil
+	}
+	filtered := make([]string, 0, len(paths))
+	for _, path := range normalizeStrings(paths) {
+		if _, ok := tracked[path]; ok {
+			filtered = append(filtered, path)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func hashExploreSeed(contextContent, content, category string, filePaths []string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		strings.TrimSpace(contextContent),
+		strings.TrimSpace(content),
+		strings.TrimSpace(category),
+		strings.Join(normalizeStrings(filePaths), ","),
+	}, "\n---\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+func hashProjectSummary(contextContent, summary string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		strings.TrimSpace(contextContent),
+		strings.TrimSpace(summary),
+		"project-summary",
+	}, "\n---\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+func buildProjectSummary(contextContent string) string {
+	lines := strings.Split(strings.TrimSpace(contextContent), "\n")
+	summary := make([]string, 0, 10)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "## Memory Extraction") {
+			break
+		}
+		summary = append(summary, line)
+		if len(summary) == 10 {
+			break
+		}
+	}
+	return strings.TrimSpace(strings.Join(summary, "\n"))
+}
+
+func normalizeStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Strings(out)
+	return out
 }

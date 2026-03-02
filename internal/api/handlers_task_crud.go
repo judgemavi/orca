@@ -1,24 +1,20 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/model"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 type createTaskReq struct {
-	Title        string               `json:"title"`
-	Description  string               `json:"description"`
-	ParentID     string               `json:"parent_id"`
-	Tool         string               `json:"tool"`
-	AssignedTool string               `json:"assigned_tool"`
-	Model        string               `json:"model"`
-	PhaseConfig  *task.PhaseConfigMap `json:"phase_config,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	ParentID    string `json:"parent_id"`
 }
 
 // ========== Task CRUD ==========
@@ -38,10 +34,11 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, map[string]interface{}{"tasks": tasks})
+	jsonOK(w, tasks)
 }
 
-func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	store := s.taskStore
 	resolved, ok := resolveTaskID(w, store, id)
 	if !ok {
@@ -65,33 +62,11 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "title required", http.StatusBadRequest)
 		return
 	}
-	toolName := strings.TrimSpace(req.Tool)
-	if toolName == "" {
-		toolName = strings.TrimSpace(req.AssignedTool)
-	}
-
 	store := s.taskStore
-	t, err := store.Create(req.Title, req.Description, req.ParentID, toolName)
+	t, err := store.Create(req.Title, req.Description, req.ParentID)
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
-	}
-	if req.Model != "" {
-		if err := store.Update(t.ID, map[string]interface{}{"model": req.Model}); err != nil {
-			jsonError(w, err, http.StatusInternalServerError)
-			return
-		}
-	}
-	if req.PhaseConfig != nil {
-		data, err := json.Marshal(req.PhaseConfig)
-		if err != nil {
-			jsonError(w, err, http.StatusInternalServerError)
-			return
-		}
-		if err := store.Update(t.ID, map[string]interface{}{"phase_config": string(data)}); err != nil {
-			jsonError(w, err, http.StatusInternalServerError)
-			return
-		}
 	}
 	t, err = store.Get(t.ID)
 	if err != nil {
@@ -103,7 +78,8 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 201, map[string]interface{}{"data": t})
 }
 
-func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	store := s.taskStore
 	resolved, ok := resolveTaskID(w, store, id)
 	if !ok {
@@ -116,19 +92,45 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
-	fields := make(map[string]interface{})
-	for _, key := range []string{"title", "description", "prompt", "status", "assigned_tool", "model", "phase_config"} {
-		if v, ok := body[key]; ok {
-			fields[key] = v
+	fields := task.UpdateFields{}
+	hasUpdates := false
+	if v, ok := body["title"]; ok {
+		title, ok := v.(string)
+		if !ok {
+			jsonError(w, "title must be a string", http.StatusBadRequest)
+			return
 		}
+		fields.Title = task.Ptr(title)
+		hasUpdates = true
 	}
-	if v, ok := fields["phase_config"]; ok && v != nil {
-		data, err := json.Marshal(v)
-		if err == nil {
-			fields["phase_config"] = string(data)
+	if v, ok := body["description"]; ok {
+		description, ok := v.(string)
+		if !ok {
+			jsonError(w, "description must be a string", http.StatusBadRequest)
+			return
 		}
+		fields.Description = task.Ptr(description)
+		hasUpdates = true
 	}
-	if len(fields) == 0 {
+	if v, ok := body["plan"]; ok {
+		plan, ok := v.(string)
+		if !ok {
+			jsonError(w, "plan must be a string", http.StatusBadRequest)
+			return
+		}
+		fields.Plan = task.Ptr(plan)
+		hasUpdates = true
+	}
+	if rawStatus, ok := body["status"]; ok {
+		newStatus, ok := rawStatus.(string)
+		if !ok {
+			jsonError(w, "status must be a string", http.StatusBadRequest)
+			return
+		}
+		fields.Status = task.Ptr(newStatus)
+		hasUpdates = true
+	}
+	if !hasUpdates {
 		jsonError(w, "no fields to update", http.StatusBadRequest)
 		return
 	}
@@ -139,22 +141,15 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
-	if rawStatus, ok := fields["status"]; ok {
-		newStatus, ok := rawStatus.(string)
-		if !ok {
-			jsonError(w, "status must be a string", http.StatusBadRequest)
-			return
-		}
+	if fields.Status != nil {
+		newStatus := strings.TrimSpace(*fields.Status)
 		switch newStatus {
 		case "pending":
 			if currentTask.Status != "failed" {
 				jsonError(w, "can only move failed tasks to pending", http.StatusBadRequest)
 				return
 			}
-		case "in_sprint":
-			jsonError(w, "use /api/v1/sprints/assign to add tasks to sprint", http.StatusBadRequest)
-			return
-		case "approved", "running", "merged", "review":
+		case "planned", "approved", "running", "merged", "review":
 			jsonError(w, "cannot manually set status to "+newStatus, http.StatusBadRequest)
 			return
 		}
@@ -174,20 +169,18 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request, id str
 	jsonOK(w, t)
 }
 
-func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	store := s.taskStore
 	resolved, ok := resolveTaskID(w, store, id)
 	if !ok {
 		return
 	}
-	var err error
-	tk, err := store.Get(resolved)
-	if err != nil {
+	if _, err := store.Get(resolved); err != nil {
 		jsonError(w, err, http.StatusNotFound)
 		return
 	}
 
-	sprintID := tk.SprintID
 	if err := store.Delete(resolved); err != nil {
 		jsonError(w, err, http.StatusBadRequest)
 		return
@@ -196,9 +189,6 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, id str
 	if err := s.executor.Worktrees().Remove(resolved); err != nil {
 		slog.Warn("cleanup worktree after delete", "task_id", resolved[:8], "err", err)
 	}
-	// End sprint if all its tasks have been deleted.
-	s.completeSprintIfNeeded(sprintID)
-
 	s.hub.Broadcast(Event{Type: "task.deleted", Data: map[string]string{"id": resolved}})
 	jsonOK(w, map[string]string{"deleted": resolved})
 }
@@ -210,7 +200,7 @@ func (s *Server) handleGetReady(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, map[string]interface{}{"tasks": tasks})
+	jsonOK(w, tasks)
 }
 
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
@@ -222,13 +212,13 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	requestedTool := strings.TrimSpace(r.URL.Query().Get("tool"))
 
 	if requestedTool != "" {
-		toolCfg, ok := s.cfg.Tools[requestedTool]
+		d, ok := driver.Get(requestedTool)
 		if !ok {
 			jsonError(w, fmt.Sprintf("tool %q not found", requestedTool), http.StatusBadRequest)
 			return
 		}
 		resp := map[string][]model.Model{
-			requestedTool: model.FromConfig(requestedTool, toolCfg),
+			requestedTool: model.FromDriver(requestedTool, d),
 		}
 		jsonOK(w, map[string]interface{}{"tools": resp})
 		return

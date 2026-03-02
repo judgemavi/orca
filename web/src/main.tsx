@@ -1,15 +1,27 @@
 import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { createRouter, RouterProvider } from '@tanstack/react-router'
 import './styles/global.css'
-import '@tiny-bits/react-dialog/styles.css'
-import { queryClient } from './lib/queryClient'
-import App from './App'
+import ReactDOM from 'react-dom/client'
+// Import the generated route tree
+import { routeTree } from './routeTree.gen'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
-)
+// Create a new router instance
+export const router = createRouter({ routeTree, basepath: '/ui' })
+
+// Register the router instance for type safety
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
+}
+
+// Render the app
+const rootElement = document.getElementById('root')!
+if (!rootElement.innerHTML) {
+  const root = ReactDOM.createRoot(rootElement)
+  root.render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  )
+}

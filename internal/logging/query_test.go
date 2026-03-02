@@ -10,21 +10,20 @@ import (
 func TestQuery_AppliesFilters(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "orca.log")
 	data := "" +
-		"{\"time\":\"2026-01-02T10:00:00Z\",\"level\":\"INFO\",\"msg\":\"boot\",\"task_id\":\"t-1\",\"sprint_id\":\"s-1\"}\n" +
-		"{\"time\":\"2026-01-02T10:01:00Z\",\"level\":\"ERROR\",\"msg\":\"task failed\",\"task_id\":\"t-2\",\"sprint_id\":\"s-1\"}\n" +
-		"{\"time\":\"2026-01-02T10:02:00Z\",\"level\":\"ERROR\",\"msg\":\"task failed hard\",\"task_id\":\"t-2\",\"sprint_id\":\"s-2\"}\n"
+		"{\"time\":\"2026-01-02T10:00:00Z\",\"level\":\"INFO\",\"msg\":\"boot\",\"task_id\":\"t-1\"}\n" +
+		"{\"time\":\"2026-01-02T10:01:00Z\",\"level\":\"ERROR\",\"msg\":\"task failed\",\"task_id\":\"t-2\"}\n" +
+		"{\"time\":\"2026-01-02T10:02:00Z\",\"level\":\"ERROR\",\"msg\":\"task failed hard\",\"task_id\":\"t-2\"}\n"
 	if err := os.WriteFile(p, []byte(data), 0644); err != nil {
 		t.Fatalf("write log: %v", err)
 	}
 
 	since := time.Date(2026, 1, 2, 10, 0, 30, 0, time.UTC)
 	got, err := Query(p, Filter{
-		Level:    "error",
-		TaskID:   "t-2",
-		SprintID: "s-1",
-		Since:    since,
-		Pattern:  "failed",
-		Limit:    1,
+		Level:   "error",
+		TaskID:  "t-2",
+		Since:   since,
+		Pattern: "failed",
+		Limit:   1,
 	})
 	if err != nil {
 		t.Fatalf("query: %v", err)

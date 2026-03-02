@@ -77,7 +77,29 @@ func (s *Server) toolDefinitions() []toolDef {
 				"properties": map[string]interface{}{
 					"status": map[string]interface{}{
 						"type":        "string",
-						"description": "Filter by status: pending, in_sprint, running, approved, merged, failed",
+						"description": "Filter by status: pending, planned, running, review, approved, merged, failed",
+					},
+				},
+			},
+		},
+		{
+			Name:        "tasks_start",
+			Description: "Start execution of ready tasks",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Task IDs to run. If empty, runs all ready tasks up to max_parallel.",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool override for this run.",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model override for this run.",
 					},
 				},
 			},
@@ -96,14 +118,6 @@ func (s *Server) toolDefinitions() []toolDef {
 						"type":        "string",
 						"description": "Detailed description",
 					},
-					"assigned_tool": map[string]interface{}{
-						"type":        "string",
-						"description": "Tool to use (e.g. claude, codex)",
-					},
-					"model": map[string]interface{}{
-						"type":        "string",
-						"description": "Model to use for this task (must be valid for the assigned tool)",
-					},
 					"depends_on": map[string]interface{}{
 						"type": "array",
 						"items": map[string]interface{}{
@@ -117,7 +131,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "tasks_update",
-			Description: "Update a task's title, description, status, or assigned tool.",
+			Description: "Update a task's title, description, status, or plan.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -127,17 +141,7 @@ func (s *Server) toolDefinitions() []toolDef {
 						"type": "string",
 					},
 					"status": map[string]interface{}{"type": "string"},
-					"assigned_tool": map[string]interface{}{
-						"type": "string",
-					},
-					"model": map[string]interface{}{
-						"type":        "string",
-						"description": "Model to use for this task",
-					},
-					"prompt": map[string]interface{}{
-						"type":        "string",
-						"description": "Custom prompt for the task",
-					},
+					"plan":   map[string]interface{}{"type": "string"},
 				},
 				"required": []string{"task_id"},
 			},
@@ -165,8 +169,19 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "tasks_reopen",
-			Description: "Move a failed task back to pending status.",
+			Name:        "tasks_stop",
+			Description: "Stop a running task. Task can be resumed later.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_resume",
+			Description: "Resume a stopped task from where it left off using its saved session",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -189,24 +204,27 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "breakdown",
-			Description: "Break down a goal into tasks using an LLM. Returns proposed tasks for review.",
+			Description: "Break down a goal into tasks using an LLM, or break down an existing task into child subtasks. Returns proposed tasks for review.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"goal": map[string]interface{}{
 						"type":        "string",
-						"description": "The goal to decompose into tasks",
+						"description": "The goal to breakdown into tasks",
+					},
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional task ID to breakdown. Uses task title+description as goal. Created subtasks will be children of this task.",
 					},
 					"tool": map[string]interface{}{
 						"type":        "string",
-						"description": "Tool to use for decomposition (optional, uses first available)",
+						"description": "Tool to use for breakdown (optional, uses first available)",
 					},
 					"auto_create": map[string]interface{}{
 						"type":        "boolean",
 						"description": "If true, create tasks immediately without confirmation (default: true for MCP)",
 					},
 				},
-				"required": []string{"goal"},
 			},
 		},
 		{
@@ -237,128 +255,68 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "sprint_plan",
-			Description: "Create a new sprint and auto-assign ready tasks.",
+			Name:        "tasks_retro",
+			Description: "Extract reusable memory from an approved or merged task.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"max_tasks": map[string]interface{}{
-						"type":        "integer",
-						"description": "Max tasks to include",
-					},
-				},
-			},
-		},
-		{
-			Name:        "sprint_assign",
-			Description: "Add tasks to the active sprint (creates one if none exists).",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"task_ids": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "Task IDs to assign to the sprint",
-					},
-				},
-				"required": []string{"task_ids"},
-			},
-		},
-		{
-			Name:        "sprint_unassign",
-			Description: "Remove tasks from the active sprint.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"task_ids": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "Task IDs to remove from the sprint",
-					},
-				},
-				"required": []string{"task_ids"},
-			},
-		},
-		{
-			Name:        "sprint_start",
-			Description: "Start a planned sprint, executing all assigned tasks.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{
+					"task_id": map[string]interface{}{
 						"type":        "string",
-						"description": "Sprint ID to start",
+						"description": "Task ID",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool override (optional)",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model override (optional)",
 					},
 				},
-				"required": []string{"sprint_id"},
-			},
-		},
-		{
-			Name:        "sprint_status",
-			Description: "Get the active sprint's status, tasks, and progress.",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
+				"required": []string{"task_id"},
 			},
 		},
 		{
 			Name:        "project_status",
-			Description: "Get project overview: task counts by status, active sprint info, and project name.",
+			Description: "Get project overview: task counts by status and project name.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
 			},
 		},
 		{
-			Name:        "sprint_cancel",
-			Description: "Cancel the currently running sprint and kill all workers.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to cancel"},
-				},
-				"required": []string{"sprint_id"},
-			},
-		},
-		{
-			Name:        "sprint_reset",
-			Description: "Reset a completed or failed sprint: cleanup worktrees and revert tasks to pending.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to reset"},
-				},
-				"required": []string{"sprint_id"},
-			},
-		},
-		{
-			Name:        "sprint_resume",
-			Description: "Detect and recover orphaned tasks from an interrupted sprint.",
+			Name:        "config_get",
+			Description: "Get the current runtime configuration.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
 			},
 		},
 		{
-			Name:        "review_get",
-			Description: "Get review artifacts (diffs, files changed, duration) for a completed sprint.",
+			Name:        "models_list",
+			Description: "List available LLM models for configured tools. Optionally filter by a specific tool name.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to review"},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Filter models by tool name (optional)",
+					},
 				},
-				"required": []string{"sprint_id"},
 			},
 		},
 		{
-			Name:        "review_sprint",
-			Description: "Run automated LLM review on all completed tasks in a sprint. Blocks until review finishes.",
+			Name:        "config_update",
+			Description: "Apply a partial JSON patch to configuration and persist it.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{"type": "string", "description": "Sprint ID to review"},
+					"patch": map[string]interface{}{
+						"type":        "object",
+						"description": "Partial configuration object to merge and persist.",
+					},
 				},
-				"required": []string{"sprint_id"},
+				"required": []string{"patch"},
 			},
 		},
 		{
@@ -373,15 +331,93 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
+			Name:        "tasks_approve_plan",
+			Description: "Approve a generated plan for a pending task, moving it to 'planned'.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
 			Name:        "tasks_request_changes",
 			Description: "Reject a task in review, store feedback, and re-run the worker with that feedback.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"task_id":  map[string]interface{}{"type": "string"},
-					"feedback": map[string]interface{}{"type": "string", "description": "What needs to change"},
+					"task_id": map[string]interface{}{"type": "string"},
+					"feedback": map[string]interface{}{
+						"type":        "string",
+						"description": "What needs to change",
+					},
+					"interaction_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional interaction ID linked to this review request.",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool override for rerun.",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model override for rerun.",
+					},
 				},
 				"required": []string{"task_id", "feedback"},
+			},
+		},
+		{
+			Name:        "ai_review",
+			Description: "Run automated AI code review on a task's diff. Task must be in 'review' status. Returns approval status and feedback. Does NOT change task status - the orchestrator decides next action.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Task ID (or prefix) to review",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool override (optional, defaults to review phase config)",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model override (optional)",
+					},
+					"prompt": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional custom instructions for the reviewer",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "tasks_request_plan_changes",
+			Description: "Request changes to a pending task's plan, recording feedback and regenerating the plan.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id":        map[string]interface{}{"type": "string"},
+					"feedback":       map[string]interface{}{"type": "string", "description": "What needs to change in the plan"},
+					"interaction_id": map[string]interface{}{"type": "string", "description": "Completed plan interaction ID being reviewed"},
+					"tool":           map[string]interface{}{"type": "string", "description": "Tool override for plan regeneration (optional)"},
+					"model":          map[string]interface{}{"type": "string", "description": "Model override for plan regeneration (optional)"},
+				},
+				"required": []string{"task_id", "feedback", "interaction_id"},
+			},
+		},
+		{
+			Name:        "tasks_reviews",
+			Description: "List reviews for a task, including feedback, status (pending/addressed), and linked interaction ID.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "description": "Task ID or prefix"},
+				},
+				"required": []string{"task_id"},
 			},
 		},
 		{
@@ -426,21 +462,16 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
-			Name:        "budget_status",
-			Description: "Get current total cost, budget, remaining budget, and per-tool breakdown.",
+			Name:        "cost_status",
+			Description: "Get current cost status: total cost and per-tool breakdown.",
 			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"sprint_id": map[string]interface{}{
-						"type":        "string",
-						"description": "Optional sprint ID for sprint-level totals instead of project totals.",
-					},
-				},
+				"type":       "object",
+				"properties": map[string]interface{}{},
 			},
 		},
 		{
 			Name:        "quality_results",
-			Description: "Get latest quality gate results for a task from stored artifacts.",
+			Description: "Get latest quality gate results for a task from run-phase task interactions.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -450,6 +481,46 @@ func (s *Server) toolDefinitions() []toolDef {
 					},
 				},
 				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "interactions_list",
+			Description: "List LLM interaction logs for a task, with optional filtering by phase and status.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Task ID to list interactions for.",
+					},
+					"phase": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional phase filter: plan, run, review, merge.",
+					},
+					"status": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional status filter: running, completed, failed.",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "interaction_get",
+			Description: "Get the formatted log content of a specific interaction. Use interactions_list to find IDs first.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"interaction_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Interaction ID from interactions_list.",
+					},
+					"raw": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Return raw NDJSON content instead of formatted text. Default: false.",
+					},
+				},
+				"required": []string{"interaction_id"},
 			},
 		},
 		{
@@ -469,10 +540,6 @@ func (s *Server) toolDefinitions() []toolDef {
 					"task_id": map[string]interface{}{
 						"type":        "string",
 						"description": "Optional task ID to attach as structured attribute.",
-					},
-					"sprint_id": map[string]interface{}{
-						"type":        "string",
-						"description": "Optional sprint ID to attach as structured attribute.",
 					},
 					"attrs": map[string]interface{}{
 						"type":                 "object",
@@ -496,10 +563,6 @@ func (s *Server) toolDefinitions() []toolDef {
 					"task_id": map[string]interface{}{
 						"type":        "string",
 						"description": "Optional task ID filter.",
-					},
-					"sprint_id": map[string]interface{}{
-						"type":        "string",
-						"description": "Optional sprint ID filter.",
 					},
 					"since": map[string]interface{}{
 						"type":        "string",
@@ -533,6 +596,158 @@ func (s *Server) toolDefinitions() []toolDef {
 					"task_id": map[string]interface{}{"type": "string", "description": "Completed task ID to merge"},
 				},
 				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "memory_list",
+			Description: "List memory entries. Optionally filter by category, tag, source type, or file path.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"category": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional category filter: pattern, pitfall, preference, convention, architecture, dependency.",
+					},
+					"tag": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional exact tag filter.",
+					},
+					"source_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional source type filter: retro, explore.",
+					},
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional file path filter for associated files.",
+					},
+				},
+			},
+		},
+		{
+			Name:        "memory_get",
+			Description: "Get a single memory entry by id.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id": map[string]interface{}{
+						"type":        "string",
+						"description": "Memory entry ID.",
+					},
+				},
+				"required": []string{"id"},
+			},
+		},
+		{
+			Name:        "memory_search",
+			Description: "Search memory entries using FTS, optionally filtered by source type or file path.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Full-text query string.",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results (default: 10).",
+					},
+					"source_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional source type filter: retro, explore.",
+					},
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional file path filter for associated files.",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "memory_query",
+			Description: "Natural-language memory query with lineage and staleness metadata.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Natural-language query string.",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results (default: 10).",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "memory_update",
+			Description: "Update an existing memory entry.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id": map[string]interface{}{
+						"type":        "string",
+						"description": "Memory entry ID.",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "Updated memory content.",
+					},
+					"confidence": map[string]interface{}{
+						"type":        "number",
+						"description": "Updated confidence score between 0 and 1.",
+					},
+					"category": map[string]interface{}{
+						"type":        "string",
+						"description": "Updated category: pattern, pitfall, preference, convention, architecture, dependency.",
+					},
+				},
+				"required": []string{"id"},
+			},
+		},
+		{
+			Name:        "memory_delete",
+			Description: "Delete a memory entry by id.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id": map[string]interface{}{
+						"type":        "string",
+						"description": "Memory entry ID.",
+					},
+				},
+				"required": []string{"id"},
+			},
+		},
+		{
+			Name:        "memory_sync",
+			Description: "Sync memory entries with git changes, flagging stale entries.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "memory_refresh",
+			Description: "Refresh stale memory entries (all or a single entry).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"entry_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional entry ID for targeted refresh.",
+					},
+				},
+			},
+		},
+		{
+			Name:        "memory_status",
+			Description: "Get memory sync status and health summary (by source, stale count, average confidence).",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
 			},
 		},
 	}

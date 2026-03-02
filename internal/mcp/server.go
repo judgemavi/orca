@@ -7,17 +7,21 @@ import (
 	"os"
 
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/sprint"
+	"github.com/jasjeetmavi/orca/internal/executor"
+	"github.com/jasjeetmavi/orca/internal/memory"
+	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // Server is a stdio JSON-RPC endpoint exposing Orca operations as MCP tools.
 type Server struct {
-	store    *task.Store
-	planner  *sprint.Planner
-	executor *sprint.Executor
-	cfg      *config.Config
-	repoDir  string
+	taskStore   *task.Store
+	memoryStore *memory.Store
+	db          *state.DB
+	executor    *executor.Executor
+	config      *config.Config
+	repoDir     string
+	onEvent     func(eventType string, data interface{})
 }
 
 type jsonrpcRequest struct {
@@ -39,8 +43,15 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func NewServer(store *task.Store, planner *sprint.Planner, executor *sprint.Executor, cfg *config.Config, repoDir string) *Server {
-	return &Server{store: store, planner: planner, executor: executor, cfg: cfg, repoDir: repoDir}
+func NewServer(db *state.DB, taskStore *task.Store, executor *executor.Executor, cfg *config.Config, repoDir string) *Server {
+	return &Server{
+		taskStore:   taskStore,
+		memoryStore: memory.NewStore(db),
+		db:          db,
+		executor:    executor,
+		config:      cfg,
+		repoDir:     repoDir,
+	}
 }
 
 // Run reads newline-delimited JSON-RPC requests from stdin and writes responses to stdout.

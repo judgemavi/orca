@@ -14,7 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/jasjeetmavi/orca/prompts"
@@ -29,24 +30,36 @@ type Integrator struct {
 
 	// For auto-rebase re-run support.
 	worktreeDir  string
-	toolResolver func(taskID string) (config.ToolConfig, error)
+	toolResolver func(taskID string) (string, driver.Driver, string, time.Duration, error)
+	interactions *interaction.Store
 
 	mu       sync.Mutex
 	lockPath string
+
+	// Optional post-merge hooks wired by callers.
+	// OnPostMerge runs after each successfully merged task.
+	OnPostMerge func(taskID string)
+	// OnPostMergeBatchComplete runs once at the end of MergeBatch for all merged tasks.
+	OnPostMergeBatchComplete func(taskIDs []string)
 }
 
 // New creates an Integrator.
-func New(repoDir, integrationBranch string, validationCmds []string) *Integrator {
+func New(repoDir, integrationBranch string, validationCmds []string, interactions ...*interaction.Store) *Integrator {
+	var store *interaction.Store
+	if len(interactions) > 0 {
+		store = interactions[0]
+	}
 	return &Integrator{
 		repoDir:           repoDir,
 		integrationBranch: integrationBranch,
 		validationCmds:    validationCmds,
 		lockPath:          filepath.Join(repoDir, ".orca", "integration.lock"),
+		interactions:      store,
 	}
 }
 
 // SetRerunConfig configures the integrator for auto-rebase re-run support.
-func (i *Integrator) SetRerunConfig(worktreeDir string, resolver func(string) (config.ToolConfig, error)) {
+func (i *Integrator) SetRerunConfig(worktreeDir string, resolver func(string) (string, driver.Driver, string, time.Duration, error)) {
 	i.worktreeDir = worktreeDir
 	i.toolResolver = resolver
 }
@@ -118,7 +131,11 @@ func (i *Integrator) mergeUnlocked(taskID string) error {
 // then continues the rebase and retries the merge.
 func (i *Integrator) MergeWithRerun(taskID string) error {
 	return i.withIntegrationLock(func() error {
-		return i.mergeWithRerunUnlocked(taskID)
+		if err := i.mergeWithRerunUnlocked(taskID); err != nil {
+			return err
+		}
+		i.runOnPostMerge(taskID)
+		return nil
 	})
 }
 
@@ -145,68 +162,108 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 	rebaseCmd.CombinedOutput() // ignore error — conflict is expected
 
 	// Resolve tool.
-	toolCfg, err := i.toolResolver(taskID)
+	toolName, d, model, timeout, err := i.toolResolver(taskID)
 	if err != nil {
 		i.abortRebaseInWorktree(wtPath)
 		return fmt.Errorf("resolve tool for conflict resolution: %w", err)
 	}
 
-	adapter, err := worker.NewAdapter(toolCfg)
+	adapter := worker.NewAdapter(d, model, timeout)
+	taskRef := taskID
+	_, err = interaction.RunWithTracking(
+		i.interactions,
+		&taskRef,
+		interaction.PhaseMerge,
+		toolName,
+		adapter,
+		func() (*worker.Result, error) {
+			var inTokens, outTokens int64
+			var costTotal float64
+			addCost := func(result *worker.Result) {
+				if result == nil {
+					return
+				}
+				inTokens += result.InputTokens
+				outTokens += result.OutputTokens
+				costTotal += result.TotalCost
+			}
+
+			prompt := prompts.ConflictResolve
+
+			result, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath)
+			addCost(result)
+			if execErr != nil {
+				i.abortRebaseInWorktree(wtPath)
+				return nil, fmt.Errorf("tool failed to resolve conflicts: %w", execErr)
+			}
+
+			// Stage resolved files and continue rebase.
+			addCmd := exec.Command("git", "add", "-A")
+			addCmd.Dir = wtPath
+			if out, err := addCmd.CombinedOutput(); err != nil {
+				i.abortRebaseInWorktree(wtPath)
+				return nil, fmt.Errorf("git add after resolve: %s", strings.TrimSpace(string(out)))
+			}
+
+			// Loop: rebase --continue may hit more commits with conflicts.
+			for attempt := 0; attempt < 10; attempt++ {
+				contCmd := exec.Command("git", "-c", "core.editor=true", "rebase", "--continue")
+				contCmd.Dir = wtPath
+				out, contErr := contCmd.CombinedOutput()
+				if contErr == nil {
+					// Rebase complete — do the final merge.
+					break
+				}
+
+				outStr := string(out)
+				if !strings.Contains(strings.ToLower(outStr), "conflict") {
+					// Non-conflict error during rebase continue.
+					i.abortRebaseInWorktree(wtPath)
+					return nil, fmt.Errorf("rebase --continue failed: %s", strings.TrimSpace(outStr))
+				}
+
+				// Another commit has conflicts — run tool again.
+				result, execErr = adapter.Execute(context.Background(), taskID, prompt, wtPath)
+				addCost(result)
+				if execErr != nil {
+					i.abortRebaseInWorktree(wtPath)
+					return nil, fmt.Errorf("tool failed to resolve conflicts (attempt %d): %w", attempt+2, execErr)
+				}
+
+				addCmd2 := exec.Command("git", "add", "-A")
+				addCmd2.Dir = wtPath
+				_ = addCmd2.Run()
+			}
+
+			// Final merge — should be clean now.
+			msg := fmt.Sprintf("orca: merge task-%s (after rebase)", taskID)
+			if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
+				_ = i.git("merge", "--abort")
+				return nil, fmt.Errorf("merge %s failed after conflict resolution: %w", branch, err)
+			}
+
+			return &worker.Result{
+				InputTokens:  inTokens,
+				OutputTokens: outTokens,
+				TotalCost:    costTotal,
+			}, nil
+		},
+		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
+			status := "completed"
+			opts := []interaction.FinishOption{}
+			if result != nil {
+				opts = append(opts, interaction.WithCost(result.InputTokens, result.OutputTokens, result.TotalCost))
+			}
+			if runErr != nil {
+				status = "failed"
+				opts = append(opts, interaction.WithError(runErr.Error()))
+			}
+			return status, opts
+		}),
+	)
 	if err != nil {
-		i.abortRebaseInWorktree(wtPath)
-		return fmt.Errorf("create adapter for conflict resolution: %w", err)
+		return err
 	}
-
-	prompt := prompts.ConflictResolve
-
-	if _, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath); execErr != nil {
-		i.abortRebaseInWorktree(wtPath)
-		return fmt.Errorf("tool failed to resolve conflicts: %w", execErr)
-	}
-
-	// Stage resolved files and continue rebase.
-	addCmd := exec.Command("git", "add", "-A")
-	addCmd.Dir = wtPath
-	if out, err := addCmd.CombinedOutput(); err != nil {
-		i.abortRebaseInWorktree(wtPath)
-		return fmt.Errorf("git add after resolve: %s", strings.TrimSpace(string(out)))
-	}
-
-	// Loop: rebase --continue may hit more commits with conflicts.
-	for attempt := 0; attempt < 10; attempt++ {
-		contCmd := exec.Command("git", "-c", "core.editor=true", "rebase", "--continue")
-		contCmd.Dir = wtPath
-		out, contErr := contCmd.CombinedOutput()
-		if contErr == nil {
-			// Rebase complete — do the final merge.
-			break
-		}
-
-		outStr := string(out)
-		if !strings.Contains(strings.ToLower(outStr), "conflict") {
-			// Non-conflict error during rebase continue.
-			i.abortRebaseInWorktree(wtPath)
-			return fmt.Errorf("rebase --continue failed: %s", strings.TrimSpace(outStr))
-		}
-
-		// Another commit has conflicts — run tool again.
-		if _, execErr := adapter.Execute(context.Background(), taskID, prompt, wtPath); execErr != nil {
-			i.abortRebaseInWorktree(wtPath)
-			return fmt.Errorf("tool failed to resolve conflicts (attempt %d): %w", attempt+2, execErr)
-		}
-
-		addCmd2 := exec.Command("git", "add", "-A")
-		addCmd2.Dir = wtPath
-		_ = addCmd2.Run()
-	}
-
-	// Final merge — should be clean now.
-	msg := fmt.Sprintf("orca: merge task-%s (after rebase)", taskID)
-	if err := i.git("merge", branch, "--no-ff", "-m", msg); err != nil {
-		_ = i.git("merge", "--abort")
-		return fmt.Errorf("merge %s failed after conflict resolution: %w", branch, err)
-	}
-
 	return nil
 }
 
@@ -323,6 +380,7 @@ func (i *Integrator) MergeAndValidate(taskID string) error {
 		return fmt.Errorf("task-%s merged but validation failed (reverted): %w", taskID, err)
 	}
 
+	i.runOnPostMerge(taskID)
 	return nil
 }
 
@@ -368,7 +426,20 @@ func (i *Integrator) MergeBatch(taskIDs []string) (merged []string, failed []str
 			merged = append(merged, id)
 		}
 	}
+	i.runOnPostMergeBatchComplete(merged)
 	return merged, failed, nil
+}
+
+func (i *Integrator) runOnPostMerge(taskID string) {
+	if i.OnPostMerge != nil {
+		i.OnPostMerge(taskID)
+	}
+}
+
+func (i *Integrator) runOnPostMergeBatchComplete(taskIDs []string) {
+	if i.OnPostMergeBatchComplete != nil {
+		i.OnPostMergeBatchComplete(taskIDs)
+	}
 }
 
 // git runs a git command in the repo dir, returning a wrapped error with stderr on failure.

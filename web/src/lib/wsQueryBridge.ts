@@ -1,109 +1,193 @@
-import { useCallback } from 'react'
-import type { QueryClient } from '@tanstack/react-query'
-import { useQueryClient } from '@tanstack/react-query'
-import type { WSEvent } from '../types'
+// Bridges WS events to react-query cache. Keeps UI in sync without polling.
 
-function readString(
-  data: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  const value = data[key]
-  return typeof value === 'string' && value.length > 0 ? value : undefined
+import type { QueryClient, QueryKey } from '@tanstack/react-query'
+import type { WSEvent, Task, Config, Interaction, KnownWSEvent } from '../types'
+import { isKnownWSEvent } from '../types'
+import { queryKeys } from './queryKeys'
+
+type TasksCache = Task[]
+
+const INVALIDATE_EXACT: Record<string, readonly QueryKey[]> = {
+  'session.created': [queryKeys.sessions],
+  'session.exited': [queryKeys.sessions],
+  'plan.generating': [queryKeys.operations()],
+  'plan.failed': [queryKeys.operations()],
+  'merge.started': [queryKeys.operations(), queryKeys.status],
+  'merge.progress': [queryKeys.operations(), queryKeys.status],
+  'merge.failed': [queryKeys.operations(), queryKeys.status],
 }
 
-export async function invalidateQueriesForWSEvent(
-  queryClient: QueryClient,
-  event: WSEvent,
-) {
-  if (event.type === 'task.updated') {
-    const taskId = readString(event.data, 'id')
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['task', taskId] })
-        : Promise.resolve(),
-    ])
-    return
-  }
+const SIGNAL_PREFIXES = [
+  'run.',
+  'breakdown.',
+  'cleanup.',
+  'explore.',
+  'evaluate.',
+]
 
-  if (event.type === 'task.deleted') {
-    await queryClient.invalidateQueries({ queryKey: ['tasks'] })
-    return
-  }
+function getTaskID(data: Record<string, unknown>): string | undefined {
+  const taskID = data.task_id
+  if (typeof taskID === 'string' && taskID.length > 0) return taskID
 
-  if (event.type.startsWith('task.')) {
-    await queryClient.invalidateQueries({ queryKey: ['tasks'] })
-    return
-  }
+  const id = data.id
+  if (typeof id === 'string' && id.length > 0) return id
 
-  if (
-    event.type === 'sprint.updated' ||
-    event.type === 'sprint.planned' ||
-    event.type === 'sprint.started' ||
-    event.type === 'sprint.completed' ||
-    event.type === 'sprint.failed' ||
-    event.type === 'sprint.cancelled' ||
-    event.type === 'sprint.reset'
-  ) {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      queryClient.invalidateQueries({ queryKey: ['sprints'] }),
-      queryClient.invalidateQueries({ queryKey: ['sprint', 'active'] }),
-      queryClient.invalidateQueries({ queryKey: ['operations'] }),
-      queryClient.invalidateQueries({ queryKey: ['status'] }),
-    ])
-    return
-  }
+  return undefined
+}
 
-  if (event.type === 'plan.completed') {
-    const taskId = readString(event.data, 'task_id')
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-      taskId
-        ? queryClient.invalidateQueries({ queryKey: ['taskPlan', taskId] })
-        : Promise.resolve(),
-    ])
-    return
-  }
+function getTaskIDFromUnknown(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  return getTaskID(data as Record<string, unknown>)
+}
 
-  if (event.type === 'review.completed') {
-    const sprintId = readString(event.data, 'sprint_id')
-    if (sprintId) {
-      await queryClient.invalidateQueries({ queryKey: ['review', sprintId] })
+function isTaskData(data: unknown): data is Task {
+  if (!data || typeof data !== 'object') return false
+  return 'id' in data && 'title' in data
+}
+
+function isInteractionData(data: unknown): data is Interaction {
+  if (!data || typeof data !== 'object') return false
+  return 'id' in data && 'phase' in data
+}
+
+function upsertTask(qc: QueryClient, task: Task) {
+  qc.setQueryData<TasksCache>(queryKeys.tasks, (old) => {
+    const tasks = old ?? []
+    if (tasks.some((t) => t.id === task.id)) {
+      return tasks.map((t) => (t.id === task.id ? task : t))
     }
-    return
-  }
+    return [...tasks, task]
+  })
 
-  if (event.type === 'session.created' || event.type === 'session.exited') {
-    await queryClient.invalidateQueries({ queryKey: ['sessions'] })
-    return
-  }
+  qc.setQueryData<Task>(queryKeys.task(task.id), task)
+}
 
-  if (
-    event.type === 'decompose.started' ||
-    event.type === 'decompose.completed' ||
-    event.type === 'decompose.failed' ||
-    event.type === 'merge.started' ||
-    event.type === 'merge.completed' ||
-    event.type === 'merge.failed' ||
-    event.type === 'cleanup.started' ||
-    event.type === 'cleanup.completed' ||
-    event.type === 'cleanup.failed' ||
-    event.type === 'explore.completed' ||
-    event.type === 'explore.failed'
-  ) {
-    await queryClient.invalidateQueries({ queryKey: ['operations'] })
+function upsertInteraction(qc: QueryClient, interaction: Interaction) {
+  const tid = interaction.task_id
+  if (!tid) return
+
+  qc.setQueryData<Interaction[]>(queryKeys.taskInteractions(tid), (old) => {
+    const list = old ?? []
+    const idx = list.findIndex((i) => i.id === interaction.id)
+    if (idx >= 0) {
+      const next = [...list]
+      next[idx] = interaction
+      return next
+    }
+    return [...list, interaction]
+  })
+}
+
+function handleKnownEvent(qc: QueryClient, event: KnownWSEvent): boolean {
+  switch (event.type) {
+    case 'task.created':
+      upsertTask(qc, event.data)
+      return true
+
+    case 'task.updated':
+      if (isTaskData(event.data)) {
+        upsertTask(qc, event.data)
+      }
+      return true
+
+    case 'merge.completed':
+      if (isTaskData(event.data)) {
+        upsertTask(qc, event.data)
+      }
+      return true
+
+    case 'task.deleted': {
+      const id = event.data.id
+      qc.setQueryData<TasksCache>(queryKeys.tasks, (old) =>
+        (old ?? []).filter((t) => t.id !== id),
+      )
+      return true
+    }
+
+    case 'config.updated':
+      qc.setQueryData<Config>(queryKeys.config, event.data)
+      return true
+
+    case 'plan.completed':
+      qc.setQueryData(queryKeys.taskPlan(event.data.task_id), event.data.plan)
+      void qc.invalidateQueries({
+        queryKey: queryKeys.task(event.data.task_id),
+      })
+      return true
+
+    case 'interaction.started':
+    case 'interaction.updated':
+    case 'interaction.completed':
+    case 'interaction.failed':
+      if (isInteractionData(event.data)) {
+        upsertInteraction(qc, event.data)
+      }
+      return true
+
+    case 'ai_review.failed':
+    case 'ai_review.completed':
+      void qc.invalidateQueries({
+        queryKey: queryKeys.taskReviews(event.data.task_id),
+      })
+      return true
+
+    default:
+      return false
   }
 }
 
-export function useWSQueryBridge(onEvent?: (event: WSEvent) => void) {
-  const queryClient = useQueryClient()
+export function handleWSEvent(qc: QueryClient, event: WSEvent) {
+  if (isKnownWSEvent(event) && handleKnownEvent(qc, event)) {
+    return
+  }
 
-  return useCallback(
-    (event: WSEvent) => {
-      void invalidateQueriesForWSEvent(queryClient, event)
-      onEvent?.(event)
-    },
-    [onEvent, queryClient],
-  )
+  const exactKeys = INVALIDATE_EXACT[event.type]
+  if (exactKeys) {
+    void Promise.all(
+      exactKeys.map((key) => qc.invalidateQueries({ queryKey: key })),
+    )
+    return
+  }
+
+  const data = event.data
+  if (event.type.startsWith('ai_review.')) {
+    const tid = getTaskIDFromUnknown(data)
+    if (tid) void qc.invalidateQueries({ queryKey: queryKeys.taskReviews(tid) })
+    return
+  }
+
+  if (event.type.startsWith('retro.')) {
+    const tid = getTaskIDFromUnknown(event.data)
+    const queries = [
+      qc.invalidateQueries({ queryKey: queryKeys.operations() }),
+      qc.invalidateQueries({ queryKey: queryKeys.status }),
+    ]
+    if (tid) {
+      queries.push(
+        qc.invalidateQueries({ queryKey: queryKeys.task(tid) }),
+        qc.invalidateQueries({ queryKey: queryKeys.taskInteractions(tid) }),
+      )
+    }
+    if (event.type === 'retro.completed') {
+      queries.push(qc.invalidateQueries({ queryKey: queryKeys.memory }))
+    }
+    void Promise.all(queries)
+    return
+  }
+
+  if (event.type.startsWith('memory.sync')) {
+    void Promise.all([
+      qc.invalidateQueries({ queryKey: queryKeys.memory }),
+      qc.invalidateQueries({ queryKey: queryKeys.operations() }),
+      qc.invalidateQueries({ queryKey: queryKeys.status }),
+    ])
+    return
+  }
+
+  if (SIGNAL_PREFIXES.some((p) => event.type.startsWith(p))) {
+    void Promise.all([
+      qc.invalidateQueries({ queryKey: queryKeys.operations() }),
+      qc.invalidateQueries({ queryKey: queryKeys.status }),
+    ])
+  }
 }

@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/jasjeetmavi/orca/internal/sprint"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -24,8 +23,6 @@ func (r *Registry) runTaskAdd(cmd *cobra.Command, args []string) error {
 	description, _ := cmd.Flags().GetString("description")
 	parentID, _ := cmd.Flags().GetString("parent")
 	dependsOn, _ := cmd.Flags().GetStringSlice("depends-on")
-	toolName, _ := cmd.Flags().GetString("tool")
-	modelName, _ := cmd.Flags().GetString("model")
 
 	for i, dep := range dependsOn {
 		resolved, err := resolveTaskID(store, dep)
@@ -35,14 +32,9 @@ func (r *Registry) runTaskAdd(cmd *cobra.Command, args []string) error {
 		dependsOn[i] = resolved
 	}
 
-	t, err := store.Create(title, description, parentID, toolName)
+	t, err := store.Create(title, description, parentID)
 	if err != nil {
 		return fmt.Errorf("create task: %w", err)
-	}
-	if modelName != "" {
-		if err := store.Update(t.ID, map[string]interface{}{"model": modelName}); err != nil {
-			return fmt.Errorf("set model: %w", err)
-		}
 	}
 
 	for _, depID := range dependsOn {
@@ -52,12 +44,6 @@ func (r *Registry) runTaskAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Created task %s: %s\n", short(t.ID), title)
-	if toolName != "" {
-		fmt.Printf("  tool: %s\n", toolName)
-	}
-	if modelName != "" {
-		fmt.Printf("  model: %s\n", modelName)
-	}
 	if len(dependsOn) > 0 {
 		shortened := make([]string, len(dependsOn))
 		for i, d := range dependsOn {
@@ -86,22 +72,12 @@ func (r *Registry) runTaskList(cmd *cobra.Command, args []string) error {
 
 	for _, t := range tasks {
 		line := fmt.Sprintf("%s %s  %s", statusIcon(t.Status), short(t.ID), t.Title)
-		var extras []string
 		if len(t.DependsOn) > 0 {
 			shortened := make([]string, len(t.DependsOn))
 			for i, d := range t.DependsOn {
 				shortened[i] = short(d)
 			}
-			extras = append(extras, "depends on: "+strings.Join(shortened, ", "))
-		}
-		if t.AssignedTool != "" {
-			extras = append(extras, "tool: "+t.AssignedTool)
-		}
-		if t.Model != "" {
-			extras = append(extras, "model: "+t.Model)
-		}
-		if len(extras) > 0 {
-			line += "      " + strings.Join(extras, "  ")
+			line += "      depends on: " + strings.Join(shortened, ", ")
 		}
 		fmt.Println(line)
 	}
@@ -109,11 +85,10 @@ func (r *Registry) runTaskList(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
-	db, cfg, _, _, err := r.loadRuntimeOrErr()
+	db, store, err := r.openStoreOrErr()
 	if err != nil {
 		return err
 	}
-	store := task.NewStore(db)
 	defer db.Close()
 
 	var id string
@@ -125,95 +100,33 @@ func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fields := make(map[string]interface{})
+
+	fields := task.UpdateFields{}
+	hasUpdates := false
 	if cmd.Flags().Changed("title") {
 		v, _ := cmd.Flags().GetString("title")
-		fields["title"] = v
+		fields.Title = task.Ptr(v)
+		hasUpdates = true
 	}
 	if cmd.Flags().Changed("description") {
 		v, _ := cmd.Flags().GetString("description")
-		fields["description"] = v
+		fields.Description = task.Ptr(v)
+		hasUpdates = true
 	}
-	if cmd.Flags().Changed("prompt") {
-		v, _ := cmd.Flags().GetString("prompt")
-		fields["prompt"] = v
+	if cmd.Flags().Changed("plan") {
+		v, _ := cmd.Flags().GetString("plan")
+		fields.Plan = task.Ptr(v)
+		hasUpdates = true
 	}
 	if cmd.Flags().Changed("status") {
 		v, _ := cmd.Flags().GetString("status")
-		fields["status"] = v
+		fields.Status = task.Ptr(v)
+		hasUpdates = true
 	}
-	if cmd.Flags().Changed("tool") {
-		v, _ := cmd.Flags().GetString("tool")
-		fields["assigned_tool"] = v
+	if !hasUpdates {
+		return fmt.Errorf("no fields provided (use --title, --description, --plan, or --status)")
 	}
-	if cmd.Flags().Changed("model") {
-		v, _ := cmd.Flags().GetString("model")
-		fields["model"] = v
-	}
-	if len(fields) == 0 {
-		t, err := store.Get(id)
-		if err != nil {
-			return fmt.Errorf("get task: %w", err)
-		}
 
-		title := t.Title
-		description := t.Description
-		toolName := t.AssignedTool
-		modelName := t.Model
-
-		toolNames := make([]string, 0, len(cfg.Tools))
-		for name := range cfg.Tools {
-			toolNames = append(toolNames, name)
-		}
-		sort.Strings(toolNames)
-
-		toolOpts := []huh.Option[string]{huh.NewOption("(none)", "")}
-		for _, name := range toolNames {
-			toolOpts = append(toolOpts, huh.NewOption(name, name))
-		}
-
-		if err := huh.NewForm(huh.NewGroup(
-			huh.NewInput().Title("Title").Value(&title),
-			huh.NewText().Title("Description").Value(&description),
-			huh.NewSelect[string]().Title("Tool").Options(toolOpts...).Value(&toolName),
-		)).Run(); err != nil {
-			return err
-		}
-
-		if toolName != "" {
-			if tc, ok := cfg.Tools[toolName]; ok && len(tc.Models) > 0 {
-				modelOpts := []huh.Option[string]{huh.NewOption("(tool default)", "")}
-				for _, m := range tc.Models {
-					modelOpts = append(modelOpts, huh.NewOption(m, m))
-				}
-				if err := huh.NewSelect[string]().
-					Title("Model").
-					Options(modelOpts...).
-					Value(&modelName).
-					Run(); err != nil {
-					return err
-				}
-			}
-		}
-
-		if title != t.Title {
-			fields["title"] = title
-		}
-		if description != t.Description {
-			fields["description"] = description
-		}
-		if toolName != t.AssignedTool {
-			fields["assigned_tool"] = toolName
-		}
-		if modelName != t.Model {
-			fields["model"] = modelName
-		}
-
-		if len(fields) == 0 {
-			fmt.Println("No changes.")
-			return nil
-		}
-	}
 	if err := store.Update(id, fields); err != nil {
 		return fmt.Errorf("update task: %w", err)
 	}
@@ -222,7 +135,7 @@ func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 }
 
 func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
-	db, cfg, _, executor, err := r.loadRuntimeOrErr()
+	db, cfg, executor, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -259,25 +172,15 @@ func (r *Registry) runTaskDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	sprintID := t.SprintID
 	if err := store.Delete(id); err != nil {
 		return fmt.Errorf("delete task: %w", err)
 	}
-	// Best-effort worktree cleanup.
 	if _, statErr := os.Stat(filepath.Join(cfg.Project.WorktreeDir, "task-"+id)); statErr == nil {
 		if rmErr := executor.Worktrees().Remove(id); rmErr != nil {
 			warnf("cleanup worktree for %s: %v", short(id), rmErr)
 		}
 	}
 	fmt.Printf("Deleted task %s: %s\n", short(t.ID), t.Title)
-	// End sprint if all its tasks have been deleted.
-	if sprintID != "" {
-		if ended, err := sprint.TryComplete(db, sprintID); err != nil {
-			warnf("check sprint after delete: %v", err)
-		} else if ended {
-			fmt.Printf("Sprint %s completed (no tasks remaining)\n", short(sprintID))
-		}
-	}
 	return nil
 }
 
@@ -306,16 +209,6 @@ func (r *Registry) runTaskShow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Title: %s\n", t.Title)
 	fmt.Printf("Description: %s\n", t.Description)
 	fmt.Printf("Status: %s\n", t.Status)
-	if t.AssignedTool != "" {
-		fmt.Printf("Tool: %s\n", t.AssignedTool)
-	} else {
-		fmt.Println("Tool: (none)")
-	}
-	if t.Model != "" {
-		fmt.Printf("Model: %s\n", t.Model)
-	} else {
-		fmt.Println("Model: (none)")
-	}
 
 	if len(t.DependsOn) == 0 {
 		fmt.Println("Dependencies: (none)")
@@ -336,54 +229,115 @@ func (r *Registry) runTaskShow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runTaskReopen(cmd *cobra.Command, args []string) error {
+func (r *Registry) runTaskStop(cmd *cobra.Command, args []string) error {
+	db, _, exec, err := r.loadRuntimeOrErr()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	store := task.NewStore(db)
+
+	var id string
+	if len(args) > 0 {
+		id, err = resolveTaskID(store, args[0])
+	} else {
+		id, err = pickTask(store, "Running task", statusFilter("running"))
+	}
+	if err != nil {
+		return err
+	}
+
+	tk, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task %s: %w", short(id), err)
+	}
+	if tk.Status != "running" {
+		return fmt.Errorf("task %s is %q, only running tasks can be stopped", short(id), tk.Status)
+	}
+
+	if err := exec.StopTask(id); err != nil {
+		return fmt.Errorf("stop task %s: %w", short(id), err)
+	}
+	if err := store.Update(id, task.UpdateFields{Status: task.Ptr("stopped")}); err != nil {
+		return fmt.Errorf("set task %s stopped: %w", short(id), err)
+	}
+	fmt.Printf("Stopped task %s\n", short(id))
+	return nil
+}
+
+func (r *Registry) runTaskResume(cmd *cobra.Command, args []string) error {
+	db, _, exec, err := r.loadRuntimeOrErr()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	store := task.NewStore(db)
+
+	var id string
+	if len(args) > 0 {
+		id, err = resolveTaskID(store, args[0])
+	} else {
+		id, err = pickTask(store, "Stopped task", statusFilter("stopped"))
+	}
+	if err != nil {
+		return err
+	}
+
+	tk, err := store.Get(id)
+	if err != nil {
+		return fmt.Errorf("get task %s: %w", short(id), err)
+	}
+	if tk.Status != "stopped" {
+		return fmt.Errorf("task %s is %q, only stopped tasks can be resumed", short(id), tk.Status)
+	}
+	if tk.SessionID == "" {
+		return fmt.Errorf("task %s cannot resume without session_id", short(id))
+	}
+
+	done := make(chan struct{})
+	go renderSpinner("Resuming task "+short(id), done)
+	result, err := exec.ResumeTask(id)
+	close(done)
+	if err != nil {
+		return fmt.Errorf("resume task %s: %w", short(id), err)
+	}
+	fmt.Printf("%s %s  %s  (%s)\n", statusIcon(result.Status), short(result.TaskID), tk.Title, result.Duration.Round(time.Second))
+	fmt.Printf("Resumed task %s finished with status: %s\n", short(id), result.Status)
+	return nil
+}
+
+func (r *Registry) runTaskAddDep(cmd *cobra.Command, args []string) error {
 	db, store, err := r.openStoreOrErr()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	taskIDs := args
-	if len(taskIDs) == 0 {
-		taskIDs, err = pickTasks(store, "Failed tasks", statusFilter("failed"))
-		if err != nil {
-			return err
-		}
+	taskID, err := resolveTaskID(store, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve task: %w", err)
+	}
+	dependsOnID, err := resolveTaskID(store, args[1])
+	if err != nil {
+		return fmt.Errorf("resolve dependency: %w", err)
 	}
 
-	var reopened int
-	var lastReopenedID string
-	for _, arg := range taskIDs {
-		id, err := resolveTaskID(store, arg)
-		if err != nil {
-			errorf("%v", err)
-			continue
-		}
-
-		t, err := store.Get(id)
-		if err != nil {
-			errorf("get task %s: %v", short(id), err)
-			continue
-		}
-		if t.Status != "failed" {
-			errorf("task %s is %q, not %q", short(id), t.Status, "failed")
-			continue
-		}
-
-		if err := store.Update(id, map[string]interface{}{"status": "pending", "sprint_id": nil}); err != nil {
-			errorf("reopen task %s: %v", short(id), err)
-			continue
-		}
-		reopened++
-		lastReopenedID = id
+	taskToUpdate, err := store.Get(taskID)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+	dependencyTask, err := store.Get(dependsOnID)
+	if err != nil {
+		return fmt.Errorf("get dependency: %w", err)
 	}
 
-	if reopened == 1 {
-		fmt.Printf("Reopened task %s -> pending\n", short(lastReopenedID))
-		return nil
+	if err := store.AddDependency(taskID, dependsOnID); err != nil {
+		return fmt.Errorf("add dependency: %w", err)
 	}
-	if reopened > 1 {
-		fmt.Printf("Reopened %d tasks -> pending\n", reopened)
-	}
+
+	fmt.Printf("Added dependency: %s %s depends on %s %s\n",
+		short(taskToUpdate.ID), taskToUpdate.Title, short(dependencyTask.ID), dependencyTask.Title)
 	return nil
 }
