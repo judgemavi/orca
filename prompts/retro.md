@@ -18,6 +18,10 @@ Extract durable, reusable engineering knowledge from a completed task.
 
 %s
 
+## Plan Review Feedback
+
+%s
+
 ## Knowledge Used During Planning (Do Not Rephrase)
 
 %s

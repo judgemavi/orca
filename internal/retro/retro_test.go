@@ -23,6 +23,7 @@ func TestBuildRetroPrompt(t *testing.T) {
 		"plan diff content",
 		"run diff content",
 		"review feedback content",
+		"plan review feedback content",
 		[]*knowledge.Entry{
 			{
 				ID:             "used-1",
@@ -51,6 +52,7 @@ func TestBuildRetroPrompt(t *testing.T) {
 		"plan diff content",
 		"run diff content",
 		"review feedback content",
+		"plan review feedback content",
 		"- k-1",
 		"- hash-1",
 		"Existing used knowledge entry",
@@ -85,9 +87,10 @@ func TestRetroProvenanceHash(t *testing.T) {
 	planText := "plan"
 	runDiffs := "diff"
 	reviewFeedback := "feedback"
+	planReviewFeedback := "plan feedback"
 
-	got := retroProvenanceHash(planText, runDiffs, reviewFeedback)
-	sum := sha256.Sum256([]byte(planText + "\n---\n" + runDiffs + "\n---\n" + reviewFeedback))
+	got := retroProvenanceHash(planText, runDiffs, reviewFeedback, planReviewFeedback)
+	sum := sha256.Sum256([]byte(planText + "\n---\n" + runDiffs + "\n---\n" + reviewFeedback + "\n---\n" + planReviewFeedback))
 	want := hex.EncodeToString(sum[:])
 	if got != want {
 		t.Fatalf("hash = %q, want %q", got, want)
@@ -133,6 +136,9 @@ func TestRetroGeneratorRunCreatesKnowledgeAndSupersedes(t *testing.T) {
 		`{"approved":false,"feedback":"add parser edge-case tests"}`,
 		"",
 	)
+	if _, err := taskStore.AddReview(tk.ID, "Prefer parser boundary tests in plan", ""); err != nil {
+		t.Fatalf("add plan review: %v", err)
+	}
 
 	output := fmt.Sprintf(
 		`[{"content":"Prefer table-driven tests for parser boundaries","category":"pattern","tags":["go","testing"],"confidence":0.9,"supersedes":"%s"}]`,
@@ -183,6 +189,7 @@ func TestRetroGeneratorRunCreatesKnowledgeAndSupersedes(t *testing.T) {
 		planDiff,
 		collectRunDiffs(taskInteractions),
 		collectReviewFeedback(taskInteractions),
+		collectPlanReviewFeedback(mustListReviews(t, taskStore, tk.ID)),
 	)
 	if newEntry.ProvenanceHash != expectedHash {
 		t.Fatalf("provenance_hash = %q, want %q", newEntry.ProvenanceHash, expectedHash)
@@ -273,6 +280,15 @@ func createCompletedInteraction(
 		t.Fatalf("close interaction writer (%s): %v", phase, err)
 	}
 	return w.ID()
+}
+
+func mustListReviews(t *testing.T, store *task.Store, taskID string) []task.TaskReview {
+	t.Helper()
+	reviews, err := store.ListReviews(taskID)
+	if err != nil {
+		t.Fatalf("list reviews: %v", err)
+	}
+	return reviews
 }
 
 type retroTestDriver struct {

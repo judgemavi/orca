@@ -111,6 +111,10 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load task: %w", err)
 	}
+	planReviews, err := g.taskStore.ListReviews(taskID)
+	if err != nil {
+		return nil, fmt.Errorf("list task reviews: %w", err)
+	}
 	taskInteractions, err := g.interactions.List(taskID)
 	if err != nil {
 		return nil, fmt.Errorf("list task interactions: %w", err)
@@ -126,12 +130,20 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 	}
 	runDiffs := collectRunDiffs(taskInteractions)
 	reviewFeedback := collectReviewFeedback(taskInteractions)
+	planReviewFeedback := collectPlanReviewFeedback(planReviews)
 	usedEntries, err := loadKnowledgeEntries(g.knowledgeStore, usedKnowledgeIDs)
 	if err != nil {
 		return nil, fmt.Errorf("load used knowledge entries: %w", err)
 	}
 
-	searchQuery := buildSearchQuery(tk.Title, tk.Description, planText, runDiffs, reviewFeedback)
+	searchQuery := buildSearchQuery(
+		tk.Title,
+		tk.Description,
+		planText,
+		runDiffs,
+		reviewFeedback,
+		planReviewFeedback,
+	)
 	relatedEntries := []*knowledge.Entry{}
 	if searchQuery != "" {
 		relatedEntries, err = g.knowledgeStore.SearchExcluding(searchQuery, 10, usedProvenanceHashes)
@@ -146,12 +158,13 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 		planText,
 		runDiffs,
 		reviewFeedback,
+		planReviewFeedback,
 		usedEntries,
 		usedKnowledgeIDs,
 		usedProvenanceHashes,
 		relatedEntries,
 	)
-	provenanceHash := retroProvenanceHash(planText, runDiffs, reviewFeedback)
+	provenanceHash := retroProvenanceHash(planText, runDiffs, reviewFeedback, planReviewFeedback)
 
 	adapter := worker.NewAdapter(g.driver, g.model, g.timeout)
 	var (
@@ -300,7 +313,7 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 }
 
 func buildRetroPrompt(
-	title, description, planText, runDiffs, reviewFeedback string,
+	title, description, planText, runDiffs, reviewFeedback, planReviewFeedback string,
 	usedEntries []*knowledge.Entry,
 	usedKnowledgeIDs, usedProvenanceHashes []string,
 	relatedEntries []*knowledge.Entry,
@@ -312,6 +325,7 @@ func buildRetroPrompt(
 		emptyFallback(planText),
 		emptyFallback(runDiffs),
 		emptyFallback(reviewFeedback),
+		emptyFallback(planReviewFeedback),
 		formatKnowledgeEntries(usedEntries),
 		formatList(usedKnowledgeIDs),
 		formatList(usedProvenanceHashes),
@@ -395,6 +409,18 @@ func collectReviewFeedback(interactions []interaction.Interaction) string {
 	return strings.Join(sections, "\n\n---\n\n")
 }
 
+func collectPlanReviewFeedback(reviews []task.TaskReview) string {
+	sections := make([]string, 0, len(reviews))
+	for _, review := range reviews {
+		feedback := strings.TrimSpace(review.Feedback)
+		if feedback == "" {
+			continue
+		}
+		sections = append(sections, feedback)
+	}
+	return strings.Join(sections, "\n\n---\n\n")
+}
+
 func extractPlanUsage(raw string) ([]string, []string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -407,8 +433,13 @@ func extractPlanUsage(raw string) ([]string, []string) {
 	return normalizeList(usage.UsedKnowledgeIDs), normalizeList(usage.UsedProvenanceHashes)
 }
 
-func retroProvenanceHash(planText, runDiffs, reviewFeedback string) string {
-	sum := sha256.Sum256([]byte(planText + "\n---\n" + runDiffs + "\n---\n" + reviewFeedback))
+func retroProvenanceHash(planText, runDiffs, reviewFeedback, planReviewFeedback string) string {
+	sum := sha256.Sum256([]byte(
+		planText +
+			"\n---\n" + runDiffs +
+			"\n---\n" + reviewFeedback +
+			"\n---\n" + planReviewFeedback,
+	))
 	return hex.EncodeToString(sum[:])
 }
 
