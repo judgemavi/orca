@@ -15,3 +15,16 @@ Skip:
 - Boilerplate explanations of standard tooling
 
 Keep it under 300 lines. Prioritize insight over completeness.
+
+## Memory Extraction
+
+After the context document, add a section exactly titled `## Memory Extraction` and include a JSON array only:
+
+```json
+[{"content":"...","category":"architecture|dependency|pattern|convention","tags":["..."],"confidence":0.95,"file_paths":["path/to/file"]}]
+```
+
+Rules:
+- Use repo-root-relative `file_paths`.
+- Exclude paths that are not tracked by git.
+- Return `[]` when there is no durable memory to add.

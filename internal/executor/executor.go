@@ -10,6 +10,7 @@ package executor
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/monitor"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/quality"
@@ -89,13 +91,14 @@ type ExecutorOptions struct {
 // Executor orchestrates task execution: worktree creation, parallel worker
 // spawning, result collection, and artifact storage.
 type Executor struct {
-	parentCtx  context.Context
-	db         *state.DB
-	taskStore  *task.Store
-	worktrees  *worktree.Manager
-	config     *config.Config
-	repoDir    string
-	sessionMgr *pty.SessionManager
+	parentCtx   context.Context
+	db          *state.DB
+	taskStore   *task.Store
+	memoryStore *memory.Store
+	worktrees   *worktree.Manager
+	config      *config.Config
+	repoDir     string
+	sessionMgr  *pty.SessionManager
 
 	// Interaction tracking (optional — nil means no tracking).
 	interactions *interaction.Store
@@ -202,6 +205,7 @@ func (e *Executor) finalizeRun(results []TaskResult) error {
 		if err := e.taskStore.Update(r.TaskID, map[string]interface{}{"status": r.Status}); err != nil {
 			slog.Warn("complete task failed", "task_id", r.TaskID, "run_id", e.runID, "err", err)
 		}
+		e.reinforceMemoryConfidence(r.TaskID, r.Status)
 		if r.Status == "failed" {
 			failedCount++
 		} else {
@@ -262,10 +266,15 @@ func NewExecutor(parentCtx context.Context, db *state.DB, taskStore *task.Store,
 	if len(sessionMgr) > 0 {
 		mgr = sessionMgr[0]
 	}
+	var memoryStore *memory.Store
+	if db != nil {
+		memoryStore = memory.NewStore(db)
+	}
 	return &Executor{
 		parentCtx:     parentCtx,
 		db:            db,
 		taskStore:     taskStore,
+		memoryStore:   memoryStore,
 		worktrees:     wm,
 		config:        cfg,
 		repoDir:       repoDir,
@@ -335,6 +344,11 @@ func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error
 	if err := e.worktrees.EnsureIntegrationBranch(e.config.Project.IntegrationBranch); err != nil {
 		return nil, fmt.Errorf("ensure integration branch: %w", err)
 	}
+	if e.memoryStore != nil {
+		if _, err := e.memoryStore.DecayConfidence(7*24*time.Hour, 0.95); err != nil {
+			slog.Warn("batch memory decay failed", "run_id", e.runID, "err", err)
+		}
+	}
 
 	for _, id := range taskIDs {
 		t, err := e.taskStore.Get(id)
@@ -387,6 +401,93 @@ func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error
 		return results, err
 	}
 	return results, nil
+}
+
+func (e *Executor) reinforceMemoryConfidence(taskID, taskStatus string) {
+	if e.memoryStore == nil || e.db == nil {
+		return
+	}
+	if taskStatus != "review" && taskStatus != "failed" {
+		return
+	}
+	ids, err := e.loadUsedMemoryIDs(taskID)
+	if err != nil {
+		slog.Warn("load used memory ids failed", "task_id", taskID, "err", err)
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	for _, id := range ids {
+		if taskStatus == "review" {
+			if err := e.memoryStore.BoostConfidence(id, 1.1); err != nil {
+				slog.Warn("boost memory confidence failed", "task_id", taskID, "memory_id", id, "err", err)
+			}
+			continue
+		}
+		if err := e.memoryStore.DecayEntry(id, 0.9); err != nil {
+			slog.Warn("decay memory confidence failed", "task_id", taskID, "memory_id", id, "err", err)
+		}
+	}
+}
+
+func (e *Executor) loadUsedMemoryIDs(taskID string) ([]string, error) {
+	if e.db == nil {
+		return nil, nil
+	}
+	var qualityJSON sql.NullString
+	err := e.db.QueryRow(
+		`SELECT quality_json
+		 FROM task_interactions
+		 WHERE task_id = ?
+		   AND phase = ?
+		   AND status = 'completed'
+		 ORDER BY started_at DESC
+		 LIMIT 1`,
+		taskID,
+		interaction.PhasePlan,
+	).Scan(&qualityJSON)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !qualityJSON.Valid || strings.TrimSpace(qualityJSON.String) == "" {
+		return nil, nil
+	}
+
+	var payload struct {
+		UsedMemoryIDs []string `json:"used_memory_ids"`
+	}
+	if err := json.Unmarshal([]byte(qualityJSON.String), &payload); err != nil {
+		return nil, err
+	}
+	return normalizeMemoryIDs(payload.UsedMemoryIDs), nil
+}
+
+func normalizeMemoryIDs(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 type resumeRunState struct {

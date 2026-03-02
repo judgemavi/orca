@@ -26,6 +26,7 @@ type Generator struct {
 	repoDir      string
 	interactions *interaction.Store
 	memory       *memory.Store
+	syncer       *memory.Syncer
 }
 
 // New creates a plan Generator.
@@ -43,6 +44,11 @@ func (g *Generator) WithMemory(store *memory.Store) *Generator {
 	return g
 }
 
+func (g *Generator) WithSyncer(syncer *memory.Syncer) *Generator {
+	g.syncer = syncer
+	return g
+}
+
 func (g *Generator) Generate(taskID, title, description string) (string, error) {
 	return g.generate(taskID, title, description, "")
 }
@@ -52,6 +58,12 @@ func (g *Generator) GenerateWithModel(taskID, title, description, model string) 
 }
 
 func (g *Generator) generate(taskID, title, description, model string) (string, error) {
+	if g.syncer != nil {
+		if _, err := g.syncer.Sync(); err != nil {
+			return "", fmt.Errorf("sync memory: %w", err)
+		}
+	}
+
 	memorySection := ""
 	usedMemoryIDs := []string{}
 	usedProvenanceHashes := []string{}

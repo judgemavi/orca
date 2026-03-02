@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -67,7 +70,7 @@ func TestBuildRetroPrompt(t *testing.T) {
 }
 
 func TestParseRetroEntries(t *testing.T) {
-	raw := "```json\n[{\"content\":\" Keep edge-case tests \",\"category\":\"PATTERN\",\"tags\":[\"go\",\"testing\"],\"confidence\":0.82}]\n```"
+	raw := "```json\n[{\"content\":\" Keep edge-case tests \",\"category\":\"PATTERN\",\"tags\":[\"go\",\"testing\"],\"confidence\":0.82,\"file_paths\":[\" internal/retro/retro.go \",\"internal/retro/retro.go\"]}]\n```"
 	entries, err := parseRetroEntries(raw)
 	if err != nil {
 		t.Fatalf("parseRetroEntries: %v", err)
@@ -80,6 +83,9 @@ func TestParseRetroEntries(t *testing.T) {
 	}
 	if entries[0].Category != "pattern" {
 		t.Fatalf("category = %q, want %q", entries[0].Category, "pattern")
+	}
+	if len(entries[0].FilePaths) != 1 || entries[0].FilePaths[0] != "internal/retro/retro.go" {
+		t.Fatalf("file_paths = %v", entries[0].FilePaths)
 	}
 }
 
@@ -102,6 +108,8 @@ func TestRetroGeneratorRunCreatesMemoryAndSupersedes(t *testing.T) {
 	taskStore := task.NewStore(db)
 	interactionStore := interaction.NewStore(db, t.TempDir())
 	memoryStore := memory.NewStore(db)
+
+	repoDir := initRetroTestRepo(t)
 
 	tk, err := taskStore.Create("Retro Task", "Generate memory from a completed task", "")
 	if err != nil {
@@ -141,7 +149,7 @@ func TestRetroGeneratorRunCreatesMemoryAndSupersedes(t *testing.T) {
 	}
 
 	output := fmt.Sprintf(
-		`[{"content":"Prefer table-driven tests for parser boundaries","category":"pattern","tags":["go","testing"],"confidence":0.9,"supersedes":"%s"}]`,
+		`[{"content":"Prefer table-driven tests for parser boundaries","category":"pattern","tags":["go","testing"],"confidence":0.9,"supersedes":"%s","file_paths":["parser.go","missing.go"]}]`,
 		oldEntry.ID,
 	)
 	generator := New(
@@ -149,7 +157,7 @@ func TestRetroGeneratorRunCreatesMemoryAndSupersedes(t *testing.T) {
 		&retroTestDriver{output: output},
 		"retro-test-model",
 		time.Minute,
-		t.TempDir(),
+		repoDir,
 		memoryStore,
 		taskStore,
 		interactionStore,
@@ -179,6 +187,12 @@ func TestRetroGeneratorRunCreatesMemoryAndSupersedes(t *testing.T) {
 	newEntry := currentEntries[0]
 	if newEntry.ID == oldEntry.ID {
 		t.Fatalf("new entry id = old entry id %q", newEntry.ID)
+	}
+	if newEntry.SourceType != "retro" {
+		t.Fatalf("source_type = %q, want %q", newEntry.SourceType, "retro")
+	}
+	if len(newEntry.FilePaths) != 1 || newEntry.FilePaths[0] != "parser.go" {
+		t.Fatalf("file_paths = %v, want [parser.go]", newEntry.FilePaths)
 	}
 
 	taskInteractions, err := interactionStore.List(tk.ID)
@@ -289,6 +303,39 @@ func mustListReviews(t *testing.T, store *task.Store, taskID string) []task.Task
 		t.Fatalf("list reviews: %v", err)
 	}
 	return reviews
+}
+
+func initRetroTestRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	runGit(t, repoDir, "config", "user.name", "Retro Test")
+	writeRepoFile(t, repoDir, "parser.go", "package parser\n")
+	runGit(t, repoDir, "add", "parser.go")
+	runGit(t, repoDir, "commit", "-m", "init")
+	return repoDir
+}
+
+func writeRepoFile(t *testing.T, repoDir, relPath, content string) {
+	t.Helper()
+	fullPath := filepath.Join(repoDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", relPath, err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", relPath, err)
+	}
+}
+
+func runGit(t *testing.T, repoDir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, string(out))
+	}
 }
 
 type retroTestDriver struct {

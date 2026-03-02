@@ -39,7 +39,7 @@ Used provenance hashes:
 ## Instructions
 
 Produce a JSON array of memory entries. Each item must follow:
-{"content": string, "category": "pattern"|"pitfall"|"preference"|"convention", "tags": string[], "confidence": float, "supersedes"?: string}
+{"content": string, "category": "pattern"|"pitfall"|"preference"|"convention", "tags": string[], "confidence": float, "supersedes"?: string, "file_paths"?: string[]}
 
 Example response:
 [{"content":"Validate config paths before writing files","category":"pitfall","tags":["config","validation"],"confidence":0.85}]
@@ -49,6 +49,7 @@ Rules:
 - `confidence` must be between 0.0 and 1.0.
 - Keep each `content` concrete and reusable across similar tasks.
 - `tags` should be short, lowercase, and specific.
+- Include relevant `file_paths` that this memory applies to. Use repository-root-relative paths only.
 - Return `[]` when there is no useful memory to add.
 
 Do not rephrase existing memory:

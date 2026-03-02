@@ -143,3 +143,15 @@ export function useDeleteMemoryMutation() {
     },
   })
 }
+
+export function useSyncMemoryMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.syncMemory(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.memory })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.operations() })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.status })
+    },
+  })
+}

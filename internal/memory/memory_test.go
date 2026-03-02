@@ -16,6 +16,8 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 		Content:        "Prefer table-driven tests for parser cases",
 		Category:       "pattern",
 		Tags:           []string{"go", "testing"},
+		SourceType:     "task",
+		FilePaths:      []string{"internal/memory/memory.go", "internal/memory/memory_test.go"},
 		ProvenanceHash: "hash-crud-1",
 	}
 	if err := store.Create(entry); err != nil {
@@ -38,13 +40,22 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	if len(got.Tags) != 2 || got.Tags[0] != "go" || got.Tags[1] != "testing" {
 		t.Fatalf("tags = %v, want [go testing]", got.Tags)
 	}
+	if got.SourceType != "task" {
+		t.Fatalf("source_type = %q, want task", got.SourceType)
+	}
+	if len(got.FilePaths) != 2 {
+		t.Fatalf("file_paths len = %d, want 2", len(got.FilePaths))
+	}
 
-	var tagsRaw string
-	if err := db.QueryRow(`SELECT tags FROM memory_entries WHERE id = ?`, entry.ID).Scan(&tagsRaw); err != nil {
-		t.Fatalf("read tags json: %v", err)
+	var tagsRaw, sourceTypeRaw string
+	if err := db.QueryRow(`SELECT tags, source_type FROM memory_entries WHERE id = ?`, entry.ID).Scan(&tagsRaw, &sourceTypeRaw); err != nil {
+		t.Fatalf("read tags/source_type: %v", err)
 	}
 	if tagsRaw != `["go","testing"]` {
 		t.Fatalf("stored tags = %q, want JSON array", tagsRaw)
+	}
+	if sourceTypeRaw != "task" {
+		t.Fatalf("stored source_type = %q, want task", sourceTypeRaw)
 	}
 
 	var ftsRows int
@@ -56,9 +67,10 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	}
 
 	if err := store.Update(entry.ID, map[string]interface{}{
-		"content":    "Updated: prefer focused, narrow unit tests",
-		"tags":       []string{"go", "unit"},
-		"confidence": 0.75,
+		"content":     "Updated: prefer focused, narrow unit tests",
+		"tags":        []string{"go", "unit"},
+		"confidence":  0.75,
+		"source_type": "commit",
 	}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -89,6 +101,9 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	if len(updated.Tags) != 2 || updated.Tags[1] != "unit" {
 		t.Fatalf("tags after update = %v", updated.Tags)
 	}
+	if updated.SourceType != "commit" {
+		t.Fatalf("source_type after update = %q, want commit", updated.SourceType)
+	}
 
 	if err := store.Delete(entry.ID); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -108,6 +123,12 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	}
 	if ftsRows != 0 {
 		t.Fatalf("fts rows after delete = %d, want 0", ftsRows)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM memory_file_associations WHERE memory_id = ?`, entry.ID).Scan(&ftsRows); err != nil {
+		t.Fatalf("count file associations after delete: %v", err)
+	}
+	if ftsRows != 0 {
+		t.Fatalf("file associations after delete = %d, want 0", ftsRows)
 	}
 }
 
@@ -308,6 +329,127 @@ func TestDecayConfidence(t *testing.T) {
 	}
 }
 
+func TestAssociateFilesGetFilePathsAndFindByFilePaths(t *testing.T) {
+	store, _ := setupStore(t)
+
+	first := mustCreateEntry(t, store, "First entry", "pattern", []string{"a"}, 0.9, "hash-files-1")
+	second := mustCreateEntry(t, store, "Second entry", "pitfall", []string{"b"}, 0.9, "hash-files-2")
+
+	if err := store.AssociateFiles(first.ID, []string{"internal/api/server.go", "internal/api/server.go", "internal/memory/memory.go"}); err != nil {
+		t.Fatalf("associate first files: %v", err)
+	}
+	if err := store.AssociateFiles(second.ID, []string{"internal/api/server.go"}); err != nil {
+		t.Fatalf("associate second files: %v", err)
+	}
+
+	paths, err := store.GetFilePaths(first.ID)
+	if err != nil {
+		t.Fatalf("get file paths: %v", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("file paths len = %d, want 2", len(paths))
+	}
+	if paths[0] != "internal/api/server.go" || paths[1] != "internal/memory/memory.go" {
+		t.Fatalf("file paths = %v", paths)
+	}
+
+	found, err := store.FindByFilePaths([]string{"internal/api/server.go"})
+	if err != nil {
+		t.Fatalf("find by file path: %v", err)
+	}
+	if len(found) != 2 {
+		t.Fatalf("found len = %d, want 2", len(found))
+	}
+
+	if err := store.Supersede(first.ID, second.ID); err != nil {
+		t.Fatalf("supersede first: %v", err)
+	}
+	found, err = store.FindByFilePaths([]string{"internal/api/server.go"})
+	if err != nil {
+		t.Fatalf("find by file path after supersede: %v", err)
+	}
+	if len(found) != 1 || found[0].ID != second.ID {
+		t.Fatalf("found after supersede = %v, want only %s", entryIDs(found), second.ID)
+	}
+}
+
+func TestListFiltersBySourceTypeAndFilePath(t *testing.T) {
+	store, _ := setupStore(t)
+
+	retro := mustCreateEntryWithOptions(
+		t, store, "Retro entry", "pattern", []string{"retro"}, 0.9, "hash-list-source-1", "retro", []string{"internal/state/state.go"},
+	)
+	task := mustCreateEntryWithOptions(
+		t, store, "Task entry", "architecture", []string{"task"}, 0.9, "hash-list-source-2", "task", []string{"internal/state/state.go"},
+	)
+	_ = mustCreateEntryWithOptions(
+		t, store, "Commit entry", "dependency", []string{"commit"}, 0.9, "hash-list-source-3", "commit", []string{"README.md"},
+	)
+
+	bySourceType, err := store.List(ListOpts{SourceType: "task"})
+	if err != nil {
+		t.Fatalf("list by source type: %v", err)
+	}
+	if len(bySourceType) != 1 || bySourceType[0].ID != task.ID {
+		t.Fatalf("source type filter got %v, want only %s", entryIDs(bySourceType), task.ID)
+	}
+
+	byFilePath, err := store.List(ListOpts{FilePath: "internal/state/state.go"})
+	if err != nil {
+		t.Fatalf("list by file path: %v", err)
+	}
+	if len(byFilePath) != 2 {
+		t.Fatalf("file path filter count = %d, want 2", len(byFilePath))
+	}
+
+	combined, err := store.List(ListOpts{SourceType: "retro", FilePath: "internal/state/state.go"})
+	if err != nil {
+		t.Fatalf("list by combined source/file: %v", err)
+	}
+	if len(combined) != 1 || combined[0].ID != retro.ID {
+		t.Fatalf("combined filter got %v, want only %s", entryIDs(combined), retro.ID)
+	}
+}
+
+func TestBoostConfidenceAndDecayEntry(t *testing.T) {
+	store, _ := setupStore(t)
+
+	entry := mustCreateEntry(t, store, "Confidence target", "pattern", []string{"confidence"}, 0.95, "hash-conf-1")
+	if err := store.BoostConfidence(entry.ID, 1.1); err != nil {
+		t.Fatalf("boost confidence: %v", err)
+	}
+	got, err := store.Get(entry.ID)
+	if err != nil {
+		t.Fatalf("get boosted entry: %v", err)
+	}
+	if got.Confidence != 1.0 {
+		t.Fatalf("boosted confidence = %v, want 1.0 cap", got.Confidence)
+	}
+
+	if err := store.DecayEntry(entry.ID, 0.5); err != nil {
+		t.Fatalf("decay entry: %v", err)
+	}
+	got, err = store.Get(entry.ID)
+	if err != nil {
+		t.Fatalf("get decayed entry: %v", err)
+	}
+	if got.Confidence != 0.5 {
+		t.Fatalf("decayed confidence = %v, want 0.5", got.Confidence)
+	}
+
+	low := mustCreateEntry(t, store, "Low floor", "pattern", []string{"confidence"}, 0.1, "hash-conf-2")
+	if err := store.DecayEntry(low.ID, 0.2); err != nil {
+		t.Fatalf("decay low entry: %v", err)
+	}
+	got, err = store.Get(low.ID)
+	if err != nil {
+		t.Fatalf("get low entry: %v", err)
+	}
+	if got.Confidence != 0.1 {
+		t.Fatalf("low entry confidence = %v, want floor 0.1", got.Confidence)
+	}
+}
+
 func TestProvenanceHashLookupIncludesSupersededEntries(t *testing.T) {
 	store, _ := setupStore(t)
 
@@ -358,11 +500,27 @@ func mustCreateEntry(
 	hash string,
 ) *Entry {
 	t.Helper()
+	return mustCreateEntryWithOptions(t, store, content, category, tags, confidence, hash, "", nil)
+}
+
+func mustCreateEntryWithOptions(
+	t *testing.T,
+	store *Store,
+	content, category string,
+	tags []string,
+	confidence float64,
+	hash string,
+	sourceType string,
+	filePaths []string,
+) *Entry {
+	t.Helper()
 	entry := &Entry{
 		Content:        content,
 		Category:       category,
 		Tags:           tags,
 		Confidence:     confidence,
+		SourceType:     sourceType,
+		FilePaths:      filePaths,
 		ProvenanceHash: hash,
 	}
 	if err := store.Create(entry); err != nil {

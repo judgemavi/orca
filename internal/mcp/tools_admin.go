@@ -16,6 +16,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/logging"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/model"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
@@ -27,7 +28,13 @@ func (s *Server) HandleExploreTool(_ json.RawMessage) (interface{}, error) {
 	}
 	model := s.config.ResolveModelForPhase("explore", "", d)
 
-	explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions"))
+	memStore, err := s.getMemoryStore()
+	if err != nil {
+		return nil, err
+	}
+	explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions")).
+		WithMemory(memStore).
+		WithSyncer(memory.NewSyncer(memStore, s.db.DB, s.repoDir))
 	outPath, err := explorer.Run()
 	if err != nil {
 		return nil, err

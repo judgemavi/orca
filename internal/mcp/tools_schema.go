@@ -600,17 +600,25 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "memory_list",
-			Description: "List memory entries. Optionally filter by category or tag.",
+			Description: "List memory entries. Optionally filter by category, tag, source type, or file path.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"category": map[string]interface{}{
 						"type":        "string",
-						"description": "Optional category filter: pattern, pitfall, preference, convention.",
+						"description": "Optional category filter: pattern, pitfall, preference, convention, architecture, dependency.",
 					},
 					"tag": map[string]interface{}{
 						"type":        "string",
 						"description": "Optional exact tag filter.",
+					},
+					"source_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional source type filter: retro, task, commit.",
+					},
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional file path filter for associated files.",
 					},
 				},
 			},
@@ -631,7 +639,7 @@ func (s *Server) toolDefinitions() []toolDef {
 		},
 		{
 			Name:        "memory_search",
-			Description: "Search memory entries using FTS.",
+			Description: "Search memory entries using FTS, optionally filtered by source type or file path.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -642,6 +650,14 @@ func (s *Server) toolDefinitions() []toolDef {
 					"limit": map[string]interface{}{
 						"type":        "integer",
 						"description": "Maximum number of results (default: 10).",
+					},
+					"source_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional source type filter: retro, task, commit.",
+					},
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional file path filter for associated files.",
 					},
 				},
 				"required": []string{"query"},
@@ -667,7 +683,7 @@ func (s *Server) toolDefinitions() []toolDef {
 					},
 					"category": map[string]interface{}{
 						"type":        "string",
-						"description": "Updated category: pattern, pitfall, preference, convention.",
+						"description": "Updated category: pattern, pitfall, preference, convention, architecture, dependency.",
 					},
 				},
 				"required": []string{"id"},
@@ -685,6 +701,14 @@ func (s *Server) toolDefinitions() []toolDef {
 					},
 				},
 				"required": []string{"id"},
+			},
+		},
+		{
+			Name:        "memory_sync",
+			Description: "Sync memory entries with git changes, flagging stale entries.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
 			},
 		},
 	}

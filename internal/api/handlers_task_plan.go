@@ -217,8 +217,10 @@ func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteracti
 	})
 
 	go func(taskID, title, description, reviewID string) {
+		memoryStore := memory.NewStore(s.db)
 		generator := plan.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
-			WithMemory(memory.NewStore(s.db))
+			WithMemory(memoryStore).
+			WithSyncer(memory.NewSyncer(memoryStore, s.db.DB, s.repoDir))
 		content, genErr := generator.Generate(taskID, title, description)
 		if genErr != nil {
 			s.hub.Broadcast(Event{

@@ -16,16 +16,25 @@ import {
   useDeleteMemoryMutation,
   useMemoryMutation,
   useMemoryQuery,
+  useSyncMemoryMutation,
 } from '../hooks/queries'
 import { controlClass } from '../lib/constants'
 import { queryKeys } from '../lib/queryKeys'
-import type { MemoryCategory, MemoryEntry } from '../types'
+import type { MemoryCategory, MemoryEntry, MemorySourceType } from '../types'
 
 const CATEGORIES: MemoryCategory[] = [
   'pattern',
   'pitfall',
   'preference',
   'convention',
+  'architecture',
+  'dependency',
+]
+
+const SOURCE_TYPES: MemorySourceType[] = [
+  'retro',
+  'task',
+  'commit',
 ]
 
 const CATEGORY_TONE: Record<MemoryCategory, string> = {
@@ -33,6 +42,14 @@ const CATEGORY_TONE: Record<MemoryCategory, string> = {
   pitfall: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
   preference: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
   convention: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  architecture: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300',
+  dependency: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300',
+}
+
+const SOURCE_TONE: Record<MemorySourceType, string> = {
+  retro: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
+  task: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  commit: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
 }
 
 const columnHelper = createColumnHelper<MemoryEntry>()
@@ -56,6 +73,8 @@ function formatDate(iso: string) {
 function MemoryPage() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<MemoryCategory | 'all'>('all')
+  const [sourceType, setSourceType] = useState<MemorySourceType | 'all'>('all')
+  const [filePath, setFilePath] = useState('')
   const [expandedContent, setExpandedContent] = useState<
     Record<string, boolean>
   >({})
@@ -66,15 +85,19 @@ function MemoryPage() {
 
   const listParams = useMemo(() => {
     const trimmed = search.trim()
+    const filePathTrimmed = filePath.trim()
     return {
       ...(trimmed ? { q: trimmed } : {}),
       ...(category !== 'all' ? { category } : {}),
+      ...(sourceType !== 'all' ? { source_type: sourceType } : {}),
+      ...(filePathTrimmed ? { file_path: filePathTrimmed } : {}),
     }
-  }, [search, category])
+  }, [search, category, sourceType, filePath])
 
   const memoryQuery = useMemoryQuery(listParams)
   const updateMutation = useMemoryMutation()
   const deleteMutation = useDeleteMemoryMutation()
+  const syncMutation = useSyncMemoryMutation()
   const exploreMutation = useMutation({
     mutationFn: () => api.runExplore(),
     onSuccess: async () => {
@@ -245,6 +268,19 @@ function MemoryPage() {
           )
         },
       }),
+      columnHelper.accessor('source_type', {
+        header: 'Source Type',
+        cell: ({ getValue }) => {
+          const value = getValue()
+          return (
+            <span
+              className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${SOURCE_TONE[value]}`}
+            >
+              {value}
+            </span>
+          )
+        },
+      }),
       columnHelper.accessor('tags', {
         header: 'Tags',
         cell: ({ getValue }) => {
@@ -261,6 +297,30 @@ function MemoryPage() {
                 >
                   {tag}
                 </span>
+              ))}
+            </div>
+          )
+        },
+      }),
+      columnHelper.accessor('file_paths', {
+        header: 'Files',
+        cell: ({ getValue }) => {
+          const paths = getValue() ?? []
+          if (paths.length === 0) {
+            return <span className="text-xs text-muted">—</span>
+          }
+          return (
+            <div className="flex max-w-[260px] flex-wrap gap-1">
+              {paths.map((path) => (
+                <button
+                  key={path}
+                  type="button"
+                  className="inline-flex rounded bg-surface-alt px-1.5 py-0.5 text-[11px] hover:bg-muted/50"
+                  onClick={() => setFilePath(path)}
+                  title={`Filter by ${path}`}
+                >
+                  {path}
+                </button>
               ))}
             </div>
           )
@@ -305,7 +365,7 @@ function MemoryPage() {
         },
       }),
       columnHelper.accessor('source_task_id', {
-        header: 'Source',
+        header: 'Task',
         cell: ({ getValue }) => {
           const sourceTaskId = getValue()
           if (!sourceTaskId) {
@@ -395,10 +455,38 @@ function MemoryPage() {
           >
             {exploreMutation.isPending ? 'Exploring…' : 'Explore'}
           </Button>
+          <Button
+            variant="default"
+            onClick={() =>
+              syncMutation.mutate(undefined, {
+                onSuccess: (result) => {
+                  const range =
+                    result.last_commit && result.new_commit
+                      ? `${result.last_commit.slice(0, 8)}→${result.new_commit.slice(0, 8)}`
+                      : result.new_commit
+                        ? `synced to ${result.new_commit.slice(0, 8)}`
+                        : 'synced'
+                  toast.success(
+                    `Memory sync complete: ${result.flagged_entries} flagged, ${result.affected_files.length} files, ${range}`,
+                  )
+                },
+                onError: (error) => {
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : 'Memory sync failed',
+                  )
+                },
+              })
+            }
+            disabled={syncMutation.isPending}
+          >
+            {syncMutation.isPending ? 'Syncing…' : 'Sync'}
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-2 pb-3 sm:grid-cols-[minmax(0,1fr)_220px_auto]">
+      <div className="grid gap-2 pb-3 sm:grid-cols-[minmax(0,1fr)_220px_180px_minmax(0,1fr)_auto]">
         <input
           className={controlClass}
           value={search}
@@ -419,12 +507,39 @@ function MemoryPage() {
             </option>
           ))}
         </select>
+        <select
+          className={controlClass}
+          value={sourceType}
+          onChange={(e) =>
+            setSourceType(e.target.value as MemorySourceType | 'all')
+          }
+        >
+          <option value="all">All sources</option>
+          {SOURCE_TYPES.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+        <input
+          className={controlClass}
+          value={filePath}
+          onChange={(e) => setFilePath(e.target.value)}
+          placeholder="Filter by file path"
+        />
         <Button
           onClick={() => {
             setSearch('')
             setCategory('all')
+            setSourceType('all')
+            setFilePath('')
           }}
-          disabled={search.length === 0 && category === 'all'}
+          disabled={
+            search.length === 0 &&
+            category === 'all' &&
+            sourceType === 'all' &&
+            filePath.length === 0
+          }
         >
           Reset
         </Button>
@@ -450,7 +565,7 @@ function MemoryPage() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle">
-          <table className="w-full min-w-[980px]">
+          <table className="w-full min-w-[1160px]">
             <thead className="[&_tr]:border-b">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>

@@ -9,6 +9,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/spf13/cobra"
 )
 
@@ -102,7 +103,10 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 	}
 	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
 
-	explorer := explore.New(selectedTool, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
+	memoryStore := memory.NewStore(db)
+	explorer := explore.New(selectedTool, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+		WithMemory(memoryStore).
+		WithSyncer(memory.NewSyncer(memoryStore, db.DB, repoDir))
 	if explore.LoadContext(repoDir) != "" {
 		if stale, err := explore.IsStale(repoDir); err == nil && stale {
 			fmt.Println("Note: existing context was stale (codebase changed since last explore). Refreshing...")

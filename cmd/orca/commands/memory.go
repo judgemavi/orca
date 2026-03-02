@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -18,8 +19,10 @@ func RegisterMemory(root *cobra.Command, r *Registry) {
 	}
 
 	listCmd := &cobra.Command{Use: "list", Short: "List memory entries", RunE: r.runMemoryList}
-	listCmd.Flags().String("category", "", "Filter by category: pattern|pitfall|preference|convention")
+	listCmd.Flags().String("category", "", "Filter by category: pattern|pitfall|preference|convention|architecture|dependency")
 	listCmd.Flags().String("tag", "", "Filter by tag")
+	listCmd.Flags().String("source-type", "", "Filter by source type: retro|task|commit")
+	listCmd.Flags().String("file", "", "Filter by associated file path")
 	listCmd.Flags().Bool("json", false, "Output as JSON")
 	memoryCmd.AddCommand(listCmd)
 
@@ -28,6 +31,8 @@ func RegisterMemory(root *cobra.Command, r *Registry) {
 
 	searchCmd := &cobra.Command{Use: "search <query>", Short: "Search memory entries", Args: cobra.MinimumNArgs(1), RunE: r.runMemorySearch}
 	searchCmd.Flags().Int("limit", 10, "Maximum results")
+	searchCmd.Flags().String("source-type", "", "Filter by source type: retro|task|commit")
+	searchCmd.Flags().String("file", "", "Filter by associated file path")
 	searchCmd.Flags().Bool("json", false, "Output as JSON")
 	memoryCmd.AddCommand(searchCmd)
 
@@ -40,6 +45,9 @@ func RegisterMemory(root *cobra.Command, r *Registry) {
 	deleteCmd := &cobra.Command{Use: "delete <id>", Short: "Delete a memory entry", Args: cobra.ExactArgs(1), RunE: r.runMemoryDelete}
 	deleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
 	memoryCmd.AddCommand(deleteCmd)
+
+	syncCmd := &cobra.Command{Use: "sync", Short: "Sync memory entries with git changes", RunE: r.runMemorySync}
+	memoryCmd.AddCommand(syncCmd)
 
 	root.AddCommand(memoryCmd)
 }
@@ -55,14 +63,26 @@ func (r *Registry) runMemoryList(cmd *cobra.Command, args []string) error {
 	category = strings.TrimSpace(strings.ToLower(category))
 	tag, _ := cmd.Flags().GetString("tag")
 	tag = strings.TrimSpace(tag)
+	sourceType, _ := cmd.Flags().GetString("source-type")
+	sourceType = strings.TrimSpace(strings.ToLower(sourceType))
+	filePath, _ := cmd.Flags().GetString("file")
+	filePath = strings.TrimSpace(filePath)
 	jsonOut, _ := cmd.Flags().GetBool("json")
 
 	if category != "" && !isValidMemoryCategory(category) {
-		return fmt.Errorf("invalid --category %q (must be one of: pattern|pitfall|preference|convention)", category)
+		return fmt.Errorf("invalid --category %q (must be one of: pattern|pitfall|preference|convention|architecture|dependency)", category)
+	}
+	if sourceType != "" && !isValidMemorySourceType(sourceType) {
+		return fmt.Errorf("invalid --source-type %q (must be one of: retro|task|commit)", sourceType)
 	}
 
 	store := memory.NewStore(db)
-	entries, err := store.List(memory.ListOpts{Category: category, Tag: tag})
+	entries, err := store.List(memory.ListOpts{
+		Category:   category,
+		Tag:        tag,
+		SourceType: sourceType,
+		FilePath:   filePath,
+	})
 	if err != nil {
 		return fmt.Errorf("list memory: %w", err)
 	}
@@ -84,7 +104,7 @@ func (r *Registry) runMemoryList(cmd *cobra.Command, args []string) error {
 		if len(e.Tags) > 0 {
 			tags = strings.Join(e.Tags, ",")
 		}
-		fmt.Printf("%s  [%s]  conf=%.2f  tags=%s\n", short(e.ID), e.Category, e.Confidence, tags)
+		fmt.Printf("%s  [%s/%s]  conf=%.2f  tags=%s\n", short(e.ID), e.Category, e.SourceType, e.Confidence, tags)
 		fmt.Printf("  %s\n", e.Content)
 	}
 	return nil
@@ -134,9 +154,16 @@ func (r *Registry) runMemorySearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("query is required")
 	}
 	limit, _ := cmd.Flags().GetInt("limit")
+	sourceType, _ := cmd.Flags().GetString("source-type")
+	sourceType = strings.TrimSpace(strings.ToLower(sourceType))
+	filePath, _ := cmd.Flags().GetString("file")
+	filePath = strings.TrimSpace(filePath)
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	if limit <= 0 {
 		return fmt.Errorf("--limit must be > 0")
+	}
+	if sourceType != "" && !isValidMemorySourceType(sourceType) {
+		return fmt.Errorf("invalid --source-type %q (must be one of: retro|task|commit)", sourceType)
 	}
 
 	store := memory.NewStore(db)
@@ -144,22 +171,32 @@ func (r *Registry) runMemorySearch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("search memory: %w", err)
 	}
+	filtered := make([]*memory.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if sourceType != "" && strings.TrimSpace(strings.ToLower(entry.SourceType)) != sourceType {
+			continue
+		}
+		if filePath != "" && !containsString(entry.FilePaths, filePath) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
 
 	if jsonOut {
-		payload, err := json.MarshalIndent(entries, "", "  ")
+		payload, err := json.MarshalIndent(filtered, "", "  ")
 		if err != nil {
 			return fmt.Errorf("marshal memory entries: %w", err)
 		}
 		fmt.Println(string(payload))
 		return nil
 	}
-	if len(entries) == 0 {
+	if len(filtered) == 0 {
 		fmt.Println("No matching memory entries.")
 		return nil
 	}
 
-	for _, e := range entries {
-		fmt.Printf("%s  [%s]  conf=%.2f\n", short(e.ID), e.Category, e.Confidence)
+	for _, e := range filtered {
+		fmt.Printf("%s  [%s/%s]  conf=%.2f\n", short(e.ID), e.Category, e.SourceType, e.Confidence)
 		fmt.Printf("  %s\n", e.Content)
 	}
 	return nil
@@ -250,11 +287,59 @@ func (r *Registry) runMemoryDelete(cmd *cobra.Command, args []string) error {
 
 func isValidMemoryCategory(category string) bool {
 	switch strings.TrimSpace(strings.ToLower(category)) {
-	case "pattern", "pitfall", "preference", "convention":
+	case "pattern", "pitfall", "preference", "convention", "architecture", "dependency":
 		return true
 	default:
 		return false
 	}
+}
+
+func isValidMemorySourceType(sourceType string) bool {
+	switch strings.TrimSpace(strings.ToLower(sourceType)) {
+	case "retro", "task", "commit":
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *Registry) runMemorySync(cmd *cobra.Command, args []string) error {
+	db, _, err := r.openStoreOrErr()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve repo dir: %w", err)
+	}
+	store := memory.NewStore(db)
+	syncer := memory.NewSyncer(store, db.DB, repoDir)
+	result, err := syncer.Sync()
+	if err != nil {
+		return fmt.Errorf("sync memory: %w", err)
+	}
+
+	fmt.Printf("Last commit: %s\n", emptyDash(result.LastCommit))
+	fmt.Printf("New commit: %s\n", emptyDash(result.NewCommit))
+	fmt.Printf("Commits since last sync: %d\n", result.CommitCount)
+	fmt.Printf("Affected files: %d\n", len(result.AffectedFiles))
+	fmt.Printf("Flagged entries: %d\n", result.FlaggedEntries)
+	return nil
+}
+
+func containsString(items []string, needle string) bool {
+	needle = strings.TrimSpace(needle)
+	if needle == "" {
+		return false
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item) == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func emptyDash(v string) string {

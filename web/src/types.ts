@@ -152,6 +152,10 @@ export type MemoryCategory =
   | 'pitfall'
   | 'preference'
   | 'convention'
+  | 'architecture'
+  | 'dependency'
+
+export type MemorySourceType = 'retro' | 'task' | 'commit'
 
 export interface MemoryEntry {
   id: string
@@ -159,6 +163,8 @@ export interface MemoryEntry {
   category: MemoryCategory
   tags: string[]
   confidence: number
+  source_type: MemorySourceType
+  file_paths?: string[]
   source_task_id?: string
   source_interaction_id?: string
   provenance_hash: string
@@ -170,6 +176,8 @@ export interface MemoryEntry {
 export interface ListMemoryParams {
   category?: MemoryCategory
   tag?: string
+  source_type?: MemorySourceType
+  file_path?: string
   q?: string
   limit?: number
 }
@@ -178,6 +186,14 @@ export interface UpdateMemoryInput {
   content?: string
   confidence?: number
   category?: MemoryCategory
+}
+
+export interface MemorySyncResult {
+  last_commit: string
+  new_commit: string
+  commit_count: number
+  affected_files: string[]
+  flagged_entries: number
 }
 
 export type KnownWSEvent =

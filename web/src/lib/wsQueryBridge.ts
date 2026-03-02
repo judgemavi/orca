@@ -175,6 +175,15 @@ export function handleWSEvent(qc: QueryClient, event: WSEvent) {
     return
   }
 
+  if (event.type.startsWith('memory.sync')) {
+    void Promise.all([
+      qc.invalidateQueries({ queryKey: queryKeys.memory }),
+      qc.invalidateQueries({ queryKey: queryKeys.operations() }),
+      qc.invalidateQueries({ queryKey: queryKeys.status }),
+    ])
+    return
+  }
+
   if (SIGNAL_PREFIXES.some((p) => event.type.startsWith(p))) {
     void Promise.all([
       qc.invalidateQueries({ queryKey: queryKeys.operations() }),

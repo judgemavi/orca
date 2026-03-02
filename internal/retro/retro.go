@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ type retroEntry struct {
 	Tags       []string `json:"tags"`
 	Confidence float64  `json:"confidence"`
 	Supersedes string   `json:"supersedes,omitempty"`
+	FilePaths  []string `json:"file_paths,omitempty"`
 }
 
 type planUsage struct {
@@ -165,6 +167,10 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 		relatedEntries,
 	)
 	provenanceHash := retroProvenanceHash(planText, runDiffs, reviewFeedback, planReviewFeedback)
+	trackedFiles, err := trackedFileSet(g.repoDir)
+	if err != nil {
+		trackedFiles = map[string]struct{}{}
+	}
 
 	adapter := worker.NewAdapter(g.driver, g.model, g.timeout)
 	var (
@@ -200,7 +206,7 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 				exitCode = runResult.ExitCode
 				stderr = runResult.Stderr
 			}
-			parseErr = llm.ExtractJSON(output, &entries)
+			entries, parseErr = parseRetroEntries(output)
 			if parseErr != nil {
 				return
 			}
@@ -234,6 +240,8 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 					Tags:                entry.Tags,
 					SourceTaskID:        taskID,
 					SourceInteractionID: interactionID,
+					SourceType:          "retro",
+					FilePaths:           filterTrackedFilePaths(entry.FilePaths, trackedFiles),
 					Confidence:          entry.Confidence,
 					ProvenanceHash:      provenanceHash,
 				}
@@ -349,6 +357,7 @@ func normalizeRetroEntry(in retroEntry) retroEntry {
 		Content:    strings.TrimSpace(in.Content),
 		Category:   strings.ToLower(strings.TrimSpace(in.Category)),
 		Tags:       normalizeList(in.Tags),
+		FilePaths:  normalizeList(in.FilePaths),
 		Confidence: in.Confidence,
 		Supersedes: strings.TrimSpace(in.Supersedes),
 	}
@@ -556,4 +565,38 @@ func buildSearchQuery(parts ...string) string {
 		}
 	})
 	return strings.Join(normalizeList(tokens), " ")
+}
+
+func trackedFileSet(repoDir string) (map[string]struct{}, error) {
+	cmd := exec.Command("git", "ls-files")
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	tracked := make(map[string]struct{})
+	for _, line := range strings.Split(string(out), "\n") {
+		path := strings.TrimSpace(line)
+		if path == "" {
+			continue
+		}
+		tracked[path] = struct{}{}
+	}
+	return tracked, nil
+}
+
+func filterTrackedFilePaths(paths []string, tracked map[string]struct{}) []string {
+	if len(paths) == 0 || len(tracked) == 0 {
+		return nil
+	}
+	filtered := make([]string, 0, len(paths))
+	for _, path := range normalizeList(paths) {
+		if _, ok := tracked[path]; ok {
+			filtered = append(filtered, path)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }

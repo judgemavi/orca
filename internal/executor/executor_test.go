@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/testutil"
 )
@@ -149,5 +150,95 @@ func TestResolveResumeRunStateIncludesPendingReviewForFailedTask(t *testing.T) {
 	}
 	if phase != interaction.PhaseRevise {
 		t.Fatalf("phase = %q, want %q", phase, interaction.PhaseRevise)
+	}
+}
+
+func TestLoadUsedMemoryIDs(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	e := &Executor{db: db}
+
+	tk, err := store.Create("memory ids task", "desc", "")
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	if _, err := db.Exec(
+		`INSERT INTO task_interactions (id, task_id, phase, tool, log_path, status, quality_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"plan-int-1",
+		tk.ID,
+		interaction.PhasePlan,
+		"codex",
+		"/tmp/plan-int-1.log",
+		"completed",
+		`{"used_memory_ids":["mem-1"," mem-1 ","mem-2"]}`,
+	); err != nil {
+		t.Fatalf("insert interaction: %v", err)
+	}
+
+	ids, err := e.loadUsedMemoryIDs(tk.ID)
+	if err != nil {
+		t.Fatalf("load used memory ids: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != "mem-1" || ids[1] != "mem-2" {
+		t.Fatalf("ids = %v, want [mem-1 mem-2]", ids)
+	}
+}
+
+func TestReinforceMemoryConfidence(t *testing.T) {
+	db := testutil.DB(t)
+	store := task.NewStore(db)
+	memoryStore := memory.NewStore(db)
+	e := &Executor{
+		db:          db,
+		taskStore:   store,
+		memoryStore: memoryStore,
+	}
+
+	entry := &memory.Entry{
+		Content:        "confidence target",
+		Category:       "pattern",
+		Confidence:     0.5,
+		ProvenanceHash: "exec-conf-hash",
+	}
+	if err := memoryStore.Create(entry); err != nil {
+		t.Fatalf("create memory entry: %v", err)
+	}
+
+	tk, err := store.Create("reinforce", "desc", "")
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO task_interactions (id, task_id, phase, tool, log_path, status, quality_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"plan-int-2",
+		tk.ID,
+		interaction.PhasePlan,
+		"codex",
+		"/tmp/plan-int-2.log",
+		"completed",
+		`{"used_memory_ids":["`+entry.ID+`"]}`,
+	); err != nil {
+		t.Fatalf("insert interaction: %v", err)
+	}
+
+	e.reinforceMemoryConfidence(tk.ID, "review")
+	afterReview, err := memoryStore.Get(entry.ID)
+	if err != nil {
+		t.Fatalf("get entry after review: %v", err)
+	}
+	if afterReview.Confidence != 0.55 {
+		t.Fatalf("confidence after review = %v, want 0.55", afterReview.Confidence)
+	}
+
+	e.reinforceMemoryConfidence(tk.ID, "failed")
+	afterFailed, err := memoryStore.Get(entry.ID)
+	if err != nil {
+		t.Fatalf("get entry after failed: %v", err)
+	}
+	if diff := afterFailed.Confidence - 0.495; diff < -1e-9 || diff > 1e-9 {
+		t.Fatalf("confidence after failed = %v, want 0.495", afterFailed.Confidence)
 	}
 }

@@ -4,8 +4,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/state"
 )
 
@@ -206,6 +208,102 @@ func TestLoadContextFromDB(t *testing.T) {
 	}
 }
 
+func TestExtractMemoryExtractionAndStripSection(t *testing.T) {
+	raw := strings.TrimSpace(strings.Join([]string{
+		"## Project Context",
+		"",
+		"Useful context.",
+		"",
+		"## Memory Extraction",
+		"",
+		"```json",
+		`[{"content":"Use layered boundaries","category":"architecture","tags":["arch"],"confidence":0.95,"file_paths":["internal/app.go"]}]`,
+		"```",
+	}, "\n"))
+
+	entries, err := extractMemoryExtraction(raw)
+	if err != nil {
+		t.Fatalf("extractMemoryExtraction: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(entries))
+	}
+	if entries[0].Category != "architecture" {
+		t.Fatalf("category = %q, want architecture", entries[0].Category)
+	}
+
+	stripped := stripMemoryExtractionSection(raw)
+	if strings.Contains(stripped, "## Memory Extraction") {
+		t.Fatalf("stripped output still contains memory extraction section:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "## Project Context") {
+		t.Fatalf("stripped output lost context section:\n%s", stripped)
+	}
+}
+
+func TestSeedMemoryCreatesTaskEntriesAndSupersedesOld(t *testing.T) {
+	repoDir := initEmptyGitRepo(t)
+	writeRepoFile(t, repoDir, "internal/app.go", "package app\n")
+	runGit(t, repoDir, "add", "internal/app.go")
+	runGit(t, repoDir, "commit", "-m", "seed file")
+
+	db := setupStateDB(t, repoDir)
+	store := memory.NewStore(db)
+
+	old := &memory.Entry{
+		Content:        "Old seeded context",
+		Category:       "pattern",
+		Tags:           []string{"explore-seed", "old"},
+		SourceType:     "task",
+		FilePaths:      []string{"internal/app.go"},
+		Confidence:     0.9,
+		ProvenanceHash: "old-seed-hash",
+	}
+	if err := store.Create(old); err != nil {
+		t.Fatalf("create old seed entry: %v", err)
+	}
+
+	explorer := &Explorer{repoDir: repoDir, memory: store}
+	err := explorer.seedMemory("context", []extractedMemoryEntry{
+		{
+			Content:    "Use package boundaries for handlers",
+			Category:   "architecture",
+			Tags:       []string{"api"},
+			Confidence: 0.95,
+			FilePaths:  []string{"internal/app.go", "missing.go"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("seedMemory: %v", err)
+	}
+
+	current, err := store.List(memory.ListOpts{})
+	if err != nil {
+		t.Fatalf("list memory: %v", err)
+	}
+	if len(current) != 1 {
+		t.Fatalf("list len = %d, want 1 non-superseded entry", len(current))
+	}
+	newEntry := current[0]
+	if newEntry.SourceType != "task" {
+		t.Fatalf("source_type = %q, want task", newEntry.SourceType)
+	}
+	if !contains(newEntry.Tags, "explore-seed") {
+		t.Fatalf("tags = %v, want explore-seed", newEntry.Tags)
+	}
+	if len(newEntry.FilePaths) != 1 || newEntry.FilePaths[0] != "internal/app.go" {
+		t.Fatalf("file_paths = %v, want [internal/app.go]", newEntry.FilePaths)
+	}
+
+	oldReloaded, err := store.Get(old.ID)
+	if err != nil {
+		t.Fatalf("get old entry: %v", err)
+	}
+	if oldReloaded.SupersededBy != newEntry.ID {
+		t.Fatalf("old superseded_by = %q, want %q", oldReloaded.SupersededBy, newEntry.ID)
+	}
+}
+
 func initTempGitRepo(t *testing.T) string {
 	t.Helper()
 
@@ -252,4 +350,24 @@ func runGit(t *testing.T, repoDir string, args ...string) {
 	if err != nil {
 		t.Fatalf("git %v failed: %v; output: %s", args, err, string(out))
 	}
+}
+
+func writeRepoFile(t *testing.T, repoDir, relPath, content string) {
+	t.Helper()
+	fullPath := filepath.Join(repoDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", relPath, err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", relPath, err)
+	}
+}
+
+func contains(items []string, needle string) bool {
+	for _, item := range items {
+		if strings.TrimSpace(item) == needle {
+			return true
+		}
+	}
+	return false
 }

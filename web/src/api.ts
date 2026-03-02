@@ -10,6 +10,7 @@ import type {
   InteractionWithContent,
   ProposedTask,
   MemoryEntry,
+  MemorySyncResult,
   ListMemoryParams,
   UpdateMemoryInput,
 } from './types'
@@ -114,6 +115,8 @@ export const api = {
       withQuery('/memory', {
         category: params?.category,
         tag: params?.tag,
+        source_type: params?.source_type,
+        file_path: params?.file_path,
         q: params?.q,
         limit:
           typeof params?.limit === 'number' ? String(params.limit) : undefined,
@@ -125,6 +128,7 @@ export const api = {
     patch<MemoryEntry>(`/memory/${encodeURIComponent(id)}`, data),
   deleteMemory: (id: string) =>
     del<{ deleted: string }>(`/memory/${encodeURIComponent(id)}`),
+  syncMemory: () => post<MemorySyncResult>('/memory/sync'),
 
   merge: () => post<{ operation_id: string }>('/merge'),
   startTasks: (taskIds?: string[], tool?: string, model?: string) =>

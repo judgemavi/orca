@@ -6,6 +6,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 )
 
 // ========== Explore ==========
@@ -36,7 +37,13 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 	model := s.cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
 
 	s.runAsyncHandler(w, interaction.PhaseExplore, map[string]string{"status": "exploring"}, func() {
-		explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions)
+		memoryStore := s.memoryStore
+		if memoryStore == nil && s.db != nil {
+			memoryStore = memory.NewStore(s.db)
+		}
+		explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions).
+			WithMemory(memoryStore).
+			WithSyncer(memory.NewSyncer(memoryStore, s.db.DB, s.repoDir))
 		outPath, err := explorer.Run()
 		if err != nil {
 			s.hub.Broadcast(Event{Type: "explore.failed", Data: map[string]string{"error": err.Error()}})

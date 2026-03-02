@@ -4,6 +4,8 @@ function normalizeMemoryParams(params?: ListMemoryParams) {
   return {
     category: params?.category ?? null,
     tag: params?.tag ?? null,
+    source_type: params?.source_type ?? null,
+    file_path: params?.file_path ?? null,
     q: params?.q ?? null,
     limit: params?.limit ?? null,
   }

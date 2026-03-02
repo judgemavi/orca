@@ -15,12 +15,12 @@ import (
 
 const entryColumns = `
 	id, content, category, tags, source_task_id, source_interaction_id,
-	confidence, provenance_hash, superseded_by, created_at, updated_at
+	confidence, provenance_hash, superseded_by, source_type, created_at, updated_at
 `
 
 const entryColumnsQualified = `
 	ke.id, ke.content, ke.category, ke.tags, ke.source_task_id, ke.source_interaction_id,
-	ke.confidence, ke.provenance_hash, ke.superseded_by, ke.created_at, ke.updated_at
+	ke.confidence, ke.provenance_hash, ke.superseded_by, ke.source_type, ke.created_at, ke.updated_at
 `
 
 // Entry is a single memory row persisted in SQLite.
@@ -31,6 +31,8 @@ type Entry struct {
 	Tags                []string  `json:"tags"`
 	SourceTaskID        string    `json:"source_task_id,omitempty"`
 	SourceInteractionID string    `json:"source_interaction_id,omitempty"`
+	SourceType          string    `json:"source_type"`
+	FilePaths           []string  `json:"file_paths,omitempty"`
 	Confidence          float64   `json:"confidence"`
 	ProvenanceHash      string    `json:"provenance_hash"`
 	SupersededBy        string    `json:"superseded_by,omitempty"`
@@ -40,8 +42,10 @@ type Entry struct {
 
 // ListOpts controls list filtering.
 type ListOpts struct {
-	Category string
-	Tag      string
+	Category   string
+	Tag        string
+	SourceType string
+	FilePath   string
 }
 
 // Store persists memory entries and mirrors data into the FTS table.
@@ -78,6 +82,11 @@ func (s *Store) Create(e *Entry) error {
 	if confidence == 0 {
 		confidence = 1.0
 	}
+	sourceType, err := normalizeSourceType(e.SourceType)
+	if err != nil {
+		return err
+	}
+	filePaths := normalizeFilePaths(e.FilePaths)
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -87,9 +96,9 @@ func (s *Store) Create(e *Entry) error {
 
 	if _, err := tx.Exec(
 		`INSERT INTO memory_entries (
-			id, content, category, tags, source_task_id, source_interaction_id,
-			confidence, provenance_hash, superseded_by, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, content, category, tags, source_task_id, source_interaction_id,
+				confidence, provenance_hash, superseded_by, source_type, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id,
 		e.Content,
 		e.Category,
@@ -99,6 +108,7 @@ func (s *Store) Create(e *Entry) error {
 		confidence,
 		e.ProvenanceHash,
 		nullableString(e.SupersededBy),
+		sourceType,
 		now,
 		now,
 	); err != nil {
@@ -108,6 +118,11 @@ func (s *Store) Create(e *Entry) error {
 	if err := upsertFTS(tx, id, e.Content, tagsJSON); err != nil {
 		return err
 	}
+	if len(filePaths) > 0 {
+		if err := s.associateFilesTx(tx, id, filePaths); err != nil {
+			return err
+		}
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit create memory entry: %w", err)
@@ -115,6 +130,8 @@ func (s *Store) Create(e *Entry) error {
 
 	e.ID = id
 	e.Confidence = confidence
+	e.SourceType = sourceType
+	e.FilePaths = filePaths
 	e.CreatedAt = now
 	e.UpdatedAt = now
 	return nil
@@ -131,6 +148,10 @@ func (s *Store) Get(id string) (*Entry, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get memory entry: %w", err)
+	}
+	entry.FilePaths, err = s.GetFilePaths(entry.ID)
+	if err != nil {
+		return nil, err
 	}
 	return entry, nil
 }
@@ -155,6 +176,10 @@ func (s *Store) GetByProvenanceHash(hash string) (*Entry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get memory entry by provenance hash: %w", err)
 	}
+	entry.FilePaths, err = s.GetFilePaths(entry.ID)
+	if err != nil {
+		return nil, err
+	}
 	return entry, nil
 }
 
@@ -169,7 +194,7 @@ func (s *Store) HasProvenanceHash(hash string) (bool, error) {
 func (s *Store) List(opts ListOpts) ([]*Entry, error) {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf(`SELECT %s FROM memory_entries WHERE superseded_by IS NULL`, entryColumns))
-	args := make([]interface{}, 0, 2)
+	args := make([]interface{}, 0, 4)
 
 	if strings.TrimSpace(opts.Category) != "" {
 		sb.WriteString(` AND category = ?`)
@@ -179,6 +204,21 @@ func (s *Store) List(opts ListOpts) ([]*Entry, error) {
 		sb.WriteString(` AND tags LIKE ?`)
 		args = append(args, fmt.Sprintf("%%\"%s\"%%", opts.Tag))
 	}
+	if strings.TrimSpace(opts.SourceType) != "" {
+		sourceType, err := normalizeSourceType(opts.SourceType)
+		if err != nil {
+			return nil, err
+		}
+		sb.WriteString(` AND source_type = ?`)
+		args = append(args, sourceType)
+	}
+	if filePath := strings.TrimSpace(opts.FilePath); filePath != "" {
+		sb.WriteString(` AND EXISTS (
+			SELECT 1 FROM memory_file_associations mfa
+			WHERE mfa.memory_id = memory_entries.id AND mfa.file_path = ?
+		)`)
+		args = append(args, filePath)
+	}
 	sb.WriteString(` ORDER BY created_at`)
 
 	rows, err := s.db.Query(sb.String(), args...)
@@ -186,7 +226,14 @@ func (s *Store) List(opts ListOpts) ([]*Entry, error) {
 		return nil, fmt.Errorf("list memory entries: %w", err)
 	}
 	defer rows.Close()
-	return scanEntries(rows)
+	entries, err := scanEntries(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.loadFilePaths(entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
 func (s *Store) Update(id string, updates map[string]interface{}) error {
@@ -326,7 +373,14 @@ func (s *Store) search(query string, limit int, excludeHashes []string) ([]*Entr
 		return nil, fmt.Errorf("search memory entries: %w", err)
 	}
 	defer rows.Close()
-	return scanEntries(rows)
+	entries, err := scanEntries(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.loadFilePaths(entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
 func (s *Store) Supersede(oldID, newID string) error {
@@ -384,6 +438,141 @@ func (s *Store) DecayConfidence(olderThan time.Duration, factor float64) (int, e
 	return int(affected), nil
 }
 
+func (s *Store) AssociateFiles(entryID string, paths []string) error {
+	entryID = strings.TrimSpace(entryID)
+	if entryID == "" {
+		return fmt.Errorf("entry id required")
+	}
+	filePaths := normalizeFilePaths(paths)
+	if len(filePaths) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin associate files: %w", err)
+	}
+	defer tx.Rollback()
+	if err := s.associateFilesTx(tx, entryID, filePaths); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit associate files: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetFilePaths(entryID string) ([]string, error) {
+	entryID = strings.TrimSpace(entryID)
+	if entryID == "" {
+		return []string{}, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT file_path FROM memory_file_associations WHERE memory_id = ? ORDER BY file_path`,
+		entryID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get memory file paths: %w", err)
+	}
+	defer rows.Close()
+	paths := make([]string, 0)
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
+func (s *Store) FindByFilePaths(paths []string) ([]*Entry, error) {
+	filePaths := normalizeFilePaths(paths)
+	if len(filePaths) == 0 {
+		return []*Entry{}, nil
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(
+		`SELECT DISTINCT %s FROM memory_entries ke
+		JOIN memory_file_associations mfa ON mfa.memory_id = ke.id
+		WHERE ke.superseded_by IS NULL
+		AND mfa.file_path IN (`,
+		entryColumnsQualified,
+	))
+	sb.WriteString(strings.TrimSuffix(strings.Repeat("?,", len(filePaths)), ","))
+	sb.WriteString(`) ORDER BY ke.created_at`)
+
+	args := make([]interface{}, 0, len(filePaths))
+	for _, path := range filePaths {
+		args = append(args, path)
+	}
+	rows, err := s.db.Query(sb.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("find memory by file paths: %w", err)
+	}
+	defer rows.Close()
+	entries, err := scanEntries(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.loadFilePaths(entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func (s *Store) BoostConfidence(id string, factor float64) error {
+	if factor <= 0 {
+		return fmt.Errorf("factor must be > 0")
+	}
+	res, err := s.db.Exec(
+		`UPDATE memory_entries
+		 SET confidence = MIN(1.0, confidence * ?),
+		     updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		factor,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("boost confidence: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("boost confidence rows affected: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("memory entry %s not found", id)
+	}
+	return nil
+}
+
+func (s *Store) DecayEntry(id string, factor float64) error {
+	if factor <= 0 {
+		return fmt.Errorf("factor must be > 0")
+	}
+	res, err := s.db.Exec(
+		`UPDATE memory_entries
+		 SET confidence = MAX(0.1, confidence * ?),
+		     updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		factor,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("decay memory entry: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("decay memory entry rows affected: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("memory entry %s not found", id)
+	}
+	return nil
+}
+
 func scanEntries(rows *sql.Rows) ([]*Entry, error) {
 	entries := make([]*Entry, 0)
 	for rows.Next() {
@@ -402,7 +591,7 @@ func scanEntries(rows *sql.Rows) ([]*Entry, error) {
 func scanEntry(scan func(dest ...interface{}) error) (*Entry, error) {
 	var e Entry
 	var tagsJSON string
-	var sourceTaskID, sourceInteractionID, supersededBy sql.NullString
+	var sourceTaskID, sourceInteractionID, supersededBy, sourceType sql.NullString
 	if err := scan(
 		&e.ID,
 		&e.Content,
@@ -413,6 +602,7 @@ func scanEntry(scan func(dest ...interface{}) error) (*Entry, error) {
 		&e.Confidence,
 		&e.ProvenanceHash,
 		&supersededBy,
+		&sourceType,
 		&e.CreatedAt,
 		&e.UpdatedAt,
 	); err != nil {
@@ -433,6 +623,9 @@ func scanEntry(scan func(dest ...interface{}) error) (*Entry, error) {
 	if supersededBy.Valid {
 		e.SupersededBy = supersededBy.String
 	}
+	if sourceType.Valid {
+		e.SourceType = sourceType.String
+	}
 	return &e, nil
 }
 
@@ -440,6 +633,12 @@ func normalizeUpdateValue(key string, value interface{}) (interface{}, error) {
 	switch key {
 	case "content", "category", "confidence", "provenance_hash":
 		return value, nil
+	case "source_type":
+		v, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("source_type must be string")
+		}
+		return normalizeSourceType(v)
 	case "source_task_id", "source_interaction_id", "superseded_by":
 		return nullableAnyString(value)
 	case "tags":
@@ -526,6 +725,64 @@ func nullableString(v string) interface{} {
 		return nil
 	}
 	return v
+}
+
+func normalizeSourceType(sourceType string) (string, error) {
+	sourceType = strings.TrimSpace(strings.ToLower(sourceType))
+	if sourceType == "" {
+		return "retro", nil
+	}
+	switch sourceType {
+	case "retro", "task", "commit":
+		return sourceType, nil
+	default:
+		return "", fmt.Errorf("invalid source_type %q", sourceType)
+	}
+}
+
+func normalizeFilePaths(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(paths))
+	normalized := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		normalized = append(normalized, path)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func (s *Store) associateFilesTx(tx *sql.Tx, entryID string, paths []string) error {
+	for _, path := range paths {
+		if _, err := tx.Exec(
+			`INSERT OR IGNORE INTO memory_file_associations (memory_id, file_path) VALUES (?, ?)`,
+			entryID,
+			path,
+		); err != nil {
+			return fmt.Errorf("associate memory file %q: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) loadFilePaths(entries []*Entry) error {
+	for _, entry := range entries {
+		paths, err := s.GetFilePaths(entry.ID)
+		if err != nil {
+			return err
+		}
+		entry.FilePaths = paths
+	}
+	return nil
 }
 
 // buildFTSQuery converts raw text into an FTS5 MATCH expression.

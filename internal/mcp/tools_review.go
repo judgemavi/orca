@@ -201,8 +201,10 @@ func (s *Server) HandleTasksRequestPlanChangesTool(argsRaw json.RawMessage) (int
 	}
 
 	description := strings.TrimSpace(t.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
+	memStore := memory.NewStore(s.db)
 	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, s.repoDir, interactions).
-		WithMemory(memory.NewStore(s.db))
+		WithMemory(memStore).
+		WithSyncer(memory.NewSyncer(memStore, s.db.DB, s.repoDir))
 	planContent, err := generator.Generate(taskID, t.Title, description)
 	if err != nil {
 		return nil, fmt.Errorf("generate plan: %w", err)

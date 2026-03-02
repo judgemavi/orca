@@ -10,8 +10,10 @@ import (
 
 func (s *Server) HandleMemoryListTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		Category string `json:"category"`
-		Tag      string `json:"tag"`
+		Category   string `json:"category"`
+		Tag        string `json:"tag"`
+		SourceType string `json:"source_type"`
+		FilePath   string `json:"file_path"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("memory_list: %w", err)
@@ -23,10 +25,19 @@ func (s *Server) HandleMemoryListTool(argsRaw json.RawMessage) (interface{}, err
 
 	category := strings.TrimSpace(strings.ToLower(args.Category))
 	if category != "" && !isValidMemoryCategory(category) {
-		return nil, fmt.Errorf("category must be one of: pattern|pitfall|preference|convention")
+		return nil, fmt.Errorf("category must be one of: pattern|pitfall|preference|convention|architecture|dependency")
+	}
+	sourceType := strings.TrimSpace(strings.ToLower(args.SourceType))
+	if sourceType != "" && !isValidMemorySourceType(sourceType) {
+		return nil, fmt.Errorf("source_type must be one of: retro|task|commit")
 	}
 
-	entries, err := store.List(memory.ListOpts{Category: category, Tag: strings.TrimSpace(args.Tag)})
+	entries, err := store.List(memory.ListOpts{
+		Category:   category,
+		Tag:        strings.TrimSpace(args.Tag),
+		SourceType: sourceType,
+		FilePath:   strings.TrimSpace(args.FilePath),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -57,8 +68,10 @@ func (s *Server) HandleMemoryGetTool(argsRaw json.RawMessage) (interface{}, erro
 
 func (s *Server) HandleMemorySearchTool(argsRaw json.RawMessage) (interface{}, error) {
 	args, err := parseArgs[struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
+		Query      string `json:"query"`
+		Limit      int    `json:"limit"`
+		SourceType string `json:"source_type"`
+		FilePath   string `json:"file_path"`
 	}](argsRaw)
 	if err != nil {
 		return nil, fmt.Errorf("memory_search: %w", err)
@@ -72,6 +85,11 @@ func (s *Server) HandleMemorySearchTool(argsRaw json.RawMessage) (interface{}, e
 	if limit <= 0 {
 		limit = 10
 	}
+	sourceType := strings.TrimSpace(strings.ToLower(args.SourceType))
+	if sourceType != "" && !isValidMemorySourceType(sourceType) {
+		return nil, fmt.Errorf("source_type must be one of: retro|task|commit")
+	}
+	filePath := strings.TrimSpace(args.FilePath)
 
 	store, err := s.getMemoryStore()
 	if err != nil {
@@ -82,7 +100,17 @@ func (s *Server) HandleMemorySearchTool(argsRaw json.RawMessage) (interface{}, e
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"entries": entries}, nil
+	filtered := make([]*memory.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if sourceType != "" && strings.ToLower(strings.TrimSpace(entry.SourceType)) != sourceType {
+			continue
+		}
+		if filePath != "" && !hasMemoryFilePath(entry.FilePaths, filePath) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return map[string]interface{}{"entries": filtered}, nil
 }
 
 func (s *Server) HandleMemoryUpdateTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -117,7 +145,7 @@ func (s *Server) HandleMemoryUpdateTool(argsRaw json.RawMessage) (interface{}, e
 	if args.Category != nil {
 		category := strings.TrimSpace(strings.ToLower(*args.Category))
 		if !isValidMemoryCategory(category) {
-			return nil, fmt.Errorf("category must be one of: pattern|pitfall|preference|convention")
+			return nil, fmt.Errorf("category must be one of: pattern|pitfall|preference|convention|architecture|dependency")
 		}
 		fields["category"] = category
 	}
@@ -163,6 +191,25 @@ func (s *Server) HandleMemoryDeleteTool(argsRaw json.RawMessage) (interface{}, e
 	return map[string]interface{}{"id": id, "deleted": true}, nil
 }
 
+func (s *Server) HandleMemorySyncTool(argsRaw json.RawMessage) (interface{}, error) {
+	if _, err := parseArgs[struct{}](argsRaw); err != nil {
+		return nil, fmt.Errorf("memory_sync: %w", err)
+	}
+	store, err := s.getMemoryStore()
+	if err != nil {
+		return nil, fmt.Errorf("memory_sync: %w", err)
+	}
+	if s.db == nil {
+		return nil, fmt.Errorf("memory_sync: db not configured")
+	}
+	syncer := memory.NewSyncer(store, s.db.DB, s.repoDir)
+	result, err := syncer.Sync()
+	if err != nil {
+		return nil, fmt.Errorf("memory_sync: %w", err)
+	}
+	return result, nil
+}
+
 func (s *Server) getMemoryStore() (*memory.Store, error) {
 	if s.memoryStore != nil {
 		return s.memoryStore, nil
@@ -176,9 +223,31 @@ func (s *Server) getMemoryStore() (*memory.Store, error) {
 
 func isValidMemoryCategory(category string) bool {
 	switch strings.TrimSpace(strings.ToLower(category)) {
-	case "pattern", "pitfall", "preference", "convention":
+	case "pattern", "pitfall", "preference", "convention", "architecture", "dependency":
 		return true
 	default:
 		return false
 	}
+}
+
+func isValidMemorySourceType(sourceType string) bool {
+	switch strings.TrimSpace(strings.ToLower(sourceType)) {
+	case "retro", "task", "commit":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasMemoryFilePath(paths []string, needle string) bool {
+	needle = strings.TrimSpace(needle)
+	if needle == "" {
+		return false
+	}
+	for _, path := range paths {
+		if strings.TrimSpace(path) == needle {
+			return true
+		}
+	}
+	return false
 }

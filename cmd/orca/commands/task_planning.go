@@ -56,7 +56,8 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
-		WithMemory(memory.NewStore(db))
+		WithMemory(memory.NewStore(db)).
+		WithSyncer(memory.NewSyncer(memory.NewStore(db), db.DB, repoDir))
 	var planContent string
 	fmt.Printf("Generating plan for task %s\n", short(id))
 	spinDone := make(chan struct{})
@@ -324,7 +325,8 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 	}
 	description := strings.TrimSpace(tk.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
 	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interactions).
-		WithMemory(memory.NewStore(db))
+		WithMemory(memory.NewStore(db)).
+		WithSyncer(memory.NewSyncer(memory.NewStore(db), db.DB, repoDir))
 
 	fmt.Printf("Regenerating plan for task %s\n", short(taskID))
 	spinDone := make(chan struct{})
