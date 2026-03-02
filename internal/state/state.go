@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
+	"strings"
 )
 
 // DB wraps a SQLite connection with Orca-specific operations.
@@ -142,6 +143,11 @@ var migrations = []migration{
 		apply:     schemaV6Apply,
 		isApplied: schemaV6Applied,
 	},
+	{
+		version:   7,
+		apply:     schemaV7Apply,
+		isApplied: schemaV7Applied,
+	},
 }
 
 // DBVersion returns the current persisted db_version sentinel value.
@@ -222,6 +228,31 @@ func schemaV6Applied(tx *sql.Tx) (bool, error) {
 	return hasTable(tx, "memory_file_associations")
 }
 
+func schemaV7Applied(tx *sql.Tx) (bool, error) {
+	hasTasksFTS, err := hasTable(tx, "tasks_fts")
+	if err != nil {
+		return false, err
+	}
+	if !hasTasksFTS {
+		return false, nil
+	}
+	hasTaskFileAssociations, err := hasTable(tx, "task_file_associations")
+	if err != nil {
+		return false, err
+	}
+	if !hasTaskFileAssociations {
+		return false, nil
+	}
+	hasCoveredAtCommit, err := hasColumn(tx, "memory_entries", "covered_at_commit")
+	if err != nil {
+		return false, err
+	}
+	if !hasCoveredAtCommit {
+		return false, nil
+	}
+	return hasColumn(tx, "memory_entries", "stale")
+}
+
 func schemaV6Apply(tx *sql.Tx) error {
 	hasKnowledgeTable, err := hasTable(tx, "knowledge_entries")
 	if err != nil {
@@ -252,7 +283,7 @@ CREATE TABLE memory_entries_new (
 	confidence            REAL NOT NULL DEFAULT 1.0,
 	provenance_hash       TEXT NOT NULL,
 	superseded_by         TEXT REFERENCES memory_entries_new(id),
-	source_type           TEXT NOT NULL DEFAULT 'retro' CHECK(source_type IN ('retro','task','commit')),
+	source_type           TEXT NOT NULL DEFAULT 'retro' CHECK(source_type IN ('retro','explore')),
 	created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -396,6 +427,126 @@ BEGIN
 END;
 
 INSERT OR IGNORE INTO meta (key, value) VALUES ('last_synced_commit', '');
+`); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func schemaV7Apply(tx *sql.Tx) error {
+	hasTaskDescription, err := hasColumn(tx, "tasks", "description")
+	if err != nil {
+		return err
+	}
+	if !hasTaskDescription {
+		if _, err := tx.Exec(`ALTER TABLE tasks ADD COLUMN description TEXT NOT NULL DEFAULT '';`); err != nil {
+			return err
+		}
+	}
+	hasTaskPlan, err := hasColumn(tx, "tasks", "plan")
+	if err != nil {
+		return err
+	}
+	if !hasTaskPlan {
+		if _, err := tx.Exec(`ALTER TABLE tasks ADD COLUMN plan TEXT;`); err != nil {
+			return err
+		}
+	}
+
+	hasCoveredAtCommit, err := hasColumn(tx, "memory_entries", "covered_at_commit")
+	if err != nil {
+		return err
+	}
+	if !hasCoveredAtCommit {
+		if _, err := tx.Exec(`ALTER TABLE memory_entries ADD COLUMN covered_at_commit TEXT NOT NULL DEFAULT '';`); err != nil {
+			return err
+		}
+	}
+
+	hasStale, err := hasColumn(tx, "memory_entries", "stale")
+	if err != nil {
+		return err
+	}
+	if !hasStale {
+		if _, err := tx.Exec(`ALTER TABLE memory_entries ADD COLUMN stale INTEGER NOT NULL DEFAULT 0;`); err != nil {
+			return err
+		}
+	}
+
+	coveredAtCommit := ""
+	_ = tx.QueryRow(`SELECT value FROM meta WHERE key = 'last_synced_commit'`).Scan(&coveredAtCommit)
+	coveredAtCommit = strings.TrimSpace(coveredAtCommit)
+	if coveredAtCommit != "" {
+		if _, err := tx.Exec(
+			`UPDATE memory_entries
+			 SET covered_at_commit = ?
+			 WHERE covered_at_commit = '' OR covered_at_commit IS NULL`,
+			coveredAtCommit,
+		); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.Exec(`
+CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+	id UNINDEXED,
+	title,
+	description,
+	plan,
+	tokenize='porter'
+);
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_insert
+AFTER INSERT ON tasks
+BEGIN
+	INSERT INTO tasks_fts (id, title, description, plan)
+	VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.plan, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_update
+AFTER UPDATE ON tasks
+BEGIN
+	DELETE FROM tasks_fts WHERE id = old.id;
+	INSERT INTO tasks_fts (id, title, description, plan)
+	VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.plan, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_delete
+AFTER DELETE ON tasks
+BEGIN
+	DELETE FROM tasks_fts WHERE id = old.id;
+END;
+
+DELETE FROM tasks_fts;
+INSERT INTO tasks_fts (id, title, description, plan)
+SELECT id, COALESCE(title, ''), COALESCE(description, ''), COALESCE(plan, '')
+FROM tasks;
+
+CREATE TABLE IF NOT EXISTS task_file_associations (
+	task_id   TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+	file_path TEXT NOT NULL,
+	PRIMARY KEY (task_id, file_path)
+);
+CREATE INDEX IF NOT EXISTS idx_tfa_file_path ON task_file_associations(file_path);
+
+CREATE TRIGGER IF NOT EXISTS task_file_associations_version_insert
+AFTER INSERT ON task_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS task_file_associations_version_update
+AFTER UPDATE ON task_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS task_file_associations_version_delete
+AFTER DELETE ON task_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
 `); err != nil {
 		return err
 	}

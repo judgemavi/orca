@@ -155,7 +155,7 @@ export type MemoryCategory =
   | 'architecture'
   | 'dependency'
 
-export type MemorySourceType = 'retro' | 'task' | 'commit'
+export type MemorySourceType = 'retro' | 'explore'
 
 export interface MemoryEntry {
   id: string
@@ -165,6 +165,8 @@ export interface MemoryEntry {
   confidence: number
   source_type: MemorySourceType
   file_paths?: string[]
+  covered_at_commit?: string
+  stale?: boolean
   source_task_id?: string
   source_interaction_id?: string
   provenance_hash: string
@@ -173,11 +175,30 @@ export interface MemoryEntry {
   updated_at: string
 }
 
+export interface MemoryUsedByTask {
+  task_id: string
+  title: string
+  status: string
+}
+
+export interface MemoryEntryDetail {
+  entry: MemoryEntry
+  used_by_tasks: MemoryUsedByTask[]
+  supersedes?: string[]
+}
+
+export interface MemoryQueryResult {
+  entry: MemoryEntry
+  used_by_tasks: MemoryUsedByTask[]
+}
+
 export interface ListMemoryParams {
   category?: MemoryCategory
   tag?: string
   source_type?: MemorySourceType
   file_path?: string
+  stale?: boolean
+  covered_before?: string
   q?: string
   limit?: number
 }
@@ -194,8 +215,18 @@ export interface MemorySyncResult {
   commit_count: number
   affected_files: string[]
   flagged_entries: number
+  stale_entries: number
+  superseded_count: number
+  classifications: Record<string, string>
   context_updated: boolean
   context_stale: boolean
+}
+
+export interface MemoryRefreshResult {
+  entry_id?: string
+  updated: number
+  skipped: number
+  commit: string
 }
 
 export interface ProjectStatus {
@@ -214,6 +245,8 @@ export interface ProjectStatus {
   current_commit: string
   sync_needed: boolean
   commits_behind: number
+  memory_total: number
+  memory_stale_count: number
 }
 
 export type KnownWSEvent =

@@ -15,12 +15,12 @@ import (
 
 const entryColumns = `
 	id, content, category, tags, source_task_id, source_interaction_id,
-	confidence, provenance_hash, superseded_by, source_type, created_at, updated_at
+	confidence, provenance_hash, superseded_by, source_type, covered_at_commit, stale, created_at, updated_at
 `
 
 const entryColumnsQualified = `
 	ke.id, ke.content, ke.category, ke.tags, ke.source_task_id, ke.source_interaction_id,
-	ke.confidence, ke.provenance_hash, ke.superseded_by, ke.source_type, ke.created_at, ke.updated_at
+	ke.confidence, ke.provenance_hash, ke.superseded_by, ke.source_type, ke.covered_at_commit, ke.stale, ke.created_at, ke.updated_at
 `
 
 // Entry is a single memory row persisted in SQLite.
@@ -33,6 +33,8 @@ type Entry struct {
 	SourceInteractionID string    `json:"source_interaction_id,omitempty"`
 	SourceType          string    `json:"source_type"`
 	FilePaths           []string  `json:"file_paths,omitempty"`
+	CoveredAtCommit     string    `json:"covered_at_commit"`
+	Stale               bool      `json:"stale"`
 	Confidence          float64   `json:"confidence"`
 	ProvenanceHash      string    `json:"provenance_hash"`
 	SupersededBy        string    `json:"superseded_by,omitempty"`
@@ -40,12 +42,29 @@ type Entry struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
+// UsedByTask captures task lineage for memory consumption.
+type UsedByTask struct {
+	TaskID string `json:"task_id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+}
+
+// HealthSummary provides aggregate memory health data.
+type HealthSummary struct {
+	TotalEntries   int            `json:"total_entries"`
+	BySource       map[string]int `json:"by_source"`
+	StaleCount     int            `json:"stale_count"`
+	AverageQuality float64        `json:"avg_confidence"`
+}
+
 // ListOpts controls list filtering.
 type ListOpts struct {
-	Category   string
-	Tag        string
-	SourceType string
-	FilePath   string
+	Category      string
+	Tag           string
+	SourceType    string
+	FilePath      string
+	StaleOnly     bool
+	CoveredBefore string
 }
 
 // Store persists memory entries and mirrors data into the FTS table.
@@ -87,6 +106,7 @@ func (s *Store) Create(e *Entry) error {
 		return err
 	}
 	filePaths := normalizeFilePaths(e.FilePaths)
+	coveredAtCommit := strings.TrimSpace(e.CoveredAtCommit)
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -97,8 +117,8 @@ func (s *Store) Create(e *Entry) error {
 	if _, err := tx.Exec(
 		`INSERT INTO memory_entries (
 				id, content, category, tags, source_task_id, source_interaction_id,
-				confidence, provenance_hash, superseded_by, source_type, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				confidence, provenance_hash, superseded_by, source_type, covered_at_commit, stale, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		id,
 		e.Content,
 		e.Category,
@@ -109,6 +129,7 @@ func (s *Store) Create(e *Entry) error {
 		e.ProvenanceHash,
 		nullableString(e.SupersededBy),
 		sourceType,
+		coveredAtCommit,
 		now,
 		now,
 	); err != nil {
@@ -132,6 +153,8 @@ func (s *Store) Create(e *Entry) error {
 	e.Confidence = confidence
 	e.SourceType = sourceType
 	e.FilePaths = filePaths
+	e.CoveredAtCommit = coveredAtCommit
+	e.Stale = false
 	e.CreatedAt = now
 	e.UpdatedAt = now
 	return nil
@@ -218,6 +241,13 @@ func (s *Store) List(opts ListOpts) ([]*Entry, error) {
 			WHERE mfa.memory_id = memory_entries.id AND mfa.file_path = ?
 		)`)
 		args = append(args, filePath)
+	}
+	if opts.StaleOnly {
+		sb.WriteString(` AND stale = 1`)
+	}
+	if coveredBefore := strings.TrimSpace(opts.CoveredBefore); coveredBefore != "" {
+		sb.WriteString(` AND (covered_at_commit = '' OR covered_at_commit <> ?)`)
+		args = append(args, coveredBefore)
 	}
 	sb.WriteString(` ORDER BY created_at`)
 
@@ -573,6 +603,242 @@ func (s *Store) DecayEntry(id string, factor float64) error {
 	return nil
 }
 
+func (s *Store) MarkStale(id string) error {
+	res, err := s.db.Exec(
+		`UPDATE memory_entries
+		 SET stale = 1,
+		     updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("mark stale memory entry: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark stale memory entry rows affected: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("memory entry %s not found", id)
+	}
+	return nil
+}
+
+func (s *Store) ClearStale(id string) error {
+	res, err := s.db.Exec(
+		`UPDATE memory_entries
+		 SET stale = 0,
+		     updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("clear stale memory entry: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("clear stale memory entry rows affected: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("memory entry %s not found", id)
+	}
+	return nil
+}
+
+func (s *Store) UpdateCoveredCommit(id string, commitSHA string) error {
+	commitSHA = strings.TrimSpace(commitSHA)
+	res, err := s.db.Exec(
+		`UPDATE memory_entries
+		 SET covered_at_commit = ?,
+		     updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		commitSHA,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("update covered_at_commit: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update covered_at_commit rows affected: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("memory entry %s not found", id)
+	}
+	return nil
+}
+
+func (s *Store) FindStaleEntries() ([]*Entry, error) {
+	rows, err := s.db.Query(
+		fmt.Sprintf(
+			`SELECT %s
+			 FROM memory_entries
+			 WHERE superseded_by IS NULL
+			   AND stale = 1
+			 ORDER BY updated_at`,
+			entryColumns,
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find stale memory entries: %w", err)
+	}
+	defer rows.Close()
+	entries, err := scanEntries(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.loadFilePaths(entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func (s *Store) FindUsedByTasks(entryID string) ([]UsedByTask, error) {
+	entryID = strings.TrimSpace(entryID)
+	if entryID == "" {
+		return []UsedByTask{}, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT DISTINCT t.id, t.title, t.status
+		 FROM task_interactions ti
+		 JOIN tasks t ON t.id = ti.task_id
+		 JOIN json_each(
+			CASE
+				WHEN json_valid(ti.quality_json)
+				THEN COALESCE(json_extract(ti.quality_json, '$.used_memory_ids'), '[]')
+				ELSE '[]'
+			END
+		 ) used
+		 WHERE ti.task_id IS NOT NULL
+		   AND used.value = ?
+		 ORDER BY t.updated_at DESC`,
+		entryID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find used-by tasks: %w", err)
+	}
+	defer rows.Close()
+	usedBy := make([]UsedByTask, 0)
+	for rows.Next() {
+		var info UsedByTask
+		if err := rows.Scan(&info.TaskID, &info.Title, &info.Status); err != nil {
+			return nil, err
+		}
+		usedBy = append(usedBy, info)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return usedBy, nil
+}
+
+func (s *Store) FindSupersededIDs(entryID string) ([]string, error) {
+	entryID = strings.TrimSpace(entryID)
+	if entryID == "" {
+		return []string{}, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT id
+		 FROM memory_entries
+		 WHERE superseded_by = ?
+		 ORDER BY created_at`,
+		entryID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find superseded ids: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func (s *Store) DistinctFilePaths(limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.Query(
+		`SELECT DISTINCT file_path
+		 FROM memory_file_associations
+		 ORDER BY file_path
+		 LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list distinct memory file paths: %w", err)
+	}
+	defer rows.Close()
+	paths := make([]string, 0, limit)
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
+func (s *Store) BuildHealthSummary() (*HealthSummary, error) {
+	summary := &HealthSummary{
+		BySource: make(map[string]int),
+	}
+
+	rows, err := s.db.Query(
+		`SELECT source_type, COUNT(*)
+		 FROM memory_entries
+		 WHERE superseded_by IS NULL
+		 GROUP BY source_type`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("memory health by source: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sourceType string
+		var count int
+		if err := rows.Scan(&sourceType, &count); err != nil {
+			return nil, err
+		}
+		summary.BySource[sourceType] = count
+		summary.TotalEntries += count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*)
+		 FROM memory_entries
+		 WHERE superseded_by IS NULL
+		   AND stale = 1`,
+	).Scan(&summary.StaleCount); err != nil {
+		return nil, fmt.Errorf("memory health stale count: %w", err)
+	}
+
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(AVG(confidence), 0)
+		 FROM memory_entries
+		 WHERE superseded_by IS NULL`,
+	).Scan(&summary.AverageQuality); err != nil {
+		return nil, fmt.Errorf("memory health avg confidence: %w", err)
+	}
+
+	return summary, nil
+}
+
 func scanEntries(rows *sql.Rows) ([]*Entry, error) {
 	entries := make([]*Entry, 0)
 	for rows.Next() {
@@ -592,6 +858,8 @@ func scanEntry(scan func(dest ...interface{}) error) (*Entry, error) {
 	var e Entry
 	var tagsJSON string
 	var sourceTaskID, sourceInteractionID, supersededBy, sourceType sql.NullString
+	var coveredAtCommit sql.NullString
+	var stale int
 	if err := scan(
 		&e.ID,
 		&e.Content,
@@ -603,6 +871,8 @@ func scanEntry(scan func(dest ...interface{}) error) (*Entry, error) {
 		&e.ProvenanceHash,
 		&supersededBy,
 		&sourceType,
+		&coveredAtCommit,
+		&stale,
 		&e.CreatedAt,
 		&e.UpdatedAt,
 	); err != nil {
@@ -626,6 +896,10 @@ func scanEntry(scan func(dest ...interface{}) error) (*Entry, error) {
 	if sourceType.Valid {
 		e.SourceType = sourceType.String
 	}
+	if coveredAtCommit.Valid {
+		e.CoveredAtCommit = strings.TrimSpace(coveredAtCommit.String)
+	}
+	e.Stale = stale == 1
 	return &e, nil
 }
 
@@ -639,6 +913,27 @@ func normalizeUpdateValue(key string, value interface{}) (interface{}, error) {
 			return nil, fmt.Errorf("source_type must be string")
 		}
 		return normalizeSourceType(v)
+	case "covered_at_commit":
+		v, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("covered_at_commit must be string")
+		}
+		return strings.TrimSpace(v), nil
+	case "stale":
+		switch v := value.(type) {
+		case bool:
+			if v {
+				return 1, nil
+			}
+			return 0, nil
+		case int:
+			if v != 0 {
+				return 1, nil
+			}
+			return 0, nil
+		default:
+			return nil, fmt.Errorf("stale must be bool or int")
+		}
 	case "source_task_id", "source_interaction_id", "superseded_by":
 		return nullableAnyString(value)
 	case "tags":
@@ -733,7 +1028,7 @@ func normalizeSourceType(sourceType string) (string, error) {
 		return "retro", nil
 	}
 	switch sourceType {
-	case "retro", "task", "commit":
+	case "retro", "explore":
 		return sourceType, nil
 	default:
 		return "", fmt.Errorf("invalid source_type %q", sourceType)

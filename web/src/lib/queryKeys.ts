@@ -6,6 +6,8 @@ function normalizeMemoryParams(params?: ListMemoryParams) {
     tag: params?.tag ?? null,
     source_type: params?.source_type ?? null,
     file_path: params?.file_path ?? null,
+    stale: params?.stale ?? null,
+    covered_before: params?.covered_before ?? null,
     q: params?.q ?? null,
     limit: params?.limit ?? null,
   }
@@ -29,4 +31,6 @@ export const queryKeys = {
   memoryList: (params?: ListMemoryParams) =>
     ['memory', 'list', normalizeMemoryParams(params)] as const,
   memoryEntry: (id: string) => ['memory', 'entry', id] as const,
+  memoryQuery: (q: string, limit?: number) =>
+    ['memory', 'query', q, limit ?? null] as const,
 }

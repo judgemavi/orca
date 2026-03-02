@@ -41,10 +41,12 @@ func (s *Server) Routes() http.Handler {
 
 	// Memory
 	mux.HandleFunc("GET /api/v1/memory", s.handleListMemory)
+	mux.HandleFunc("GET /api/v1/memory/query", s.handleQueryMemory)
 	mux.HandleFunc("GET /api/v1/memory/{id}", s.handleGetMemory)
 	mux.HandleFunc("PATCH /api/v1/memory/{id}", s.handleUpdateMemory)
 	mux.HandleFunc("DELETE /api/v1/memory/{id}", s.handleDeleteMemory)
 	mux.HandleFunc("POST /api/v1/memory/sync", s.handleSyncMemory)
+	mux.HandleFunc("POST /api/v1/memory/refresh", s.handleRefreshMemory)
 
 	mux.HandleFunc("GET /api/v1/models", s.handleListModels)
 	mux.HandleFunc("POST /api/v1/cleanup", s.handleCleanup)

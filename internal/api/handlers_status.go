@@ -27,6 +27,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	syncNeeded := false
 	commitsBehind := 0
 	contextStale := staleByHash
+	memoryTotal := 0
+	memoryStaleCount := 0
 
 	if s.memoryStore != nil {
 		if syncStatus, err := s.newMemorySyncer(s.memoryStore).Status(); err == nil && syncStatus != nil {
@@ -35,6 +37,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			syncNeeded = syncStatus.SyncNeeded
 			commitsBehind = syncStatus.CommitsBehind
 			contextStale = contextStale || syncStatus.ContextStale
+		}
+		if health, err := s.memoryStore.BuildHealthSummary(); err == nil && health != nil {
+			memoryTotal = health.TotalEntries
+			memoryStaleCount = health.StaleCount
 		}
 	}
 
@@ -54,6 +60,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"current_commit":      currentCommit,
 		"sync_needed":         syncNeeded,
 		"commits_behind":      commitsBehind,
+		"memory_total":        memoryTotal,
+		"memory_stale_count":  memoryStaleCount,
 	}
 
 	jsonOK(w, status)

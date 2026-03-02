@@ -128,7 +128,10 @@ export function useMemoryMutation() {
     mutationFn: ({ id, data }: { id: string; data: UpdateMemoryInput }) =>
       api.updateMemory(id, data),
     onSuccess: async (entry) => {
-      queryClient.setQueryData(queryKeys.memoryEntry(entry.id), entry)
+      queryClient.removeQueries({
+        queryKey: queryKeys.memoryEntry(entry.id),
+        exact: true,
+      })
       await queryClient.invalidateQueries({ queryKey: queryKeys.memory })
     },
   })
@@ -157,5 +160,32 @@ export function useSyncMemoryMutation() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.operations() })
       await queryClient.invalidateQueries({ queryKey: queryKeys.status })
     },
+  })
+}
+
+export function useRefreshMemoryMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (entryId?: string) => api.refreshMemory(entryId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.memory })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.status })
+    },
+  })
+}
+
+export function useMemoryEntryQuery(id?: string) {
+  return useQuery({
+    queryKey: queryKeys.memoryEntry(id ?? ''),
+    queryFn: () => api.getMemory(id ?? ''),
+    enabled: Boolean(id),
+  })
+}
+
+export function useMemorySemanticQuery(q: string, limit?: number) {
+  return useQuery({
+    queryKey: queryKeys.memoryQuery(q, limit),
+    queryFn: () => api.queryMemory(q, limit),
+    enabled: q.trim().length > 0,
   })
 }

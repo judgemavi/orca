@@ -14,8 +14,11 @@ import { Button } from '../components/Button'
 import { DialogChrome } from '../components/DialogChrome'
 import {
   useDeleteMemoryMutation,
+  useMemoryEntryQuery,
   useMemoryMutation,
   useMemoryQuery,
+  useMemorySemanticQuery,
+  useRefreshMemoryMutation,
   useStatusQuery,
   useSyncMemoryMutation,
 } from '../hooks/queries'
@@ -34,8 +37,7 @@ const CATEGORIES: MemoryCategory[] = [
 
 const SOURCE_TYPES: MemorySourceType[] = [
   'retro',
-  'task',
-  'commit',
+  'explore',
 ]
 
 const CATEGORY_TONE: Record<MemoryCategory, string> = {
@@ -49,8 +51,7 @@ const CATEGORY_TONE: Record<MemoryCategory, string> = {
 
 const SOURCE_TONE: Record<MemorySourceType, string> = {
   retro: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
-  task: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-  commit: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+  explore: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
 }
 
 const columnHelper = createColumnHelper<MemoryEntry>()
@@ -72,34 +73,38 @@ function formatDate(iso: string) {
 }
 
 function MemoryPage() {
-  const [search, setSearch] = useState('')
+  const [queryText, setQueryText] = useState('')
   const [category, setCategory] = useState<MemoryCategory | 'all'>('all')
   const [sourceType, setSourceType] = useState<MemorySourceType | 'all'>('all')
   const [filePath, setFilePath] = useState('')
+  const [staleOnly, setStaleOnly] = useState(false)
   const [expandedContent, setExpandedContent] = useState<
     Record<string, boolean>
   >({})
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState<EditDraft | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<MemoryEntry | null>(null)
   const queryClient = useQueryClient()
 
   const listParams = useMemo(() => {
-    const trimmed = search.trim()
     const filePathTrimmed = filePath.trim()
     return {
-      ...(trimmed ? { q: trimmed } : {}),
       ...(category !== 'all' ? { category } : {}),
       ...(sourceType !== 'all' ? { source_type: sourceType } : {}),
       ...(filePathTrimmed ? { file_path: filePathTrimmed } : {}),
+      ...(staleOnly ? { stale: true } : {}),
     }
-  }, [search, category, sourceType, filePath])
+  }, [category, sourceType, filePath, staleOnly])
 
   const memoryQuery = useMemoryQuery(listParams)
+  const semanticQuery = useMemorySemanticQuery(queryText.trim(), 20)
   const statusQuery = useStatusQuery()
   const updateMutation = useMemoryMutation()
   const deleteMutation = useDeleteMemoryMutation()
   const syncMutation = useSyncMemoryMutation()
+  const refreshMutation = useRefreshMemoryMutation()
+  const detailQuery = useMemoryEntryQuery(selectedEntryId ?? undefined)
   const exploreMutation = useMutation({
     mutationFn: () => api.runExplore(),
     onSuccess: async () => {
@@ -116,7 +121,32 @@ function MemoryPage() {
     },
   })
 
-  const entries = memoryQuery.data ?? []
+  const entries = useMemo(() => {
+    if (queryText.trim()) {
+      return (semanticQuery.data ?? []).map((item) => item.entry)
+    }
+    return memoryQuery.data ?? []
+  }, [memoryQuery.data, queryText, semanticQuery.data])
+
+  const staleEntries = useMemo(
+    () => (memoryQuery.data ?? []).filter((entry) => entry.stale),
+    [memoryQuery.data],
+  )
+
+  const allFilePaths = useMemo(() => {
+    const set = new Set<string>()
+    for (const entry of memoryQuery.data ?? []) {
+      for (const path of entry.file_paths ?? []) {
+        if (path) set.add(path)
+      }
+    }
+    for (const item of semanticQuery.data ?? []) {
+      for (const path of item.entry.file_paths ?? []) {
+        if (path) set.add(path)
+      }
+    }
+    return Array.from(set).sort()
+  }, [memoryQuery.data, semanticQuery.data])
 
   const toggleExpanded = (id: string) => {
     setExpandedContent((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -209,15 +239,21 @@ function MemoryPage() {
 
           return (
             <div className="max-w-[560px]">
-              <p
-                className={
-                  isExpanded
-                    ? 'whitespace-pre-wrap break-words text-sm'
-                    : 'line-clamp-2 break-words text-sm'
-                }
+              <button
+                type="button"
+                className="text-left"
+                onClick={() => setSelectedEntryId(row.original.id)}
               >
-                {content}
-              </p>
+                <p
+                  className={
+                    isExpanded
+                      ? 'whitespace-pre-wrap break-words text-sm'
+                      : 'line-clamp-2 break-words text-sm'
+                  }
+                >
+                  {content}
+                </p>
+              </button>
               {showToggle && (
                 <button
                   type="button"
@@ -228,6 +264,32 @@ function MemoryPage() {
                 </button>
               )}
             </div>
+          )
+        },
+      }),
+      columnHelper.accessor('stale', {
+        header: 'Stale',
+        cell: ({ getValue }) =>
+          getValue() ? (
+            <span className="inline-flex rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+              Stale
+            </span>
+          ) : (
+            <span className="text-xs text-muted">No</span>
+          ),
+      }),
+      columnHelper.accessor('covered_at_commit', {
+        header: 'Covered At',
+        cell: ({ getValue }) => {
+          const value = getValue()
+          if (!value) {
+            return <span className="text-xs text-muted">—</span>
+          }
+          const trimmed = value.trim()
+          return (
+            <span className="text-xs text-muted" title={trimmed}>
+              {trimmed.slice(0, 8)}
+            </span>
           )
         },
       }),
@@ -415,6 +477,25 @@ function MemoryPage() {
 
           return (
             <div className="flex gap-1">
+              {row.original.stale ? (
+                <Button
+                  className="px-2 py-1 text-xs"
+                  disabled={refreshMutation.isPending}
+                  onClick={() =>
+                    refreshMutation.mutate(row.original.id, {
+                      onSuccess: () => toast.success('Entry refreshed'),
+                      onError: (error) =>
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : 'Refresh failed',
+                        ),
+                    })
+                  }
+                >
+                  Refresh
+                </Button>
+              ) : null}
               <Button
                 className="px-2 py-1 text-xs"
                 onClick={() => beginEdit(row.original)}
@@ -433,7 +514,13 @@ function MemoryPage() {
         },
       }),
     ],
-    [draft, editingId, expandedContent, updateMutation.isPending],
+    [
+      draft,
+      editingId,
+      expandedContent,
+      refreshMutation,
+      updateMutation.isPending,
+    ],
   )
 
   const table = useReactTable({
@@ -441,6 +528,14 @@ function MemoryPage() {
     columns,
     getCoreRowModel: getCoreRowModel(),
   })
+  const hasSemanticQuery = queryText.trim().length > 0
+  const listLoading = hasSemanticQuery
+    ? semanticQuery.isLoading
+    : memoryQuery.isLoading
+  const listError = hasSemanticQuery ? semanticQuery.error : memoryQuery.error
+  const listIsError = hasSemanticQuery
+    ? semanticQuery.isError
+    : memoryQuery.isError
 
   return (
     <div className="flex min-h-0 flex-1 flex-col py-4">
@@ -469,7 +564,7 @@ function MemoryPage() {
                         ? `synced to ${result.new_commit.slice(0, 8)}`
                         : 'synced'
                   toast.success(
-                    `Memory sync complete: ${result.flagged_entries} flagged, ${result.affected_files.length} files, ${range}`,
+                    `Memory sync complete: ${result.flagged_entries} flagged, ${result.stale_entries} stale, ${result.superseded_count} superseded, ${result.affected_files.length} files, ${range}`,
                   )
                 },
                 onError: (error) => {
@@ -485,6 +580,24 @@ function MemoryPage() {
           >
             {syncMutation.isPending ? 'Syncing…' : 'Sync'}
           </Button>
+          {staleEntries.length > 0 ? (
+            <Button
+              variant="default"
+              onClick={() =>
+                refreshMutation.mutate(undefined, {
+                  onSuccess: () =>
+                    toast.success(`Refreshed ${staleEntries.length} stale entries`),
+                  onError: (error) =>
+                    toast.error(
+                      error instanceof Error ? error.message : 'Refresh failed',
+                    ),
+                })
+              }
+              disabled={refreshMutation.isPending}
+            >
+              {refreshMutation.isPending ? 'Refreshing…' : 'Refresh All Stale'}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -512,7 +625,8 @@ function MemoryPage() {
           ) : statusQuery.data.sync_needed || statusQuery.data.context_stale ? (
             <div className="flex items-center justify-between gap-2">
               <span>
-                Memory is {statusQuery.data.commits_behind} commits behind
+                Memory is {statusQuery.data.commits_behind} commits behind with{' '}
+                {statusQuery.data.memory_stale_count} stale entries
                 {statusQuery.data.context_stale
                   ? ' and context is stale.'
                   : '.'}
@@ -526,17 +640,19 @@ function MemoryPage() {
               </Button>
             </div>
           ) : (
-            <span>Memory up to date.</span>
+            <span>
+              Memory up to date ({statusQuery.data.memory_total} entries).
+            </span>
           )}
         </div>
       )}
 
-      <div className="grid gap-2 pb-3 sm:grid-cols-[minmax(0,1fr)_220px_180px_minmax(0,1fr)_auto]">
+      <div className="grid gap-2 pb-3 sm:grid-cols-[minmax(0,1fr)_220px_180px_minmax(0,1fr)_auto_auto]">
         <input
           className={controlClass}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search memory (BM25)"
+          value={queryText}
+          onChange={(e) => setQueryText(e.target.value)}
+          placeholder="Natural language query (e.g. how does auth work?)"
         />
         <select
           className={controlClass}
@@ -570,34 +686,136 @@ function MemoryPage() {
           className={controlClass}
           value={filePath}
           onChange={(e) => setFilePath(e.target.value)}
+          list="memory-file-paths"
           placeholder="Filter by file path"
         />
+        <label className="inline-flex items-center gap-2 rounded-md border border-border-subtle px-3 py-2 text-xs">
+          <input
+            type="checkbox"
+            checked={staleOnly}
+            onChange={(e) => setStaleOnly(e.target.checked)}
+          />
+          Stale only
+        </label>
         <Button
           onClick={() => {
-            setSearch('')
+            setQueryText('')
             setCategory('all')
             setSourceType('all')
             setFilePath('')
+            setStaleOnly(false)
           }}
           disabled={
-            search.length === 0 &&
+            queryText.length === 0 &&
             category === 'all' &&
             sourceType === 'all' &&
-            filePath.length === 0
+            filePath.length === 0 &&
+            !staleOnly
           }
         >
           Reset
         </Button>
       </div>
 
-      {memoryQuery.isLoading ? (
+      <datalist id="memory-file-paths">
+        {allFilePaths.map((path) => (
+          <option key={path} value={path} />
+        ))}
+      </datalist>
+
+      {selectedEntryId ? (
+        <div className="mb-3 rounded-lg border border-border-subtle p-3 text-sm">
+          {detailQuery.isLoading ? (
+            <p className="text-muted">Loading entry details…</p>
+          ) : detailQuery.isError ? (
+            <p className="text-danger">Failed to load entry details.</p>
+          ) : detailQuery.data ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-medium">Entry Detail</h2>
+                <Button className="px-2 py-1 text-xs" onClick={() => setSelectedEntryId(null)}>
+                  Close
+                </Button>
+              </div>
+              <p className="whitespace-pre-wrap break-words text-sm">
+                {detailQuery.data.entry.content}
+              </p>
+              <p className="text-xs text-muted">
+                Source: {detailQuery.data.entry.source_type} • Confidence:{' '}
+                {Math.round(detailQuery.data.entry.confidence * 100)}% • Stale:{' '}
+                {detailQuery.data.entry.stale ? 'yes' : 'no'} • Covered:{' '}
+                {detailQuery.data.entry.covered_at_commit
+                  ? detailQuery.data.entry.covered_at_commit.slice(0, 8)
+                  : '—'}
+              </p>
+              <p className="text-xs text-muted">
+                Origin task:{' '}
+                {detailQuery.data.entry.source_task_id ? (
+                  <Link
+                    to="/$taskId"
+                    params={{ taskId: detailQuery.data.entry.source_task_id }}
+                    className="underline"
+                  >
+                    {detailQuery.data.entry.source_task_id.slice(0, 8)}
+                  </Link>
+                ) : (
+                  '—'
+                )}{' '}
+                • Source interaction:{' '}
+                {detailQuery.data.entry.source_interaction_id || '—'}
+              </p>
+              <p className="text-xs text-muted">
+                Supersedes:{' '}
+                {detailQuery.data.supersedes && detailQuery.data.supersedes.length > 0
+                  ? detailQuery.data.supersedes.join(', ')
+                  : '—'}{' '}
+                • Superseded by:{' '}
+                {detailQuery.data.entry.superseded_by || '—'}
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {(detailQuery.data.entry.file_paths ?? []).map((path) => (
+                  <button
+                    key={path}
+                    type="button"
+                    className="inline-flex rounded bg-surface-alt px-1.5 py-0.5 text-[11px] hover:bg-muted/50"
+                    onClick={() => setFilePath(path)}
+                  >
+                    {path}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted">Used by tasks</p>
+                {detailQuery.data.used_by_tasks.length === 0 ? (
+                  <p className="text-xs text-muted">None</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {detailQuery.data.used_by_tasks.map((task) => (
+                      <Link
+                        key={task.task_id}
+                        to="/$taskId"
+                        params={{ taskId: task.task_id }}
+                        className="text-xs"
+                      >
+                        {task.title} ({task.status})
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {listLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
         </div>
-      ) : memoryQuery.isError ? (
+      ) : listIsError ? (
         <div className="flex flex-1 items-center justify-center text-sm text-danger">
-          {memoryQuery.error instanceof Error
-            ? memoryQuery.error.message
+          {listError instanceof Error
+            ? listError.message
             : 'Failed to load memory entries'}
         </div>
       ) : entries.length === 0 ? (
@@ -610,7 +828,7 @@ function MemoryPage() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle">
-          <table className="w-full min-w-[1160px]">
+          <table className="w-full min-w-[1280px]">
             <thead className="[&_tr]:border-b">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>

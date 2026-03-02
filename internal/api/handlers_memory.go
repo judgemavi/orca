@@ -21,15 +21,18 @@ func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
 	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
 	sourceType := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("source_type")))
 	filePath := strings.TrimSpace(r.URL.Query().Get("file_path"))
+	staleRaw := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("stale")))
+	coveredBefore := strings.TrimSpace(r.URL.Query().Get("covered_before"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	staleOnly := staleRaw == "1" || staleRaw == "true" || staleRaw == "yes"
 
 	if category != "" && !isValidMemoryCategory(category) {
 		jsonError(w, "category must be one of: pattern|pitfall|preference|convention|architecture|dependency", http.StatusBadRequest)
 		return
 	}
 	if sourceType != "" && !isValidMemorySourceType(sourceType) {
-		jsonError(w, "source_type must be one of: retro|task|commit", http.StatusBadRequest)
+		jsonError(w, "source_type must be one of: retro|explore", http.StatusBadRequest)
 		return
 	}
 
@@ -76,16 +79,55 @@ func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entries, err := s.memoryStore.List(memory.ListOpts{
-		Category:   category,
-		Tag:        tag,
-		SourceType: sourceType,
-		FilePath:   filePath,
+		Category:      category,
+		Tag:           tag,
+		SourceType:    sourceType,
+		FilePath:      filePath,
+		StaleOnly:     staleOnly,
+		CoveredBefore: coveredBefore,
 	})
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
 	jsonOK(w, entries)
+}
+
+func (s *Server) handleQueryMemory(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.memoryStore == nil {
+		jsonError(w, "memory store not configured", http.StatusInternalServerError)
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		jsonError(w, "q is required", http.StatusBadRequest)
+		return
+	}
+	limit := 10
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			jsonError(w, "limit must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		limit = parsed
+	}
+
+	entries, err := s.memoryStore.Search(query, limit)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	enriched, err := s.enrichMemoryEntries(entries)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, enriched)
 }
 
 func (s *Server) handleGetMemory(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +150,21 @@ func (s *Server) handleGetMemory(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusNotFound)
 		return
 	}
-	jsonOK(w, entry)
+	usedBy, err := s.memoryStore.FindUsedByTasks(entry.ID)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	supersedes, err := s.memoryStore.FindSupersededIDs(entry.ID)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, memoryEntryResponse{
+		Entry:       entry,
+		UsedByTasks: usedBy,
+		Supersedes:  supersedes,
+	})
 }
 
 func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +285,32 @@ func (s *Server) handleSyncMemory(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, result)
 }
 
+func (s *Server) handleRefreshMemory(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if s.memoryStore == nil || s.db == nil {
+		jsonError(w, "memory store not configured", http.StatusInternalServerError)
+		return
+	}
+
+	type refreshReq struct {
+		EntryID string `json:"entry_id"`
+	}
+	body, ok := decodeJSON[refreshReq](w, r, true)
+	if !ok {
+		return
+	}
+
+	syncer := s.newMemorySyncer(s.memoryStore)
+	result, err := syncer.Refresh(strings.TrimSpace(body.EntryID))
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, result)
+}
+
 func hasMemoryTag(tags []string, needle string) bool {
 	needle = strings.TrimSpace(strings.ToLower(needle))
 	if needle == "" {
@@ -253,11 +335,32 @@ func isValidMemoryCategory(category string) bool {
 
 func isValidMemorySourceType(sourceType string) bool {
 	switch strings.TrimSpace(strings.ToLower(sourceType)) {
-	case "retro", "task", "commit":
+	case "retro", "explore":
 		return true
 	default:
 		return false
 	}
+}
+
+type memoryEntryResponse struct {
+	Entry       *memory.Entry       `json:"entry"`
+	UsedByTasks []memory.UsedByTask `json:"used_by_tasks,omitempty"`
+	Supersedes  []string            `json:"supersedes,omitempty"`
+}
+
+func (s *Server) enrichMemoryEntries(entries []*memory.Entry) ([]memoryEntryResponse, error) {
+	enriched := make([]memoryEntryResponse, 0, len(entries))
+	for _, entry := range entries {
+		usedBy, err := s.memoryStore.FindUsedByTasks(entry.ID)
+		if err != nil {
+			return nil, err
+		}
+		enriched = append(enriched, memoryEntryResponse{
+			Entry:       entry,
+			UsedByTasks: usedBy,
+		})
+	}
+	return enriched, nil
 }
 
 func hasMemoryFilePath(paths []string, needle string) bool {

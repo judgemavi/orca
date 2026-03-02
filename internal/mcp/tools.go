@@ -60,9 +60,11 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"memory_list":                s.HandleMemoryListTool,
 		"memory_get":                 s.HandleMemoryGetTool,
 		"memory_search":              s.HandleMemorySearchTool,
+		"memory_query":               s.HandleMemoryQueryTool,
 		"memory_update":              s.HandleMemoryUpdateTool,
 		"memory_delete":              s.HandleMemoryDeleteTool,
 		"memory_sync":                s.HandleMemorySyncTool,
+		"memory_refresh":             s.HandleMemoryRefreshTool,
 		"memory_status":              s.HandleMemoryStatusTool,
 	}
 }

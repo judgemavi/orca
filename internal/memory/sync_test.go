@@ -68,20 +68,20 @@ func TestSyncNoOpWhenHeadUnchanged(t *testing.T) {
 	}
 }
 
-func TestSyncAppliesSourceTypePolicies(t *testing.T) {
+func TestSyncClassifiesAndFlagsEntries(t *testing.T) {
 	repoDir := initGitRepoWithCommit(t, map[string]string{
-		"internal/retro.go":  "package main\n",
-		"internal/task.go":   "package main\n",
-		"internal/commit.go": "package main\n",
-		"internal/other.go":  "package main\n",
+		"go.mod":              "module example.com/orca\n\ngo 1.22\n",
+		"internal/retro.go":   "package main\n",
+		"internal/deleted.go": "package main\n",
+		"internal/other.go":   "package main\n",
 	})
 
 	store, db := setupStore(t)
 	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
 
 	retro := mustCreateEntryWithOptions(t, store, "retro", "pattern", []string{"sync"}, 1.0, "hash-sync-retro", "retro", []string{"internal/retro.go"})
-	taskEntry := mustCreateEntryWithOptions(t, store, "task", "pattern", []string{"sync"}, 1.0, "hash-sync-task", "task", []string{"internal/task.go"})
-	commitEntry := mustCreateEntryWithOptions(t, store, "commit", "pattern", []string{"sync"}, 1.0, "hash-sync-commit", "commit", []string{"internal/commit.go"})
+	structuralEntry := mustCreateEntryWithOptions(t, store, "structural", "architecture", []string{"sync"}, 1.0, "hash-sync-structural", "explore", []string{"go.mod"})
+	deletedEntry := mustCreateEntryWithOptions(t, store, "deleted", "pattern", []string{"sync"}, 1.0, "hash-sync-deleted", "explore", []string{"internal/deleted.go"})
 	unaffected := mustCreateEntryWithOptions(t, store, "other", "pattern", []string{"sync"}, 1.0, "hash-sync-other", "retro", []string{"internal/other.go"})
 
 	last := gitOutput(t, repoDir, "rev-parse", "HEAD")
@@ -90,10 +90,14 @@ func TestSyncAppliesSourceTypePolicies(t *testing.T) {
 	}
 
 	writeRepoFile(t, repoDir, "internal/retro.go", "package main\n// changed\n")
-	writeRepoFile(t, repoDir, "internal/task.go", "package main\n// changed\n")
-	writeRepoFile(t, repoDir, "internal/commit.go", "package main\n// changed\n")
-	runGit(t, repoDir, "add", "internal/retro.go", "internal/task.go", "internal/commit.go")
+	writeRepoFile(t, repoDir, "go.mod", "module example.com/orca\n\ngo 1.23\n")
+	if err := os.Remove(filepath.Join(repoDir, "internal/deleted.go")); err != nil {
+		t.Fatalf("remove deleted file: %v", err)
+	}
+	runGit(t, repoDir, "add", "internal/retro.go", "go.mod")
+	runGit(t, repoDir, "rm", "internal/deleted.go")
 	runGit(t, repoDir, "commit", "-m", "change tracked files")
+	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
 
 	result, err := syncer.Sync()
 	if err != nil {
@@ -108,29 +112,47 @@ func TestSyncAppliesSourceTypePolicies(t *testing.T) {
 	if len(result.AffectedFiles) != 3 {
 		t.Fatalf("affected_files len = %d, want 3", len(result.AffectedFiles))
 	}
+	if result.StaleEntries != 1 {
+		t.Fatalf("stale_entries = %d, want 1", result.StaleEntries)
+	}
+	if result.SupersededCount != 1 {
+		t.Fatalf("superseded_count = %d, want 1", result.SupersededCount)
+	}
+	if result.Classifications["internal/retro.go"] != "body" {
+		t.Fatalf("classification internal/retro.go = %q, want body", result.Classifications["internal/retro.go"])
+	}
+	if result.Classifications["go.mod"] != "structural" {
+		t.Fatalf("classification go.mod = %q, want structural", result.Classifications["go.mod"])
+	}
+	if result.Classifications["internal/deleted.go"] != "deleted" {
+		t.Fatalf("classification internal/deleted.go = %q, want deleted", result.Classifications["internal/deleted.go"])
+	}
 
 	gotRetro, err := store.Get(retro.ID)
 	if err != nil {
 		t.Fatalf("get retro: %v", err)
 	}
-	if gotRetro.Confidence != 0.8 {
-		t.Fatalf("retro confidence = %v, want 0.8", gotRetro.Confidence)
+	if gotRetro.Confidence != 0.95 {
+		t.Fatalf("retro confidence = %v, want 0.95", gotRetro.Confidence)
+	}
+	if gotRetro.CoveredAtCommit != head {
+		t.Fatalf("retro covered_at_commit = %q, want %q", gotRetro.CoveredAtCommit, head)
 	}
 
-	gotTask, err := store.Get(taskEntry.ID)
+	gotStructural, err := store.Get(structuralEntry.ID)
 	if err != nil {
-		t.Fatalf("get task entry: %v", err)
+		t.Fatalf("get structural entry: %v", err)
 	}
-	if gotTask.Confidence != 0.9 {
-		t.Fatalf("task confidence = %v, want 0.9", gotTask.Confidence)
+	if !gotStructural.Stale {
+		t.Fatal("structural entry stale = false, want true")
 	}
 
-	gotCommit, err := store.Get(commitEntry.ID)
+	gotDeleted, err := store.Get(deletedEntry.ID)
 	if err != nil {
-		t.Fatalf("get commit entry: %v", err)
+		t.Fatalf("get deleted entry: %v", err)
 	}
-	if gotCommit.SupersededBy != commitEntry.ID {
-		t.Fatalf("commit superseded_by = %q, want self id %q", gotCommit.SupersededBy, commitEntry.ID)
+	if gotDeleted.SupersededBy != deletedEntry.ID {
+		t.Fatalf("deleted superseded_by = %q, want self id %q", gotDeleted.SupersededBy, deletedEntry.ID)
 	}
 
 	gotUnaffected, err := store.Get(unaffected.ID)

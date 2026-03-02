@@ -614,7 +614,7 @@ func (s *Server) toolDefinitions() []toolDef {
 					},
 					"source_type": map[string]interface{}{
 						"type":        "string",
-						"description": "Optional source type filter: retro, task, commit.",
+						"description": "Optional source type filter: retro, explore.",
 					},
 					"file_path": map[string]interface{}{
 						"type":        "string",
@@ -653,11 +653,29 @@ func (s *Server) toolDefinitions() []toolDef {
 					},
 					"source_type": map[string]interface{}{
 						"type":        "string",
-						"description": "Optional source type filter: retro, task, commit.",
+						"description": "Optional source type filter: retro, explore.",
 					},
 					"file_path": map[string]interface{}{
 						"type":        "string",
 						"description": "Optional file path filter for associated files.",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "memory_query",
+			Description: "Natural-language memory query with lineage and staleness metadata.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Natural-language query string.",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results (default: 10).",
 					},
 				},
 				"required": []string{"query"},
@@ -712,8 +730,21 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
+			Name:        "memory_refresh",
+			Description: "Refresh stale memory entries (all or a single entry).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"entry_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional entry ID for targeted refresh.",
+					},
+				},
+			},
+		},
+		{
 			Name:        "memory_status",
-			Description: "Get memory sync status, including commit lag and context staleness.",
+			Description: "Get memory sync status and health summary (by source, stale count, average confidence).",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},

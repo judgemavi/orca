@@ -16,7 +16,7 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 		Content:        "Prefer table-driven tests for parser cases",
 		Category:       "pattern",
 		Tags:           []string{"go", "testing"},
-		SourceType:     "task",
+		SourceType:     "explore",
 		FilePaths:      []string{"internal/memory/memory.go", "internal/memory/memory_test.go"},
 		ProvenanceHash: "hash-crud-1",
 	}
@@ -40,8 +40,8 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	if len(got.Tags) != 2 || got.Tags[0] != "go" || got.Tags[1] != "testing" {
 		t.Fatalf("tags = %v, want [go testing]", got.Tags)
 	}
-	if got.SourceType != "task" {
-		t.Fatalf("source_type = %q, want task", got.SourceType)
+	if got.SourceType != "explore" {
+		t.Fatalf("source_type = %q, want explore", got.SourceType)
 	}
 	if len(got.FilePaths) != 2 {
 		t.Fatalf("file_paths len = %d, want 2", len(got.FilePaths))
@@ -54,8 +54,8 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	if tagsRaw != `["go","testing"]` {
 		t.Fatalf("stored tags = %q, want JSON array", tagsRaw)
 	}
-	if sourceTypeRaw != "task" {
-		t.Fatalf("stored source_type = %q, want task", sourceTypeRaw)
+	if sourceTypeRaw != "explore" {
+		t.Fatalf("stored source_type = %q, want explore", sourceTypeRaw)
 	}
 
 	var ftsRows int
@@ -70,7 +70,7 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 		"content":     "Updated: prefer focused, narrow unit tests",
 		"tags":        []string{"go", "unit"},
 		"confidence":  0.75,
-		"source_type": "commit",
+		"source_type": "retro",
 	}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -101,8 +101,8 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	if len(updated.Tags) != 2 || updated.Tags[1] != "unit" {
 		t.Fatalf("tags after update = %v", updated.Tags)
 	}
-	if updated.SourceType != "commit" {
-		t.Fatalf("source_type after update = %q, want commit", updated.SourceType)
+	if updated.SourceType != "retro" {
+		t.Fatalf("source_type after update = %q, want retro", updated.SourceType)
 	}
 
 	if err := store.Delete(entry.ID); err != nil {
@@ -379,19 +379,19 @@ func TestListFiltersBySourceTypeAndFilePath(t *testing.T) {
 	retro := mustCreateEntryWithOptions(
 		t, store, "Retro entry", "pattern", []string{"retro"}, 0.9, "hash-list-source-1", "retro", []string{"internal/state/state.go"},
 	)
-	task := mustCreateEntryWithOptions(
-		t, store, "Task entry", "architecture", []string{"task"}, 0.9, "hash-list-source-2", "task", []string{"internal/state/state.go"},
+	explore := mustCreateEntryWithOptions(
+		t, store, "Explore entry", "architecture", []string{"explore"}, 0.9, "hash-list-source-2", "explore", []string{"internal/state/state.go"},
 	)
 	_ = mustCreateEntryWithOptions(
-		t, store, "Commit entry", "dependency", []string{"commit"}, 0.9, "hash-list-source-3", "commit", []string{"README.md"},
+		t, store, "Retro readme entry", "dependency", []string{"retro"}, 0.9, "hash-list-source-3", "retro", []string{"README.md"},
 	)
 
-	bySourceType, err := store.List(ListOpts{SourceType: "task"})
+	bySourceType, err := store.List(ListOpts{SourceType: "explore"})
 	if err != nil {
 		t.Fatalf("list by source type: %v", err)
 	}
-	if len(bySourceType) != 1 || bySourceType[0].ID != task.ID {
-		t.Fatalf("source type filter got %v, want only %s", entryIDs(bySourceType), task.ID)
+	if len(bySourceType) != 1 || bySourceType[0].ID != explore.ID {
+		t.Fatalf("source type filter got %v, want only %s", entryIDs(bySourceType), explore.ID)
 	}
 
 	byFilePath, err := store.List(ListOpts{FilePath: "internal/state/state.go"})
@@ -482,6 +482,93 @@ func TestProvenanceHashLookupIncludesSupersededEntries(t *testing.T) {
 	}
 	if missing != nil {
 		t.Fatalf("missing provenance hash returned entry: %#v", missing)
+	}
+}
+
+func TestFindUsedByTasks(t *testing.T) {
+	store, db := setupStore(t)
+
+	entry := mustCreateEntryWithOptions(
+		t,
+		store,
+		"Authentication middleware validates JWT",
+		"pattern",
+		[]string{"auth"},
+		0.9,
+		"hash-used-by-1",
+		"explore",
+		[]string{"internal/api/middleware.go"},
+	)
+
+	now := time.Now().UTC()
+	if _, err := db.Exec(
+		`INSERT INTO tasks (id, title, description, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		"task-memory-used-1",
+		"Add auth endpoint",
+		"Wire auth endpoint",
+		"running",
+		now,
+		now,
+	); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO task_interactions (id, task_id, phase, tool, log_path, status, quality_json, started_at, finished_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"interaction-memory-used-1",
+		"task-memory-used-1",
+		"plan",
+		"codex",
+		"/tmp/interaction-memory-used-1.log",
+		"completed",
+		`{"used_memory_ids":["`+entry.ID+`"]}`,
+		now,
+		now,
+	); err != nil {
+		t.Fatalf("insert interaction: %v", err)
+	}
+
+	usedBy, err := store.FindUsedByTasks(entry.ID)
+	if err != nil {
+		t.Fatalf("find used-by tasks: %v", err)
+	}
+	if len(usedBy) != 1 {
+		t.Fatalf("used by len = %d, want 1", len(usedBy))
+	}
+	if usedBy[0].TaskID != "task-memory-used-1" {
+		t.Fatalf("used by task id = %q, want task-memory-used-1", usedBy[0].TaskID)
+	}
+}
+
+func TestBuildHealthSummary(t *testing.T) {
+	store, _ := setupStore(t)
+
+	retro := mustCreateEntryWithOptions(
+		t, store, "Retro rule", "pattern", []string{"retro"}, 0.8, "hash-health-1", "retro", []string{"internal/a.go"},
+	)
+	_ = mustCreateEntryWithOptions(
+		t, store, "Explore rule", "architecture", []string{"explore"}, 0.9, "hash-health-2", "explore", []string{"internal/b.go"},
+	)
+	if err := store.MarkStale(retro.ID); err != nil {
+		t.Fatalf("mark stale: %v", err)
+	}
+
+	summary, err := store.BuildHealthSummary()
+	if err != nil {
+		t.Fatalf("build health summary: %v", err)
+	}
+	if summary.TotalEntries != 2 {
+		t.Fatalf("total entries = %d, want 2", summary.TotalEntries)
+	}
+	if summary.StaleCount != 1 {
+		t.Fatalf("stale count = %d, want 1", summary.StaleCount)
+	}
+	if summary.BySource["retro"] != 1 || summary.BySource["explore"] != 1 {
+		t.Fatalf("by source = %v, want retro=1 explore=1", summary.BySource)
+	}
+	if summary.AverageQuality <= 0 {
+		t.Fatalf("avg confidence = %f, want > 0", summary.AverageQuality)
 	}
 }
 

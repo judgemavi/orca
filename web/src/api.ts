@@ -10,6 +10,9 @@ import type {
   InteractionWithContent,
   ProposedTask,
   MemoryEntry,
+  MemoryEntryDetail,
+  MemoryQueryResult,
+  MemoryRefreshResult,
   MemorySyncResult,
   ProjectStatus,
   ListMemoryParams,
@@ -118,18 +121,34 @@ export const api = {
         tag: params?.tag,
         source_type: params?.source_type,
         file_path: params?.file_path,
+        stale:
+          typeof params?.stale === 'boolean'
+            ? String(params.stale)
+            : undefined,
+        covered_before: params?.covered_before,
         q: params?.q,
         limit:
           typeof params?.limit === 'number' ? String(params.limit) : undefined,
       }),
     ),
+  queryMemory: (q: string, limit?: number) =>
+    request<MemoryQueryResult[]>(
+      withQuery('/memory/query', {
+        q,
+        limit: typeof limit === 'number' ? String(limit) : undefined,
+      }),
+    ),
   getMemory: (id: string) =>
-    request<MemoryEntry>(`/memory/${encodeURIComponent(id)}`),
+    request<MemoryEntryDetail>(`/memory/${encodeURIComponent(id)}`),
   updateMemory: (id: string, data: UpdateMemoryInput) =>
     patch<MemoryEntry>(`/memory/${encodeURIComponent(id)}`, data),
   deleteMemory: (id: string) =>
     del<{ deleted: string }>(`/memory/${encodeURIComponent(id)}`),
   syncMemory: () => post<MemorySyncResult>('/memory/sync'),
+  refreshMemory: (entryId?: string) =>
+    post<MemoryRefreshResult>('/memory/refresh', {
+      ...(entryId ? { entry_id: entryId } : {}),
+    }),
   getStatus: () => request<ProjectStatus>('/status'),
 
   merge: () => post<{ operation_id: string }>('/merge'),

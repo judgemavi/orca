@@ -473,6 +473,7 @@ func (e *Explorer) seedMemory(contextContent string, entries []extractedMemoryEn
 	}
 
 	createdIDs := make([]string, 0, len(entries))
+	coveredAtCommit, _ := currentHeadCommit(e.repoDir)
 	for _, extracted := range entries {
 		if strings.TrimSpace(extracted.Content) == "" {
 			continue
@@ -498,13 +499,14 @@ func (e *Explorer) seedMemory(contextContent string, entries []extractedMemoryEn
 			continue
 		}
 		entry := &memory.Entry{
-			Content:        extracted.Content,
-			Category:       extracted.Category,
-			Tags:           tags,
-			SourceType:     "task",
-			FilePaths:      filePaths,
-			Confidence:     confidence,
-			ProvenanceHash: provenanceHash,
+			Content:         extracted.Content,
+			Category:        extracted.Category,
+			Tags:            tags,
+			SourceType:      "explore",
+			FilePaths:       filePaths,
+			CoveredAtCommit: coveredAtCommit,
+			Confidence:      confidence,
+			ProvenanceHash:  provenanceHash,
 		}
 		if err := e.memory.Create(entry); err != nil {
 			return err
@@ -543,6 +545,16 @@ func trackedFileSet(repoDir string) (map[string]struct{}, error) {
 		tracked[path] = struct{}{}
 	}
 	return tracked, nil
+}
+
+func currentHeadCommit(repoDir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func filterTrackedFilePaths(paths []string, tracked map[string]struct{}) []string {

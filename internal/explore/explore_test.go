@@ -241,7 +241,7 @@ func TestExtractMemoryExtractionAndStripSection(t *testing.T) {
 	}
 }
 
-func TestSeedMemoryCreatesTaskEntriesAndSupersedesOld(t *testing.T) {
+func TestSeedMemoryCreatesExploreEntriesAndSupersedesOld(t *testing.T) {
 	repoDir := initEmptyGitRepo(t)
 	writeRepoFile(t, repoDir, "internal/app.go", "package app\n")
 	runGit(t, repoDir, "add", "internal/app.go")
@@ -254,7 +254,7 @@ func TestSeedMemoryCreatesTaskEntriesAndSupersedesOld(t *testing.T) {
 		Content:        "Old seeded context",
 		Category:       "pattern",
 		Tags:           []string{"explore-seed", "old"},
-		SourceType:     "task",
+		SourceType:     "explore",
 		FilePaths:      []string{"internal/app.go"},
 		Confidence:     0.9,
 		ProvenanceHash: "old-seed-hash",
@@ -285,8 +285,8 @@ func TestSeedMemoryCreatesTaskEntriesAndSupersedesOld(t *testing.T) {
 		t.Fatalf("list len = %d, want 1 non-superseded entry", len(current))
 	}
 	newEntry := current[0]
-	if newEntry.SourceType != "task" {
-		t.Fatalf("source_type = %q, want task", newEntry.SourceType)
+	if newEntry.SourceType != "explore" {
+		t.Fatalf("source_type = %q, want explore", newEntry.SourceType)
 	}
 	if !contains(newEntry.Tags, "explore-seed") {
 		t.Fatalf("tags = %v, want explore-seed", newEntry.Tags)
