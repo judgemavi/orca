@@ -13,34 +13,34 @@ import { api } from '../api'
 import { Button } from '../components/Button'
 import { DialogChrome } from '../components/DialogChrome'
 import {
-  useDeleteKnowledgeMutation,
-  useKnowledgeMutation,
-  useKnowledgeQuery,
+  useDeleteMemoryMutation,
+  useMemoryMutation,
+  useMemoryQuery,
 } from '../hooks/queries'
 import { controlClass } from '../lib/constants'
 import { queryKeys } from '../lib/queryKeys'
-import type { KnowledgeCategory, KnowledgeEntry } from '../types'
+import type { MemoryCategory, MemoryEntry } from '../types'
 
-const CATEGORIES: KnowledgeCategory[] = [
+const CATEGORIES: MemoryCategory[] = [
   'pattern',
   'pitfall',
   'preference',
   'convention',
 ]
 
-const CATEGORY_TONE: Record<KnowledgeCategory, string> = {
+const CATEGORY_TONE: Record<MemoryCategory, string> = {
   pattern: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
   pitfall: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
   preference: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
   convention: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
 }
 
-const columnHelper = createColumnHelper<KnowledgeEntry>()
+const columnHelper = createColumnHelper<MemoryEntry>()
 
 type EditDraft = {
   content: string
   confidence: string
-  category: KnowledgeCategory
+  category: MemoryCategory
 }
 
 function formatDate(iso: string) {
@@ -53,15 +53,15 @@ function formatDate(iso: string) {
   })
 }
 
-function KnowledgePage() {
+function MemoryPage() {
   const [search, setSearch] = useState('')
-  const [category, setCategory] = useState<KnowledgeCategory | 'all'>('all')
+  const [category, setCategory] = useState<MemoryCategory | 'all'>('all')
   const [expandedContent, setExpandedContent] = useState<
     Record<string, boolean>
   >({})
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState<EditDraft | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<KnowledgeEntry | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<MemoryEntry | null>(null)
   const queryClient = useQueryClient()
 
   const listParams = useMemo(() => {
@@ -72,9 +72,9 @@ function KnowledgePage() {
     }
   }, [search, category])
 
-  const knowledgeQuery = useKnowledgeQuery(listParams)
-  const updateMutation = useKnowledgeMutation()
-  const deleteMutation = useDeleteKnowledgeMutation()
+  const memoryQuery = useMemoryQuery(listParams)
+  const updateMutation = useMemoryMutation()
+  const deleteMutation = useDeleteMemoryMutation()
   const exploreMutation = useMutation({
     mutationFn: () => api.runExplore(),
     onSuccess: async () => {
@@ -91,13 +91,13 @@ function KnowledgePage() {
     },
   })
 
-  const entries = knowledgeQuery.data ?? []
+  const entries = memoryQuery.data ?? []
 
   const toggleExpanded = (id: string) => {
     setExpandedContent((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
-  const beginEdit = (entry: KnowledgeEntry) => {
+  const beginEdit = (entry: MemoryEntry) => {
     setEditingId(entry.id)
     setDraft({
       content: entry.content,
@@ -134,7 +134,7 @@ function KnowledgePage() {
           category: draft.category,
         },
       })
-      toast.success('Knowledge updated')
+      toast.success('Memory updated')
       cancelEdit()
     } catch (error: unknown) {
       toast.error(
@@ -148,7 +148,7 @@ function KnowledgePage() {
     try {
       await deleteMutation.mutateAsync(deleteTarget.id)
       if (editingId === deleteTarget.id) cancelEdit()
-      toast.success('Knowledge deleted')
+      toast.success('Memory deleted')
       setDeleteTarget(null)
     } catch (error: unknown) {
       toast.error(
@@ -220,7 +220,7 @@ function KnowledgePage() {
                     prev
                       ? {
                           ...prev,
-                          category: e.target.value as KnowledgeCategory,
+                          category: e.target.value as MemoryCategory,
                         }
                       : prev,
                   )
@@ -383,7 +383,7 @@ function KnowledgePage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col py-4">
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
-        <h1 className="text-lg font-semibold">Knowledge</h1>
+        <h1 className="text-lg font-semibold">Memory</h1>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted">
             {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
@@ -403,13 +403,13 @@ function KnowledgePage() {
           className={controlClass}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search knowledge (BM25)"
+          placeholder="Search memory (BM25)"
         />
         <select
           className={controlClass}
           value={category}
           onChange={(e) =>
-            setCategory(e.target.value as KnowledgeCategory | 'all')
+            setCategory(e.target.value as MemoryCategory | 'all')
           }
         >
           <option value="all">All categories</option>
@@ -430,22 +430,22 @@ function KnowledgePage() {
         </Button>
       </div>
 
-      {knowledgeQuery.isLoading ? (
+      {memoryQuery.isLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
         </div>
-      ) : knowledgeQuery.isError ? (
+      ) : memoryQuery.isError ? (
         <div className="flex flex-1 items-center justify-center text-sm text-danger">
-          {knowledgeQuery.error instanceof Error
-            ? knowledgeQuery.error.message
-            : 'Failed to load knowledge entries'}
+          {memoryQuery.error instanceof Error
+            ? memoryQuery.error.message
+            : 'Failed to load memory entries'}
         </div>
       ) : entries.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-          <p className="text-sm">No knowledge entries yet.</p>
+          <p className="text-sm">No memory entries yet.</p>
           <p className="text-xs text-muted">
             Run <code>orca tasks retro</code> on completed tasks to extract
-            knowledge.
+            memory.
           </p>
         </div>
       ) : (
@@ -501,10 +501,10 @@ function KnowledgePage() {
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
           <Dialog.Content className="dialog-content fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2">
             <div className="dialog-content-inner w-[min(92vw,420px)]">
-              <DialogChrome title="Delete Knowledge" />
+              <DialogChrome title="Delete Memory" />
               <div className="flex flex-col gap-4 p-4 text-sm">
                 <p>
-                  Delete this knowledge entry? This action cannot be undone.
+                  Delete this memory entry? This action cannot be undone.
                 </p>
                 {deleteTarget && (
                   <p className="line-clamp-3 rounded-md bg-surface-alt p-2 text-xs">
@@ -535,6 +535,6 @@ function KnowledgePage() {
   )
 }
 
-export const Route = createFileRoute('/knowledge')({
-  component: KnowledgePage,
+export const Route = createFileRoute('/memory')({
+  component: MemoryPage,
 })

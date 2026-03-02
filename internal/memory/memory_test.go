@@ -1,4 +1,4 @@
-package knowledge
+package memory
 
 import (
 	"strings"
@@ -40,7 +40,7 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	}
 
 	var tagsRaw string
-	if err := db.QueryRow(`SELECT tags FROM knowledge_entries WHERE id = ?`, entry.ID).Scan(&tagsRaw); err != nil {
+	if err := db.QueryRow(`SELECT tags FROM memory_entries WHERE id = ?`, entry.ID).Scan(&tagsRaw); err != nil {
 		t.Fatalf("read tags json: %v", err)
 	}
 	if tagsRaw != `["go","testing"]` {
@@ -48,7 +48,7 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	}
 
 	var ftsRows int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM knowledge_fts WHERE id = ?`, entry.ID).Scan(&ftsRows); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM memory_fts WHERE id = ?`, entry.ID).Scan(&ftsRows); err != nil {
 		t.Fatalf("count fts rows: %v", err)
 	}
 	if ftsRows != 1 {
@@ -97,13 +97,13 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 		t.Fatalf("get after delete err = %v, want not found", err)
 	}
 
-	if err := db.QueryRow(`SELECT COUNT(*) FROM knowledge_entries WHERE id = ?`, entry.ID).Scan(&ftsRows); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM memory_entries WHERE id = ?`, entry.ID).Scan(&ftsRows); err != nil {
 		t.Fatalf("count entries rows after delete: %v", err)
 	}
 	if ftsRows != 0 {
 		t.Fatalf("entries rows after delete = %d, want 0", ftsRows)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM knowledge_fts WHERE id = ?`, entry.ID).Scan(&ftsRows); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM memory_fts WHERE id = ?`, entry.ID).Scan(&ftsRows); err != nil {
 		t.Fatalf("count fts rows after delete: %v", err)
 	}
 	if ftsRows != 0 {
@@ -239,12 +239,12 @@ func TestDecayConfidence(t *testing.T) {
 
 	oldTime := time.Now().UTC().Add(-72 * time.Hour)
 	for _, id := range []string{toDecay.ID, used.ID, low.ID, superseded.ID} {
-		if _, err := db.Exec(`UPDATE knowledge_entries SET updated_at = ? WHERE id = ?`, oldTime, id); err != nil {
+		if _, err := db.Exec(`UPDATE memory_entries SET updated_at = ? WHERE id = ?`, oldTime, id); err != nil {
 			t.Fatalf("set old updated_at for %s: %v", id, err)
 		}
 	}
 
-	qualityJSON := `{"used_knowledge_ids":["` + used.ID + `"]}`
+	qualityJSON := `{"used_memory_ids":["` + used.ID + `"]}`
 	if _, err := db.Exec(
 		`INSERT INTO task_interactions (id, phase, tool, log_path, status, quality_json, finished_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,

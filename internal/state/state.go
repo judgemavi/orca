@@ -172,7 +172,7 @@ func schemaV3Applied(tx *sql.Tx) (bool, error) {
 }
 
 func schemaV4Applied(tx *sql.Tx) (bool, error) {
-	return hasTable(tx, "knowledge_entries")
+	return hasTable(tx, "memory_entries")
 }
 
 func schemaV5Applied(tx *sql.Tx) (bool, error) {
@@ -386,7 +386,7 @@ CREATE TABLE IF NOT EXISTS config (
 `
 
 const schemaV4 = `
-CREATE TABLE IF NOT EXISTS knowledge_entries (
+CREATE TABLE IF NOT EXISTS memory_entries (
 	id                    TEXT PRIMARY KEY,
 	content               TEXT NOT NULL,
 	category              TEXT NOT NULL CHECK(category IN ('pattern','pitfall','preference','convention')),
@@ -395,16 +395,16 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
 	source_interaction_id TEXT REFERENCES task_interactions(id),
 	confidence            REAL NOT NULL DEFAULT 1.0,
 	provenance_hash       TEXT NOT NULL,
-	superseded_by         TEXT REFERENCES knowledge_entries(id),
+	superseded_by         TEXT REFERENCES memory_entries(id),
 	created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge_entries(category);
-CREATE INDEX IF NOT EXISTS idx_knowledge_source_task ON knowledge_entries(source_task_id);
-CREATE INDEX IF NOT EXISTS idx_knowledge_superseded ON knowledge_entries(superseded_by);
+CREATE INDEX IF NOT EXISTS idx_memory_category ON memory_entries(category);
+CREATE INDEX IF NOT EXISTS idx_memory_source_task ON memory_entries(source_task_id);
+CREATE INDEX IF NOT EXISTS idx_memory_superseded ON memory_entries(superseded_by);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
 	id UNINDEXED,
 	content,
 	tags,
@@ -412,14 +412,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
 );
 
 -- db_version triggers
-CREATE TRIGGER IF NOT EXISTS knowledge_version_insert
-AFTER INSERT ON knowledge_entries
+CREATE TRIGGER IF NOT EXISTS memory_version_insert
+AFTER INSERT ON memory_entries
 BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;
 
-CREATE TRIGGER IF NOT EXISTS knowledge_version_update
-AFTER UPDATE ON knowledge_entries
+CREATE TRIGGER IF NOT EXISTS memory_version_update
+AFTER UPDATE ON memory_entries
 BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;

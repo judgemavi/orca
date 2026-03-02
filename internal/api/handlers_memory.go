@@ -5,15 +5,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 )
 
-func (s *Server) handleListKnowledge(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	if s.knowledgeStore == nil {
-		jsonError(w, "knowledge store not configured", http.StatusInternalServerError)
+	if s.memoryStore == nil {
+		jsonError(w, "memory store not configured", http.StatusInternalServerError)
 		return
 	}
 
@@ -22,7 +22,7 @@ func (s *Server) handleListKnowledge(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
 
-	if category != "" && !isValidKnowledgeCategory(category) {
+	if category != "" && !isValidMemoryCategory(category) {
 		jsonError(w, "category must be one of: pattern|pitfall|preference|convention", http.StatusBadRequest)
 		return
 	}
@@ -38,18 +38,18 @@ func (s *Server) handleListKnowledge(w http.ResponseWriter, r *http.Request) {
 			limit = parsed
 		}
 
-		entries, err := s.knowledgeStore.Search(query, limit)
+		entries, err := s.memoryStore.Search(query, limit)
 		if err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
 
-		filtered := make([]*knowledge.Entry, 0, len(entries))
+		filtered := make([]*memory.Entry, 0, len(entries))
 		for _, entry := range entries {
 			if category != "" && entry.Category != category {
 				continue
 			}
-			if tag != "" && !hasKnowledgeTag(entry.Tags, tag) {
+			if tag != "" && !hasMemoryTag(entry.Tags, tag) {
 				continue
 			}
 			filtered = append(filtered, entry)
@@ -63,7 +63,7 @@ func (s *Server) handleListKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := s.knowledgeStore.List(knowledge.ListOpts{Category: category, Tag: tag})
+	entries, err := s.memoryStore.List(memory.ListOpts{Category: category, Tag: tag})
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
@@ -71,12 +71,12 @@ func (s *Server) handleListKnowledge(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, entries)
 }
 
-func (s *Server) handleGetKnowledge(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetMemory(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	if s.knowledgeStore == nil {
-		jsonError(w, "knowledge store not configured", http.StatusInternalServerError)
+	if s.memoryStore == nil {
+		jsonError(w, "memory store not configured", http.StatusInternalServerError)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (s *Server) handleGetKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := s.knowledgeStore.Get(id)
+	entry, err := s.memoryStore.Get(id)
 	if err != nil {
 		jsonError(w, err, http.StatusNotFound)
 		return
@@ -94,21 +94,21 @@ func (s *Server) handleGetKnowledge(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, entry)
 }
 
-func (s *Server) handleUpdateKnowledge(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPatch) {
 		return
 	}
-	if s.knowledgeStore == nil {
-		jsonError(w, "knowledge store not configured", http.StatusInternalServerError)
+	if s.memoryStore == nil {
+		jsonError(w, "memory store not configured", http.StatusInternalServerError)
 		return
 	}
 
-	type updateKnowledgeReq struct {
+	type updateMemoryReq struct {
 		Content    *string  `json:"content"`
 		Confidence *float64 `json:"confidence"`
 		Category   *string  `json:"category"`
 	}
-	body, ok := decodeJSON[updateKnowledgeReq](w, r, false)
+	body, ok := decodeJSON[updateMemoryReq](w, r, false)
 	if !ok {
 		return
 	}
@@ -137,7 +137,7 @@ func (s *Server) handleUpdateKnowledge(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Category != nil {
 		category := strings.TrimSpace(strings.ToLower(*body.Category))
-		if !isValidKnowledgeCategory(category) {
+		if !isValidMemoryCategory(category) {
 			jsonError(w, "category must be one of: pattern|pitfall|preference|convention", http.StatusBadRequest)
 			return
 		}
@@ -148,7 +148,7 @@ func (s *Server) handleUpdateKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.knowledgeStore.Update(id, fields); err != nil {
+	if err := s.memoryStore.Update(id, fields); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			jsonError(w, err, http.StatusNotFound)
 			return
@@ -157,7 +157,7 @@ func (s *Server) handleUpdateKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := s.knowledgeStore.Get(id)
+	entry, err := s.memoryStore.Get(id)
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
@@ -165,12 +165,12 @@ func (s *Server) handleUpdateKnowledge(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, entry)
 }
 
-func (s *Server) handleDeleteKnowledge(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if s.knowledgeStore == nil {
-		jsonError(w, "knowledge store not configured", http.StatusInternalServerError)
+	if s.memoryStore == nil {
+		jsonError(w, "memory store not configured", http.StatusInternalServerError)
 		return
 	}
 
@@ -180,18 +180,18 @@ func (s *Server) handleDeleteKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.knowledgeStore.Get(id); err != nil {
+	if _, err := s.memoryStore.Get(id); err != nil {
 		jsonError(w, err, http.StatusNotFound)
 		return
 	}
-	if err := s.knowledgeStore.Delete(id); err != nil {
+	if err := s.memoryStore.Delete(id); err != nil {
 		jsonError(w, err, http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, map[string]string{"deleted": id})
 }
 
-func hasKnowledgeTag(tags []string, needle string) bool {
+func hasMemoryTag(tags []string, needle string) bool {
 	needle = strings.TrimSpace(strings.ToLower(needle))
 	if needle == "" {
 		return false
@@ -204,7 +204,7 @@ func hasKnowledgeTag(tags []string, needle string) bool {
 	return false
 }
 
-func isValidKnowledgeCategory(category string) bool {
+func isValidMemoryCategory(category string) bool {
 	switch strings.TrimSpace(strings.ToLower(category)) {
 	case "pattern", "pitfall", "preference", "convention":
 		return true

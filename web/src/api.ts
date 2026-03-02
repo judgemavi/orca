@@ -9,9 +9,9 @@ import type {
   Interaction,
   InteractionWithContent,
   ProposedTask,
-  KnowledgeEntry,
-  ListKnowledgeParams,
-  UpdateKnowledgeInput,
+  MemoryEntry,
+  ListMemoryParams,
+  UpdateMemoryInput,
 } from './types'
 
 const BASE = '/api/v1'
@@ -109,9 +109,9 @@ export const api = {
       }),
     ),
 
-  listKnowledge: (params?: ListKnowledgeParams) =>
-    request<KnowledgeEntry[]>(
-      withQuery('/knowledge', {
+  listMemory: (params?: ListMemoryParams) =>
+    request<MemoryEntry[]>(
+      withQuery('/memory', {
         category: params?.category,
         tag: params?.tag,
         q: params?.q,
@@ -119,12 +119,12 @@ export const api = {
           typeof params?.limit === 'number' ? String(params.limit) : undefined,
       }),
     ),
-  getKnowledge: (id: string) =>
-    request<KnowledgeEntry>(`/knowledge/${encodeURIComponent(id)}`),
-  updateKnowledge: (id: string, data: UpdateKnowledgeInput) =>
-    patch<KnowledgeEntry>(`/knowledge/${encodeURIComponent(id)}`, data),
-  deleteKnowledge: (id: string) =>
-    del<{ deleted: string }>(`/knowledge/${encodeURIComponent(id)}`),
+  getMemory: (id: string) =>
+    request<MemoryEntry>(`/memory/${encodeURIComponent(id)}`),
+  updateMemory: (id: string, data: UpdateMemoryInput) =>
+    patch<MemoryEntry>(`/memory/${encodeURIComponent(id)}`, data),
+  deleteMemory: (id: string) =>
+    del<{ deleted: string }>(`/memory/${encodeURIComponent(id)}`),
 
   merge: () => post<{ operation_id: string }>('/merge'),
   startTasks: (taskIds?: string[], tool?: string, model?: string) =>

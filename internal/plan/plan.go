@@ -12,7 +12,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -25,7 +25,7 @@ type Generator struct {
 	timeout      time.Duration
 	repoDir      string
 	interactions *interaction.Store
-	knowledge    *knowledge.Store
+	memory       *memory.Store
 }
 
 // New creates a plan Generator.
@@ -37,9 +37,9 @@ func New(toolName string, d driver.Driver, model string, timeout time.Duration, 
 	return &Generator{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
-// WithKnowledge attaches an optional knowledge store for prompt-time retrieval.
-func (g *Generator) WithKnowledge(store *knowledge.Store) *Generator {
-	g.knowledge = store
+// WithMemory attaches an optional memory store for prompt-time retrieval.
+func (g *Generator) WithMemory(store *memory.Store) *Generator {
+	g.memory = store
 	return g
 }
 
@@ -52,20 +52,20 @@ func (g *Generator) GenerateWithModel(taskID, title, description, model string) 
 }
 
 func (g *Generator) generate(taskID, title, description, model string) (string, error) {
-	knowledgeSection := ""
-	usedKnowledgeIDs := []string{}
+	memorySection := ""
+	usedMemoryIDs := []string{}
 	usedProvenanceHashes := []string{}
-	if g.knowledge != nil {
+	if g.memory != nil {
 		query := strings.TrimSpace(title + "\n\n" + description)
-		entries, err := g.knowledge.Search(query, 10)
+		entries, err := g.memory.Search(query, 10)
 		if err != nil {
-			slog.Warn("plan: knowledge search failed", "task_id", taskID, "err", err)
+			slog.Warn("plan: memory search failed", "task_id", taskID, "err", err)
 		} else {
-			knowledgeSection, usedKnowledgeIDs, usedProvenanceHashes = buildKnowledgeSection(entries)
+			memorySection, usedMemoryIDs, usedProvenanceHashes = buildMemorySection(entries)
 		}
 	}
 
-	prompt := buildPlanPrompt(explore.LoadContext(g.repoDir), knowledgeSection, title, description)
+	prompt := buildPlanPrompt(explore.LoadContext(g.repoDir), memorySection, title, description)
 	selectedModel := g.model
 	if model != "" {
 		selectedModel = model
@@ -115,8 +115,8 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 				opts = append(opts, interaction.WithDiff(generatedPlan))
 			}
 			if status == "completed" {
-				if qualityJSON, err := buildKnowledgeQualityJSON(usedKnowledgeIDs, usedProvenanceHashes); err != nil {
-					slog.Warn("plan: build knowledge quality metadata failed", "task_id", taskID, "err", err)
+				if qualityJSON, err := buildMemoryQualityJSON(usedMemoryIDs, usedProvenanceHashes); err != nil {
+					slog.Warn("plan: build memory quality metadata failed", "task_id", taskID, "err", err)
 				} else {
 					opts = append(opts, interaction.WithQuality(qualityJSON))
 				}
@@ -141,25 +141,25 @@ func parsePlanResponse(stdout string) string {
 	return strings.TrimSpace(stdout)
 }
 
-func buildPlanPrompt(codebaseContext, knowledgeSection, title, description string) string {
+func buildPlanPrompt(codebaseContext, memorySection, title, description string) string {
 	contextSection := ""
 	if strings.TrimSpace(codebaseContext) != "" {
 		contextSection = "## Codebase Context\n\n" + codebaseContext + "\n\n"
 	}
-	knowledgeBlock := ""
-	if strings.TrimSpace(knowledgeSection) != "" {
-		knowledgeBlock = strings.TrimSpace(knowledgeSection) + "\n\n"
+	memoryBlock := ""
+	if strings.TrimSpace(memorySection) != "" {
+		memoryBlock = strings.TrimSpace(memorySection) + "\n\n"
 	}
-	prompt := fmt.Sprintf(prompts.Plan, contextSection+knowledgeBlock, title, description)
+	prompt := fmt.Sprintf(prompts.Plan, contextSection+memoryBlock, title, description)
 	return strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
 }
 
-type knowledgeUsageMetadata struct {
-	UsedKnowledgeIDs     []string `json:"used_knowledge_ids"`
+type memoryUsageMetadata struct {
+	UsedMemoryIDs        []string `json:"used_memory_ids"`
 	UsedProvenanceHashes []string `json:"used_provenance_hashes"`
 }
 
-func buildKnowledgeSection(entries []*knowledge.Entry) (section string, ids []string, provenanceHashes []string) {
+func buildMemorySection(entries []*memory.Entry) (section string, ids []string, provenanceHashes []string) {
 	if len(entries) == 0 {
 		return "", []string{}, []string{}
 	}
@@ -167,7 +167,7 @@ func buildKnowledgeSection(entries []*knowledge.Entry) (section string, ids []st
 	idSeen := make(map[string]struct{}, len(entries))
 	hashSeen := make(map[string]struct{}, len(entries))
 	lines := make([]string, 0, len(entries)*6+2)
-	lines = append(lines, "## Relevant Knowledge", "")
+	lines = append(lines, "## Relevant Memory", "")
 
 	item := 0
 	for _, entry := range entries {
@@ -208,14 +208,14 @@ func buildKnowledgeSection(entries []*knowledge.Entry) (section string, ids []st
 	return strings.Join(lines, "\n"), ids, provenanceHashes
 }
 
-func buildKnowledgeQualityJSON(ids, provenanceHashes []string) (string, error) {
-	metadata := knowledgeUsageMetadata{
-		UsedKnowledgeIDs:     normalizeUniqueStrings(ids),
+func buildMemoryQualityJSON(ids, provenanceHashes []string) (string, error) {
+	metadata := memoryUsageMetadata{
+		UsedMemoryIDs:        normalizeUniqueStrings(ids),
 		UsedProvenanceHashes: normalizeUniqueStrings(provenanceHashes),
 	}
 	raw, err := json.Marshal(metadata)
 	if err != nil {
-		return "", fmt.Errorf("marshal knowledge usage metadata: %w", err)
+		return "", fmt.Errorf("marshal memory usage metadata: %w", err)
 	}
 	return string(raw), nil
 }

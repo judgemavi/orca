@@ -76,7 +76,7 @@ func RegisterTask(root *cobra.Command, r *Registry) {
 
 	retroCmd := &cobra.Command{
 		Use:   "retro [task-id]",
-		Short: "Extract knowledge from a completed task",
+		Short: "Extract memory from a completed task",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  r.runTaskRetro,
 	}

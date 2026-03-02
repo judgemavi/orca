@@ -11,7 +11,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/testutil"
 )
@@ -24,10 +24,10 @@ func TestBuildRetroPrompt(t *testing.T) {
 		"run diff content",
 		"review feedback content",
 		"plan review feedback content",
-		[]*knowledge.Entry{
+		[]*memory.Entry{
 			{
 				ID:             "used-1",
-				Content:        "Existing used knowledge entry",
+				Content:        "Existing used memory entry",
 				Category:       "pattern",
 				Confidence:     0.9,
 				ProvenanceHash: "hash-used-1",
@@ -35,10 +35,10 @@ func TestBuildRetroPrompt(t *testing.T) {
 		},
 		[]string{"k-1", "k-2"},
 		[]string{"hash-1"},
-		[]*knowledge.Entry{
+		[]*memory.Entry{
 			{
 				ID:             "rel-1",
-				Content:        "Related existing knowledge",
+				Content:        "Related existing memory",
 				Category:       "pitfall",
 				Confidence:     0.8,
 				ProvenanceHash: "hash-rel-1",
@@ -55,8 +55,8 @@ func TestBuildRetroPrompt(t *testing.T) {
 		"plan review feedback content",
 		"- k-1",
 		"- hash-1",
-		"Existing used knowledge entry",
-		"Related existing knowledge",
+		"Existing used memory entry",
+		"Related existing memory",
 		"Output JSON array only.",
 		"Do not rephrase",
 	} {
@@ -97,31 +97,31 @@ func TestRetroProvenanceHash(t *testing.T) {
 	}
 }
 
-func TestRetroGeneratorRunCreatesKnowledgeAndSupersedes(t *testing.T) {
+func TestRetroGeneratorRunCreatesMemoryAndSupersedes(t *testing.T) {
 	db := testutil.DB(t)
 	taskStore := task.NewStore(db)
 	interactionStore := interaction.NewStore(db, t.TempDir())
-	knowledgeStore := knowledge.NewStore(db)
+	memoryStore := memory.NewStore(db)
 
-	tk, err := taskStore.Create("Retro Task", "Generate knowledge from a completed task", "")
+	tk, err := taskStore.Create("Retro Task", "Generate memory from a completed task", "")
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 
-	oldEntry := &knowledge.Entry{
+	oldEntry := &memory.Entry{
 		Content:        "Legacy parser guidance",
 		Category:       "pattern",
 		Tags:           []string{"go", "parser"},
 		Confidence:     0.7,
 		ProvenanceHash: "legacy-hash",
 	}
-	if err := knowledgeStore.Create(oldEntry); err != nil {
+	if err := memoryStore.Create(oldEntry); err != nil {
 		t.Fatalf("create old entry: %v", err)
 	}
 
 	planDiff := "1. Parse output\n2. Validate schema"
 	planQuality := fmt.Sprintf(
-		`{"used_knowledge_ids":["%s"],"used_provenance_hashes":["%s"]}`,
+		`{"used_memory_ids":["%s"],"used_provenance_hashes":["%s"]}`,
 		oldEntry.ID,
 		oldEntry.ProvenanceHash,
 	)
@@ -150,7 +150,7 @@ func TestRetroGeneratorRunCreatesKnowledgeAndSupersedes(t *testing.T) {
 		"retro-test-model",
 		time.Minute,
 		t.TempDir(),
-		knowledgeStore,
+		memoryStore,
 		taskStore,
 		interactionStore,
 	)
@@ -169,9 +169,9 @@ func TestRetroGeneratorRunCreatesKnowledgeAndSupersedes(t *testing.T) {
 		t.Fatalf("created_entry_ids = %v, want len 1", result.CreatedEntryIDs)
 	}
 
-	currentEntries, err := knowledgeStore.List(knowledge.ListOpts{})
+	currentEntries, err := memoryStore.List(memory.ListOpts{})
 	if err != nil {
-		t.Fatalf("list knowledge entries: %v", err)
+		t.Fatalf("list memory entries: %v", err)
 	}
 	if len(currentEntries) != 1 {
 		t.Fatalf("list count = %d, want 1 (old entry superseded)", len(currentEntries))
@@ -195,7 +195,7 @@ func TestRetroGeneratorRunCreatesKnowledgeAndSupersedes(t *testing.T) {
 		t.Fatalf("provenance_hash = %q, want %q", newEntry.ProvenanceHash, expectedHash)
 	}
 
-	oldReloaded, err := knowledgeStore.Get(oldEntry.ID)
+	oldReloaded, err := memoryStore.Get(oldEntry.ID)
 	if err != nil {
 		t.Fatalf("get old entry: %v", err)
 	}
@@ -214,9 +214,9 @@ func TestRetroGeneratorRunCreatesKnowledgeAndSupersedes(t *testing.T) {
 		t.Fatalf("second result counts = created:%d skipped:%d, want 0 and 1", second.CreatedCount, second.SkippedCount)
 	}
 
-	currentEntries, err = knowledgeStore.List(knowledge.ListOpts{})
+	currentEntries, err = memoryStore.List(memory.ListOpts{})
 	if err != nil {
-		t.Fatalf("list knowledge entries after second run: %v", err)
+		t.Fatalf("list memory entries after second run: %v", err)
 	}
 	if len(currentEntries) != 1 {
 		t.Fatalf("list count after second run = %d, want 1", len(currentEntries))

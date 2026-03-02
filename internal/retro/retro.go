@@ -1,4 +1,4 @@
-// Package retro extracts reusable knowledge entries from task outcomes.
+// Package retro extracts reusable memory entries from task outcomes.
 package retro
 
 import (
@@ -12,8 +12,8 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
 	"github.com/jasjeetmavi/orca/internal/llm"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
@@ -28,7 +28,7 @@ type retroEntry struct {
 }
 
 type planUsage struct {
-	UsedKnowledgeIDs     []string `json:"used_knowledge_ids"`
+	UsedMemoryIDs        []string `json:"used_memory_ids"`
 	UsedProvenanceHashes []string `json:"used_provenance_hashes"`
 }
 
@@ -40,7 +40,7 @@ type retroQuality struct {
 	SkippedCount         int      `json:"skipped_count"`
 	DuplicateProvenance  bool     `json:"duplicate_provenance"`
 	CreatedEntryIDs      []string `json:"created_entry_ids,omitempty"`
-	UsedKnowledgeIDs     []string `json:"used_knowledge_ids,omitempty"`
+	UsedMemoryIDs        []string `json:"used_memory_ids,omitempty"`
 	UsedProvenanceHashes []string `json:"used_provenance_hashes,omitempty"`
 	Error                string   `json:"error,omitempty"`
 }
@@ -56,14 +56,14 @@ type RetroResult struct {
 }
 
 type RetroGenerator struct {
-	toolName       string
-	driver         driver.Driver
-	model          string
-	timeout        time.Duration
-	repoDir        string
-	knowledgeStore *knowledge.Store
-	taskStore      *task.Store
-	interactions   *interaction.Store
+	toolName     string
+	driver       driver.Driver
+	model        string
+	timeout      time.Duration
+	repoDir      string
+	memoryStore  *memory.Store
+	taskStore    *task.Store
+	interactions *interaction.Store
 }
 
 func New(
@@ -72,7 +72,7 @@ func New(
 	model string,
 	timeout time.Duration,
 	repoDir string,
-	knowledgeStore *knowledge.Store,
+	memoryStore *memory.Store,
 	taskStore *task.Store,
 	interactions ...*interaction.Store,
 ) *RetroGenerator {
@@ -81,14 +81,14 @@ func New(
 		store = interactions[0]
 	}
 	return &RetroGenerator{
-		toolName:       toolName,
-		driver:         d,
-		model:          model,
-		timeout:        timeout,
-		repoDir:        repoDir,
-		knowledgeStore: knowledgeStore,
-		taskStore:      taskStore,
-		interactions:   store,
+		toolName:     toolName,
+		driver:       d,
+		model:        model,
+		timeout:      timeout,
+		repoDir:      repoDir,
+		memoryStore:  memoryStore,
+		taskStore:    taskStore,
+		interactions: store,
 	}
 }
 
@@ -100,8 +100,8 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 	if g.taskStore == nil {
 		return nil, fmt.Errorf("task store required")
 	}
-	if g.knowledgeStore == nil {
-		return nil, fmt.Errorf("knowledge store required")
+	if g.memoryStore == nil {
+		return nil, fmt.Errorf("memory store required")
 	}
 	if g.interactions == nil {
 		return nil, fmt.Errorf("interaction store required")
@@ -122,18 +122,18 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 
 	planInteraction := latestCompletedPlanInteraction(taskInteractions)
 	planText := ""
-	usedKnowledgeIDs := []string{}
+	usedMemoryIDs := []string{}
 	usedProvenanceHashes := []string{}
 	if planInteraction != nil {
 		planText = strings.TrimSpace(planInteraction.Diff)
-		usedKnowledgeIDs, usedProvenanceHashes = extractPlanUsage(planInteraction.QualityJSON)
+		usedMemoryIDs, usedProvenanceHashes = extractPlanUsage(planInteraction.QualityJSON)
 	}
 	runDiffs := collectRunDiffs(taskInteractions)
 	reviewFeedback := collectReviewFeedback(taskInteractions)
 	planReviewFeedback := collectPlanReviewFeedback(planReviews)
-	usedEntries, err := loadKnowledgeEntries(g.knowledgeStore, usedKnowledgeIDs)
+	usedEntries, err := loadMemoryEntries(g.memoryStore, usedMemoryIDs)
 	if err != nil {
-		return nil, fmt.Errorf("load used knowledge entries: %w", err)
+		return nil, fmt.Errorf("load used memory entries: %w", err)
 	}
 
 	searchQuery := buildSearchQuery(
@@ -144,9 +144,9 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 		reviewFeedback,
 		planReviewFeedback,
 	)
-	relatedEntries := []*knowledge.Entry{}
+	relatedEntries := []*memory.Entry{}
 	if searchQuery != "" {
-		relatedEntries, err = g.knowledgeStore.SearchExcluding(searchQuery, 10, usedProvenanceHashes)
+		relatedEntries, err = g.memoryStore.SearchExcluding(searchQuery, 10, usedProvenanceHashes)
 		if err != nil {
 			relatedEntries = nil
 		}
@@ -160,7 +160,7 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 		reviewFeedback,
 		planReviewFeedback,
 		usedEntries,
-		usedKnowledgeIDs,
+		usedMemoryIDs,
 		usedProvenanceHashes,
 		relatedEntries,
 	)
@@ -206,7 +206,7 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 			}
 			result.ExtractedCount = len(entries)
 
-			duplicate, err := g.knowledgeStore.HasProvenanceHash(provenanceHash)
+			duplicate, err := g.memoryStore.HasProvenanceHash(provenanceHash)
 			if err != nil {
 				createErr = fmt.Errorf("check duplicate provenance hash: %w", err)
 				return
@@ -228,7 +228,7 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 					return
 				}
 
-				created := &knowledge.Entry{
+				created := &memory.Entry{
 					Content:             entry.Content,
 					Category:            entry.Category,
 					Tags:                entry.Tags,
@@ -237,16 +237,16 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 					Confidence:          entry.Confidence,
 					ProvenanceHash:      provenanceHash,
 				}
-				if err := g.knowledgeStore.Create(created); err != nil {
-					createErr = fmt.Errorf("create knowledge entry: %w", err)
+				if err := g.memoryStore.Create(created); err != nil {
+					createErr = fmt.Errorf("create memory entry: %w", err)
 					return
 				}
 				result.CreatedCount++
 				result.CreatedEntryIDs = append(result.CreatedEntryIDs, created.ID)
 
 				if entry.Supersedes != "" {
-					if err := g.knowledgeStore.Supersede(entry.Supersedes, created.ID); err != nil {
-						createErr = fmt.Errorf("supersede knowledge entry %s: %w", entry.Supersedes, err)
+					if err := g.memoryStore.Supersede(entry.Supersedes, created.ID); err != nil {
+						createErr = fmt.Errorf("supersede memory entry %s: %w", entry.Supersedes, err)
 						return
 					}
 				}
@@ -267,7 +267,7 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 				SkippedCount:         result.SkippedCount,
 				DuplicateProvenance:  result.DuplicateProvenance,
 				CreatedEntryIDs:      result.CreatedEntryIDs,
-				UsedKnowledgeIDs:     usedKnowledgeIDs,
+				UsedMemoryIDs:        usedMemoryIDs,
 				UsedProvenanceHashes: usedProvenanceHashes,
 			}
 
@@ -314,9 +314,9 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 
 func buildRetroPrompt(
 	title, description, planText, runDiffs, reviewFeedback, planReviewFeedback string,
-	usedEntries []*knowledge.Entry,
-	usedKnowledgeIDs, usedProvenanceHashes []string,
-	relatedEntries []*knowledge.Entry,
+	usedEntries []*memory.Entry,
+	usedMemoryIDs, usedProvenanceHashes []string,
+	relatedEntries []*memory.Entry,
 ) string {
 	return fmt.Sprintf(
 		prompts.Retro,
@@ -326,10 +326,10 @@ func buildRetroPrompt(
 		emptyFallback(runDiffs),
 		emptyFallback(reviewFeedback),
 		emptyFallback(planReviewFeedback),
-		formatKnowledgeEntries(usedEntries),
-		formatList(usedKnowledgeIDs),
+		formatMemoryEntries(usedEntries),
+		formatList(usedMemoryIDs),
 		formatList(usedProvenanceHashes),
-		formatKnowledgeEntries(relatedEntries),
+		formatMemoryEntries(relatedEntries),
 	)
 }
 
@@ -430,7 +430,7 @@ func extractPlanUsage(raw string) ([]string, []string) {
 	if err := json.Unmarshal([]byte(raw), &usage); err != nil {
 		return nil, nil
 	}
-	return normalizeList(usage.UsedKnowledgeIDs), normalizeList(usage.UsedProvenanceHashes)
+	return normalizeList(usage.UsedMemoryIDs), normalizeList(usage.UsedProvenanceHashes)
 }
 
 func retroProvenanceHash(planText, runDiffs, reviewFeedback, planReviewFeedback string) string {
@@ -465,7 +465,7 @@ func formatList(items []string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func formatKnowledgeEntries(entries []*knowledge.Entry) string {
+func formatMemoryEntries(entries []*memory.Entry) string {
 	if len(entries) == 0 {
 		return "(none)"
 	}
@@ -500,17 +500,17 @@ func formatKnowledgeEntries(entries []*knowledge.Entry) string {
 	return out
 }
 
-func loadKnowledgeEntries(store *knowledge.Store, ids []string) ([]*knowledge.Entry, error) {
+func loadMemoryEntries(store *memory.Store, ids []string) ([]*memory.Entry, error) {
 	ids = normalizeList(ids)
 	if len(ids) == 0 {
 		return nil, nil
 	}
 
-	entries := make([]*knowledge.Entry, 0, len(ids))
+	entries := make([]*memory.Entry, 0, len(ids))
 	for _, id := range ids {
 		entry, err := store.Get(id)
 		if err != nil {
-			// Ignore missing entries so retro still proceeds if knowledge was deleted.
+			// Ignore missing entries so retro still proceeds if memory was deleted.
 			if strings.Contains(strings.ToLower(err.Error()), "not found") {
 				continue
 			}

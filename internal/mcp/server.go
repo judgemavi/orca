@@ -8,20 +8,20 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/executor"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // Server is a stdio JSON-RPC endpoint exposing Orca operations as MCP tools.
 type Server struct {
-	taskStore      *task.Store
-	knowledgeStore *knowledge.Store
-	db             *state.DB
-	executor       *executor.Executor
-	config         *config.Config
-	repoDir        string
-	onEvent        func(eventType string, data interface{})
+	taskStore   *task.Store
+	memoryStore *memory.Store
+	db          *state.DB
+	executor    *executor.Executor
+	config      *config.Config
+	repoDir     string
+	onEvent     func(eventType string, data interface{})
 }
 
 type jsonrpcRequest struct {
@@ -45,12 +45,12 @@ type rpcError struct {
 
 func NewServer(db *state.DB, taskStore *task.Store, executor *executor.Executor, cfg *config.Config, repoDir string) *Server {
 	return &Server{
-		taskStore:      taskStore,
-		knowledgeStore: knowledge.NewStore(db),
-		db:             db,
-		executor:       executor,
-		config:         cfg,
-		repoDir:        repoDir,
+		taskStore:   taskStore,
+		memoryStore: memory.NewStore(db),
+		db:          db,
+		executor:    executor,
+		config:      cfg,
+		repoDir:     repoDir,
 	}
 }
 

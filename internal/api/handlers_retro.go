@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/retro"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
@@ -103,7 +103,7 @@ func (s *Server) handleRetroTask(w http.ResponseWriter, r *http.Request) {
 			modelName,
 			10*time.Minute,
 			s.repoDir,
-			knowledge.NewStore(s.db),
+			memory.NewStore(s.db),
 			task.NewStore(s.db),
 			interaction.NewStore(s.db, ".orca/interactions"),
 		)

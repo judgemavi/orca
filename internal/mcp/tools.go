@@ -57,10 +57,10 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"log_query":                  s.HandleLogQueryTool,
 		"merge":                      s.HandleMergeTool,
 		"tasks_merge":                s.HandleTasksMergeTool,
-		"knowledge_list":             s.HandleKnowledgeListTool,
-		"knowledge_get":              s.HandleKnowledgeGetTool,
-		"knowledge_search":           s.HandleKnowledgeSearchTool,
-		"knowledge_update":           s.HandleKnowledgeUpdateTool,
-		"knowledge_delete":           s.HandleKnowledgeDeleteTool,
+		"memory_list":                s.HandleMemoryListTool,
+		"memory_get":                 s.HandleMemoryGetTool,
+		"memory_search":              s.HandleMemorySearchTool,
+		"memory_update":              s.HandleMemoryUpdateTool,
+		"memory_delete":              s.HandleMemoryDeleteTool,
 	}
 }

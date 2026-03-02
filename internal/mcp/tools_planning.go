@@ -9,7 +9,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 )
 
@@ -143,7 +143,7 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 
 	interactions := interaction.NewStore(s.db, ".orca/interactions")
 	generator := planpkg.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions).
-		WithKnowledge(knowledge.NewStore(s.db))
+		WithMemory(memory.NewStore(s.db))
 	var planContent string
 	planContent, err = generator.Generate(taskID, t.Title, t.Description)
 	if err != nil {

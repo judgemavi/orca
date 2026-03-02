@@ -6,45 +6,45 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/spf13/cobra"
 )
 
-func RegisterKnowledge(root *cobra.Command, r *Registry) {
-	knowledgeCmd := &cobra.Command{
-		Use:   "knowledge",
-		Short: "Manage learned knowledge entries",
-		RunE:  r.runKnowledgeList,
+func RegisterMemory(root *cobra.Command, r *Registry) {
+	memoryCmd := &cobra.Command{
+		Use:   "memory",
+		Short: "Manage learned memory entries",
+		RunE:  r.runMemoryList,
 	}
 
-	listCmd := &cobra.Command{Use: "list", Short: "List knowledge entries", RunE: r.runKnowledgeList}
+	listCmd := &cobra.Command{Use: "list", Short: "List memory entries", RunE: r.runMemoryList}
 	listCmd.Flags().String("category", "", "Filter by category: pattern|pitfall|preference|convention")
 	listCmd.Flags().String("tag", "", "Filter by tag")
 	listCmd.Flags().Bool("json", false, "Output as JSON")
-	knowledgeCmd.AddCommand(listCmd)
+	memoryCmd.AddCommand(listCmd)
 
-	showCmd := &cobra.Command{Use: "show <id>", Short: "Show a knowledge entry", Args: cobra.ExactArgs(1), RunE: r.runKnowledgeShow}
-	knowledgeCmd.AddCommand(showCmd)
+	showCmd := &cobra.Command{Use: "show <id>", Short: "Show a memory entry", Args: cobra.ExactArgs(1), RunE: r.runMemoryShow}
+	memoryCmd.AddCommand(showCmd)
 
-	searchCmd := &cobra.Command{Use: "search <query>", Short: "Search knowledge entries", Args: cobra.MinimumNArgs(1), RunE: r.runKnowledgeSearch}
+	searchCmd := &cobra.Command{Use: "search <query>", Short: "Search memory entries", Args: cobra.MinimumNArgs(1), RunE: r.runMemorySearch}
 	searchCmd.Flags().Int("limit", 10, "Maximum results")
 	searchCmd.Flags().Bool("json", false, "Output as JSON")
-	knowledgeCmd.AddCommand(searchCmd)
+	memoryCmd.AddCommand(searchCmd)
 
-	editCmd := &cobra.Command{Use: "edit <id>", Short: "Edit a knowledge entry", Args: cobra.ExactArgs(1), RunE: r.runKnowledgeEdit}
+	editCmd := &cobra.Command{Use: "edit <id>", Short: "Edit a memory entry", Args: cobra.ExactArgs(1), RunE: r.runMemoryEdit}
 	editCmd.Flags().String("content", "", "Updated content")
 	editCmd.Flags().Float64("confidence", 0, "Updated confidence (0..1)")
 	editCmd.Flags().String("category", "", "Updated category: pattern|pitfall|preference|convention")
-	knowledgeCmd.AddCommand(editCmd)
+	memoryCmd.AddCommand(editCmd)
 
-	deleteCmd := &cobra.Command{Use: "delete <id>", Short: "Delete a knowledge entry", Args: cobra.ExactArgs(1), RunE: r.runKnowledgeDelete}
+	deleteCmd := &cobra.Command{Use: "delete <id>", Short: "Delete a memory entry", Args: cobra.ExactArgs(1), RunE: r.runMemoryDelete}
 	deleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
-	knowledgeCmd.AddCommand(deleteCmd)
+	memoryCmd.AddCommand(deleteCmd)
 
-	root.AddCommand(knowledgeCmd)
+	root.AddCommand(memoryCmd)
 }
 
-func (r *Registry) runKnowledgeList(cmd *cobra.Command, args []string) error {
+func (r *Registry) runMemoryList(cmd *cobra.Command, args []string) error {
 	db, _, err := r.openStoreOrErr()
 	if err != nil {
 		return err
@@ -57,25 +57,25 @@ func (r *Registry) runKnowledgeList(cmd *cobra.Command, args []string) error {
 	tag = strings.TrimSpace(tag)
 	jsonOut, _ := cmd.Flags().GetBool("json")
 
-	if category != "" && !isValidKnowledgeCategory(category) {
+	if category != "" && !isValidMemoryCategory(category) {
 		return fmt.Errorf("invalid --category %q (must be one of: pattern|pitfall|preference|convention)", category)
 	}
 
-	store := knowledge.NewStore(db)
-	entries, err := store.List(knowledge.ListOpts{Category: category, Tag: tag})
+	store := memory.NewStore(db)
+	entries, err := store.List(memory.ListOpts{Category: category, Tag: tag})
 	if err != nil {
-		return fmt.Errorf("list knowledge: %w", err)
+		return fmt.Errorf("list memory: %w", err)
 	}
 	if jsonOut {
 		payload, err := json.MarshalIndent(entries, "", "  ")
 		if err != nil {
-			return fmt.Errorf("marshal knowledge entries: %w", err)
+			return fmt.Errorf("marshal memory entries: %w", err)
 		}
 		fmt.Println(string(payload))
 		return nil
 	}
 	if len(entries) == 0 {
-		fmt.Println("No knowledge entries.")
+		fmt.Println("No memory entries.")
 		return nil
 	}
 
@@ -90,17 +90,17 @@ func (r *Registry) runKnowledgeList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runKnowledgeShow(cmd *cobra.Command, args []string) error {
+func (r *Registry) runMemoryShow(cmd *cobra.Command, args []string) error {
 	db, _, err := r.openStoreOrErr()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	store := knowledge.NewStore(db)
+	store := memory.NewStore(db)
 	entry, err := store.Get(strings.TrimSpace(args[0]))
 	if err != nil {
-		return fmt.Errorf("get knowledge entry: %w", err)
+		return fmt.Errorf("get memory entry: %w", err)
 	}
 
 	fmt.Printf("ID: %s\n", entry.ID)
@@ -122,7 +122,7 @@ func (r *Registry) runKnowledgeShow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runKnowledgeSearch(cmd *cobra.Command, args []string) error {
+func (r *Registry) runMemorySearch(cmd *cobra.Command, args []string) error {
 	db, _, err := r.openStoreOrErr()
 	if err != nil {
 		return err
@@ -139,22 +139,22 @@ func (r *Registry) runKnowledgeSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--limit must be > 0")
 	}
 
-	store := knowledge.NewStore(db)
+	store := memory.NewStore(db)
 	entries, err := store.Search(query, limit)
 	if err != nil {
-		return fmt.Errorf("search knowledge: %w", err)
+		return fmt.Errorf("search memory: %w", err)
 	}
 
 	if jsonOut {
 		payload, err := json.MarshalIndent(entries, "", "  ")
 		if err != nil {
-			return fmt.Errorf("marshal knowledge entries: %w", err)
+			return fmt.Errorf("marshal memory entries: %w", err)
 		}
 		fmt.Println(string(payload))
 		return nil
 	}
 	if len(entries) == 0 {
-		fmt.Println("No matching knowledge entries.")
+		fmt.Println("No matching memory entries.")
 		return nil
 	}
 
@@ -165,7 +165,7 @@ func (r *Registry) runKnowledgeSearch(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *Registry) runKnowledgeEdit(cmd *cobra.Command, args []string) error {
+func (r *Registry) runMemoryEdit(cmd *cobra.Command, args []string) error {
 	db, _, err := r.openStoreOrErr()
 	if err != nil {
 		return err
@@ -193,7 +193,7 @@ func (r *Registry) runKnowledgeEdit(cmd *cobra.Command, args []string) error {
 	if cmd.Flags().Changed("category") {
 		category, _ := cmd.Flags().GetString("category")
 		category = strings.TrimSpace(strings.ToLower(category))
-		if !isValidKnowledgeCategory(category) {
+		if !isValidMemoryCategory(category) {
 			return fmt.Errorf("invalid --category %q (must be one of: pattern|pitfall|preference|convention)", category)
 		}
 		fields["category"] = category
@@ -202,16 +202,16 @@ func (r *Registry) runKnowledgeEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no fields provided (use --content, --confidence, or --category)")
 	}
 
-	store := knowledge.NewStore(db)
+	store := memory.NewStore(db)
 	if err := store.Update(id, fields); err != nil {
-		return fmt.Errorf("update knowledge entry: %w", err)
+		return fmt.Errorf("update memory entry: %w", err)
 	}
 
-	fmt.Printf("Updated knowledge entry %s\n", short(id))
+	fmt.Printf("Updated memory entry %s\n", short(id))
 	return nil
 }
 
-func (r *Registry) runKnowledgeDelete(cmd *cobra.Command, args []string) error {
+func (r *Registry) runMemoryDelete(cmd *cobra.Command, args []string) error {
 	db, _, err := r.openStoreOrErr()
 	if err != nil {
 		return err
@@ -219,17 +219,17 @@ func (r *Registry) runKnowledgeDelete(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	id := strings.TrimSpace(args[0])
-	store := knowledge.NewStore(db)
+	store := memory.NewStore(db)
 	entry, err := store.Get(id)
 	if err != nil {
-		return fmt.Errorf("get knowledge entry: %w", err)
+		return fmt.Errorf("get memory entry: %w", err)
 	}
 
 	yes, _ := cmd.Flags().GetBool("yes")
 	if !yes {
 		confirm := false
 		if err := huh.NewConfirm().
-			Title(fmt.Sprintf("Delete knowledge entry %s?", short(entry.ID))).
+			Title(fmt.Sprintf("Delete memory entry %s?", short(entry.ID))).
 			Description(entry.Content).
 			Value(&confirm).
 			Run(); err != nil {
@@ -242,13 +242,13 @@ func (r *Registry) runKnowledgeDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := store.Delete(id); err != nil {
-		return fmt.Errorf("delete knowledge entry: %w", err)
+		return fmt.Errorf("delete memory entry: %w", err)
 	}
-	fmt.Printf("Deleted knowledge entry %s\n", short(entry.ID))
+	fmt.Printf("Deleted memory entry %s\n", short(entry.ID))
 	return nil
 }
 
-func isValidKnowledgeCategory(category string) bool {
+func isValidMemoryCategory(category string) bool {
 	switch strings.TrimSpace(strings.ToLower(category)) {
 	case "pattern", "pitfall", "preference", "convention":
 		return true

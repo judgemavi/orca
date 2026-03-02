@@ -147,16 +147,16 @@ export interface ProposedTask {
   suggested_tool: string
 }
 
-export type KnowledgeCategory =
+export type MemoryCategory =
   | 'pattern'
   | 'pitfall'
   | 'preference'
   | 'convention'
 
-export interface KnowledgeEntry {
+export interface MemoryEntry {
   id: string
   content: string
-  category: KnowledgeCategory
+  category: MemoryCategory
   tags: string[]
   confidence: number
   source_task_id?: string
@@ -167,17 +167,17 @@ export interface KnowledgeEntry {
   updated_at: string
 }
 
-export interface ListKnowledgeParams {
-  category?: KnowledgeCategory
+export interface ListMemoryParams {
+  category?: MemoryCategory
   tag?: string
   q?: string
   limit?: number
 }
 
-export interface UpdateKnowledgeInput {
+export interface UpdateMemoryInput {
   content?: string
   confidence?: number
-  category?: KnowledgeCategory
+  category?: MemoryCategory
 }
 
 export type KnownWSEvent =

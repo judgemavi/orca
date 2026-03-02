@@ -1,6 +1,6 @@
-import type { ListKnowledgeParams } from '../types'
+import type { ListMemoryParams } from '../types'
 
-function normalizeKnowledgeParams(params?: ListKnowledgeParams) {
+function normalizeMemoryParams(params?: ListMemoryParams) {
   return {
     category: params?.category ?? null,
     tag: params?.tag ?? null,
@@ -23,8 +23,8 @@ export const queryKeys = {
   taskInteractions: (taskId: string) => ['task-interactions', taskId] as const,
   taskInteraction: (taskId: string, logId: string) =>
     ['task-interaction', taskId, logId] as const,
-  knowledge: ['knowledge'] as const,
-  knowledgeList: (params?: ListKnowledgeParams) =>
-    ['knowledge', 'list', normalizeKnowledgeParams(params)] as const,
-  knowledgeEntry: (id: string) => ['knowledge', 'entry', id] as const,
+  memory: ['memory'] as const,
+  memoryList: (params?: ListMemoryParams) =>
+    ['memory', 'list', normalizeMemoryParams(params)] as const,
+  memoryEntry: (id: string) => ['memory', 'entry', id] as const,
 }

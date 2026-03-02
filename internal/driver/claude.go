@@ -172,7 +172,7 @@ func (c *Claude) formatStreamEvent(raw map[string]any) string {
 			if name == "" {
 				return ""
 			}
-			return fmt.Sprintf("\n[tool: %s]\n", name)
+			return fmt.Sprintf("[tool: %s]\n", name)
 		case "thinking":
 			return "\n[thinking]\n"
 		case "text":
@@ -205,7 +205,7 @@ func (c *Claude) formatStreamEvent(raw map[string]any) string {
 		return "\n"
 
 	case "message_start":
-		return ""
+		return "[message start]\n"
 
 	case "message_delta":
 		if delta, ok := evt["delta"].(map[string]any); ok {

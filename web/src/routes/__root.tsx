@@ -81,7 +81,7 @@ const RootLayout = () => {
             </Button>
             <Button asChild size="icon">
               <Link
-                to="/knowledge"
+                to="/memory"
                 className="rounded border border-border-subtle px-2.5 py-1 text-xs font-medium hover:no-underline"
               >
                 <Brain size={14} />

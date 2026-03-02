@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { queryKeys } from '../lib/queryKeys'
-import type { ListKnowledgeParams, UpdateKnowledgeInput } from '../types'
+import type { ListMemoryParams, UpdateMemoryInput } from '../types'
 
 // ── Tasks ───────────────────────────────────────────────────────────────
 
@@ -109,37 +109,37 @@ export function useSavePlanMutation() {
   })
 }
 
-// ── Knowledge ───────────────────────────────────────────────────────────
+// ── Memory ───────────────────────────────────────────────────────────
 
-export function useKnowledgeQuery(params?: ListKnowledgeParams) {
+export function useMemoryQuery(params?: ListMemoryParams) {
   return useQuery({
-    queryKey: queryKeys.knowledgeList(params),
-    queryFn: () => api.listKnowledge(params),
+    queryKey: queryKeys.memoryList(params),
+    queryFn: () => api.listMemory(params),
   })
 }
 
-export function useKnowledgeMutation() {
+export function useMemoryMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateKnowledgeInput }) =>
-      api.updateKnowledge(id, data),
+    mutationFn: ({ id, data }: { id: string; data: UpdateMemoryInput }) =>
+      api.updateMemory(id, data),
     onSuccess: async (entry) => {
-      queryClient.setQueryData(queryKeys.knowledgeEntry(entry.id), entry)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.knowledge })
+      queryClient.setQueryData(queryKeys.memoryEntry(entry.id), entry)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.memory })
     },
   })
 }
 
-export function useDeleteKnowledgeMutation() {
+export function useDeleteMemoryMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.deleteKnowledge(id),
+    mutationFn: (id: string) => api.deleteMemory(id),
     onSuccess: async (_result, id) => {
       queryClient.removeQueries({
-        queryKey: queryKeys.knowledgeEntry(id),
+        queryKey: queryKeys.memoryEntry(id),
         exact: true,
       })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.knowledge })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.memory })
     },
   })
 }

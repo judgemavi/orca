@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
@@ -56,7 +56,7 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
-		WithKnowledge(knowledge.NewStore(db))
+		WithMemory(memory.NewStore(db))
 	var planContent string
 	fmt.Printf("Generating plan for task %s\n", short(id))
 	spinDone := make(chan struct{})
@@ -324,7 +324,7 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 	}
 	description := strings.TrimSpace(tk.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
 	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interactions).
-		WithKnowledge(knowledge.NewStore(db))
+		WithMemory(memory.NewStore(db))
 
 	fmt.Printf("Regenerating plan for task %s\n", short(taskID))
 	spinDone := make(chan struct{})

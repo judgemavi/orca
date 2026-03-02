@@ -19,6 +19,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/tasks/{id}/deps", s.handleAddDep)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/merge", s.handleMergeTask)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/stop", s.handleStopTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/cancel", s.handleStopTask)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/resume", s.handleResumeTask)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/approve", s.handleApproveTask)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/approve-plan", s.handleApprovePlan)
@@ -38,11 +39,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/tasks/{id}/ai-review", s.handleAIReview)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/retro", s.handleRetroTask)
 
-	// Knowledge
-	mux.HandleFunc("GET /api/v1/knowledge", s.handleListKnowledge)
-	mux.HandleFunc("GET /api/v1/knowledge/{id}", s.handleGetKnowledge)
-	mux.HandleFunc("PATCH /api/v1/knowledge/{id}", s.handleUpdateKnowledge)
-	mux.HandleFunc("DELETE /api/v1/knowledge/{id}", s.handleDeleteKnowledge)
+	// Memory
+	mux.HandleFunc("GET /api/v1/memory", s.handleListMemory)
+	mux.HandleFunc("GET /api/v1/memory/{id}", s.handleGetMemory)
+	mux.HandleFunc("PATCH /api/v1/memory/{id}", s.handleUpdateMemory)
+	mux.HandleFunc("DELETE /api/v1/memory/{id}", s.handleDeleteMemory)
 
 	mux.HandleFunc("GET /api/v1/models", s.handleListModels)
 	mux.HandleFunc("POST /api/v1/cleanup", s.handleCleanup)

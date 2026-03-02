@@ -11,7 +11,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/plan"
 )
 
@@ -218,7 +218,7 @@ func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteracti
 
 	go func(taskID, title, description, reviewID string) {
 		generator := plan.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
-			WithKnowledge(knowledge.NewStore(s.db))
+			WithMemory(memory.NewStore(s.db))
 		content, genErr := generator.Generate(taskID, title, description)
 		if genErr != nil {
 			s.hub.Broadcast(Event{

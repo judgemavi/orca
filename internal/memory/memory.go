@@ -1,4 +1,4 @@
-package knowledge
+package memory
 
 import (
 	"database/sql"
@@ -23,7 +23,7 @@ const entryColumnsQualified = `
 	ke.confidence, ke.provenance_hash, ke.superseded_by, ke.created_at, ke.updated_at
 `
 
-// Entry is a single knowledge row persisted in SQLite.
+// Entry is a single memory row persisted in SQLite.
 type Entry struct {
 	ID                  string    `json:"id"`
 	Content             string    `json:"content"`
@@ -44,7 +44,7 @@ type ListOpts struct {
 	Tag      string
 }
 
-// Store persists knowledge entries and mirrors data into the FTS table.
+// Store persists memory entries and mirrors data into the FTS table.
 type Store struct {
 	db *state.DB
 }
@@ -81,12 +81,12 @@ func (s *Store) Create(e *Entry) error {
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin create knowledge entry: %w", err)
+		return fmt.Errorf("begin create memory entry: %w", err)
 	}
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(
-		`INSERT INTO knowledge_entries (
+		`INSERT INTO memory_entries (
 			id, content, category, tags, source_task_id, source_interaction_id,
 			confidence, provenance_hash, superseded_by, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -102,7 +102,7 @@ func (s *Store) Create(e *Entry) error {
 		now,
 		now,
 	); err != nil {
-		return fmt.Errorf("insert knowledge entry: %w", err)
+		return fmt.Errorf("insert memory entry: %w", err)
 	}
 
 	if err := upsertFTS(tx, id, e.Content, tagsJSON); err != nil {
@@ -110,7 +110,7 @@ func (s *Store) Create(e *Entry) error {
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit create knowledge entry: %w", err)
+		return fmt.Errorf("commit create memory entry: %w", err)
 	}
 
 	e.ID = id
@@ -122,15 +122,15 @@ func (s *Store) Create(e *Entry) error {
 
 func (s *Store) Get(id string) (*Entry, error) {
 	row := s.db.QueryRow(
-		fmt.Sprintf(`SELECT %s FROM knowledge_entries WHERE id = ?`, entryColumns),
+		fmt.Sprintf(`SELECT %s FROM memory_entries WHERE id = ?`, entryColumns),
 		id,
 	)
 	entry, err := scanEntry(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("knowledge entry %s not found", id)
+		return nil, fmt.Errorf("memory entry %s not found", id)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get knowledge entry: %w", err)
+		return nil, fmt.Errorf("get memory entry: %w", err)
 	}
 	return entry, nil
 }
@@ -143,7 +143,7 @@ func (s *Store) GetByProvenanceHash(hash string) (*Entry, error) {
 
 	row := s.db.QueryRow(
 		fmt.Sprintf(
-			`SELECT %s FROM knowledge_entries WHERE provenance_hash = ? ORDER BY created_at DESC LIMIT 1`,
+			`SELECT %s FROM memory_entries WHERE provenance_hash = ? ORDER BY created_at DESC LIMIT 1`,
 			entryColumns,
 		),
 		hash,
@@ -153,7 +153,7 @@ func (s *Store) GetByProvenanceHash(hash string) (*Entry, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get knowledge entry by provenance hash: %w", err)
+		return nil, fmt.Errorf("get memory entry by provenance hash: %w", err)
 	}
 	return entry, nil
 }
@@ -168,7 +168,7 @@ func (s *Store) HasProvenanceHash(hash string) (bool, error) {
 
 func (s *Store) List(opts ListOpts) ([]*Entry, error) {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`SELECT %s FROM knowledge_entries WHERE superseded_by IS NULL`, entryColumns))
+	sb.WriteString(fmt.Sprintf(`SELECT %s FROM memory_entries WHERE superseded_by IS NULL`, entryColumns))
 	args := make([]interface{}, 0, 2)
 
 	if strings.TrimSpace(opts.Category) != "" {
@@ -183,7 +183,7 @@ func (s *Store) List(opts ListOpts) ([]*Entry, error) {
 
 	rows, err := s.db.Query(sb.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("list knowledge entries: %w", err)
+		return nil, fmt.Errorf("list memory entries: %w", err)
 	}
 	defer rows.Close()
 	return scanEntries(rows)
@@ -196,7 +196,7 @@ func (s *Store) Update(id string, updates map[string]interface{}) error {
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin update knowledge entry: %w", err)
+		return fmt.Errorf("begin update memory entry: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -219,25 +219,25 @@ func (s *Store) Update(id string, updates map[string]interface{}) error {
 	setClauses = append(setClauses, "updated_at = ?")
 	args = append(args, time.Now().UTC(), id)
 
-	query := fmt.Sprintf("UPDATE knowledge_entries SET %s WHERE id = ?", strings.Join(setClauses, ", "))
+	query := fmt.Sprintf("UPDATE memory_entries SET %s WHERE id = ?", strings.Join(setClauses, ", "))
 	res, err := tx.Exec(query, args...)
 	if err != nil {
-		return fmt.Errorf("update knowledge entry: %w", err)
+		return fmt.Errorf("update memory entry: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("update knowledge entry rows affected: %w", err)
+		return fmt.Errorf("update memory entry rows affected: %w", err)
 	}
 	if affected == 0 {
-		return fmt.Errorf("knowledge entry %s not found", id)
+		return fmt.Errorf("memory entry %s not found", id)
 	}
 
 	var content, tagsJSON string
 	if err := tx.QueryRow(
-		`SELECT content, tags FROM knowledge_entries WHERE id = ?`,
+		`SELECT content, tags FROM memory_entries WHERE id = ?`,
 		id,
 	).Scan(&content, &tagsJSON); err != nil {
-		return fmt.Errorf("load updated knowledge entry for fts: %w", err)
+		return fmt.Errorf("load updated memory entry for fts: %w", err)
 	}
 
 	if err := upsertFTS(tx, id, content, tagsJSON); err != nil {
@@ -245,7 +245,7 @@ func (s *Store) Update(id string, updates map[string]interface{}) error {
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit update knowledge entry: %w", err)
+		return fmt.Errorf("commit update memory entry: %w", err)
 	}
 	return nil
 }
@@ -253,28 +253,28 @@ func (s *Store) Update(id string, updates map[string]interface{}) error {
 func (s *Store) Delete(id string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin delete knowledge entry: %w", err)
+		return fmt.Errorf("begin delete memory entry: %w", err)
 	}
 	defer tx.Rollback()
 
-	res, err := tx.Exec(`DELETE FROM knowledge_entries WHERE id = ?`, id)
+	res, err := tx.Exec(`DELETE FROM memory_entries WHERE id = ?`, id)
 	if err != nil {
-		return fmt.Errorf("delete knowledge entry: %w", err)
+		return fmt.Errorf("delete memory entry: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("delete knowledge entry rows affected: %w", err)
+		return fmt.Errorf("delete memory entry rows affected: %w", err)
 	}
 	if affected == 0 {
-		return fmt.Errorf("knowledge entry %s not found", id)
+		return fmt.Errorf("memory entry %s not found", id)
 	}
 
-	if _, err := tx.Exec(`DELETE FROM knowledge_fts WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete knowledge fts row: %w", err)
+	if _, err := tx.Exec(`DELETE FROM memory_fts WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete memory fts row: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit delete knowledge entry: %w", err)
+		return fmt.Errorf("commit delete memory entry: %w", err)
 	}
 	return nil
 }
@@ -299,9 +299,9 @@ func (s *Store) search(query string, limit int, excludeHashes []string) ([]*Entr
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf(
-		`SELECT %s FROM knowledge_entries ke
-		 JOIN knowledge_fts ON ke.id = knowledge_fts.id
-		 WHERE knowledge_fts MATCH ?
+		`SELECT %s FROM memory_entries ke
+		 JOIN memory_fts ON ke.id = memory_fts.id
+		 WHERE memory_fts MATCH ?
 		 AND ke.superseded_by IS NULL
 		 AND ke.confidence >= 0.3`,
 		entryColumnsQualified,
@@ -318,12 +318,12 @@ func (s *Store) search(query string, limit int, excludeHashes []string) ([]*Entr
 		}
 	}
 
-	sb.WriteString(` ORDER BY bm25(knowledge_fts) LIMIT ?`)
+	sb.WriteString(` ORDER BY bm25(memory_fts) LIMIT ?`)
 	args = append(args, limit)
 
 	rows, err := s.db.Query(sb.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("search knowledge entries: %w", err)
+		return nil, fmt.Errorf("search memory entries: %w", err)
 	}
 	defer rows.Close()
 	return scanEntries(rows)
@@ -331,7 +331,7 @@ func (s *Store) search(query string, limit int, excludeHashes []string) ([]*Entr
 
 func (s *Store) Supersede(oldID, newID string) error {
 	res, err := s.db.Exec(
-		`UPDATE knowledge_entries
+		`UPDATE memory_entries
 		 SET superseded_by = ?, updated_at = ?
 		 WHERE id = ?`,
 		newID,
@@ -339,14 +339,14 @@ func (s *Store) Supersede(oldID, newID string) error {
 		oldID,
 	)
 	if err != nil {
-		return fmt.Errorf("supersede knowledge entry: %w", err)
+		return fmt.Errorf("supersede memory entry: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("supersede knowledge entry rows affected: %w", err)
+		return fmt.Errorf("supersede memory entry rows affected: %w", err)
 	}
 	if affected == 0 {
-		return fmt.Errorf("knowledge entry %s not found", oldID)
+		return fmt.Errorf("memory entry %s not found", oldID)
 	}
 	return nil
 }
@@ -361,7 +361,7 @@ func (s *Store) DecayConfidence(olderThan time.Duration, factor float64) (int, e
 
 	cutoff := time.Now().UTC().Add(-olderThan)
 	res, err := s.db.Exec(`
-		UPDATE knowledge_entries
+		UPDATE memory_entries
 		SET confidence = confidence * ?,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE updated_at < ?
@@ -369,7 +369,7 @@ func (s *Store) DecayConfidence(olderThan time.Duration, factor float64) (int, e
 		AND confidence > 0.1
 		AND id NOT IN (
 			SELECT DISTINCT json_each.value
-			FROM task_interactions, json_each(json_extract(quality_json, '$.used_knowledge_ids'))
+			FROM task_interactions, json_each(json_extract(quality_json, '$.used_memory_ids'))
 			WHERE task_interactions.status = 'completed'
 			AND task_interactions.finished_at >= ?
 		)
@@ -450,16 +450,16 @@ func normalizeUpdateValue(key string, value interface{}) (interface{}, error) {
 }
 
 func upsertFTS(tx *sql.Tx, id, content, tagsJSON string) error {
-	if _, err := tx.Exec(`DELETE FROM knowledge_fts WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete knowledge fts row: %w", err)
+	if _, err := tx.Exec(`DELETE FROM memory_fts WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete memory fts row: %w", err)
 	}
 	if _, err := tx.Exec(
-		`INSERT INTO knowledge_fts (id, content, tags) VALUES (?, ?, ?)`,
+		`INSERT INTO memory_fts (id, content, tags) VALUES (?, ?, ?)`,
 		id,
 		content,
 		tagsJSON,
 	); err != nil {
-		return fmt.Errorf("insert knowledge fts row: %w", err)
+		return fmt.Errorf("insert memory fts row: %w", err)
 	}
 	return nil
 }

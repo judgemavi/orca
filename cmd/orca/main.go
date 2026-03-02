@@ -187,7 +187,7 @@ func main() {
 	commands.RegisterPlan(root, reg)
 	commands.RegisterStart(root, reg)
 	commands.RegisterTask(root, reg)
-	commands.RegisterKnowledge(root, reg)
+	commands.RegisterMemory(root, reg)
 	commands.RegisterReview(root, reg)
 	commands.RegisterMerge(root, reg)
 	commands.RegisterServe(root, reg)

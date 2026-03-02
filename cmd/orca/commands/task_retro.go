@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/knowledge"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/retro"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
@@ -69,7 +69,7 @@ func (r *Registry) runTaskRetro(cmd *cobra.Command, args []string) error {
 		modelName,
 		10*time.Minute,
 		repoDir,
-		knowledge.NewStore(db),
+		memory.NewStore(db),
 		task.NewStore(db),
 		interaction.NewStore(db, ".orca/interactions"),
 	)
@@ -100,7 +100,7 @@ func (r *Registry) runTaskRetro(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Skipped: %d\n", result.SkippedCount)
 	fmt.Printf("Duplicate provenance: %t\n", result.DuplicateProvenance)
 	if len(result.CreatedEntryIDs) > 0 {
-		fmt.Printf("Created knowledge IDs: %v\n", result.CreatedEntryIDs)
+		fmt.Printf("Created memory IDs: %v\n", result.CreatedEntryIDs)
 	}
 
 	return nil

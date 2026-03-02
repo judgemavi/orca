@@ -169,7 +169,7 @@ export function handleWSEvent(qc: QueryClient, event: WSEvent) {
       )
     }
     if (event.type === 'retro.completed') {
-      queries.push(qc.invalidateQueries({ queryKey: queryKeys.knowledge }))
+      queries.push(qc.invalidateQueries({ queryKey: queryKeys.memory }))
     }
     void Promise.all(queries)
     return
