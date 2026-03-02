@@ -319,7 +319,7 @@ func TestRefreshWithoutChangesClearsStale(t *testing.T) {
 	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
 	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
 	entry := mustCreateEntryWithOptions(t, store, "stale", "pattern", []string{"sync"}, 1.0, "hash-sync-refresh", "retro", []string{"internal/app.go"})
-	if err := store.Update(entry.ID, map[string]interface{}{"stale": true, "covered_at_commit": head}); err != nil {
+	if err := store.Update(entry.ID, UpdateFields{Stale: Ptr(true), CoveredAtCommit: Ptr(head)}); err != nil {
 		t.Fatalf("mark stale: %v", err)
 	}
 
@@ -347,7 +347,7 @@ func TestRefreshWithoutLLMSkipsChangedStaleEntry(t *testing.T) {
 	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
 	base := gitOutput(t, repoDir, "rev-parse", "HEAD")
 	entry := mustCreateEntryWithOptions(t, store, "stale", "pattern", []string{"sync"}, 1.0, "hash-sync-refresh-llm", "retro", []string{"internal/app.go"})
-	if err := store.Update(entry.ID, map[string]interface{}{"stale": true, "covered_at_commit": base}); err != nil {
+	if err := store.Update(entry.ID, UpdateFields{Stale: Ptr(true), CoveredAtCommit: Ptr(base)}); err != nil {
 		t.Fatalf("mark stale: %v", err)
 	}
 

@@ -57,67 +57,59 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 	}
 
 	interactions := interaction.NewStore(db, ".orca/interactions")
-	writer, err := interactions.Begin(nil, interaction.PhaseMerge, "orca")
-	if err != nil {
-		return fmt.Errorf("begin merge interaction: %w", err)
-	}
-	defer writer.Close()
+	return interaction.Wrap(interactions, nil, interaction.PhaseMerge, "orca", func(writer *interaction.Writer) error {
+		fmt.Println("merge.started")
 
-	fmt.Println("merge.started")
-
-	repoDir, _ := os.Getwd()
-	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands, interactions)
-	ig.OnPostMerge = func(taskID string) {
-		if retroErr := runPostMergeRetro(cfg, db, repoDir, taskID); retroErr != nil {
-			recordPostMergeFailure(interactions, taskID, "retro", retroErr)
-			warnf("post-merge retro failed for task %s: %v (retry: orca tasks retro %s)", short(taskID), retroErr, taskID)
-		}
-	}
-	ig.OnPostMergeBatchComplete = func(mergedTaskIDs []string) {
-		if len(mergedTaskIDs) == 0 {
-			return
-		}
-		if _, syncErr := runPostMergeSync(cfg, db, repoDir); syncErr != nil {
-			for _, taskID := range mergedTaskIDs {
-				recordPostMergeFailure(interactions, taskID, "sync", syncErr)
+		repoDir, _ := os.Getwd()
+		ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands, interactions)
+		ig.OnPostMerge = func(taskID string) {
+			if retroErr := runPostMergeRetro(cfg, db, repoDir, taskID); retroErr != nil {
+				recordPostMergeFailure(interactions, taskID, "retro", retroErr)
+				warnf("post-merge retro failed for task %s: %v (retry: orca tasks retro %s)", short(taskID), retroErr, taskID)
 			}
-			warnf("post-merge memory sync failed: %v (retry: orca memory sync)", syncErr)
 		}
-	}
-	ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
-		if _, err := store.Get(taskID); err != nil {
-			return "", nil, "", 0, err
+		ig.OnPostMergeBatchComplete = func(mergedTaskIDs []string) {
+			if len(mergedTaskIDs) == 0 {
+				return
+			}
+			if _, syncErr := runPostMergeSync(cfg, db, repoDir); syncErr != nil {
+				for _, taskID := range mergedTaskIDs {
+					recordPostMergeFailure(interactions, taskID, "sync", syncErr)
+				}
+				warnf("post-merge memory sync failed: %v (retry: orca memory sync)", syncErr)
+			}
 		}
-		toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
+		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
+			if _, err := store.Get(taskID); err != nil {
+				return "", nil, "", 0, err
+			}
+			toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
+			if err != nil {
+				return "", nil, "", 0, err
+			}
+			model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
+			return toolName, d, model, 10 * time.Minute, nil
+		})
+		merged, failed, err := ig.MergeBatch(taskIDs)
 		if err != nil {
-			return "", nil, "", 0, err
+			return fmt.Errorf("merge batch: %w", err)
 		}
-		model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
-		return toolName, d, model, 10 * time.Minute, nil
-	})
-	merged, failed, err := ig.MergeBatch(taskIDs)
-	if err != nil {
-		_ = interactions.Finish(writer.ID(), "failed", interaction.WithError(err.Error()))
-		return fmt.Errorf("merge batch: %w", err)
-	}
 
-	for _, id := range merged {
-		fmt.Printf("merge.progress task=%s status=merged\n", short(id))
-		_ = writer.WriteString(fmt.Sprintf("merge.progress task=%s status=merged\n", id))
-		if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
-			warnf("set task %s merged: %v", short(id), err)
+		for _, id := range merged {
+			fmt.Printf("merge.progress task=%s status=merged\n", short(id))
+			_ = writer.WriteString(fmt.Sprintf("merge.progress task=%s status=merged\n", id))
+			if err := store.Update(id, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
+				warnf("set task %s merged: %v", short(id), err)
+			}
+			fmt.Printf("  ✓ Merged task-%s\n", short(id))
 		}
-		fmt.Printf("  ✓ Merged task-%s\n", short(id))
-	}
-	for _, id := range failed {
-		fmt.Printf("merge.progress task=%s status=failed\n", short(id))
-		_ = writer.WriteString(fmt.Sprintf("merge.progress task=%s status=failed\n", id))
-		fmt.Printf("  ✗ Failed task-%s\n", short(id))
-	}
-	fmt.Println("merge.completed")
-	fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failed))
-	if err := interactions.Finish(writer.ID(), "completed"); err != nil {
-		return fmt.Errorf("finish merge interaction: %w", err)
-	}
-	return nil
+		for _, id := range failed {
+			fmt.Printf("merge.progress task=%s status=failed\n", short(id))
+			_ = writer.WriteString(fmt.Sprintf("merge.progress task=%s status=failed\n", id))
+			fmt.Printf("  ✗ Failed task-%s\n", short(id))
+		}
+		fmt.Println("merge.completed")
+		fmt.Printf("\nMerged: %d merged, %d failed\n", len(merged), len(failed))
+		return nil
+	})
 }

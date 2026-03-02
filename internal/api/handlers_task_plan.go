@@ -13,6 +13,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/plan"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 // ========== Task Plans ==========
@@ -539,7 +540,7 @@ func (s *Server) handleAcceptBreakdown(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "broken_down"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("broken_down")}); err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}

@@ -83,15 +83,15 @@ func (r *Registry) runMemoryList(cmd *cobra.Command, args []string) error {
 	coveredBefore = strings.TrimSpace(coveredBefore)
 	jsonOut, _ := cmd.Flags().GetBool("json")
 
-	if category != "" && !isValidMemoryCategory(category) {
+	if category != "" && !memory.IsValidCategory(category) {
 		return fmt.Errorf("invalid --category %q (must be one of: pattern|pitfall|preference|convention|architecture|dependency)", category)
 	}
-	if sourceType != "" && !isValidMemorySourceType(sourceType) {
+	if sourceType != "" && !memory.IsValidSourceType(sourceType) {
 		return fmt.Errorf("invalid --source-type %q (must be one of: retro|explore)", sourceType)
 	}
 
 	store := memory.NewStore(db)
-	entries, err := store.List(memory.ListOpts{
+	result, err := store.ListEntries(memory.ListOpts{
 		Category:      category,
 		Tag:           tag,
 		SourceType:    sourceType,
@@ -102,6 +102,7 @@ func (r *Registry) runMemoryList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list memory: %w", err)
 	}
+	entries := result.Entries
 	if jsonOut {
 		payload, err := json.MarshalIndent(entries, "", "  ")
 		if err != nil {
@@ -141,19 +142,11 @@ func (r *Registry) runMemoryShow(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	store := memory.NewStore(db)
-	entry, err := store.Get(strings.TrimSpace(args[0]))
+	detail, err := store.GetEntryDetail(strings.TrimSpace(args[0]))
 	if err != nil {
 		return fmt.Errorf("get memory entry: %w", err)
 	}
-
-	usedByTasks, err := store.FindUsedByTasks(entry.ID)
-	if err != nil {
-		return fmt.Errorf("load entry lineage: %w", err)
-	}
-	supersedes, err := store.FindSupersededIDs(entry.ID)
-	if err != nil {
-		return fmt.Errorf("load supersession lineage: %w", err)
-	}
+	entry := detail.Entry
 
 	fmt.Printf("ID: %s\n", entry.ID)
 	fmt.Printf("Source: %s\n", entry.SourceType)
@@ -174,19 +167,19 @@ func (r *Registry) runMemoryShow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Source task: %s\n", emptyDash(entry.SourceTaskID))
 	fmt.Printf("Source interaction: %s\n", emptyDash(entry.SourceInteractionID))
 	fmt.Printf("Provenance hash: %s\n", entry.ProvenanceHash)
-	if len(supersedes) == 0 {
+	if len(detail.Supersedes) == 0 {
 		fmt.Println("Supersedes: -")
 	} else {
-		fmt.Printf("Supersedes: %s\n", strings.Join(supersedes, ", "))
+		fmt.Printf("Supersedes: %s\n", strings.Join(detail.Supersedes, ", "))
 	}
 	fmt.Printf("Superseded by: %s\n", emptyDash(entry.SupersededBy))
 	fmt.Printf("Created: %s\n", entry.CreatedAt.Local().Format("2006-01-02 15:04:05"))
 	fmt.Printf("Updated: %s\n", entry.UpdatedAt.Local().Format("2006-01-02 15:04:05"))
 	fmt.Println("Used by tasks:")
-	if len(usedByTasks) == 0 {
+	if len(detail.UsedByTasks) == 0 {
 		fmt.Println("  - none")
 	} else {
-		for _, info := range usedByTasks {
+		for _, info := range detail.UsedByTasks {
 			fmt.Printf("  - %s %q (%s)\n", short(info.TaskID), info.Title, info.Status)
 		}
 	}
@@ -215,24 +208,15 @@ func (r *Registry) runMemorySearch(cmd *cobra.Command, args []string) error {
 	if limit <= 0 {
 		return fmt.Errorf("--limit must be > 0")
 	}
-	if sourceType != "" && !isValidMemorySourceType(sourceType) {
-		return fmt.Errorf("invalid --source-type %q (must be one of: retro|explore)", sourceType)
-	}
-
 	store := memory.NewStore(db)
-	entries, err := store.Search(query, limit)
+	filtered, err := store.SearchEntries(memory.SearchOpts{
+		Query:      query,
+		Limit:      limit,
+		SourceType: sourceType,
+		FilePath:   filePath,
+	})
 	if err != nil {
 		return fmt.Errorf("search memory: %w", err)
-	}
-	filtered := make([]*memory.Entry, 0, len(entries))
-	for _, entry := range entries {
-		if sourceType != "" && strings.TrimSpace(strings.ToLower(entry.SourceType)) != sourceType {
-			continue
-		}
-		if filePath != "" && !containsString(entry.FilePaths, filePath) {
-			continue
-		}
-		filtered = append(filtered, entry)
 	}
 
 	if jsonOut {
@@ -263,41 +247,35 @@ func (r *Registry) runMemoryEdit(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	id := strings.TrimSpace(args[0])
-	fields := make(map[string]interface{})
+	input := memory.UpdateEntryInput{}
+	hasUpdates := false
 
 	if cmd.Flags().Changed("content") {
 		content, _ := cmd.Flags().GetString("content")
-		content = strings.TrimSpace(content)
-		if content == "" {
-			return fmt.Errorf("--content cannot be empty")
-		}
-		fields["content"] = content
+		input.Content = &content
+		hasUpdates = true
 	}
 	if cmd.Flags().Changed("confidence") {
 		confidence, _ := cmd.Flags().GetFloat64("confidence")
-		if confidence < 0 || confidence > 1 {
-			return fmt.Errorf("--confidence must be between 0 and 1")
-		}
-		fields["confidence"] = confidence
+		input.Confidence = &confidence
+		hasUpdates = true
 	}
 	if cmd.Flags().Changed("category") {
 		category, _ := cmd.Flags().GetString("category")
-		category = strings.TrimSpace(strings.ToLower(category))
-		if !isValidMemoryCategory(category) {
-			return fmt.Errorf("invalid --category %q (must be one of: pattern|pitfall|preference|convention)", category)
-		}
-		fields["category"] = category
+		input.Category = &category
+		hasUpdates = true
 	}
-	if len(fields) == 0 {
+	if !hasUpdates {
 		return fmt.Errorf("no fields provided (use --content, --confidence, or --category)")
 	}
 
 	store := memory.NewStore(db)
-	if err := store.Update(id, fields); err != nil {
+	entry, err := store.UpdateEntry(id, input)
+	if err != nil {
 		return fmt.Errorf("update memory entry: %w", err)
 	}
 
-	fmt.Printf("Updated memory entry %s\n", short(id))
+	fmt.Printf("Updated memory entry %s\n", short(entry.ID))
 	return nil
 }
 
@@ -331,29 +309,12 @@ func (r *Registry) runMemoryDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := store.Delete(id); err != nil {
+	result, err := store.DeleteEntry(id)
+	if err != nil {
 		return fmt.Errorf("delete memory entry: %w", err)
 	}
-	fmt.Printf("Deleted memory entry %s\n", short(entry.ID))
+	fmt.Printf("Deleted memory entry %s\n", short(result.ID))
 	return nil
-}
-
-func isValidMemoryCategory(category string) bool {
-	switch strings.TrimSpace(strings.ToLower(category)) {
-	case "pattern", "pitfall", "preference", "convention", "architecture", "dependency":
-		return true
-	default:
-		return false
-	}
-}
-
-func isValidMemorySourceType(sourceType string) bool {
-	switch strings.TrimSpace(strings.ToLower(sourceType)) {
-	case "retro", "explore":
-		return true
-	default:
-		return false
-	}
 }
 
 func (r *Registry) runMemorySync(cmd *cobra.Command, args []string) error {
@@ -432,11 +393,6 @@ func (r *Registry) runMemoryRefresh(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-type memoryQueryResult struct {
-	Entry       *memory.Entry       `json:"entry"`
-	UsedByTasks []memory.UsedByTask `json:"used_by_tasks,omitempty"`
-}
-
 func (r *Registry) runMemoryQuery(cmd *cobra.Command, args []string) error {
 	db, _, err := r.openStoreOrErr()
 	if err != nil {
@@ -455,38 +411,26 @@ func (r *Registry) runMemoryQuery(cmd *cobra.Command, args []string) error {
 	}
 
 	store := memory.NewStore(db)
-	entries, err := store.Search(query, limit)
+	result, err := store.QueryEntries(query, limit)
 	if err != nil {
 		return fmt.Errorf("query memory: %w", err)
 	}
 
-	enriched := make([]memoryQueryResult, 0, len(entries))
-	for _, entry := range entries {
-		usedBy, lineageErr := store.FindUsedByTasks(entry.ID)
-		if lineageErr != nil {
-			return fmt.Errorf("load memory lineage: %w", lineageErr)
-		}
-		enriched = append(enriched, memoryQueryResult{
-			Entry:       entry,
-			UsedByTasks: usedBy,
-		})
-	}
-
 	if jsonOut {
-		payload, err := json.MarshalIndent(enriched, "", "  ")
+		payload, err := json.MarshalIndent(result.Entries, "", "  ")
 		if err != nil {
 			return fmt.Errorf("marshal query results: %w", err)
 		}
 		fmt.Println(string(payload))
 		return nil
 	}
-	if len(enriched) == 0 {
+	if len(result.Entries) == 0 {
 		fmt.Println("No matching memory entries.")
 		return nil
 	}
 
-	fmt.Printf("Found %d relevant entries:\n\n", len(enriched))
-	for idx, item := range enriched {
+	fmt.Printf("Found %d relevant entries:\n\n", len(result.Entries))
+	for idx, item := range result.Entries {
 		entry := item.Entry
 		fmt.Printf("%d. [%s] %s (confidence: %.2f, stale: %v)\n", idx+1, entry.SourceType, entry.Content, entry.Confidence, entry.Stale)
 		if len(entry.FilePaths) > 0 {
@@ -502,19 +446,6 @@ func (r *Registry) runMemoryQuery(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 	return nil
-}
-
-func containsString(items []string, needle string) bool {
-	needle = strings.TrimSpace(needle)
-	if needle == "" {
-		return false
-	}
-	for _, item := range items {
-		if strings.TrimSpace(item) == needle {
-			return true
-		}
-	}
-	return false
 }
 
 func emptyDash(v string) string {

@@ -14,11 +14,6 @@ import (
 // ========== Retro ==========
 
 // POST /api/v1/tasks/{id}/retro
-func (s *Server) handleTaskRetro(w http.ResponseWriter, r *http.Request) {
-	s.handleRetroTask(w, r)
-}
-
-// POST /api/v1/tasks/{id}/retro
 func (s *Server) handleRetroTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !requireMethod(w, r, http.MethodPost) {

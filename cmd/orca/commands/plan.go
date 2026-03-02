@@ -155,7 +155,7 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	if parentTaskID != nil {
-		if err := store.Update(*parentTaskID, map[string]interface{}{"status": "broken_down"}); err != nil {
+		if err := store.Update(*parentTaskID, task.UpdateFields{Status: task.Ptr("broken_down")}); err != nil {
 			return fmt.Errorf("update parent task status: %w", err)
 		}
 		fmt.Printf("\nParent task: %s (%s)\n", *parentTaskID, parentTaskTitle)

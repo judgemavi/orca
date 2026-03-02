@@ -55,7 +55,7 @@ func TestHandleStopTaskReturnsStoppedTaskOnSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := store.Update(tk.ID, map[string]interface{}{"status": "running"}); err != nil {
+	if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 		t.Fatalf("set running: %v", err)
 	}
 	markExecutorTaskRunning(exec, tk.ID)
@@ -94,7 +94,7 @@ func TestHandleCancelTaskAliasStillWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := store.Update(tk.ID, map[string]interface{}{"status": "running"}); err != nil {
+	if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 		t.Fatalf("set running: %v", err)
 	}
 	markExecutorTaskRunning(exec, tk.ID)
@@ -148,7 +148,7 @@ func TestHandleResumeTaskReturns400WithoutSessionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := store.Update(tk.ID, map[string]interface{}{"status": "stopped"}); err != nil {
+	if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("stopped")}); err != nil {
 		t.Fatalf("set stopped: %v", err)
 	}
 

@@ -87,30 +87,23 @@ func (r *Registry) runCleanup(cmd *cobra.Command, args []string) error {
 	}
 
 	interactions := interaction.NewStore(db, ".orca/interactions")
-	writer, err := interactions.Begin(nil, "cleanup", "orca")
-	if err != nil {
-		return fmt.Errorf("begin cleanup interaction: %w", err)
-	}
-	defer writer.Close()
+	return interaction.Wrap(interactions, nil, "cleanup", "orca", func(writer *interaction.Writer) error {
+		fmt.Println("cleanup.started")
 
-	fmt.Println("cleanup.started")
-
-	var removed int
-	for _, s := range stale {
-		if err := wm.Remove(s.taskID); err != nil {
-			warnf("remove %s: %v", s.branch, err)
-			fmt.Printf("cleanup.progress branch=%s status=failed\n", s.branch)
-			_ = writer.WriteString(fmt.Sprintf("cleanup.progress branch=%s status=failed\n", s.branch))
-			continue
+		var removed int
+		for _, s := range stale {
+			if err := wm.Remove(s.taskID); err != nil {
+				warnf("remove %s: %v", s.branch, err)
+				fmt.Printf("cleanup.progress branch=%s status=failed\n", s.branch)
+				_ = writer.WriteString(fmt.Sprintf("cleanup.progress branch=%s status=failed\n", s.branch))
+				continue
+			}
+			removed++
+			fmt.Printf("cleanup.progress branch=%s status=removed\n", s.branch)
+			_ = writer.WriteString(fmt.Sprintf("cleanup.progress branch=%s status=removed\n", s.branch))
 		}
-		removed++
-		fmt.Printf("cleanup.progress branch=%s status=removed\n", s.branch)
-		_ = writer.WriteString(fmt.Sprintf("cleanup.progress branch=%s status=removed\n", s.branch))
-	}
-	fmt.Printf("cleanup.completed removed=%d\n", removed)
-	fmt.Printf("\nRemoved %d worktrees\n", removed)
-	if err := interactions.Finish(writer.ID(), "completed"); err != nil {
-		return fmt.Errorf("finish cleanup interaction: %w", err)
-	}
-	return nil
+		fmt.Printf("cleanup.completed removed=%d\n", removed)
+		fmt.Printf("\nRemoved %d worktrees\n", removed)
+		return nil
+	})
 }

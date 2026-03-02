@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasjeetmavi/orca/internal/executor"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 func (s *Server) HandleTasksListTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -88,21 +89,26 @@ func (s *Server) HandleTasksUpdateTool(argsRaw json.RawMessage) (interface{}, er
 		return nil, err
 	}
 
-	fields := make(map[string]interface{})
+	fields := task.UpdateFields{}
+	hasUpdates := false
 	if args.Title != nil {
-		fields["title"] = *args.Title
+		fields.Title = task.Ptr(*args.Title)
+		hasUpdates = true
 	}
 	if args.Description != nil {
-		fields["description"] = *args.Description
+		fields.Description = task.Ptr(*args.Description)
+		hasUpdates = true
 	}
 	if args.Status != nil {
-		fields["status"] = *args.Status
+		fields.Status = task.Ptr(*args.Status)
+		hasUpdates = true
 	}
 	if args.Plan != nil {
-		fields["plan"] = *args.Plan
+		fields.Plan = task.Ptr(*args.Plan)
+		hasUpdates = true
 	}
 
-	if len(fields) > 0 {
+	if hasUpdates {
 		if err := s.taskStore.Update(resolved, fields); err != nil {
 			return nil, err
 		}
@@ -185,7 +191,7 @@ func (s *Server) HandleTasksStopTool(argsRaw json.RawMessage) (interface{}, erro
 		}
 		return map[string]interface{}{"task_id": taskID, "status": current.Status}, nil
 	}
-	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "stopped"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("stopped")}); err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{"task_id": taskID, "status": "stopped"}, nil

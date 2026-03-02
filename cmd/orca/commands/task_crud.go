@@ -101,24 +101,29 @@ func (r *Registry) runTaskEdit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fields := make(map[string]interface{})
+	fields := task.UpdateFields{}
+	hasUpdates := false
 	if cmd.Flags().Changed("title") {
 		v, _ := cmd.Flags().GetString("title")
-		fields["title"] = v
+		fields.Title = task.Ptr(v)
+		hasUpdates = true
 	}
 	if cmd.Flags().Changed("description") {
 		v, _ := cmd.Flags().GetString("description")
-		fields["description"] = v
+		fields.Description = task.Ptr(v)
+		hasUpdates = true
 	}
 	if cmd.Flags().Changed("plan") {
 		v, _ := cmd.Flags().GetString("plan")
-		fields["plan"] = v
+		fields.Plan = task.Ptr(v)
+		hasUpdates = true
 	}
 	if cmd.Flags().Changed("status") {
 		v, _ := cmd.Flags().GetString("status")
-		fields["status"] = v
+		fields.Status = task.Ptr(v)
+		hasUpdates = true
 	}
-	if len(fields) == 0 {
+	if !hasUpdates {
 		return fmt.Errorf("no fields provided (use --title, --description, --plan, or --status)")
 	}
 
@@ -254,7 +259,7 @@ func (r *Registry) runTaskStop(cmd *cobra.Command, args []string) error {
 	if err := exec.StopTask(id); err != nil {
 		return fmt.Errorf("stop task %s: %w", short(id), err)
 	}
-	if err := store.Update(id, map[string]interface{}{"status": "stopped"}); err != nil {
+	if err := store.Update(id, task.UpdateFields{Status: task.Ptr("stopped")}); err != nil {
 		return fmt.Errorf("set task %s stopped: %w", short(id), err)
 	}
 	fmt.Printf("Stopped task %s\n", short(id))

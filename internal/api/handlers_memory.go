@@ -27,11 +27,11 @@ func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
 	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
 	staleOnly := staleRaw == "1" || staleRaw == "true" || staleRaw == "yes"
 
-	if category != "" && !isValidMemoryCategory(category) {
+	if category != "" && !memory.IsValidCategory(category) {
 		jsonError(w, "category must be one of: pattern|pitfall|preference|convention|architecture|dependency", http.StatusBadRequest)
 		return
 	}
-	if sourceType != "" && !isValidMemorySourceType(sourceType) {
+	if sourceType != "" && !memory.IsValidSourceType(sourceType) {
 		jsonError(w, "source_type must be one of: retro|explore", http.StatusBadRequest)
 		return
 	}
@@ -47,29 +47,19 @@ func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
 			limit = parsed
 		}
 
-		entries, err := s.memoryStore.Search(query, limit)
+		entries, err := s.memoryStore.SearchEntries(memory.SearchOpts{
+			Query:      query,
+			Limit:      limit,
+			Category:   category,
+			Tag:        tag,
+			SourceType: sourceType,
+			FilePath:   filePath,
+		})
 		if err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
-
-		filtered := make([]*memory.Entry, 0, len(entries))
-		for _, entry := range entries {
-			if category != "" && entry.Category != category {
-				continue
-			}
-			if tag != "" && !hasMemoryTag(entry.Tags, tag) {
-				continue
-			}
-			if sourceType != "" && strings.ToLower(strings.TrimSpace(entry.SourceType)) != sourceType {
-				continue
-			}
-			if filePath != "" && !hasMemoryFilePath(entry.FilePaths, filePath) {
-				continue
-			}
-			filtered = append(filtered, entry)
-		}
-		jsonOK(w, filtered)
+		jsonOK(w, entries)
 		return
 	}
 
@@ -78,7 +68,7 @@ func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := s.memoryStore.List(memory.ListOpts{
+	result, err := s.memoryStore.ListEntries(memory.ListOpts{
 		Category:      category,
 		Tag:           tag,
 		SourceType:    sourceType,
@@ -90,7 +80,7 @@ func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, entries)
+	jsonOK(w, result.Entries)
 }
 
 func (s *Server) handleQueryMemory(w http.ResponseWriter, r *http.Request) {
@@ -117,17 +107,12 @@ func (s *Server) handleQueryMemory(w http.ResponseWriter, r *http.Request) {
 		limit = parsed
 	}
 
-	entries, err := s.memoryStore.Search(query, limit)
+	result, err := s.memoryStore.QueryEntries(query, limit)
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	enriched, err := s.enrichMemoryEntries(entries)
-	if err != nil {
-		jsonError(w, err, http.StatusInternalServerError)
-		return
-	}
-	jsonOK(w, enriched)
+	jsonOK(w, result.Entries)
 }
 
 func (s *Server) handleGetMemory(w http.ResponseWriter, r *http.Request) {
@@ -145,26 +130,12 @@ func (s *Server) handleGetMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := s.memoryStore.Get(id)
+	detail, err := s.memoryStore.GetEntryDetail(id)
 	if err != nil {
 		jsonError(w, err, http.StatusNotFound)
 		return
 	}
-	usedBy, err := s.memoryStore.FindUsedByTasks(entry.ID)
-	if err != nil {
-		jsonError(w, err, http.StatusInternalServerError)
-		return
-	}
-	supersedes, err := s.memoryStore.FindSupersededIDs(entry.ID)
-	if err != nil {
-		jsonError(w, err, http.StatusInternalServerError)
-		return
-	}
-	jsonOK(w, memoryEntryResponse{
-		Entry:       entry,
-		UsedByTasks: usedBy,
-		Supersedes:  supersedes,
-	})
+	jsonOK(w, detail)
 }
 
 func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
@@ -192,46 +163,29 @@ func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fields := map[string]interface{}{}
-	if body.Content != nil {
-		content := strings.TrimSpace(*body.Content)
-		if content == "" {
-			jsonError(w, "content cannot be empty", http.StatusBadRequest)
-			return
-		}
-		fields["content"] = content
-	}
-	if body.Confidence != nil {
-		if *body.Confidence < 0 || *body.Confidence > 1 {
-			jsonError(w, "confidence must be between 0 and 1", http.StatusBadRequest)
-			return
-		}
-		fields["confidence"] = *body.Confidence
-	}
-	if body.Category != nil {
-		category := strings.TrimSpace(strings.ToLower(*body.Category))
-		if !isValidMemoryCategory(category) {
-			jsonError(w, "category must be one of: pattern|pitfall|preference|convention|architecture|dependency", http.StatusBadRequest)
-			return
-		}
-		fields["category"] = category
-	}
-	if len(fields) == 0 {
+	if body.Content == nil && body.Confidence == nil && body.Category == nil {
 		jsonError(w, "no fields to update", http.StatusBadRequest)
 		return
 	}
 
-	if err := s.memoryStore.Update(id, fields); err != nil {
+	entry, err := s.memoryStore.UpdateEntry(id, memory.UpdateEntryInput{
+		Content:    body.Content,
+		Confidence: body.Confidence,
+		Category:   body.Category,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "cannot be empty") ||
+			strings.Contains(err.Error(), "must be between 0 and 1") ||
+			strings.Contains(err.Error(), "category must be one of") ||
+			strings.Contains(err.Error(), "id required") ||
+			strings.Contains(err.Error(), "no fields to update") {
+			jsonError(w, err, http.StatusBadRequest)
+			return
+		}
 		if strings.Contains(err.Error(), "not found") {
 			jsonError(w, err, http.StatusNotFound)
 			return
 		}
-		jsonError(w, err, http.StatusInternalServerError)
-		return
-	}
-
-	entry, err := s.memoryStore.Get(id)
-	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
@@ -253,15 +207,16 @@ func (s *Server) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.memoryStore.Get(id); err != nil {
-		jsonError(w, err, http.StatusNotFound)
-		return
-	}
-	if err := s.memoryStore.Delete(id); err != nil {
+	result, err := s.memoryStore.DeleteEntry(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			jsonError(w, err, http.StatusNotFound)
+			return
+		}
 		jsonError(w, err, http.StatusBadRequest)
 		return
 	}
-	jsonOK(w, map[string]string{"deleted": id})
+	jsonOK(w, result)
 }
 
 func (s *Server) handleSyncMemory(w http.ResponseWriter, r *http.Request) {
@@ -309,69 +264,4 @@ func (s *Server) handleRefreshMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOK(w, result)
-}
-
-func hasMemoryTag(tags []string, needle string) bool {
-	needle = strings.TrimSpace(strings.ToLower(needle))
-	if needle == "" {
-		return false
-	}
-	for _, tag := range tags {
-		if strings.ToLower(strings.TrimSpace(tag)) == needle {
-			return true
-		}
-	}
-	return false
-}
-
-func isValidMemoryCategory(category string) bool {
-	switch strings.TrimSpace(strings.ToLower(category)) {
-	case "pattern", "pitfall", "preference", "convention", "architecture", "dependency":
-		return true
-	default:
-		return false
-	}
-}
-
-func isValidMemorySourceType(sourceType string) bool {
-	switch strings.TrimSpace(strings.ToLower(sourceType)) {
-	case "retro", "explore":
-		return true
-	default:
-		return false
-	}
-}
-
-type memoryEntryResponse struct {
-	Entry       *memory.Entry       `json:"entry"`
-	UsedByTasks []memory.UsedByTask `json:"used_by_tasks,omitempty"`
-	Supersedes  []string            `json:"supersedes,omitempty"`
-}
-
-func (s *Server) enrichMemoryEntries(entries []*memory.Entry) ([]memoryEntryResponse, error) {
-	enriched := make([]memoryEntryResponse, 0, len(entries))
-	for _, entry := range entries {
-		usedBy, err := s.memoryStore.FindUsedByTasks(entry.ID)
-		if err != nil {
-			return nil, err
-		}
-		enriched = append(enriched, memoryEntryResponse{
-			Entry:       entry,
-			UsedByTasks: usedBy,
-		})
-	}
-	return enriched, nil
-}
-
-func hasMemoryFilePath(paths []string, needle string) bool {
-	needle = strings.TrimSpace(needle)
-	if needle == "" {
-		return false
-	}
-	for _, path := range paths {
-		if strings.TrimSpace(path) == needle {
-			return true
-		}
-	}
-	return false
 }

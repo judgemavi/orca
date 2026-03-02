@@ -1,3 +1,4 @@
+// retrieval.go contains multi-layer memory retrieval and sibling-task context selection.
 package memory
 
 import (

@@ -33,6 +33,18 @@ type TaskReview struct {
 	AddressedAt   *time.Time `json:"addressed_at,omitempty"`
 }
 
+type UpdateFields struct {
+	Title       *string
+	Description *string
+	Plan        *string
+	Status      *string
+	SessionID   *string
+}
+
+func Ptr[T any](value T) *T {
+	return &value
+}
+
 type Store struct {
 	db *state.DB
 }
@@ -110,17 +122,37 @@ func (s *Store) ListByStatus(status string) ([]*Task, error) {
 	)
 }
 
-func (s *Store) Update(id string, fields map[string]interface{}) error {
-	if len(fields) == 0 {
+func (s *Store) Update(id string, fields UpdateFields) error {
+	if fields.Title == nil &&
+		fields.Description == nil &&
+		fields.Plan == nil &&
+		fields.Status == nil &&
+		fields.SessionID == nil {
 		return nil
 	}
 
-	setClauses := make([]string, 0, len(fields)+1)
-	args := make([]interface{}, 0, len(fields)+2)
-
-	for col, val := range fields {
-		setClauses = append(setClauses, col+" = ?")
-		args = append(args, val)
+	setClauses := make([]string, 0, 6)
+	args := make([]interface{}, 0, 7)
+	if fields.Title != nil {
+		setClauses = append(setClauses, "title = ?")
+		args = append(args, *fields.Title)
+	}
+	if fields.Description != nil {
+		setClauses = append(setClauses, "description = ?")
+		args = append(args, *fields.Description)
+	}
+	if fields.Plan != nil {
+		setClauses = append(setClauses, "plan = ?")
+		args = append(args, *fields.Plan)
+	}
+	if fields.Status != nil {
+		setClauses = append(setClauses, "status = ?")
+		args = append(args, *fields.Status)
+	}
+	if fields.SessionID != nil {
+		argsVal := nullableString(*fields.SessionID)
+		setClauses = append(setClauses, "session_id = ?")
+		args = append(args, argsVal)
 	}
 
 	setClauses = append(setClauses, "updated_at = ?")
@@ -140,6 +172,14 @@ func (s *Store) Update(id string, fields map[string]interface{}) error {
 		return fmt.Errorf("task %s not found", id)
 	}
 	return nil
+}
+
+func nullableString(value string) interface{} {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func (s *Store) Delete(id string) error {

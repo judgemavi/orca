@@ -92,13 +92,45 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fields := make(map[string]interface{})
-	for _, key := range []string{"title", "description", "status", "plan"} {
-		if v, ok := body[key]; ok {
-			fields[key] = v
+	fields := task.UpdateFields{}
+	hasUpdates := false
+	if v, ok := body["title"]; ok {
+		title, ok := v.(string)
+		if !ok {
+			jsonError(w, "title must be a string", http.StatusBadRequest)
+			return
 		}
+		fields.Title = task.Ptr(title)
+		hasUpdates = true
 	}
-	if len(fields) == 0 {
+	if v, ok := body["description"]; ok {
+		description, ok := v.(string)
+		if !ok {
+			jsonError(w, "description must be a string", http.StatusBadRequest)
+			return
+		}
+		fields.Description = task.Ptr(description)
+		hasUpdates = true
+	}
+	if v, ok := body["plan"]; ok {
+		plan, ok := v.(string)
+		if !ok {
+			jsonError(w, "plan must be a string", http.StatusBadRequest)
+			return
+		}
+		fields.Plan = task.Ptr(plan)
+		hasUpdates = true
+	}
+	if rawStatus, ok := body["status"]; ok {
+		newStatus, ok := rawStatus.(string)
+		if !ok {
+			jsonError(w, "status must be a string", http.StatusBadRequest)
+			return
+		}
+		fields.Status = task.Ptr(newStatus)
+		hasUpdates = true
+	}
+	if !hasUpdates {
 		jsonError(w, "no fields to update", http.StatusBadRequest)
 		return
 	}
@@ -109,12 +141,8 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rawStatus, ok := fields["status"]; ok {
-		newStatus, ok := rawStatus.(string)
-		if !ok {
-			jsonError(w, "status must be a string", http.StatusBadRequest)
-			return
-		}
+	if fields.Status != nil {
+		newStatus := strings.TrimSpace(*fields.Status)
 		switch newStatus {
 		case "pending":
 			if currentTask.Status != "failed" {

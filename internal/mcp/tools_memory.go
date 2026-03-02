@@ -24,15 +24,15 @@ func (s *Server) HandleMemoryListTool(argsRaw json.RawMessage) (interface{}, err
 	}
 
 	category := strings.TrimSpace(strings.ToLower(args.Category))
-	if category != "" && !isValidMemoryCategory(category) {
+	if category != "" && !memory.IsValidCategory(category) {
 		return nil, fmt.Errorf("category must be one of: pattern|pitfall|preference|convention|architecture|dependency")
 	}
 	sourceType := strings.TrimSpace(strings.ToLower(args.SourceType))
-	if sourceType != "" && !isValidMemorySourceType(sourceType) {
+	if sourceType != "" && !memory.IsValidSourceType(sourceType) {
 		return nil, fmt.Errorf("source_type must be one of: retro|explore")
 	}
 
-	entries, err := store.List(memory.ListOpts{
+	result, err := store.ListEntries(memory.ListOpts{
 		Category:   category,
 		Tag:        strings.TrimSpace(args.Tag),
 		SourceType: sourceType,
@@ -41,7 +41,7 @@ func (s *Server) HandleMemoryListTool(argsRaw json.RawMessage) (interface{}, err
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"entries": entries}, nil
+	return map[string]interface{}{"entries": result.Entries}, nil
 }
 
 func (s *Server) HandleMemoryGetTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -59,22 +59,14 @@ func (s *Server) HandleMemoryGetTool(argsRaw json.RawMessage) (interface{}, erro
 		return nil, fmt.Errorf("memory_get: %w", err)
 	}
 
-	entry, err := store.Get(strings.TrimSpace(args.ID))
-	if err != nil {
-		return nil, err
-	}
-	usedBy, err := store.FindUsedByTasks(entry.ID)
-	if err != nil {
-		return nil, err
-	}
-	supersedes, err := store.FindSupersededIDs(entry.ID)
+	detail, err := store.GetEntryDetail(strings.TrimSpace(args.ID))
 	if err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{
-		"entry":         entry,
-		"used_by_tasks": usedBy,
-		"supersedes":    supersedes,
+		"entry":         detail.Entry,
+		"used_by_tasks": detail.UsedByTasks,
+		"supersedes":    detail.Supersedes,
 	}, nil
 }
 
@@ -97,30 +89,20 @@ func (s *Server) HandleMemorySearchTool(argsRaw json.RawMessage) (interface{}, e
 	if limit <= 0 {
 		limit = 10
 	}
-	sourceType := strings.TrimSpace(strings.ToLower(args.SourceType))
-	if sourceType != "" && !isValidMemorySourceType(sourceType) {
-		return nil, fmt.Errorf("source_type must be one of: retro|explore")
-	}
-	filePath := strings.TrimSpace(args.FilePath)
 
 	store, err := s.getMemoryStore()
 	if err != nil {
 		return nil, fmt.Errorf("memory_search: %w", err)
 	}
 
-	entries, err := store.Search(query, limit)
+	filtered, err := store.SearchEntries(memory.SearchOpts{
+		Query:      query,
+		Limit:      limit,
+		SourceType: args.SourceType,
+		FilePath:   args.FilePath,
+	})
 	if err != nil {
 		return nil, err
-	}
-	filtered := make([]*memory.Entry, 0, len(entries))
-	for _, entry := range entries {
-		if sourceType != "" && strings.ToLower(strings.TrimSpace(entry.SourceType)) != sourceType {
-			continue
-		}
-		if filePath != "" && !hasMemoryFilePath(entry.FilePaths, filePath) {
-			continue
-		}
-		filtered = append(filtered, entry)
 	}
 	return map[string]interface{}{"entries": filtered}, nil
 }
@@ -140,28 +122,7 @@ func (s *Server) HandleMemoryUpdateTool(argsRaw json.RawMessage) (interface{}, e
 		return nil, fmt.Errorf("id is required")
 	}
 
-	fields := map[string]interface{}{}
-	if args.Content != nil {
-		content := strings.TrimSpace(*args.Content)
-		if content == "" {
-			return nil, fmt.Errorf("content cannot be empty")
-		}
-		fields["content"] = content
-	}
-	if args.Confidence != nil {
-		if *args.Confidence < 0 || *args.Confidence > 1 {
-			return nil, fmt.Errorf("confidence must be between 0 and 1")
-		}
-		fields["confidence"] = *args.Confidence
-	}
-	if args.Category != nil {
-		category := strings.TrimSpace(strings.ToLower(*args.Category))
-		if !isValidMemoryCategory(category) {
-			return nil, fmt.Errorf("category must be one of: pattern|pitfall|preference|convention|architecture|dependency")
-		}
-		fields["category"] = category
-	}
-	if len(fields) == 0 {
+	if args.Content == nil && args.Confidence == nil && args.Category == nil {
 		return nil, fmt.Errorf("at least one field must be provided")
 	}
 
@@ -170,10 +131,11 @@ func (s *Server) HandleMemoryUpdateTool(argsRaw json.RawMessage) (interface{}, e
 		return nil, fmt.Errorf("memory_update: %w", err)
 	}
 
-	if err := store.Update(id, fields); err != nil {
-		return nil, err
-	}
-	entry, err := store.Get(id)
+	entry, err := store.UpdateEntry(id, memory.UpdateEntryInput{
+		Content:    args.Content,
+		Confidence: args.Confidence,
+		Category:   args.Category,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -197,10 +159,11 @@ func (s *Server) HandleMemoryDeleteTool(argsRaw json.RawMessage) (interface{}, e
 		return nil, fmt.Errorf("memory_delete: %w", err)
 	}
 
-	if err := store.Delete(id); err != nil {
+	result, err := store.DeleteEntry(id)
+	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"id": id, "deleted": true}, nil
+	return result, nil
 }
 
 func (s *Server) HandleMemorySyncTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -274,17 +237,14 @@ func (s *Server) HandleMemoryQueryTool(argsRaw json.RawMessage) (interface{}, er
 	if err != nil {
 		return nil, fmt.Errorf("memory_query: %w", err)
 	}
-	entries, err := store.Search(query, limit)
+	result, err := store.QueryEntries(query, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	enriched := make([]map[string]interface{}, 0, len(entries))
-	for _, entry := range entries {
-		usedBy, err := store.FindUsedByTasks(entry.ID)
-		if err != nil {
-			return nil, err
-		}
+	enriched := make([]map[string]interface{}, 0, len(result.Entries))
+	for _, detail := range result.Entries {
+		entry := detail.Entry
 		enriched = append(enriched, map[string]interface{}{
 			"id":                entry.ID,
 			"content":           entry.Content,
@@ -296,7 +256,7 @@ func (s *Server) HandleMemoryQueryTool(argsRaw json.RawMessage) (interface{}, er
 			"stale":             entry.Stale,
 			"covered_at_commit": entry.CoveredAtCommit,
 			"source_task_id":    entry.SourceTaskID,
-			"used_by_tasks":     usedBy,
+			"used_by_tasks":     detail.UsedByTasks,
 		})
 	}
 	return map[string]interface{}{"entries": enriched}, nil
@@ -334,35 +294,4 @@ func (s *Server) getMemoryStore() (*memory.Store, error) {
 	}
 	s.memoryStore = memory.NewStore(s.db)
 	return s.memoryStore, nil
-}
-
-func isValidMemoryCategory(category string) bool {
-	switch strings.TrimSpace(strings.ToLower(category)) {
-	case "pattern", "pitfall", "preference", "convention", "architecture", "dependency":
-		return true
-	default:
-		return false
-	}
-}
-
-func isValidMemorySourceType(sourceType string) bool {
-	switch strings.TrimSpace(strings.ToLower(sourceType)) {
-	case "retro", "explore":
-		return true
-	default:
-		return false
-	}
-}
-
-func hasMemoryFilePath(paths []string, needle string) bool {
-	needle = strings.TrimSpace(needle)
-	if needle == "" {
-		return false
-	}
-	for _, path := range paths {
-		if strings.TrimSpace(path) == needle {
-			return true
-		}
-	}
-	return false
 }

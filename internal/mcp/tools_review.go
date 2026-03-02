@@ -12,6 +12,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/memory"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/review"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 func (s *Server) HandleTasksApproveTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -38,7 +39,7 @@ func (s *Server) HandleTasksApproveTool(argsRaw json.RawMessage) (interface{}, e
 		return nil, fmt.Errorf("task must be in review status to approve")
 	}
 
-	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "approved"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("approved")}); err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{"task_id": taskID, "status": "approved"}, nil
@@ -81,7 +82,7 @@ func (s *Server) HandleTasksRequestChangesTool(argsRaw json.RawMessage) (interfa
 	if _, err := s.taskStore.AddReview(taskID, feedback, interactionID); err != nil {
 		return nil, err
 	}
-	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 		return nil, err
 	}
 
@@ -125,7 +126,7 @@ func (s *Server) HandleTasksApprovePlanTool(argsRaw json.RawMessage) (interface{
 		return nil, fmt.Errorf("task must have a plan to approve")
 	}
 
-	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "planned"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("planned")}); err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{"task_id": taskID, "status": "planned"}, nil

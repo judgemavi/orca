@@ -1,3 +1,4 @@
+// sync.go contains deterministic git-diff sync and stale-marking behavior.
 package memory
 
 import (
@@ -5,7 +6,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +16,6 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/diffclass"
 	"github.com/jasjeetmavi/orca/internal/driver"
-	"github.com/jasjeetmavi/orca/internal/llm"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -84,13 +83,6 @@ type SyncStatus struct {
 	SyncNeeded       bool   `json:"sync_needed"`
 	CommitsBehind    int    `json:"commits_behind"`
 	ContextStale     bool   `json:"context_stale"`
-}
-
-type RefreshResult struct {
-	EntryID string `json:"entry_id,omitempty"`
-	Updated int    `json:"updated"`
-	Skipped int    `json:"skipped"`
-	Commit  string `json:"commit"`
 }
 
 func NewSyncer(store *Store, db *sql.DB, repoDir, toolName string, d driver.Driver, model string, timeout time.Duration) *Syncer {
@@ -378,265 +370,6 @@ func (s *Syncer) Status() (*SyncStatus, error) {
 	}
 	status.CommitsBehind = count
 	return status, nil
-}
-
-func (s *Syncer) Refresh(entryID string) (*RefreshResult, error) {
-	if s.store == nil {
-		return nil, fmt.Errorf("memory store required")
-	}
-	if strings.TrimSpace(s.repoDir) == "" {
-		return nil, fmt.Errorf("repo dir required")
-	}
-
-	head, err := s.gitOutput("rev-parse", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-	head = strings.TrimSpace(head)
-	if head == "" {
-		return nil, fmt.Errorf("empty HEAD commit")
-	}
-
-	result := &RefreshResult{
-		EntryID: strings.TrimSpace(entryID),
-		Commit:  head,
-	}
-	if result.EntryID != "" {
-		entry, err := s.store.Get(result.EntryID)
-		if err != nil {
-			return nil, err
-		}
-		updated, refreshErr := s.refreshEntry(entry, head)
-		if refreshErr != nil {
-			return nil, refreshErr
-		}
-		if updated {
-			result.Updated = 1
-		} else {
-			result.Skipped = 1
-		}
-		return result, nil
-	}
-
-	entries, err := s.store.FindStaleEntries()
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range entries {
-		updated, refreshErr := s.refreshEntry(entry, head)
-		if refreshErr != nil {
-			result.Skipped++
-			continue
-		}
-		if updated {
-			result.Updated++
-		} else {
-			result.Skipped++
-		}
-	}
-	return result, nil
-}
-
-func (s *Syncer) refreshEntry(entry *Entry, head string) (bool, error) {
-	if entry == nil {
-		return false, nil
-	}
-	if !entry.Stale {
-		return false, nil
-	}
-
-	if !s.hasEntryChanges(entry, head) {
-		if err := s.store.Update(entry.ID, map[string]interface{}{
-			"stale":             false,
-			"covered_at_commit": head,
-		}); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-
-	// If LLM refresh isn't configured, keep stale entries unchanged.
-	if s.driver == nil || strings.TrimSpace(s.model) == "" {
-		return false, nil
-	}
-
-	updated, filePaths, err := s.refreshEntryWithLLM(entry, head)
-	if err != nil {
-		return false, err
-	}
-	if strings.TrimSpace(updated) == "" {
-		if err := s.store.Update(entry.ID, map[string]interface{}{
-			"stale":             false,
-			"covered_at_commit": head,
-		}); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-
-	nextFilePaths := entry.FilePaths
-	if len(filePaths) > 0 {
-		nextFilePaths = filePaths
-	}
-
-	nextEntry := &Entry{
-		Content:             strings.TrimSpace(updated),
-		Category:            entry.Category,
-		Tags:                entry.Tags,
-		SourceTaskID:        entry.SourceTaskID,
-		SourceInteractionID: entry.SourceInteractionID,
-		SourceType:          entry.SourceType,
-		FilePaths:           nextFilePaths,
-		CoveredAtCommit:     head,
-		Confidence:          entry.Confidence,
-		ProvenanceHash:      refreshProvenanceHash(entry, updated, head),
-	}
-	if nextEntry.Confidence <= 0 {
-		nextEntry.Confidence = 0.95
-	}
-	if err := s.store.Create(nextEntry); err != nil {
-		return false, err
-	}
-	if err := s.store.Supersede(entry.ID, nextEntry.ID); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (s *Syncer) hasEntryChanges(entry *Entry, head string) bool {
-	if entry == nil || len(entry.FilePaths) == 0 {
-		return false
-	}
-	base := strings.TrimSpace(entry.CoveredAtCommit)
-	if base == "" || base == strings.TrimSpace(head) {
-		return false
-	}
-	args := []string{"diff", "--name-only", base + ".." + strings.TrimSpace(head), "--"}
-	args = append(args, entry.FilePaths...)
-	out, err := s.gitOutput(args...)
-	if err != nil {
-		return true
-	}
-	return strings.TrimSpace(out) != ""
-}
-
-type refreshLLMOutput struct {
-	Valid            bool     `json:"valid"`
-	UpdatedContent   string   `json:"updated_content"`
-	UpdatedFilePaths []string `json:"updated_file_paths"`
-}
-
-func (s *Syncer) refreshEntryWithLLM(entry *Entry, head string) (string, []string, error) {
-	base := strings.TrimSpace(entry.CoveredAtCommit)
-	if base == "" {
-		base = head
-	}
-
-	diff := ""
-	if len(entry.FilePaths) > 0 && base != head {
-		args := []string{"diff", base + ".." + head, "--"}
-		args = append(args, entry.FilePaths...)
-		out, err := s.gitOutput(args...)
-		if err == nil {
-			diff = strings.TrimSpace(out)
-		}
-	}
-	if s.maxDiffBytes > 0 && len(diff) > s.maxDiffBytes {
-		return "", nil, nil
-	}
-
-	content := s.collectCurrentFileContent(entry.FilePaths)
-	prompt := buildRefreshPrompt(entry, diff, content)
-	adapter := worker.NewAdapter(s.driver, s.model, s.timeout)
-	runResult, runErr := adapter.Execute(context.Background(), "memory_refresh", prompt, s.repoDir)
-	if runErr != nil || runResult == nil || runResult.ExitCode != 0 {
-		return "", nil, fmt.Errorf("refresh entry %s: llm run failed", entry.ID)
-	}
-
-	response := strings.TrimSpace(runResult.Stdout)
-	if response == "" {
-		return "", nil, nil
-	}
-	var payload refreshLLMOutput
-	found, err := llm.TryExtractJSON(response, &payload)
-	if err != nil || !found {
-		return "", nil, fmt.Errorf("refresh entry %s: parse llm output", entry.ID)
-	}
-	if payload.Valid {
-		return "", nil, nil
-	}
-	return strings.TrimSpace(payload.UpdatedContent), normalizeChangedFilePaths(payload.UpdatedFilePaths), nil
-}
-
-func (s *Syncer) collectCurrentFileContent(paths []string) string {
-	if len(paths) == 0 {
-		return ""
-	}
-	var blocks []string
-	for _, path := range normalizeChangedFilePaths(paths) {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		out, err := s.gitOutput("show", "HEAD:"+path)
-		if err != nil {
-			continue
-		}
-		if s.maxDiffBytes > 0 && len(out) > s.maxDiffBytes/2 {
-			out = out[:s.maxDiffBytes/2]
-		}
-		blocks = append(blocks, "### "+path+"\n"+strings.TrimSpace(out))
-	}
-	return strings.TrimSpace(strings.Join(blocks, "\n\n"))
-}
-
-func buildRefreshPrompt(entry *Entry, diff, currentFiles string) string {
-	type entryPayload struct {
-		Content   string   `json:"content"`
-		Category  string   `json:"category"`
-		Source    string   `json:"source_type"`
-		FilePaths []string `json:"file_paths"`
-	}
-	raw, _ := json.MarshalIndent(entryPayload{
-		Content:   strings.TrimSpace(entry.Content),
-		Category:  strings.TrimSpace(entry.Category),
-		Source:    strings.TrimSpace(entry.SourceType),
-		FilePaths: normalizeChangedFilePaths(entry.FilePaths),
-	}, "", "  ")
-	return strings.TrimSpace(fmt.Sprintf(`
-You are refreshing a stale memory entry.
-
-Return valid JSON only using this schema:
-{
-  "valid": boolean,
-  "updated_content": string,
-  "updated_file_paths": string[]
-}
-
-Rules:
-- If the entry is still accurate, return {"valid": true, "updated_content": "", "updated_file_paths": []}
-- If it is outdated, return {"valid": false, ...} with concise updated content.
-- Keep content self-contained and specific to the codebase.
-- Use repo-relative file paths only.
-
-Current entry:
-%s
-
-Diff since it was last covered:
-%s
-
-Current file content:
-%s
-`, string(raw), emptyIfBlank(diff), emptyIfBlank(currentFiles)))
-}
-
-func refreshProvenanceHash(entry *Entry, updatedContent, head string) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		strings.TrimSpace(entry.ProvenanceHash),
-		strings.TrimSpace(updatedContent),
-		strings.TrimSpace(head),
-	}, "\n---\n")))
-	return hex.EncodeToString(sum[:])
 }
 
 func (s *Syncer) GetLastSyncedCommit() (string, error) {

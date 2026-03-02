@@ -1,3 +1,4 @@
+// store.go holds low-level SQLite-backed storage, indexing, and lineage helpers.
 package memory
 
 import (
@@ -65,6 +66,20 @@ type ListOpts struct {
 	FilePath      string
 	StaleOnly     bool
 	CoveredBefore string
+}
+
+type UpdateFields struct {
+	Content         *string
+	Category        *string
+	Confidence      *float64
+	SourceType      *string
+	Stale           *bool
+	CoveredAtCommit *string
+	Tags            []string // nil = no change, empty = clear
+}
+
+func Ptr[T any](value T) *T {
+	return &value
 }
 
 // Store persists memory entries and mirrors data into the FTS table.
@@ -266,8 +281,14 @@ func (s *Store) List(opts ListOpts) ([]*Entry, error) {
 	return entries, nil
 }
 
-func (s *Store) Update(id string, updates map[string]interface{}) error {
-	if len(updates) == 0 {
+func (s *Store) Update(id string, fields UpdateFields) error {
+	if fields.Content == nil &&
+		fields.Category == nil &&
+		fields.Confidence == nil &&
+		fields.SourceType == nil &&
+		fields.Stale == nil &&
+		fields.CoveredAtCommit == nil &&
+		fields.Tags == nil {
 		return nil
 	}
 
@@ -277,21 +298,47 @@ func (s *Store) Update(id string, updates map[string]interface{}) error {
 	}
 	defer tx.Rollback()
 
-	keys := make([]string, 0, len(updates))
-	for k := range updates {
-		keys = append(keys, k)
+	setClauses := make([]string, 0, 8)
+	args := make([]interface{}, 0, 10)
+	if fields.Content != nil {
+		setClauses = append(setClauses, "content = ?")
+		args = append(args, *fields.Content)
 	}
-	sort.Strings(keys)
-
-	setClauses := make([]string, 0, len(keys)+1)
-	args := make([]interface{}, 0, len(keys)+2)
-	for _, key := range keys {
-		val, err := normalizeUpdateValue(key, updates[key])
+	if fields.Category != nil {
+		setClauses = append(setClauses, "category = ?")
+		args = append(args, *fields.Category)
+	}
+	if fields.Confidence != nil {
+		setClauses = append(setClauses, "confidence = ?")
+		args = append(args, *fields.Confidence)
+	}
+	if fields.SourceType != nil {
+		sourceType, err := normalizeSourceType(*fields.SourceType)
 		if err != nil {
 			return err
 		}
-		setClauses = append(setClauses, key+" = ?")
-		args = append(args, val)
+		setClauses = append(setClauses, "source_type = ?")
+		args = append(args, sourceType)
+	}
+	if fields.Stale != nil {
+		stale := 0
+		if *fields.Stale {
+			stale = 1
+		}
+		setClauses = append(setClauses, "stale = ?")
+		args = append(args, stale)
+	}
+	if fields.CoveredAtCommit != nil {
+		setClauses = append(setClauses, "covered_at_commit = ?")
+		args = append(args, strings.TrimSpace(*fields.CoveredAtCommit))
+	}
+	if fields.Tags != nil {
+		tagsJSON, err := marshalTags(fields.Tags)
+		if err != nil {
+			return fmt.Errorf("marshal tags: %w", err)
+		}
+		setClauses = append(setClauses, "tags = ?")
+		args = append(args, tagsJSON)
 	}
 	setClauses = append(setClauses, "updated_at = ?")
 	args = append(args, time.Now().UTC(), id)
@@ -666,27 +713,6 @@ func (s *Store) MarkStale(id string) error {
 	return nil
 }
 
-func (s *Store) ClearStale(id string) error {
-	res, err := s.db.Exec(
-		`UPDATE memory_entries
-		 SET stale = 0,
-		     updated_at = CURRENT_TIMESTAMP
-		 WHERE id = ?`,
-		id,
-	)
-	if err != nil {
-		return fmt.Errorf("clear stale memory entry: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("clear stale memory entry rows affected: %w", err)
-	}
-	if affected == 0 {
-		return fmt.Errorf("memory entry %s not found", id)
-	}
-	return nil
-}
-
 func (s *Store) UpdateCoveredCommit(id string, commitSHA string) error {
 	commitSHA = strings.TrimSpace(commitSHA)
 	res, err := s.db.Exec(
@@ -804,35 +830,6 @@ func (s *Store) FindSupersededIDs(entryID string) ([]string, error) {
 	return ids, nil
 }
 
-func (s *Store) DistinctFilePaths(limit int) ([]string, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	rows, err := s.db.Query(
-		`SELECT DISTINCT file_path
-		 FROM memory_file_associations
-		 ORDER BY file_path
-		 LIMIT ?`,
-		limit,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list distinct memory file paths: %w", err)
-	}
-	defer rows.Close()
-	paths := make([]string, 0, limit)
-	for rows.Next() {
-		var path string
-		if err := rows.Scan(&path); err != nil {
-			return nil, err
-		}
-		paths = append(paths, path)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return paths, nil
-}
-
 func (s *Store) BuildHealthSummary() (*HealthSummary, error) {
 	summary := &HealthSummary{
 		BySource: make(map[string]int),
@@ -945,46 +942,6 @@ func scanEntry(scan func(dest ...interface{}) error) (*Entry, error) {
 	return &e, nil
 }
 
-func normalizeUpdateValue(key string, value interface{}) (interface{}, error) {
-	switch key {
-	case "content", "category", "confidence", "provenance_hash":
-		return value, nil
-	case "source_type":
-		v, ok := value.(string)
-		if !ok {
-			return nil, fmt.Errorf("source_type must be string")
-		}
-		return normalizeSourceType(v)
-	case "covered_at_commit":
-		v, ok := value.(string)
-		if !ok {
-			return nil, fmt.Errorf("covered_at_commit must be string")
-		}
-		return strings.TrimSpace(v), nil
-	case "stale":
-		switch v := value.(type) {
-		case bool:
-			if v {
-				return 1, nil
-			}
-			return 0, nil
-		case int:
-			if v != 0 {
-				return 1, nil
-			}
-			return 0, nil
-		default:
-			return nil, fmt.Errorf("stale must be bool or int")
-		}
-	case "source_task_id", "source_interaction_id", "superseded_by":
-		return nullableAnyString(value)
-	case "tags":
-		return normalizeTagsValue(value)
-	default:
-		return nil, fmt.Errorf("unsupported update field %q", key)
-	}
-}
-
 func upsertFTS(tx *sql.Tx, id, content, tagsJSON string) error {
 	if _, err := tx.Exec(`DELETE FROM memory_fts WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete memory fts row: %w", err)
@@ -1023,38 +980,6 @@ func unmarshalTags(raw string) ([]string, error) {
 		return []string{}, nil
 	}
 	return tags, nil
-}
-
-func normalizeTagsValue(value interface{}) (string, error) {
-	switch v := value.(type) {
-	case nil:
-		return marshalTags(nil)
-	case []string:
-		return marshalTags(v)
-	case []interface{}:
-		tags := make([]string, 0, len(v))
-		for _, tag := range v {
-			s, ok := tag.(string)
-			if !ok {
-				return "", fmt.Errorf("tags update must contain only strings")
-			}
-			tags = append(tags, s)
-		}
-		return marshalTags(tags)
-	default:
-		return "", fmt.Errorf("tags update must be []string")
-	}
-}
-
-func nullableAnyString(value interface{}) (interface{}, error) {
-	switch v := value.(type) {
-	case nil:
-		return nil, nil
-	case string:
-		return nullableString(v), nil
-	default:
-		return nil, fmt.Errorf("value must be string or nil")
-	}
 }
 
 func nullableString(v string) interface{} {

@@ -203,7 +203,6 @@ func (e *Explorer) Run() (string, error) {
 	return outPath, nil
 }
 
-// Deprecated: retrieval and planning should read from memory entries, not explore_context.
 func LoadContext(repoDir string) string {
 	dbPath := filepath.Join(repoDir, stateDBFile)
 	if info, err := os.Stat(dbPath); err == nil && !info.IsDir() {
@@ -236,7 +235,6 @@ func WriteManualContextFromFile(repoDir, sourcePath string) (string, error) {
 	return WriteManualContext(repoDir, string(data))
 }
 
-// Deprecated: sync staleness should be derived from memory status.
 func IsStale(repoDir string) (bool, error) {
 	dbPath := filepath.Join(repoDir, stateDBFile)
 	if _, err := os.Stat(dbPath); err != nil {
@@ -265,7 +263,6 @@ func IsStale(repoDir string) (bool, error) {
 	return strings.TrimSpace(stored) != current, nil
 }
 
-// Deprecated: context age is legacy explore_context metadata.
 func ContextAge(repoDir string) time.Duration {
 	dbPath := filepath.Join(repoDir, stateDBFile)
 	if _, err := os.Stat(dbPath); err != nil {
@@ -485,9 +482,9 @@ func (e *Explorer) seedMemory(contextContent string, entries []extractedMemoryEn
 		}
 		if duplicate != nil && strings.TrimSpace(duplicate.SupersededBy) == "" {
 			summaryID = duplicate.ID
-			if updateErr := e.memory.Update(duplicate.ID, map[string]interface{}{
-				"covered_at_commit": coveredAtCommit,
-				"stale":             false,
+			if updateErr := e.memory.Update(duplicate.ID, memory.UpdateFields{
+				CoveredAtCommit: memory.Ptr(coveredAtCommit),
+				Stale:           memory.Ptr(false),
 			}); updateErr != nil {
 				return updateErr
 			}

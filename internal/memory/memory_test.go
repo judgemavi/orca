@@ -66,11 +66,11 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 		t.Fatalf("fts rows = %d, want 1", ftsRows)
 	}
 
-	if err := store.Update(entry.ID, map[string]interface{}{
-		"content":     "Updated: prefer focused, narrow unit tests",
-		"tags":        []string{"go", "unit"},
-		"confidence":  0.75,
-		"source_type": "retro",
+	if err := store.Update(entry.ID, UpdateFields{
+		Content:    Ptr("Updated: prefer focused, narrow unit tests"),
+		Tags:       []string{"go", "unit"},
+		Confidence: Ptr(0.75),
+		SourceType: Ptr("retro"),
 	}); err != nil {
 		t.Fatalf("update: %v", err)
 	}

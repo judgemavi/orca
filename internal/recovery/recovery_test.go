@@ -70,14 +70,14 @@ func TestRecoverRunPhaseResetAndIdempotent(t *testing.T) {
 		t.Fatalf("create no interaction task: %v", err)
 	}
 
-	if err := taskStore.Update(runTaskWithSession.ID, map[string]interface{}{
-		"status":     "running",
-		"session_id": "sess-run",
+	if err := taskStore.Update(runTaskWithSession.ID, task.UpdateFields{
+		Status:    task.Ptr("running"),
+		SessionID: task.Ptr("sess-run"),
 	}); err != nil {
 		t.Fatalf("set task %s running with session: %v", runTaskWithSession.ID, err)
 	}
 	for _, id := range []string{runTaskWithoutSession.ID, planTask.ID, noInteractionTask.ID} {
-		if err := taskStore.Update(id, map[string]interface{}{"status": "running"}); err != nil {
+		if err := taskStore.Update(id, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 			t.Fatalf("set task %s running: %v", id, err)
 		}
 	}
@@ -140,14 +140,14 @@ func TestFailInFlightForShutdownRunAndNonRunBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create non-run task: %v", err)
 	}
-	if err := taskStore.Update(runTaskWithSession.ID, map[string]interface{}{
-		"status":     "running",
-		"session_id": "sess-1",
+	if err := taskStore.Update(runTaskWithSession.ID, task.UpdateFields{
+		Status:    task.Ptr("running"),
+		SessionID: task.Ptr("sess-1"),
 	}); err != nil {
 		t.Fatalf("set task %s running with session: %v", runTaskWithSession.ID, err)
 	}
 	for _, id := range []string{runTaskWithoutSession.ID, nonRunTask.ID} {
-		if err := taskStore.Update(id, map[string]interface{}{"status": "running"}); err != nil {
+		if err := taskStore.Update(id, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 			t.Fatalf("set task %s running: %v", id, err)
 		}
 	}
@@ -263,8 +263,11 @@ func (f *fakeTaskStore) ListByStatus(status string) ([]*task.Task, error) {
 	return f.runningTasks, nil
 }
 
-func (f *fakeTaskStore) Update(id string, fields map[string]interface{}) error {
-	status, _ := fields["status"].(string)
+func (f *fakeTaskStore) Update(id string, fields task.UpdateFields) error {
+	status := ""
+	if fields.Status != nil {
+		status = *fields.Status
+	}
 	if f.calls != nil {
 		*f.calls = append(*f.calls, "tasks.update:"+id+":"+status)
 	}

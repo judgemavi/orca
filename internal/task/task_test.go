@@ -69,10 +69,10 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	err = store.Update(created.ID, map[string]interface{}{
-		"title":  "Updated",
-		"status": "running",
-		"plan":   "1. do a\n2. do b",
+	err = store.Update(created.ID, UpdateFields{
+		Title:  Ptr("Updated"),
+		Status: Ptr("running"),
+		Plan:   Ptr("1. do a\n2. do b"),
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -93,7 +93,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	// Update non-existent ID
-	err = store.Update("nonexistent-id-that-does-not-exist-x", map[string]interface{}{"title": "nope"})
+	err = store.Update("nonexistent-id-that-does-not-exist-x", UpdateFields{Title: Ptr("nope")})
 	if err == nil {
 		t.Fatal("expected error for non-existent ID")
 	}
@@ -160,7 +160,7 @@ func TestGetReady(t *testing.T) {
 		t.Fatalf("add dep: %v", err)
 	}
 	for _, id := range []string{a.ID, b.ID, c.ID} {
-		if err := store.Update(id, map[string]interface{}{"status": "planned"}); err != nil {
+		if err := store.Update(id, UpdateFields{Status: Ptr("planned")}); err != nil {
 			t.Fatalf("set %s planned: %v", id, err)
 		}
 	}
@@ -178,7 +178,7 @@ func TestGetReady(t *testing.T) {
 	}
 
 	// Merge A -> C should become ready
-	if err := store.Update(a.ID, map[string]interface{}{"status": "merged"}); err != nil {
+	if err := store.Update(a.ID, UpdateFields{Status: Ptr("merged")}); err != nil {
 		t.Fatalf("merge A: %v", err)
 	}
 
@@ -399,7 +399,7 @@ func TestDeleteBlockedByStatus(t *testing.T) {
 
 	// Running and merged tasks cannot be deleted.
 	for _, status := range []string{"running", "merged"} {
-		if err := store.Update(tk.ID, map[string]interface{}{"status": status}); err != nil {
+		if err := store.Update(tk.ID, UpdateFields{Status: Ptr(status)}); err != nil {
 			t.Fatalf("set %s: %v", status, err)
 		}
 		if err := store.Delete(tk.ID); err == nil {
@@ -413,7 +413,7 @@ func TestDeleteBlockedByStatus(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create %s: %v", status, err)
 		}
-		if err := store.Update(tk.ID, map[string]interface{}{"status": status}); err != nil {
+		if err := store.Update(tk.ID, UpdateFields{Status: Ptr(status)}); err != nil {
 			t.Fatalf("set %s: %v", status, err)
 		}
 		if err := store.Delete(tk.ID); err != nil {

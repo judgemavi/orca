@@ -57,72 +57,62 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 
 	interactions := interaction.NewStore(db, ".orca/interactions")
 	taskRef := id
-	writer, err := interactions.Begin(&taskRef, interaction.PhaseMerge, "orca")
-	if err != nil {
-		return fmt.Errorf("begin merge interaction: %w", err)
-	}
-	defer writer.Close()
-
-	repoDir, _ := os.Getwd()
-	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands, interactions)
-	ig.OnPostMerge = func(taskID string) {
-		if retroErr := runPostMergeRetro(cfg, db, repoDir, taskID); retroErr != nil {
-			recordPostMergeFailure(interactions, taskID, "retro", retroErr)
-			warnf("post-merge retro failed for task %s: %v (retry: orca tasks retro %s)", short(taskID), retroErr, taskID)
-		}
-		if _, syncErr := runPostMergeSync(cfg, db, repoDir); syncErr != nil {
-			recordPostMergeFailure(interactions, taskID, "sync", syncErr)
-			warnf("post-merge memory sync failed: %v (retry: orca memory sync)", syncErr)
-		}
-	}
-	if auto {
-		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
-			if _, err := store.Get(taskID); err != nil {
-				return "", nil, "", 0, err
+	return interaction.Wrap(interactions, &taskRef, interaction.PhaseMerge, "orca", func(writer *interaction.Writer) error {
+		repoDir, _ := os.Getwd()
+		ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands, interactions)
+		ig.OnPostMerge = func(taskID string) {
+			if retroErr := runPostMergeRetro(cfg, db, repoDir, taskID); retroErr != nil {
+				recordPostMergeFailure(interactions, taskID, "retro", retroErr)
+				warnf("post-merge retro failed for task %s: %v (retry: orca tasks retro %s)", short(taskID), retroErr, taskID)
 			}
-			toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
-			if err != nil {
-				return "", nil, "", 0, err
+			if _, syncErr := runPostMergeSync(cfg, db, repoDir); syncErr != nil {
+				recordPostMergeFailure(interactions, taskID, "sync", syncErr)
+				warnf("post-merge memory sync failed: %v (retry: orca memory sync)", syncErr)
 			}
-			model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
-			return toolName, d, model, 10 * time.Minute, nil
-		})
-	}
-
-	fmt.Printf("Merging task %s\n", short(id))
-	if auto {
-		fmt.Println("Auto-resolving conflicts is enabled.")
-	}
-
-	var mergeErr error
-	if auto {
-		mergeErr = ig.MergeWithRerun(id)
-	} else {
-		mergeErr = ig.MergeAndValidate(id)
-	}
-	if mergeErr != nil {
-		_ = interactions.Finish(writer.ID(), "failed", interaction.WithError(mergeErr.Error()))
-		if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
-			worktreePath := filepath.Join(cfg.Project.WorktreeDir, "task-"+id)
-			return fmt.Errorf("merge conflict for task %s (worktree: %s): %w", short(id), worktreePath, mergeErr)
 		}
-		return fmt.Errorf("merge task %s: %w", short(id), mergeErr)
-	}
+		if auto {
+			ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
+				if _, err := store.Get(taskID); err != nil {
+					return "", nil, "", 0, err
+				}
+				toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
+				if err != nil {
+					return "", nil, "", 0, err
+				}
+				model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
+				return toolName, d, model, 10 * time.Minute, nil
+			})
+		}
 
-	if err := store.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
-		_ = interactions.Finish(writer.ID(), "failed", interaction.WithError(err.Error()))
-		return fmt.Errorf("set merged status: %w", err)
-	}
-	if err := executor.Worktrees().Remove(id); err != nil {
-		warnf("cleanup worktree after merge %s: %v", short(id), err)
-	}
-	if err := interactions.Finish(writer.ID(), "completed"); err != nil {
-		return fmt.Errorf("finish merge interaction: %w", err)
-	}
+		fmt.Printf("Merging task %s\n", short(id))
+		if auto {
+			fmt.Println("Auto-resolving conflicts is enabled.")
+		}
 
-	fmt.Printf("Merged task %s\n", short(id))
+		var mergeErr error
+		if auto {
+			mergeErr = ig.MergeWithRerun(id)
+		} else {
+			mergeErr = ig.MergeAndValidate(id)
+		}
+		if mergeErr != nil {
+			if strings.Contains(strings.ToLower(mergeErr.Error()), "conflict") {
+				worktreePath := filepath.Join(cfg.Project.WorktreeDir, "task-"+id)
+				return fmt.Errorf("merge conflict for task %s (worktree: %s): %w", short(id), worktreePath, mergeErr)
+			}
+			return fmt.Errorf("merge task %s: %w", short(id), mergeErr)
+		}
 
-	return nil
+		if err := store.Update(id, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
+			return fmt.Errorf("set merged status: %w", err)
+		}
+		if err := executor.Worktrees().Remove(id); err != nil {
+			warnf("cleanup worktree after merge %s: %v", short(id), err)
+		}
+
+		fmt.Printf("Merged task %s\n", short(id))
+		return nil
+	})
 }
 
 func (r *Registry) runReviewApprove(cmd *cobra.Command, args []string) error {
@@ -153,7 +143,7 @@ func (r *Registry) runReviewApprove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("task %s is %q, expected %q", short(taskID), tk.Status, "review")
 	}
 
-	if err := store.Update(taskID, map[string]interface{}{"status": "approved"}); err != nil {
+	if err := store.Update(taskID, task.UpdateFields{Status: task.Ptr("approved")}); err != nil {
 		return fmt.Errorf("approve task %s: %w", short(taskID), err)
 	}
 
@@ -213,7 +203,7 @@ func (r *Registry) runReviewRequestChanges(cmd *cobra.Command, args []string) er
 	if _, err := store.AddReview(taskID, feedback, ""); err != nil {
 		return fmt.Errorf("add review for task %s: %w", short(taskID), err)
 	}
-	if err := store.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
+	if err := store.Update(taskID, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 		return fmt.Errorf("update status for task %s: %w", short(taskID), err)
 	}
 

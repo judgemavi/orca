@@ -29,7 +29,7 @@ func (s *Server) handleApprovePlan(w http.ResponseWriter, r *http.Request) {
 		}
 
 		store := s.taskStore
-		if err := store.Update(tk.ID, map[string]interface{}{"status": "planned"}); err != nil {
+		if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("planned")}); err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
@@ -49,7 +49,7 @@ func (s *Server) handleApprovePlan(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request) {
 	s.withTaskValidation("task must be in review status to approve", []string{"review"}, func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
 		store := s.taskStore
-		if err := store.Update(tk.ID, map[string]interface{}{"status": "approved"}); err != nil {
+		if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("approved")}); err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
@@ -98,7 +98,7 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err := store.Update(tk.ID, map[string]interface{}{"status": "running"}); err != nil {
+		if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}
@@ -259,7 +259,7 @@ func (s *Server) handleStopTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := s.taskStore.Update(tk.ID, map[string]interface{}{"status": "stopped"}); err != nil {
+		if err := s.taskStore.Update(tk.ID, task.UpdateFields{Status: task.Ptr("stopped")}); err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
 			return
 		}

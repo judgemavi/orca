@@ -7,6 +7,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 func (s *Server) HandleMergeTool(_ json.RawMessage) (interface{}, error) {
@@ -38,7 +39,7 @@ func (s *Server) HandleMergeTool(_ json.RawMessage) (interface{}, error) {
 	}
 
 	for _, id := range merged {
-		if err := s.taskStore.Update(id, map[string]interface{}{"status": "merged"}); err != nil {
+		if err := s.taskStore.Update(id, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
 			return nil, fmt.Errorf("mark merged for %s: %w", id, err)
 		}
 		if err := s.executor.Worktrees().Remove(id); err != nil {
@@ -81,7 +82,7 @@ func (s *Server) HandleTasksMergeTool(argsRaw json.RawMessage) (interface{}, err
 	if err := ig.MergeAndValidate(taskID); err != nil {
 		return nil, fmt.Errorf("merge task %s: %w", taskID, err)
 	}
-	if err := s.taskStore.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
+	if err := s.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
 		return nil, err
 	}
 	_ = s.executor.Worktrees().Remove(taskID)

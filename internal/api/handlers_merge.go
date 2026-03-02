@@ -92,7 +92,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
+			if err := store.Update(taskID, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
 				s.hub.Broadcast(Event{Type: "merge.failed", Data: map[string]interface{}{
 					"task_id": taskID,
 					"error":   err.Error(),
@@ -219,7 +219,7 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 			}
 
 			merged = append(merged, taskID)
-			if err := store.Update(taskID, map[string]interface{}{"status": "merged"}); err != nil {
+			if err := store.Update(taskID, task.UpdateFields{Status: task.Ptr("merged")}); err != nil {
 				slog.Warn("set task merged failed", "task_id", taskID, "err", err)
 			}
 			if err := s.executor.Worktrees().Remove(taskID); err != nil {

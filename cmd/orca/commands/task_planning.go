@@ -234,7 +234,7 @@ func (r *Registry) runTaskApprovePlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("task %s must have a plan to approve", short(id))
 	}
 
-	if err := store.Update(id, map[string]interface{}{"status": "planned"}); err != nil {
+	if err := store.Update(id, task.UpdateFields{Status: task.Ptr("planned")}); err != nil {
 		return fmt.Errorf("approve plan for task %s: %w", short(id), err)
 	}
 

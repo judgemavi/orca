@@ -58,7 +58,7 @@ func TestResumeTaskRequiresStoppedStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := store.Update(tk.ID, map[string]interface{}{"status": "running", "session_id": "sess-123"}); err != nil {
+	if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("running"), SessionID: task.Ptr("sess-123")}); err != nil {
 		t.Fatalf("set running status and session: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestResumeTaskRequiresSessionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := store.Update(tk.ID, map[string]interface{}{"status": "stopped"}); err != nil {
+	if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("stopped")}); err != nil {
 		t.Fatalf("set stopped status: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestResolveResumeRunStateIncludesPendingReviewForFailedTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if err := store.Update(tk.ID, map[string]interface{}{"status": "failed"}); err != nil {
+	if err := store.Update(tk.ID, task.UpdateFields{Status: task.Ptr("failed")}); err != nil {
 		t.Fatalf("set failed status: %v", err)
 	}
 	reviewID, err := store.AddReview(tk.ID, "Please fix edge-case handling", "")

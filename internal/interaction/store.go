@@ -428,9 +428,13 @@ func (s *Store) Get(id string) (*Interaction, error) {
 }
 
 func (s *Store) ReadLog(id string) (string, error) {
-	r, err := s.OpenLogReader(id)
+	var logPath string
+	if err := s.db.QueryRow(`SELECT log_path FROM task_interactions WHERE id = ?`, id).Scan(&logPath); err != nil {
+		return "", fmt.Errorf("get log path: %w", err)
+	}
+	r, err := os.Open(logPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("open log file: %w", err)
 	}
 	defer r.Close()
 	b, err := io.ReadAll(r)
@@ -438,18 +442,6 @@ func (s *Store) ReadLog(id string) (string, error) {
 		return "", fmt.Errorf("read interaction log: %w", err)
 	}
 	return string(b), nil
-}
-
-func (s *Store) OpenLogReader(id string) (io.ReadCloser, error) {
-	var logPath string
-	if err := s.db.QueryRow(`SELECT log_path FROM task_interactions WHERE id = ?`, id).Scan(&logPath); err != nil {
-		return nil, fmt.Errorf("get log path: %w", err)
-	}
-	f, err := os.Open(logPath)
-	if err != nil {
-		return nil, fmt.Errorf("open log file: %w", err)
-	}
-	return f, nil
 }
 
 func (s *Store) ProjectTotal() (float64, error) {

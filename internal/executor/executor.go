@@ -208,7 +208,7 @@ func (e *Executor) finalizeRun(results []TaskResult) error {
 			continue
 		}
 		e.associateTaskFiles(r.TaskID, r.FilesChanged)
-		if err := e.taskStore.Update(r.TaskID, map[string]interface{}{"status": r.Status}); err != nil {
+		if err := e.taskStore.Update(r.TaskID, task.UpdateFields{Status: task.Ptr(r.Status)}); err != nil {
 			slog.Warn("complete task failed", "task_id", r.TaskID, "run_id", e.runID, "err", err)
 		}
 		e.reinforceMemoryConfidence(r.TaskID, r.Status)
@@ -241,7 +241,7 @@ func (e *Executor) rollbackPreparation(taskIDs []string) {
 		if err := e.worktrees.Remove(taskID); err != nil {
 			slog.Warn("rollback remove worktree failed", "task_id", taskID, "err", err)
 		}
-		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "planned"}); err != nil {
+		if err := e.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("planned")}); err != nil {
 			slog.Warn("rollback reset task failed", "task_id", taskID, "err", err)
 		}
 	}
@@ -365,7 +365,7 @@ func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error
 			return nil, fmt.Errorf("task %s must be pending or planned to run (current: %s)", id, t.Status)
 		}
 
-		if err := e.taskStore.Update(id, map[string]interface{}{"status": "running"}); err != nil {
+		if err := e.taskStore.Update(id, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 			return nil, fmt.Errorf("set task %s running: %w", id, err)
 		}
 		if e.broadcastHook != nil {
@@ -586,7 +586,7 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	}
 	prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n" + strings.TrimSpace(prompts.ExecutorStyle) + "\n\n---\n\n" + prompt
 
-	if err := e.taskStore.Update(taskID, map[string]interface{}{"status": "running"}); err != nil {
+	if err := e.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("running")}); err != nil {
 		return nil, fmt.Errorf("set task running: %w", err)
 	}
 	if e.broadcastHook != nil {
@@ -602,7 +602,7 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("worker panic", "task_id", taskID, "panic", r)
-			_ = e.taskStore.Update(taskID, map[string]interface{}{"status": "failed"})
+			_ = e.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr("failed")})
 			if e.broadcastHook != nil {
 				e.broadcastHook(taskID, "failed")
 			}
@@ -649,7 +649,7 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 
 	if !e.wasStopped(taskID) {
 		e.associateTaskFiles(taskID, result.FilesChanged)
-		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": result.Status}); err != nil {
+		if err := e.taskStore.Update(taskID, task.UpdateFields{Status: task.Ptr(result.Status)}); err != nil {
 			slog.Warn("update task status failed", "task_id", taskID, "status", result.Status, "err", err)
 		}
 		if e.broadcastHook != nil {

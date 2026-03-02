@@ -12,7 +12,7 @@ import (
 
 type taskStore interface {
 	ListByStatus(status string) ([]*task.Task, error)
-	Update(id string, fields map[string]interface{}) error
+	Update(id string, fields task.UpdateFields) error
 }
 
 type interactionStore interface {
@@ -94,7 +94,7 @@ func Recover(
 		if strings.TrimSpace(tk.SessionID) == "" {
 			nextStatus = "failed"
 		}
-		if err := taskStore.Update(tk.ID, map[string]interface{}{"status": nextStatus}); err != nil {
+		if err := taskStore.Update(tk.ID, task.UpdateFields{Status: task.Ptr(nextStatus)}); err != nil {
 			return fmt.Errorf("set task %s %s: %w", tk.ID, nextStatus, err)
 		}
 		if nextStatus == "stopped" {
@@ -163,7 +163,7 @@ func FailInFlightForShutdown(taskStore taskStore, interactionStore runningIntera
 		if hasSessionByTaskID[*in.TaskID] {
 			nextStatus = "stopped"
 		}
-		if err := taskStore.Update(*in.TaskID, map[string]interface{}{"status": nextStatus}); err != nil {
+		if err := taskStore.Update(*in.TaskID, task.UpdateFields{Status: task.Ptr(nextStatus)}); err != nil {
 			return runFailed, otherFailed, fmt.Errorf("set task %s %s: %w", *in.TaskID, nextStatus, err)
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
+	"github.com/jasjeetmavi/orca/internal/task"
 )
 
 func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -108,7 +109,7 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 		"count":    len(createdIDs),
 	}
 	if parentTaskID != nil {
-		if err := s.taskStore.Update(*parentTaskID, map[string]interface{}{"status": "broken_down"}); err != nil {
+		if err := s.taskStore.Update(*parentTaskID, task.UpdateFields{Status: task.Ptr("broken_down")}); err != nil {
 			return nil, fmt.Errorf("update parent task status: %w", err)
 		}
 		resp["parent_id"] = *parentTaskID
