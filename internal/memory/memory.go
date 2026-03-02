@@ -518,6 +518,48 @@ func (s *Store) GetFilePaths(entryID string) ([]string, error) {
 	return paths, nil
 }
 
+func (s *Store) RenameFilePathAssociations(oldPath, newPath string) (int, error) {
+	oldPath = strings.TrimSpace(oldPath)
+	newPath = strings.TrimSpace(newPath)
+	if oldPath == "" || newPath == "" || oldPath == newPath {
+		return 0, nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin rename file path associations: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
+		`INSERT OR IGNORE INTO memory_file_associations (memory_id, file_path)
+		 SELECT memory_id, ?
+		 FROM memory_file_associations
+		 WHERE file_path = ?`,
+		newPath,
+		oldPath,
+	); err != nil {
+		return 0, fmt.Errorf("insert renamed file path associations: %w", err)
+	}
+
+	res, err := tx.Exec(
+		`DELETE FROM memory_file_associations WHERE file_path = ?`,
+		oldPath,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete old file path associations: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("delete old file path associations rows affected: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit rename file path associations: %w", err)
+	}
+	return int(affected), nil
+}
+
 func (s *Store) FindByFilePaths(paths []string) ([]*Entry, error) {
 	filePaths := normalizeFilePaths(paths)
 	if len(filePaths) == 0 {

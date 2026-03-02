@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasjeetmavi/orca/internal/diffclass"
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/llm"
-	"github.com/jasjeetmavi/orca/internal/treesitter"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -27,18 +27,24 @@ const (
 	exploreContextRowID     = 1
 )
 
-var syncStructuralFiles = map[string]struct{}{
-	"go.mod":           {},
-	"go.sum":           {},
-	"package.json":     {},
-	"pnpm-lock.yaml":   {},
-	"yarn.lock":        {},
-	"bun.lock":         {},
-	"bun.lockb":        {},
-	"Cargo.toml":       {},
-	"Cargo.lock":       {},
-	"pyproject.toml":   {},
-	"requirements.txt": {},
+var syncProjectSummaryFiles = map[string]struct{}{
+	"go.mod":              {},
+	"go.sum":              {},
+	"package.json":        {},
+	"package-lock.json":   {},
+	"pnpm-lock.yaml":      {},
+	"yarn.lock":           {},
+	"bun.lock":            {},
+	"bun.lockb":           {},
+	"Cargo.toml":          {},
+	"Cargo.lock":          {},
+	"pyproject.toml":      {},
+	"requirements.txt":    {},
+	"Makefile":            {},
+	"Dockerfile":          {},
+	"docker-compose.yml":  {},
+	"docker-compose.yaml": {},
+	"Taskfile.yml":        {},
 }
 
 type Syncer struct {
@@ -52,19 +58,24 @@ type Syncer struct {
 	timeout  time.Duration
 
 	maxDiffBytes int
+
+	diffConfig        diffclass.Config
+	minorDecayFactor  float64
+	mediumDecayFactor float64
+	majorDecayFactor  float64
 }
 
 type SyncResult struct {
-	LastCommit      string            `json:"last_commit"`
-	NewCommit       string            `json:"new_commit"`
-	CommitCount     int               `json:"commit_count"`
-	AffectedFiles   []string          `json:"affected_files"`
-	FlaggedEntries  int               `json:"flagged_entries"`
-	StaleEntries    int               `json:"stale_entries"`
-	SupersededCount int               `json:"superseded_count"`
-	Classifications map[string]string `json:"classifications"`
-	ContextUpdated  bool              `json:"context_updated"`
-	ContextStale    bool              `json:"context_stale"`
+	LastCommit      string                          `json:"last_commit"`
+	NewCommit       string                          `json:"new_commit"`
+	CommitCount     int                             `json:"commit_count"`
+	AffectedFiles   []string                        `json:"affected_files"`
+	FlaggedEntries  int                             `json:"flagged_entries"`
+	StaleEntries    int                             `json:"stale_entries"`
+	SupersededCount int                             `json:"superseded_count"`
+	Classifications map[string]diffclass.ChangeType `json:"classifications"`
+	ContextUpdated  bool                            `json:"context_updated"`
+	ContextStale    bool                            `json:"context_stale"`
 }
 
 type SyncStatus struct {
@@ -87,14 +98,18 @@ func NewSyncer(store *Store, db *sql.DB, repoDir, toolName string, d driver.Driv
 		timeout = 2 * time.Minute
 	}
 	return &Syncer{
-		store:        store,
-		db:           db,
-		repoDir:      repoDir,
-		toolName:     strings.TrimSpace(toolName),
-		driver:       d,
-		model:        strings.TrimSpace(model),
-		timeout:      timeout,
-		maxDiffBytes: 200_000,
+		store:             store,
+		db:                db,
+		repoDir:           repoDir,
+		toolName:          strings.TrimSpace(toolName),
+		driver:            d,
+		model:             strings.TrimSpace(model),
+		timeout:           timeout,
+		maxDiffBytes:      200_000,
+		diffConfig:        diffclass.DefaultConfig(),
+		minorDecayFactor:  0.95,
+		mediumDecayFactor: 0.85,
+		majorDecayFactor:  0.70,
 	}
 }
 
@@ -130,7 +145,7 @@ func (s *Syncer) Sync() (*SyncResult, error) {
 		FlaggedEntries:  0,
 		StaleEntries:    0,
 		SupersededCount: 0,
-		Classifications: map[string]string{},
+		Classifications: map[string]diffclass.ChangeType{},
 	}
 
 	if strings.TrimSpace(lastCommit) == "" {
@@ -159,58 +174,86 @@ func (s *Syncer) Sync() (*SyncResult, error) {
 		return result, nil
 	}
 
-	classifications := make(map[string]string)
+	stats, err := diffclass.DiffStatsBetween(s.repoDir, lastCommit, head)
+	if err != nil {
+		return nil, err
+	}
+
+	classifications := make(map[string]diffclass.ChangeType)
+	changedPaths := make([]string, 0, len(stats)*2)
 	affected := make(map[string]struct{})
 	flagged := make(map[string]struct{})
 	staleMarked := make(map[string]struct{})
 	superseded := make(map[string]struct{})
+	majorConfigChanged := false
 
-	for _, commit := range commits {
-		parent, parentErr := s.parentCommit(commit)
-		if parentErr != nil {
-			return nil, parentErr
-		}
-		changedStatusByFile, changeErr := s.changedFilesForCommit(commit)
-		if changeErr != nil {
-			return nil, changeErr
-		}
-		changedFiles := changedStatusByFile.sortedPaths()
-		if len(changedFiles) == 0 {
+	for _, stat := range stats {
+		changeType := diffclass.ClassifyDiffWithConfig(stat, s.diffConfig)
+		if changeType == diffclass.ChangeNone {
 			continue
 		}
 
-		commitClassifications := make(map[string]string, len(changedFiles))
-		for _, path := range changedFiles {
-			classification := s.classifyFileAtCommit(path, changedStatusByFile[path], parent, commit)
-			commitClassifications[path] = classification
-			classifications[path] = mergeClassifications(classifications[path], classification)
-			affected[path] = struct{}{}
+		keyPath := strings.TrimSpace(stat.FilePath)
+		if keyPath == "" {
+			keyPath = strings.TrimSpace(stat.NewPath)
 		}
+		if keyPath != "" {
+			classifications[keyPath] = mergeClassifications(classifications[keyPath], changeType)
+		}
+		if stat.FilePath != "" {
+			changedPaths = append(changedPaths, stat.FilePath)
+			affected[stat.FilePath] = struct{}{}
+		}
+		if stat.NewPath != "" {
+			affected[stat.NewPath] = struct{}{}
+		}
+		if changeType == diffclass.ChangeMajor && isProjectSummarySignal(stat.FilePath) {
+			majorConfigChanged = true
+		}
+	}
 
-		entries, err := s.store.FindByFilePaths(changedFiles)
-		if err != nil {
+	changedPaths = normalizeChangedFilePaths(changedPaths)
+	entries, err := s.store.FindByFilePaths(changedPaths)
+	if err != nil {
+		return nil, err
+	}
+
+	entryClasses := make(map[string]diffclass.ChangeType, len(entries))
+	for _, entry := range entries {
+		entryClass := diffclass.ChangeNone
+		for _, path := range entry.FilePaths {
+			if next, ok := classifications[path]; ok {
+				entryClass = mergeClassifications(entryClass, next)
+			}
+		}
+		if entryClass != diffclass.ChangeNone {
+			entryClasses[entry.ID] = entryClass
+		}
+	}
+
+	for _, stat := range stats {
+		if diffclass.ClassifyDiffWithConfig(stat, s.diffConfig) != diffclass.ChangeRenamed {
+			continue
+		}
+		if _, err := s.store.RenameFilePathAssociations(stat.FilePath, stat.NewPath); err != nil {
 			return nil, err
 		}
-		for _, entry := range entries {
-			entryClass := "none"
-			for _, path := range entry.FilePaths {
-				if next, ok := commitClassifications[path]; ok {
-					entryClass = mergeClassifications(entryClass, next)
-				}
-			}
-			if entryClass == "none" {
-				continue
-			}
-			if err := s.applyEntryClassification(entry, entryClass, commit); err != nil {
-				return nil, err
-			}
-			flagged[entry.ID] = struct{}{}
-			if entryClass == "structural" {
-				staleMarked[entry.ID] = struct{}{}
-			}
-			if entryClass == "deleted" {
-				superseded[entry.ID] = struct{}{}
-			}
+	}
+
+	for _, entry := range entries {
+		entryClass := entryClasses[entry.ID]
+		if entryClass == diffclass.ChangeNone {
+			continue
+		}
+		if err := s.applyEntryClassification(entry, entryClass, head); err != nil {
+			return nil, err
+		}
+		flagged[entry.ID] = struct{}{}
+		if entryClass == diffclass.ChangeMajor {
+			staleMarked[entry.ID] = struct{}{}
+		}
+		if entryClass == diffclass.ChangeDeleted {
+			superseded[entry.ID] = struct{}{}
 		}
 	}
 
@@ -220,7 +263,7 @@ func (s *Syncer) Sync() (*SyncResult, error) {
 	result.StaleEntries = len(staleMarked)
 	result.SupersededCount = len(superseded)
 
-	if hasStructuralClassification(classifications) {
+	if majorConfigChanged {
 		summaries, listErr := s.store.List(ListOpts{Tag: "project-summary"})
 		if listErr == nil {
 			for _, summary := range summaries {
@@ -249,57 +292,32 @@ func (s *Syncer) Sync() (*SyncResult, error) {
 	return result, nil
 }
 
-func (s *Syncer) parentCommit(commit string) (string, error) {
-	raw, err := s.gitOutput("rev-list", "--parents", "-n", "1", strings.TrimSpace(commit))
-	if err != nil {
-		return "", err
-	}
-	parts := strings.Fields(strings.TrimSpace(raw))
-	if len(parts) < 2 {
-		return "", nil
-	}
-	return strings.TrimSpace(parts[1]), nil
-}
-
-func (s *Syncer) changedFilesForCommit(commit string) (changedFileStatuses, error) {
-	raw, err := s.gitOutput("diff-tree", "--no-commit-id", "--name-status", "-r", strings.TrimSpace(commit))
-	if err != nil {
-		return nil, err
-	}
-	return parseChangedFileStatuses(raw), nil
-}
-
-func (s *Syncer) classifyFileAtCommit(path, status, parent, commit string) string {
-	if strings.TrimSpace(status) == "deleted" {
-		return "deleted"
-	}
-	if isStructuralFile(path) {
-		return "structural"
-	}
-	baseCommit := strings.TrimSpace(parent)
-	if baseCommit == "" {
-		baseCommit = strings.TrimSpace(commit) + "^"
-	}
-	changeResult, classifyErr := treesitter.ClassifyFileChange(s.repoDir, path, baseCommit, commit)
-	if classifyErr != nil {
-		return "body"
-	}
-	return string(changeResult.Type)
-}
-
-func (s *Syncer) applyEntryClassification(entry *Entry, classification, commit string) error {
+func (s *Syncer) applyEntryClassification(entry *Entry, classification diffclass.ChangeType, commit string) error {
 	if entry == nil {
 		return nil
 	}
 	switch classification {
-	case "deleted":
+	case diffclass.ChangeDeleted:
 		return s.store.Supersede(entry.ID, entry.ID)
-	case "structural":
-		return s.store.MarkStale(entry.ID)
-	case "body":
-		if err := s.store.DecayEntry(entry.ID, 0.95); err != nil {
+	case diffclass.ChangeMinor:
+		if err := s.store.DecayEntry(entry.ID, s.minorDecayFactor); err != nil {
 			return err
 		}
+		return s.store.UpdateCoveredCommit(entry.ID, commit)
+	case diffclass.ChangeMedium:
+		if err := s.store.DecayEntry(entry.ID, s.mediumDecayFactor); err != nil {
+			return err
+		}
+		return s.store.UpdateCoveredCommit(entry.ID, commit)
+	case diffclass.ChangeMajor:
+		if err := s.store.DecayEntry(entry.ID, s.majorDecayFactor); err != nil {
+			return err
+		}
+		if err := s.store.MarkStale(entry.ID); err != nil {
+			return err
+		}
+		return s.store.UpdateCoveredCommit(entry.ID, commit)
+	case diffclass.ChangeRenamed:
 		return s.store.UpdateCoveredCommit(entry.ID, commit)
 	default:
 		return s.store.UpdateCoveredCommit(entry.ID, commit)
@@ -802,57 +820,6 @@ func (s *Syncer) gitOutput(args ...string) (string, error) {
 	return string(out), nil
 }
 
-type changedFileStatuses map[string]string
-
-func (m changedFileStatuses) sortedPaths() []string {
-	paths := make([]string, 0, len(m))
-	for path := range m {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	return paths
-}
-
-func parseChangedFileStatuses(raw string) changedFileStatuses {
-	statuses := make(changedFileStatuses)
-	lines := strings.Split(raw, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.Split(line, "\t")
-		if len(parts) < 2 {
-			continue
-		}
-		code := strings.ToUpper(strings.TrimSpace(parts[0]))
-		switch {
-		case strings.HasPrefix(code, "R"), strings.HasPrefix(code, "C"):
-			if len(parts) >= 3 {
-				oldPath := normalizeSinglePath(parts[1])
-				newPath := normalizeSinglePath(parts[2])
-				if oldPath != "" {
-					statuses[oldPath] = mergeFileStatus(statuses[oldPath], "deleted")
-				}
-				if newPath != "" {
-					statuses[newPath] = mergeFileStatus(statuses[newPath], "modified")
-				}
-			}
-		default:
-			path := normalizeSinglePath(parts[len(parts)-1])
-			if path == "" {
-				continue
-			}
-			fileStatus := "modified"
-			if strings.HasPrefix(code, "D") {
-				fileStatus = "deleted"
-			}
-			statuses[path] = mergeFileStatus(statuses[path], fileStatus)
-		}
-	}
-	return statuses
-}
-
 func splitNonEmptyLines(raw string) []string {
 	lines := strings.Split(raw, "\n")
 	out := make([]string, 0, len(lines))
@@ -885,63 +852,6 @@ func emptyIfBlank(value string) string {
 	return strings.TrimSpace(value)
 }
 
-func normalizeSinglePath(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return ""
-	}
-	return filepath.ToSlash(path)
-}
-
-func mergeFileStatus(current, next string) string {
-	if statusPriority(next) > statusPriority(current) {
-		return next
-	}
-	return current
-}
-
-func statusPriority(status string) int {
-	switch status {
-	case "deleted":
-		return 2
-	case "modified":
-		return 1
-	default:
-		return 0
-	}
-}
-
-func mergeClassifications(current, next string) string {
-	if classificationPriority(next) > classificationPriority(current) {
-		return next
-	}
-	return current
-}
-
-func classificationPriority(classification string) int {
-	switch classification {
-	case "deleted":
-		return 4
-	case "structural":
-		return 3
-	case "body":
-		return 2
-	case "none":
-		return 1
-	default:
-		return 0
-	}
-}
-
-func hasStructuralClassification(classifications map[string]string) bool {
-	for _, c := range classifications {
-		if c == "structural" || c == "deleted" {
-			return true
-		}
-	}
-	return false
-}
-
 func normalizeChangedFilePaths(paths []string) []string {
 	if len(paths) == 0 {
 		return []string{}
@@ -964,6 +874,41 @@ func normalizeChangedFilePaths(paths []string) []string {
 	return normalized
 }
 
+func mergeClassifications(current, next diffclass.ChangeType) diffclass.ChangeType {
+	if classificationPriority(next) > classificationPriority(current) {
+		return next
+	}
+	return current
+}
+
+func classificationPriority(classification diffclass.ChangeType) int {
+	switch classification {
+	case diffclass.ChangeDeleted:
+		return 6
+	case diffclass.ChangeMajor:
+		return 5
+	case diffclass.ChangeRenamed:
+		return 4
+	case diffclass.ChangeMedium:
+		return 3
+	case diffclass.ChangeMinor:
+		return 2
+	case diffclass.ChangeNone:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func isProjectSummarySignal(path string) bool {
+	path = strings.TrimSpace(filepath.ToSlash(path))
+	if path == "" || strings.Contains(path, "/") {
+		return false
+	}
+	_, ok := syncProjectSummaryFiles[path]
+	return ok
+}
+
 func hasCodeChanges(paths []string) bool {
 	for _, path := range paths {
 		if isCodeOrStructuralPath(path) {
@@ -981,7 +926,7 @@ func isCodeOrStructuralPath(path string) bool {
 	if strings.HasPrefix(path, ".orca/") || path == ".orca" {
 		return false
 	}
-	if isStructuralFile(path) {
+	if isProjectSummarySignal(path) {
 		return true
 	}
 	ext := strings.ToLower(filepath.Ext(path))
@@ -991,10 +936,4 @@ func isCodeOrStructuralPath(path string) bool {
 	default:
 		return false
 	}
-}
-
-func isStructuralFile(path string) bool {
-	base := filepath.Base(path)
-	_, ok := syncStructuralFiles[base]
-	return ok
 }
