@@ -18,7 +18,7 @@ tasks:
     desc: Build orca CLI
     deps: [web:build]
     cmds:
-      - go build -o {{.DIST}}/orca ./cmd/orca
+      - go build -tags fts5 -o {{.DIST}}/orca ./cmd/orca
     sources:
       - cmd/orca/**/*.go
       - internal/**/*.go
@@ -62,7 +62,7 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - go test ./cmd/... ./internal/...
+      - go test -tags fts5 ./cmd/... ./internal/...
 
   vet:
     desc: Run go vet

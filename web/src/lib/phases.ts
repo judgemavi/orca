@@ -7,6 +7,7 @@ export const PHASES = {
   revise: 'revise',
   review: 'review',
   merge: 'merge',
+  retro: 'retro',
 } as const
 
 export type InteractionPhase = (typeof PHASES)[keyof typeof PHASES]
@@ -50,6 +51,7 @@ export const PHASE_LABELS: Record<string, string> = {
   [PHASES.revise]: 'Run',
   [PHASES.review]: 'Review',
   [PHASES.merge]: 'Merge',
+  [PHASES.retro]: 'Retro',
   [PHASES.explore]: 'Explore',
 }
 

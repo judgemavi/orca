@@ -3,6 +3,7 @@ package plan
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -11,17 +12,10 @@ import (
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
-	"github.com/jasjeetmavi/orca/internal/llm"
+	"github.com/jasjeetmavi/orca/internal/knowledge"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
-
-// planResponse is the structured JSON response expected from the planner LLM.
-type planResponse struct {
-	Status string `json:"status"` // "completed" or "blocked"
-	Plan   string `json:"plan"`
-	Reason string `json:"reason"`
-}
 
 // Generator produces markdown implementation plans for tasks.
 type Generator struct {
@@ -31,6 +25,7 @@ type Generator struct {
 	timeout      time.Duration
 	repoDir      string
 	interactions *interaction.Store
+	knowledge    *knowledge.Store
 }
 
 // New creates a plan Generator.
@@ -42,6 +37,12 @@ func New(toolName string, d driver.Driver, model string, timeout time.Duration, 
 	return &Generator{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
+// WithKnowledge attaches an optional knowledge store for prompt-time retrieval.
+func (g *Generator) WithKnowledge(store *knowledge.Store) *Generator {
+	g.knowledge = store
+	return g
+}
+
 func (g *Generator) Generate(taskID, title, description string) (string, error) {
 	return g.generate(taskID, title, description, "")
 }
@@ -51,7 +52,20 @@ func (g *Generator) GenerateWithModel(taskID, title, description, model string) 
 }
 
 func (g *Generator) generate(taskID, title, description, model string) (string, error) {
-	prompt := buildPlanPrompt(explore.LoadContext(g.repoDir), title, description)
+	knowledgeSection := ""
+	usedKnowledgeIDs := []string{}
+	usedProvenanceHashes := []string{}
+	if g.knowledge != nil {
+		query := strings.TrimSpace(title + "\n\n" + description)
+		entries, err := g.knowledge.Search(query, 10)
+		if err != nil {
+			slog.Warn("plan: knowledge search failed", "task_id", taskID, "err", err)
+		} else {
+			knowledgeSection, usedKnowledgeIDs, usedProvenanceHashes = buildKnowledgeSection(entries)
+		}
+	}
+
+	prompt := buildPlanPrompt(explore.LoadContext(g.repoDir), knowledgeSection, title, description)
 	selectedModel := g.model
 	if model != "" {
 		selectedModel = model
@@ -63,8 +77,6 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 		exitCode      = -1
 		stderr        string
 		generatedPlan string
-		blocked       bool
-		blockedReason string
 	)
 	taskRef := taskID
 	_, err := interaction.RunWithTracking(
@@ -82,7 +94,7 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 				exitCode = result.ExitCode
 				stderr = result.Stderr
 			}
-			generatedPlan, blocked, blockedReason = parsePlanResponse(stdout)
+			generatedPlan = parsePlanResponse(stdout)
 		}),
 		interaction.WithFinishFn(func(result *worker.Result, runErr error) (string, []interaction.FinishOption) {
 			status := "completed"
@@ -96,11 +108,18 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 			} else if exitCode != 0 {
 				status = "failed"
 				opts = append(opts, interaction.WithError(fmt.Sprintf("planner exited %d: %s", exitCode, stderr)))
-			} else if blocked {
+			} else if strings.TrimSpace(generatedPlan) == "" {
 				status = "failed"
-				opts = append(opts, interaction.WithError(fmt.Sprintf("planner blocked: %s", blockedReason)))
+				opts = append(opts, interaction.WithError("planner returned empty plan"))
 			} else if generatedPlan != "" {
 				opts = append(opts, interaction.WithDiff(generatedPlan))
+			}
+			if status == "completed" {
+				if qualityJSON, err := buildKnowledgeQualityJSON(usedKnowledgeIDs, usedProvenanceHashes); err != nil {
+					slog.Warn("plan: build knowledge quality metadata failed", "task_id", taskID, "err", err)
+				} else {
+					opts = append(opts, interaction.WithQuality(qualityJSON))
+				}
 			}
 			return status, opts
 		}),
@@ -111,41 +130,112 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 	if exitCode != 0 {
 		return "", fmt.Errorf("planner exited %d: %s", exitCode, stderr)
 	}
-	if blocked {
-		return "", fmt.Errorf("planner blocked: %s", blockedReason)
+	if strings.TrimSpace(generatedPlan) == "" {
+		return "", fmt.Errorf("planner returned empty plan")
 	}
 	return generatedPlan, nil
 }
 
-// parsePlanResponse attempts structured JSON extraction from planner output.
-// Returns (plan, blocked, blockedReason). Falls back to raw text if no JSON found.
-func parsePlanResponse(stdout string) (string, bool, string) {
-	var resp planResponse
-	if err := llm.ExtractJSON(stdout, &resp); err != nil {
-		// Fallback: treat entire output as raw plan text (backwards compat).
-		slog.Debug("plan: no structured JSON, falling back to raw text", "err", err)
-		return strings.TrimSpace(stdout), false, ""
-	}
-	if strings.EqualFold(resp.Status, "blocked") {
-		reason := resp.Reason
-		if reason == "" {
-			reason = "planner reported blocked with no reason"
-		}
-		return "", true, reason
-	}
-	plan := strings.TrimSpace(resp.Plan)
-	if plan == "" {
-		// JSON parsed but plan field empty — fall back to raw text.
-		return strings.TrimSpace(stdout), false, ""
-	}
-	return plan, false, ""
+// parsePlanResponse accepts markdown output from the planner template.
+func parsePlanResponse(stdout string) string {
+	return strings.TrimSpace(stdout)
 }
 
-func buildPlanPrompt(codebaseContext, title, description string) string {
+func buildPlanPrompt(codebaseContext, knowledgeSection, title, description string) string {
 	contextSection := ""
 	if strings.TrimSpace(codebaseContext) != "" {
 		contextSection = "## Codebase Context\n\n" + codebaseContext + "\n\n"
 	}
-	prompt := fmt.Sprintf(prompts.Plan, contextSection, title, description)
+	knowledgeBlock := ""
+	if strings.TrimSpace(knowledgeSection) != "" {
+		knowledgeBlock = strings.TrimSpace(knowledgeSection) + "\n\n"
+	}
+	prompt := fmt.Sprintf(prompts.Plan, contextSection+knowledgeBlock, title, description)
 	return strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
+}
+
+type knowledgeUsageMetadata struct {
+	UsedKnowledgeIDs     []string `json:"used_knowledge_ids"`
+	UsedProvenanceHashes []string `json:"used_provenance_hashes"`
+}
+
+func buildKnowledgeSection(entries []*knowledge.Entry) (section string, ids []string, provenanceHashes []string) {
+	if len(entries) == 0 {
+		return "", []string{}, []string{}
+	}
+
+	idSeen := make(map[string]struct{}, len(entries))
+	hashSeen := make(map[string]struct{}, len(entries))
+	lines := make([]string, 0, len(entries)*6+2)
+	lines = append(lines, "## Relevant Knowledge", "")
+
+	item := 0
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		content := strings.TrimSpace(entry.Content)
+		if content == "" {
+			continue
+		}
+		item++
+		lines = append(lines, fmt.Sprintf("%d. %s", item, content))
+		lines = append(lines, fmt.Sprintf("   - id: %s", entry.ID))
+		lines = append(lines, fmt.Sprintf("   - category: %s", strings.TrimSpace(entry.Category)))
+		lines = append(lines, fmt.Sprintf("   - confidence: %.2f", entry.Confidence))
+		lines = append(lines, fmt.Sprintf("   - provenance_hash: %s", strings.TrimSpace(entry.ProvenanceHash)))
+		if len(entry.Tags) > 0 {
+			lines = append(lines, fmt.Sprintf("   - tags: %s", strings.Join(entry.Tags, ", ")))
+		}
+
+		if id := strings.TrimSpace(entry.ID); id != "" {
+			if _, ok := idSeen[id]; !ok {
+				idSeen[id] = struct{}{}
+				ids = append(ids, id)
+			}
+		}
+		if hash := strings.TrimSpace(entry.ProvenanceHash); hash != "" {
+			if _, ok := hashSeen[hash]; !ok {
+				hashSeen[hash] = struct{}{}
+				provenanceHashes = append(provenanceHashes, hash)
+			}
+		}
+	}
+
+	if item == 0 {
+		return "", []string{}, []string{}
+	}
+	return strings.Join(lines, "\n"), ids, provenanceHashes
+}
+
+func buildKnowledgeQualityJSON(ids, provenanceHashes []string) (string, error) {
+	metadata := knowledgeUsageMetadata{
+		UsedKnowledgeIDs:     normalizeUniqueStrings(ids),
+		UsedProvenanceHashes: normalizeUniqueStrings(provenanceHashes),
+	}
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return "", fmt.Errorf("marshal knowledge usage metadata: %w", err)
+	}
+	return string(raw), nil
+}
+
+func normalizeUniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		v := strings.TrimSpace(value)
+		if v == "" {
+			continue
+		}
+		if _, exists := seen[v]; exists {
+			continue
+		}
+		seen[v] = struct{}{}
+		normalized = append(normalized, v)
+	}
+	return normalized
 }

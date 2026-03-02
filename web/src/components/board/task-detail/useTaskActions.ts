@@ -106,6 +106,9 @@ export function useTaskActions(task: Task) {
   const mergeInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByPhase(PHASES.merge),
   })
+  const retroInteractionsQuery = useInteractionsQuery(task.id, {
+    select: selectByPhase(PHASES.retro),
+  })
 
   const startTaskMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
@@ -144,6 +147,10 @@ export function useTaskActions(task: Task) {
   const mergeTaskMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
       api.mergeTask(args.taskId, undefined, args.tool, args.model),
+  })
+  const retroTaskMutation = useMutation({
+    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
+      api.retroTask(args.taskId, args.tool, args.model),
   })
   const resumeTaskMutation = useMutation({
     mutationFn: (taskId: string) => api.resumeTask(taskId),
@@ -221,6 +228,7 @@ export function useTaskActions(task: Task) {
   const reviewInteractions = reviewInteractionsQuery.data ?? []
   const breakdownInteractions = breakdownInteractionsQuery.data ?? []
   const mergeInteractions = mergeInteractionsQuery.data ?? []
+  const retroInteractions = retroInteractionsQuery.data ?? []
 
   const planLoading = taskPlanQuery.isLoading
   const planGenerating = isOperationRunning('plan_generate', task.id)
@@ -359,12 +367,19 @@ export function useTaskActions(task: Task) {
     ) ||
     isOperationRunning(PHASES.review, task.id) ||
     aiReviewMutation.isPending
-  const approvedPhaseInProgress =
+  const mergePhaseInProgress =
     mergeInteractions.some(
       (item) => item.status === INTERACTION_STATUSES.running,
     ) ||
     isOperationRunning(PHASES.merge, task.id) ||
     mergeTaskMutation.isPending
+  const retroPhaseInProgress =
+    retroInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    ) ||
+    isOperationRunning(PHASES.retro, task.id) ||
+    retroTaskMutation.isPending
+  const approvedPhaseInProgress = mergePhaseInProgress || retroPhaseInProgress
 
   const phaseInProgress =
     task.status === TASK_STATUSES.pending
@@ -373,6 +388,8 @@ export function useTaskActions(task: Task) {
         ? reviewPhaseInProgress
         : task.status === TASK_STATUSES.approved
           ? approvedPhaseInProgress
+          : task.status === TASK_STATUSES.merged
+            ? retroPhaseInProgress
           : false
 
   useEffect(() => {
@@ -743,6 +760,19 @@ export function useTaskActions(task: Task) {
     }
   }
 
+  const handleRetro = async () => {
+    setActionError(null)
+    try {
+      await retroTaskMutation.mutateAsync({
+        taskId: task.id,
+        tool: actionTool || undefined,
+        model: actionModel || undefined,
+      })
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'Retro failed'))
+    }
+  }
+
   return {
     tools,
     actionTool,
@@ -785,6 +815,9 @@ export function useTaskActions(task: Task) {
     requestChangesPending: requestChangesMutation.isPending,
     aiReviewPending: aiReviewMutation.isPending,
     mergePending: mergeTaskMutation.isPending,
+    retroPending: retroTaskMutation.isPending,
+    mergeInProgress: mergePhaseInProgress,
+    retroInProgress: retroPhaseInProgress,
     resumePending: resumeTaskMutation.isPending,
     generatePlanPending: generateTaskPlanMutation.isPending,
     approvePlanPending: approvePlanMutation.isPending,
@@ -807,5 +840,6 @@ export function useTaskActions(task: Task) {
     handleRejectBreakdown,
     handleAIReview,
     handleMerge,
+    handleRetro,
   }
 }

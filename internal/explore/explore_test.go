@@ -5,7 +5,116 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/jasjeetmavi/orca/internal/state"
 )
+
+func TestWriteManualContextWritesToDBOnly(t *testing.T) {
+	repoDir := initTempGitRepo(t)
+
+	outPath, err := WriteManualContext(repoDir, "db-content")
+	if err != nil {
+		t.Fatalf("WriteManualContext() error = %v", err)
+	}
+	if outPath != stateDBFile {
+		t.Fatalf("WriteManualContext() path = %q, want %q", outPath, stateDBFile)
+	}
+
+	if _, err := os.Stat(filepath.Join(repoDir, ".orca", "context.md")); !os.IsNotExist(err) {
+		t.Fatalf("context.md should not exist, stat err = %v", err)
+	}
+
+	db := setupStateDB(t, repoDir)
+	var got string
+	if err := db.QueryRow(`SELECT content FROM explore_context WHERE id = 1`).Scan(&got); err != nil {
+		t.Fatalf("query explore_context: %v", err)
+	}
+	if got != "db-content" {
+		t.Fatalf("db content = %q, want %q", got, "db-content")
+	}
+}
+
+func TestHasTrackedCodeFalseForConfigOnlyAndOrcaFiles(t *testing.T) {
+	repoDir := initEmptyGitRepo(t)
+
+	if err := os.WriteFile(filepath.Join(repoDir, ".gitignore"), []byte("node_modules/\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.gitignore) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "LICENSE"), []byte("license"), 0o644); err != nil {
+		t.Fatalf("WriteFile(LICENSE) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoDir, ".orca"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.orca) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, ".orca", "context.md"), []byte("internal state"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.orca/context.md) error = %v", err)
+	}
+	runGit(t, repoDir, "add", ".gitignore", "LICENSE", ".orca/context.md")
+
+	hasCode, err := HasTrackedCode(repoDir)
+	if err != nil {
+		t.Fatalf("HasTrackedCode() error = %v", err)
+	}
+	if hasCode {
+		t.Fatal("HasTrackedCode() = true, want false")
+	}
+}
+
+func TestHasTrackedCodeTrueWhenSourceTracked(t *testing.T) {
+	repoDir := initEmptyGitRepo(t)
+
+	if err := os.WriteFile(filepath.Join(repoDir, ".gitignore"), []byte("node_modules/\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.gitignore) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(main.go) error = %v", err)
+	}
+	runGit(t, repoDir, "add", ".gitignore", "main.go")
+
+	hasCode, err := HasTrackedCode(repoDir)
+	if err != nil {
+		t.Fatalf("HasTrackedCode() error = %v", err)
+	}
+	if !hasCode {
+		t.Fatal("HasTrackedCode() = false, want true")
+	}
+}
+
+func TestHasTrackedCodeReturnsErrorOutsideGitRepo(t *testing.T) {
+	repoDir := t.TempDir()
+	if _, err := HasTrackedCode(repoDir); err == nil {
+		t.Fatal("HasTrackedCode() error = nil, want non-nil")
+	}
+}
+
+func TestLoadContextReturnsDBContent(t *testing.T) {
+	repoDir := initTempGitRepo(t)
+
+	if _, err := WriteManualContext(repoDir, "db-content"); err != nil {
+		t.Fatalf("WriteManualContext() error = %v", err)
+	}
+
+	got := LoadContext(repoDir)
+	if got != "db-content" {
+		t.Fatalf("LoadContext() = %q, want %q", got, "db-content")
+	}
+}
+
+func TestLoadContextIgnoresLegacyContextFile(t *testing.T) {
+	repoDir := initTempGitRepo(t)
+
+	if err := os.MkdirAll(filepath.Join(repoDir, ".orca"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.orca) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, ".orca", "context.md"), []byte("legacy-file-content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(context.md) error = %v", err)
+	}
+
+	got := LoadContext(repoDir)
+	if got != "" {
+		t.Fatalf("LoadContext() = %q, want empty string", got)
+	}
+}
 
 func TestIsStaleFalseAfterManualContextWrite(t *testing.T) {
 	repoDir := initTempGitRepo(t)
@@ -31,7 +140,7 @@ func TestIsStaleTrueAfterTrackedFileTreeChange(t *testing.T) {
 	}
 
 	newPath := filepath.Join(repoDir, "new.txt")
-	if err := os.WriteFile(newPath, []byte("new"), 0644); err != nil {
+	if err := os.WriteFile(newPath, []byte("new"), 0o644); err != nil {
 		t.Fatalf("WriteFile(new.txt) error = %v", err)
 	}
 	runGit(t, repoDir, "add", "new.txt")
@@ -45,15 +154,16 @@ func TestIsStaleTrueAfterTrackedFileTreeChange(t *testing.T) {
 	}
 }
 
-func TestIsStaleFalseWhenHashMissing(t *testing.T) {
+func TestIsStaleFalseWhenNoContextRow(t *testing.T) {
 	repoDir := initTempGitRepo(t)
+	_ = setupStateDB(t, repoDir)
 
 	stale, err := IsStale(repoDir)
 	if err != nil {
 		t.Fatalf("IsStale() error = %v", err)
 	}
 	if stale {
-		t.Fatal("IsStale() = true, want false when hash is missing")
+		t.Fatal("IsStale() = true, want false when explore_context row is missing")
 	}
 }
 
@@ -70,19 +180,67 @@ func TestContextAgeNonZeroWhenContextExists(t *testing.T) {
 	}
 }
 
+func TestContextAgeZeroWhenContextMissing(t *testing.T) {
+	repoDir := initTempGitRepo(t)
+	_ = setupStateDB(t, repoDir)
+
+	age := ContextAge(repoDir)
+	if age != 0 {
+		t.Fatalf("ContextAge() = %v, want 0", age)
+	}
+}
+
+func TestLoadContextFromDB(t *testing.T) {
+	repoDir := initTempGitRepo(t)
+	db := setupStateDB(t, repoDir)
+
+	if _, err := db.Exec(
+		`REPLACE INTO explore_context (id, content, hash, updated_at) VALUES (1, 'from-db', 'h', CURRENT_TIMESTAMP)`,
+	); err != nil {
+		t.Fatalf("seed explore_context: %v", err)
+	}
+
+	got := LoadContextFromDB(db)
+	if got != "from-db" {
+		t.Fatalf("LoadContextFromDB() = %q, want %q", got, "from-db")
+	}
+}
+
 func initTempGitRepo(t *testing.T) string {
 	t.Helper()
 
-	repoDir := t.TempDir()
-	runGit(t, repoDir, "init")
+	repoDir := initEmptyGitRepo(t)
 
 	readme := filepath.Join(repoDir, "README.md")
-	if err := os.WriteFile(readme, []byte("hello"), 0644); err != nil {
+	if err := os.WriteFile(readme, []byte("hello"), 0o644); err != nil {
 		t.Fatalf("WriteFile(README.md) error = %v", err)
 	}
 	runGit(t, repoDir, "add", "README.md")
 
 	return repoDir
+}
+
+func initEmptyGitRepo(t *testing.T) string {
+	t.Helper()
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	return repoDir
+}
+
+func setupStateDB(t *testing.T, repoDir string) *state.DB {
+	t.Helper()
+
+	statePath := filepath.Join(repoDir, ".orca", "state.db")
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(state db dir) error = %v", err)
+	}
+	db, err := state.Open(statePath)
+	if err != nil {
+		t.Fatalf("state.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
 }
 
 func runGit(t *testing.T, repoDir string, args ...string) {

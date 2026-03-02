@@ -59,7 +59,7 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("manual explore: %w", err)
 		}
-		fmt.Printf("Context written to %s (from %s)\n", outPath, manualPath)
+		fmt.Printf("Context stored in %s (from %s)\n", outPath, manualPath)
 		return nil
 	}
 	if useStdin {
@@ -71,7 +71,16 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("stdin explore: %w", err)
 		}
-		fmt.Printf("Context written to %s (from stdin)\n", outPath)
+		fmt.Printf("Context stored in %s (from stdin)\n", outPath)
+		return nil
+	}
+
+	hasTrackedCode, err := explore.HasTrackedCode(repoDir)
+	if err != nil {
+		return fmt.Errorf("inspect tracked files: %w", err)
+	}
+	if !hasTrackedCode {
+		fmt.Println(explore.NoTrackedCodeMessage)
 		return nil
 	}
 
@@ -105,7 +114,7 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("explore: %w", err)
 	}
 
-	fmt.Println("Exploration complete. Context written to .orca/context.md")
+	fmt.Println("Exploration complete. Context stored in .orca/state.db (table: explore_context)")
 	return nil
 }
 

@@ -11,6 +11,7 @@ const (
 	PhaseReview    = "review"
 	PhaseMerge     = "merge"
 	PhaseExplore   = "explore"
+	PhaseRetro     = "retro"
 )
 
 type RunWithTrackingOption func(*runWithTrackingConfig)

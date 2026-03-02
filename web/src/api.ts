@@ -9,6 +9,9 @@ import type {
   Interaction,
   InteractionWithContent,
   ProposedTask,
+  KnowledgeEntry,
+  ListKnowledgeParams,
+  UpdateKnowledgeInput,
 } from './types'
 
 const BASE = '/api/v1'
@@ -106,6 +109,23 @@ export const api = {
       }),
     ),
 
+  listKnowledge: (params?: ListKnowledgeParams) =>
+    request<KnowledgeEntry[]>(
+      withQuery('/knowledge', {
+        category: params?.category,
+        tag: params?.tag,
+        q: params?.q,
+        limit:
+          typeof params?.limit === 'number' ? String(params.limit) : undefined,
+      }),
+    ),
+  getKnowledge: (id: string) =>
+    request<KnowledgeEntry>(`/knowledge/${encodeURIComponent(id)}`),
+  updateKnowledge: (id: string, data: UpdateKnowledgeInput) =>
+    patch<KnowledgeEntry>(`/knowledge/${encodeURIComponent(id)}`, data),
+  deleteKnowledge: (id: string) =>
+    del<{ deleted: string }>(`/knowledge/${encodeURIComponent(id)}`),
+
   merge: () => post<{ operation_id: string }>('/merge'),
   startTasks: (taskIds?: string[], tool?: string, model?: string) =>
     post<{ operation_id: string; task_ids: string[] }>('/tasks/start', {
@@ -128,6 +148,12 @@ export const api = {
             })
           : undefined,
     }),
+  retroTask: (taskId: string, tool?: string, model?: string) =>
+    post<{ task_id: string; status: string }>(`/tasks/${taskId}/retro`, {
+      ...(tool ? { tool } : {}),
+      ...(model ? { model } : {}),
+    }),
+  runExplore: () => post<{ status: string }>('/explore'),
   getTaskReviews: (id: string) => request<TaskReview[]>(`/tasks/${id}/reviews`),
   listInteractions: (taskId: string) =>
     request<Interaction[]>(`/tasks/${taskId}/interactions`),

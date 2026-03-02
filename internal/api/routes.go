@@ -36,6 +36,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/tasks/{id}/breakdown/accept", s.handleAcceptBreakdown)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/breakdown/reject", s.handleRejectBreakdown)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/ai-review", s.handleAIReview)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/retro", s.handleRetroTask)
+
+	// Knowledge
+	mux.HandleFunc("GET /api/v1/knowledge", s.handleListKnowledge)
+	mux.HandleFunc("GET /api/v1/knowledge/{id}", s.handleGetKnowledge)
+	mux.HandleFunc("PATCH /api/v1/knowledge/{id}", s.handleUpdateKnowledge)
+	mux.HandleFunc("DELETE /api/v1/knowledge/{id}", s.handleDeleteKnowledge)
 
 	mux.HandleFunc("GET /api/v1/models", s.handleListModels)
 	mux.HandleFunc("POST /api/v1/cleanup", s.handleCleanup)

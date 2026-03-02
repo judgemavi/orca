@@ -34,6 +34,7 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"breakdown":                  s.HandleBreakdownTool,
 		"tasks_plan_generate":        s.HandleTasksPlanGenerateTool,
 		"tasks_plan_evaluate":        s.HandleTasksPlanEvaluateTool,
+		"tasks_retro":                s.HandleTasksRetroTool,
 		"project_status":             s.HandleProjectStatusTool,
 		"config_get":                 s.HandleConfigGetTool,
 		"models_list":                s.HandleModelsListTool,
@@ -56,5 +57,10 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"log_query":                  s.HandleLogQueryTool,
 		"merge":                      s.HandleMergeTool,
 		"tasks_merge":                s.HandleTasksMergeTool,
+		"knowledge_list":             s.HandleKnowledgeListTool,
+		"knowledge_get":              s.HandleKnowledgeGetTool,
+		"knowledge_search":           s.HandleKnowledgeSearchTool,
+		"knowledge_update":           s.HandleKnowledgeUpdateTool,
+		"knowledge_delete":           s.HandleKnowledgeDeleteTool,
 	}
 }

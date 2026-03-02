@@ -74,6 +74,17 @@ func RegisterTask(root *cobra.Command, r *Registry) {
 	evaluateCmd.Flags().Bool("json", false, "Output raw JSON")
 	taskCmd.AddCommand(evaluateCmd)
 
+	retroCmd := &cobra.Command{
+		Use:   "retro [task-id]",
+		Short: "Extract knowledge from a completed task",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  r.runTaskRetro,
+	}
+	retroCmd.Flags().String("tool", "", "Tool to use for retro extraction")
+	retroCmd.Flags().String("model", "", "Model to use for retro extraction")
+	retroCmd.Flags().Bool("json", false, "Output raw JSON")
+	taskCmd.AddCommand(retroCmd)
+
 	taskCmd.AddCommand(&cobra.Command{Use: "show [task-id]", Short: "Show full task details", Args: cobra.MaximumNArgs(1), RunE: r.runTaskShow})
 	taskCmd.AddCommand(&cobra.Command{Use: "stop [task-id]", Short: "Stop a running task", Args: cobra.MaximumNArgs(1), RunE: r.runTaskStop})
 	taskCmd.AddCommand(&cobra.Command{Use: "resume [task-id]", Short: "Resume a stopped task from session", Args: cobra.MaximumNArgs(1), RunE: r.runTaskResume})

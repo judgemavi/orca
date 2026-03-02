@@ -21,6 +21,11 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 	assertInteractionColumns(t, db.DB, "quality_json", "log_path", "phase", "status")
 	assertReviewColumns(t, db.DB, "interaction_id")
 	assertTableExists(t, db.DB, "config")
+	assertTableExists(t, db.DB, "knowledge_entries")
+	assertTableExists(t, db.DB, "explore_context")
+	assertVirtualTableExists(t, db.DB, "knowledge_fts")
+	assertTriggerExists(t, db.DB, "explore_context_version_insert")
+	assertTriggerExists(t, db.DB, "explore_context_version_update")
 	assertDBVersion(t, db, 0)
 
 	if err := db.Close(); err != nil {
@@ -38,6 +43,11 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 	assertInteractionColumns(t, db.DB, "quality_json", "log_path", "phase", "status")
 	assertReviewColumns(t, db.DB, "interaction_id")
 	assertTableExists(t, db.DB, "config")
+	assertTableExists(t, db.DB, "knowledge_entries")
+	assertTableExists(t, db.DB, "explore_context")
+	assertVirtualTableExists(t, db.DB, "knowledge_fts")
+	assertTriggerExists(t, db.DB, "explore_context_version_insert")
+	assertTriggerExists(t, db.DB, "explore_context_version_update")
 	assertDBVersion(t, db, 0)
 }
 
@@ -67,6 +77,11 @@ func TestOpenMigratesLegacyUnversionedDB(t *testing.T) {
 	assertInteractionColumns(t, db.DB, "quality_json", "log_path", "phase", "status")
 	assertReviewColumns(t, db.DB, "interaction_id")
 	assertTableExists(t, db.DB, "config")
+	assertTableExists(t, db.DB, "knowledge_entries")
+	assertTableExists(t, db.DB, "explore_context")
+	assertVirtualTableExists(t, db.DB, "knowledge_fts")
+	assertTriggerExists(t, db.DB, "explore_context_version_insert")
+	assertTriggerExists(t, db.DB, "explore_context_version_update")
 	assertDBVersion(t, db, 0)
 }
 
@@ -188,6 +203,34 @@ func assertTableExists(t *testing.T, db *sql.DB, table string) {
 	}
 	if count != 1 {
 		t.Fatalf("table %s missing", table)
+	}
+}
+
+func assertVirtualTableExists(t *testing.T, db *sql.DB, table string) {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(
+		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ? AND sql LIKE 'CREATE VIRTUAL TABLE%'`,
+		table,
+	).Scan(&count); err != nil {
+		t.Fatalf("check virtual table %s: %v", table, err)
+	}
+	if count != 1 {
+		t.Fatalf("virtual table %s missing", table)
+	}
+}
+
+func assertTriggerExists(t *testing.T, db *sql.DB, trigger string) {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(
+		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'trigger' AND name = ?`,
+		trigger,
+	).Scan(&count); err != nil {
+		t.Fatalf("check trigger %s: %v", trigger, err)
+	}
+	if count != 1 {
+		t.Fatalf("trigger %s missing", trigger)
 	}
 }
 

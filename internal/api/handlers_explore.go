@@ -15,6 +15,19 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hasTrackedCode, err := explore.HasTrackedCode(s.repoDir)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if !hasTrackedCode {
+		jsonOK(w, map[string]string{
+			"status":  "skipped",
+			"message": explore.NoTrackedCodeMessage,
+		})
+		return
+	}
+
 	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)

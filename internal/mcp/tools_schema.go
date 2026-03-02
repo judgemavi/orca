@@ -255,6 +255,28 @@ func (s *Server) toolDefinitions() []toolDef {
 			},
 		},
 		{
+			Name:        "tasks_retro",
+			Description: "Extract reusable knowledge from an approved or merged task.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Task ID",
+					},
+					"tool": map[string]interface{}{
+						"type":        "string",
+						"description": "Tool override (optional)",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Model override (optional)",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
 			Name:        "project_status",
 			Description: "Get project overview: task counts by status and project name.",
 			InputSchema: map[string]interface{}{
@@ -574,6 +596,95 @@ func (s *Server) toolDefinitions() []toolDef {
 					"task_id": map[string]interface{}{"type": "string", "description": "Completed task ID to merge"},
 				},
 				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "knowledge_list",
+			Description: "List knowledge entries. Optionally filter by category or tag.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"category": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional category filter: pattern, pitfall, preference, convention.",
+					},
+					"tag": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional exact tag filter.",
+					},
+				},
+			},
+		},
+		{
+			Name:        "knowledge_get",
+			Description: "Get a single knowledge entry by id.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id": map[string]interface{}{
+						"type":        "string",
+						"description": "Knowledge entry ID.",
+					},
+				},
+				"required": []string{"id"},
+			},
+		},
+		{
+			Name:        "knowledge_search",
+			Description: "Search knowledge entries using FTS.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Full-text query string.",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results (default: 10).",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "knowledge_update",
+			Description: "Update an existing knowledge entry.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id": map[string]interface{}{
+						"type":        "string",
+						"description": "Knowledge entry ID.",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "Updated knowledge content.",
+					},
+					"confidence": map[string]interface{}{
+						"type":        "number",
+						"description": "Updated confidence score between 0 and 1.",
+					},
+					"category": map[string]interface{}{
+						"type":        "string",
+						"description": "Updated category: pattern, pitfall, preference, convention.",
+					},
+				},
+				"required": []string{"id"},
+			},
+		},
+		{
+			Name:        "knowledge_delete",
+			Description: "Delete a knowledge entry by id.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id": map[string]interface{}{
+						"type":        "string",
+						"description": "Knowledge entry ID.",
+					},
+				},
+				"required": []string{"id"},
 			},
 		},
 	}

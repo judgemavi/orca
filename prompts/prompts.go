@@ -22,6 +22,9 @@ var Plan string
 //go:embed review.md
 var Review string
 
+//go:embed retro.md
+var Retro string
+
 //go:embed conflict_resolve.md
 var ConflictResolve string
 

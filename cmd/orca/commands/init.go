@@ -311,7 +311,7 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 		cfg.Orchestrator.Phases = phaseConfigs
 	} else {
 		// Non-interactive: set all phases to first available tool
-		for _, phase := range []string{interaction.PhaseExplore, interaction.PhasePlan, interaction.PhaseRun, interaction.PhaseReview, interaction.PhaseMerge} {
+		for _, phase := range []string{interaction.PhaseExplore, interaction.PhasePlan, interaction.PhaseRun, interaction.PhaseReview, interaction.PhaseMerge, interaction.PhaseRetro} {
 			cfg.Orchestrator.Phases[phase] = config.PhaseConfig{Tool: available[0]}
 		}
 	}
@@ -344,7 +344,7 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 }
 
 func selectPhases(available []string, toolModels []toolModelInfo, existingCfg *config.Config) (map[string]config.PhaseConfig, error) {
-	phases := []string{interaction.PhaseExplore, interaction.PhasePlan, interaction.PhaseRun, interaction.PhaseReview, interaction.PhaseMerge}
+	phases := []string{interaction.PhaseExplore, interaction.PhasePlan, interaction.PhaseRun, interaction.PhaseReview, interaction.PhaseMerge, interaction.PhaseRetro}
 	phaseToolSelections := make(map[string]string, len(phases))
 	for _, phase := range phases {
 		phaseToolSelections[phase] = available[0]

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/evaluate"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/knowledge"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
@@ -54,7 +55,8 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
+	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+		WithKnowledge(knowledge.NewStore(db))
 	var planContent string
 	fmt.Printf("Generating plan for task %s\n", short(id))
 	spinDone := make(chan struct{})
@@ -321,7 +323,8 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 		return fmt.Errorf("get working directory: %w", err)
 	}
 	description := strings.TrimSpace(tk.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
-	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interactions)
+	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interactions).
+		WithKnowledge(knowledge.NewStore(db))
 
 	fmt.Printf("Regenerating plan for task %s\n", short(taskID))
 	spinDone := make(chan struct{})

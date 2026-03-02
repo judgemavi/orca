@@ -12,6 +12,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/knowledge"
 	"github.com/jasjeetmavi/orca/internal/orchestrator"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/state"
@@ -20,16 +21,17 @@ import (
 
 // Server is the Orca HTTP/WS API server.
 type Server struct {
-	db           *state.DB
-	cfg          *config.Config
-	executor     *executor.Executor
-	taskStore    *task.Store
-	interactions *interaction.Store
-	repoDir      string
-	hub          *Hub
-	sessionMgr   *pty.SessionManager
-	ctx          context.Context
-	cancel       context.CancelFunc
+	db             *state.DB
+	cfg            *config.Config
+	executor       *executor.Executor
+	taskStore      *task.Store
+	knowledgeStore *knowledge.Store
+	interactions   *interaction.Store
+	repoDir        string
+	hub            *Hub
+	sessionMgr     *pty.SessionManager
+	ctx            context.Context
+	cancel         context.CancelFunc
 
 	monitorAlerts []MonitorAlert
 	monitorMu     sync.Mutex
@@ -47,20 +49,22 @@ func NewServerWithHub(db *state.DB, cfg *config.Config, exec *executor.Executor,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	taskStore := task.NewStore(db)
+	knowledgeStore := knowledge.NewStore(db)
 	interactionStore := interaction.NewStore(db, ".orca/interactions")
 
 	srv := &Server{
-		db:           db,
-		cfg:          cfg,
-		executor:     exec,
-		taskStore:    taskStore,
-		interactions: interactionStore,
-		repoDir:      repoDir,
-		hub:          hub,
-		frontendFS:   frontendFS,
-		sessionMgr:   sessionMgr,
-		ctx:          ctx,
-		cancel:       cancel,
+		db:             db,
+		cfg:            cfg,
+		executor:       exec,
+		taskStore:      taskStore,
+		knowledgeStore: knowledgeStore,
+		interactions:   interactionStore,
+		repoDir:        repoDir,
+		hub:            hub,
+		frontendFS:     frontendFS,
+		sessionMgr:     sessionMgr,
+		ctx:            ctx,
+		cancel:         cancel,
 	}
 
 	srv.setupWatchers(ctx, taskStore)

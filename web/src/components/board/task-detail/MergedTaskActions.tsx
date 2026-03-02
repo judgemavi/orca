@@ -3,7 +3,11 @@ import { Button } from '../../Button'
 import { TaskActionsLayout } from './TaskActionsLayout'
 import { useTaskActions } from './useTaskActions'
 
-export function ApprovedTaskActions() {
+interface Props {
+  onClose: () => void
+}
+
+export function MergedTaskActions({ onClose }: Props) {
   const { task } = useTaskDetailContext()
   const actions = useTaskActions(task)
 
@@ -26,12 +30,8 @@ export function ApprovedTaskActions() {
           >
             {actions.retroInProgress ? 'Running Retro…' : 'Run Retro'}
           </Button>
-          <Button
-            variant="primary"
-            onClick={actions.handleMerge}
-            disabled={actions.phaseInProgress}
-          >
-            {actions.mergeInProgress ? 'Merging…' : 'Merge'}
+          <Button variant="default" onClick={onClose} type="button">
+            Close
           </Button>
         </>
       }

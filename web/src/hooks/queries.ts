@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { queryKeys } from '../lib/queryKeys'
+import type { ListKnowledgeParams, UpdateKnowledgeInput } from '../types'
 
 // ── Tasks ───────────────────────────────────────────────────────────────
 
@@ -104,6 +105,41 @@ export function useSavePlanMutation() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.taskPlan(variables.taskId),
       })
+    },
+  })
+}
+
+// ── Knowledge ───────────────────────────────────────────────────────────
+
+export function useKnowledgeQuery(params?: ListKnowledgeParams) {
+  return useQuery({
+    queryKey: queryKeys.knowledgeList(params),
+    queryFn: () => api.listKnowledge(params),
+  })
+}
+
+export function useKnowledgeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateKnowledgeInput }) =>
+      api.updateKnowledge(id, data),
+    onSuccess: async (entry) => {
+      queryClient.setQueryData(queryKeys.knowledgeEntry(entry.id), entry)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.knowledge })
+    },
+  })
+}
+
+export function useDeleteKnowledgeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deleteKnowledge(id),
+    onSuccess: async (_result, id) => {
+      queryClient.removeQueries({
+        queryKey: queryKeys.knowledgeEntry(id),
+        exact: true,
+      })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.knowledge })
     },
   })
 }

@@ -17,10 +17,22 @@ Produce an implementation plan covering:
 - Edge cases worth noting
 - What tests to write or update
 
-Keep it concise. No code blocks — the executor handles implementation.
+Keep it concise. No code blocks - the executor handles implementation.
 
-Respond with ONLY a JSON object (no markdown fences, no surrounding text):
-{"status": "completed", "plan": "your implementation plan here"}
+Respond using EXACTLY this template:
 
-If you cannot produce a plan (missing critical info, fundamentally ambiguous requirements):
-{"status": "blocked", "reason": "what's missing or unclear"}
+## Approach
+<strategy in 1-3 sentences>
+
+## Files
+- `path/to/file` - reason for change
+
+## Steps
+1. First step
+2. Second step
+
+## Edge Cases
+- Case worth noting
+
+## Tests
+- Test to write or update

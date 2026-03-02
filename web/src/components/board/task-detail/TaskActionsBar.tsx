@@ -3,6 +3,7 @@ import { TASK_STATUSES } from '../../../lib/phases'
 import { Button } from '../../Button'
 import { ApprovedTaskActions } from './ApprovedTaskActions'
 import { FailedTaskActions } from './FailedTaskActions'
+import { MergedTaskActions } from './MergedTaskActions'
 import { PendingTaskActions } from './PendingTaskActions'
 import { ReviewTaskActions } from './ReviewTaskActions'
 import { RunningTaskActions } from './RunningTaskActions'
@@ -42,22 +43,7 @@ export function TaskActionsBar({ onClose }: Props) {
   }
 
   if (task.status === TASK_STATUSES.merged) {
-    return (
-      <TaskActionsLayout
-        tools={[]}
-        actionTool=""
-        actionModel=""
-        actionModels={[]}
-        actionModelsFetching={false}
-        onToolChange={() => {}}
-        onModelChange={() => {}}
-        actions={
-          <Button variant="default" onClick={onClose} type="button">
-            Close
-          </Button>
-        }
-      />
-    )
+    return <MergedTaskActions onClose={onClose} />
   }
 
   if (task.status === TASK_STATUSES.broken_down) {

@@ -19,6 +19,7 @@ import (
 	"regexp"
 
 	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/procutil"
 	"github.com/jasjeetmavi/orca/internal/pty"
 	"github.com/jasjeetmavi/orca/internal/worker"
@@ -138,7 +139,7 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 
 	args := info.args
 	if len(args) == 0 {
-		args = buildWorkerArgs(info, info.prompt, info.model, info.worktreePath)
+		args = buildWorkerArgs(info, info.prompt, info.model, info.worktreePath, e.repoDir)
 	}
 	slog.Info("worker.starting (pty)", "task_id", info.taskID, "binary", info.driver.Binary(), "dir", info.worktreePath, "args_count", len(args))
 	sess, err := e.sessionMgr.Create(pty.CreateOpts{
@@ -346,8 +347,8 @@ func detectSilentFailure(diff, stdout string) string {
 	return "no changes produced"
 }
 
-func buildWorkerArgs(info taskInfo, prompt, model, worktreePath string) []string {
-	contextContent := procutil.LoadContextFromWorktree(worktreePath)
+func buildWorkerArgs(info taskInfo, prompt, model, worktreePath, repoDir string) []string {
+	contextContent := explore.LoadContext(repoDir)
 	args := info.driver.HeadlessArgs(prompt, model, worktreePath)
 	for i := range args {
 		args[i] = strings.ReplaceAll(args[i], "{{context}}", contextContent)

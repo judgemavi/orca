@@ -1,0 +1,214 @@
+package api
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/jasjeetmavi/orca/internal/knowledge"
+)
+
+func (s *Server) handleListKnowledge(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.knowledgeStore == nil {
+		jsonError(w, "knowledge store not configured", http.StatusInternalServerError)
+		return
+	}
+
+	category := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("category")))
+	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+
+	if category != "" && !isValidKnowledgeCategory(category) {
+		jsonError(w, "category must be one of: pattern|pitfall|preference|convention", http.StatusBadRequest)
+		return
+	}
+
+	if query != "" {
+		limit := 10
+		if limitRaw != "" {
+			parsed, err := strconv.Atoi(limitRaw)
+			if err != nil || parsed <= 0 {
+				jsonError(w, "limit must be a positive integer", http.StatusBadRequest)
+				return
+			}
+			limit = parsed
+		}
+
+		entries, err := s.knowledgeStore.Search(query, limit)
+		if err != nil {
+			jsonError(w, err, http.StatusInternalServerError)
+			return
+		}
+
+		filtered := make([]*knowledge.Entry, 0, len(entries))
+		for _, entry := range entries {
+			if category != "" && entry.Category != category {
+				continue
+			}
+			if tag != "" && !hasKnowledgeTag(entry.Tags, tag) {
+				continue
+			}
+			filtered = append(filtered, entry)
+		}
+		jsonOK(w, filtered)
+		return
+	}
+
+	if limitRaw != "" {
+		jsonError(w, "limit requires q", http.StatusBadRequest)
+		return
+	}
+
+	entries, err := s.knowledgeStore.List(knowledge.ListOpts{Category: category, Tag: tag})
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, entries)
+}
+
+func (s *Server) handleGetKnowledge(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.knowledgeStore == nil {
+		jsonError(w, "knowledge store not configured", http.StatusInternalServerError)
+		return
+	}
+
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		jsonError(w, "id required", http.StatusBadRequest)
+		return
+	}
+
+	entry, err := s.knowledgeStore.Get(id)
+	if err != nil {
+		jsonError(w, err, http.StatusNotFound)
+		return
+	}
+	jsonOK(w, entry)
+}
+
+func (s *Server) handleUpdateKnowledge(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPatch) {
+		return
+	}
+	if s.knowledgeStore == nil {
+		jsonError(w, "knowledge store not configured", http.StatusInternalServerError)
+		return
+	}
+
+	type updateKnowledgeReq struct {
+		Content    *string  `json:"content"`
+		Confidence *float64 `json:"confidence"`
+		Category   *string  `json:"category"`
+	}
+	body, ok := decodeJSON[updateKnowledgeReq](w, r, false)
+	if !ok {
+		return
+	}
+
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		jsonError(w, "id required", http.StatusBadRequest)
+		return
+	}
+
+	fields := map[string]interface{}{}
+	if body.Content != nil {
+		content := strings.TrimSpace(*body.Content)
+		if content == "" {
+			jsonError(w, "content cannot be empty", http.StatusBadRequest)
+			return
+		}
+		fields["content"] = content
+	}
+	if body.Confidence != nil {
+		if *body.Confidence < 0 || *body.Confidence > 1 {
+			jsonError(w, "confidence must be between 0 and 1", http.StatusBadRequest)
+			return
+		}
+		fields["confidence"] = *body.Confidence
+	}
+	if body.Category != nil {
+		category := strings.TrimSpace(strings.ToLower(*body.Category))
+		if !isValidKnowledgeCategory(category) {
+			jsonError(w, "category must be one of: pattern|pitfall|preference|convention", http.StatusBadRequest)
+			return
+		}
+		fields["category"] = category
+	}
+	if len(fields) == 0 {
+		jsonError(w, "no fields to update", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.knowledgeStore.Update(id, fields); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			jsonError(w, err, http.StatusNotFound)
+			return
+		}
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	entry, err := s.knowledgeStore.Get(id)
+	if err != nil {
+		jsonError(w, err, http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, entry)
+}
+
+func (s *Server) handleDeleteKnowledge(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodDelete) {
+		return
+	}
+	if s.knowledgeStore == nil {
+		jsonError(w, "knowledge store not configured", http.StatusInternalServerError)
+		return
+	}
+
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		jsonError(w, "id required", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := s.knowledgeStore.Get(id); err != nil {
+		jsonError(w, err, http.StatusNotFound)
+		return
+	}
+	if err := s.knowledgeStore.Delete(id); err != nil {
+		jsonError(w, err, http.StatusBadRequest)
+		return
+	}
+	jsonOK(w, map[string]string{"deleted": id})
+}
+
+func hasKnowledgeTag(tags []string, needle string) bool {
+	needle = strings.TrimSpace(strings.ToLower(needle))
+	if needle == "" {
+		return false
+	}
+	for _, tag := range tags {
+		if strings.ToLower(strings.TrimSpace(tag)) == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func isValidKnowledgeCategory(category string) bool {
+	switch strings.TrimSpace(strings.ToLower(category)) {
+	case "pattern", "pitfall", "preference", "convention":
+		return true
+	default:
+		return false
+	}
+}

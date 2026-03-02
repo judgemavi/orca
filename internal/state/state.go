@@ -4,7 +4,6 @@ package state
 import (
 	"database/sql"
 	"fmt"
-
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -121,6 +120,16 @@ var migrations = []migration{
 		sql:       schemaV3,
 		isApplied: schemaV3Applied,
 	},
+	{
+		version:   4,
+		sql:       schemaV4,
+		isApplied: schemaV4Applied,
+	},
+	{
+		version:   5,
+		sql:       schemaV5,
+		isApplied: schemaV5Applied,
+	},
 }
 
 // DBVersion returns the current persisted db_version sentinel value.
@@ -162,11 +171,50 @@ func schemaV3Applied(tx *sql.Tx) (bool, error) {
 	return hasTable(tx, "config")
 }
 
+func schemaV4Applied(tx *sql.Tx) (bool, error) {
+	return hasTable(tx, "knowledge_entries")
+}
+
+func schemaV5Applied(tx *sql.Tx) (bool, error) {
+	tableExists, err := hasTable(tx, "explore_context")
+	if err != nil {
+		return false, err
+	}
+	if !tableExists {
+		return false, nil
+	}
+
+	insertTrigger, err := hasTrigger(tx, "explore_context_version_insert")
+	if err != nil {
+		return false, err
+	}
+	if !insertTrigger {
+		return false, nil
+	}
+
+	updateTrigger, err := hasTrigger(tx, "explore_context_version_update")
+	if err != nil {
+		return false, err
+	}
+	return updateTrigger, nil
+}
+
 func hasTable(tx *sql.Tx, table string) (bool, error) {
 	var count int
 	if err := tx.QueryRow(
 		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`,
 		table,
+	).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func hasTrigger(tx *sql.Tx, trigger string) (bool, error) {
+	var count int
+	if err := tx.QueryRow(
+		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'trigger' AND name = ?`,
+		trigger,
 	).Scan(&count); err != nil {
 		return false, err
 	}
@@ -335,4 +383,65 @@ CREATE TABLE IF NOT EXISTS config (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+`
+
+const schemaV4 = `
+CREATE TABLE IF NOT EXISTS knowledge_entries (
+	id                    TEXT PRIMARY KEY,
+	content               TEXT NOT NULL,
+	category              TEXT NOT NULL CHECK(category IN ('pattern','pitfall','preference','convention')),
+	tags                  TEXT NOT NULL DEFAULT '[]',
+	source_task_id        TEXT REFERENCES tasks(id),
+	source_interaction_id TEXT REFERENCES task_interactions(id),
+	confidence            REAL NOT NULL DEFAULT 1.0,
+	provenance_hash       TEXT NOT NULL,
+	superseded_by         TEXT REFERENCES knowledge_entries(id),
+	created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge_entries(category);
+CREATE INDEX IF NOT EXISTS idx_knowledge_source_task ON knowledge_entries(source_task_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_superseded ON knowledge_entries(superseded_by);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+	id UNINDEXED,
+	content,
+	tags,
+	tokenize='porter'
+);
+
+-- db_version triggers
+CREATE TRIGGER IF NOT EXISTS knowledge_version_insert
+AFTER INSERT ON knowledge_entries
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS knowledge_version_update
+AFTER UPDATE ON knowledge_entries
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+`
+
+const schemaV5 = `
+CREATE TABLE IF NOT EXISTS explore_context (
+	id         INTEGER PRIMARY KEY CHECK (id = 1),
+	content    TEXT NOT NULL,
+	hash       TEXT NOT NULL,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER IF NOT EXISTS explore_context_version_insert
+AFTER INSERT ON explore_context
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS explore_context_version_update
+AFTER UPDATE ON explore_context
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
 `

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/knowledge"
 	planpkg "github.com/jasjeetmavi/orca/internal/plan"
 	"github.com/jasjeetmavi/orca/internal/review"
 )
@@ -200,7 +201,8 @@ func (s *Server) HandleTasksRequestPlanChangesTool(argsRaw json.RawMessage) (int
 	}
 
 	description := strings.TrimSpace(t.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
-	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, s.repoDir, interactions)
+	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, s.repoDir, interactions).
+		WithKnowledge(knowledge.NewStore(s.db))
 	planContent, err := generator.Generate(taskID, t.Title, description)
 	if err != nil {
 		return nil, fmt.Errorf("generate plan: %w", err)

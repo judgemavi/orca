@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as KnowledgeRouteImport } from './routes/knowledge'
 import { Route as ConfigRouteImport } from './routes/config'
 import { Route as TaskIdRouteImport } from './routes/$taskId'
 import { Route as IndexRouteImport } from './routes/index'
 
+const KnowledgeRoute = KnowledgeRouteImport.update({
+  id: '/knowledge',
+  path: '/knowledge',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConfigRoute = ConfigRouteImport.update({
   id: '/config',
   path: '/config',
@@ -33,34 +39,45 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$taskId': typeof TaskIdRoute
   '/config': typeof ConfigRoute
+  '/knowledge': typeof KnowledgeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$taskId': typeof TaskIdRoute
   '/config': typeof ConfigRoute
+  '/knowledge': typeof KnowledgeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$taskId': typeof TaskIdRoute
   '/config': typeof ConfigRoute
+  '/knowledge': typeof KnowledgeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$taskId' | '/config'
+  fullPaths: '/' | '/$taskId' | '/config' | '/knowledge'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$taskId' | '/config'
-  id: '__root__' | '/' | '/$taskId' | '/config'
+  to: '/' | '/$taskId' | '/config' | '/knowledge'
+  id: '__root__' | '/' | '/$taskId' | '/config' | '/knowledge'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   TaskIdRoute: typeof TaskIdRoute
   ConfigRoute: typeof ConfigRoute
+  KnowledgeRoute: typeof KnowledgeRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/knowledge': {
+      id: '/knowledge'
+      path: '/knowledge'
+      fullPath: '/knowledge'
+      preLoaderRoute: typeof KnowledgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/config': {
       id: '/config'
       path: '/config'
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   TaskIdRoute: TaskIdRoute,
   ConfigRoute: ConfigRoute,
+  KnowledgeRoute: KnowledgeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

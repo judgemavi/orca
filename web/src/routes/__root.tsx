@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, Link, createRootRoute } from '@tanstack/react-router'
-import { Moon, Settings, Sun } from 'lucide-react'
+import { Brain, Moon, Settings, Sun } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { handleWSEvent } from '../lib/wsQueryBridge'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -78,6 +78,14 @@ const RootLayout = () => {
           <div className="flex items-center gap-2">
             <Button onClick={cycleTheme} size="icon" aria-label="Toggle theme">
               <ThemeIcon size={14} />
+            </Button>
+            <Button asChild size="icon">
+              <Link
+                to="/knowledge"
+                className="rounded border border-border-subtle px-2.5 py-1 text-xs font-medium hover:no-underline"
+              >
+                <Brain size={14} />
+              </Link>
             </Button>
             <Button asChild size="icon">
               <Link to="/config" className="btn-icon" aria-label="Open config">

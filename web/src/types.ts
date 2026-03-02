@@ -147,6 +147,39 @@ export interface ProposedTask {
   suggested_tool: string
 }
 
+export type KnowledgeCategory =
+  | 'pattern'
+  | 'pitfall'
+  | 'preference'
+  | 'convention'
+
+export interface KnowledgeEntry {
+  id: string
+  content: string
+  category: KnowledgeCategory
+  tags: string[]
+  confidence: number
+  source_task_id?: string
+  source_interaction_id?: string
+  provenance_hash: string
+  superseded_by?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ListKnowledgeParams {
+  category?: KnowledgeCategory
+  tag?: string
+  q?: string
+  limit?: number
+}
+
+export interface UpdateKnowledgeInput {
+  content?: string
+  confidence?: number
+  category?: KnowledgeCategory
+}
+
 export type KnownWSEvent =
   | WSEventBase<'task.created', Task>
   | WSEventBase<'task.updated', Task | { id: string }>

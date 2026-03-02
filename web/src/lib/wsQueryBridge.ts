@@ -156,6 +156,25 @@ export function handleWSEvent(qc: QueryClient, event: WSEvent) {
     return
   }
 
+  if (event.type.startsWith('retro.')) {
+    const tid = getTaskIDFromUnknown(event.data)
+    const queries = [
+      qc.invalidateQueries({ queryKey: queryKeys.operations() }),
+      qc.invalidateQueries({ queryKey: queryKeys.status }),
+    ]
+    if (tid) {
+      queries.push(
+        qc.invalidateQueries({ queryKey: queryKeys.task(tid) }),
+        qc.invalidateQueries({ queryKey: queryKeys.taskInteractions(tid) }),
+      )
+    }
+    if (event.type === 'retro.completed') {
+      queries.push(qc.invalidateQueries({ queryKey: queryKeys.knowledge }))
+    }
+    void Promise.all(queries)
+    return
+  }
+
   if (SIGNAL_PREFIXES.some((p) => event.type.startsWith(p))) {
     void Promise.all([
       qc.invalidateQueries({ queryKey: queryKeys.operations() }),

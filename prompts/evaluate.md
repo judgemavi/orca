@@ -22,6 +22,9 @@ If task is focused on a single concern/module, `needs_breakdown` should be `fals
 Respond with ONLY a JSON object in this exact shape:
 {"needs_breakdown": bool, "confidence": float, "reasoning": string, "suggested_subtask_count": int}
 
+Example response:
+{"needs_breakdown": true, "confidence": 0.86, "reasoning": "Touches API handlers, task store logic, and UI query wiring across multiple files.", "suggested_subtask_count": 3}
+
 Rules:
 - `confidence` must be between 0.0 and 1.0
 - `suggested_subtask_count` must be 0 when `needs_breakdown` is false
