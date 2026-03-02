@@ -36,7 +36,7 @@ Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cance
 - Provenance-aware memory lifecycle (provenance hashes, supersession, confidence reinforcement/decay)
 - Auto-explore on `orca init` (cold-start context + seeded memory)
 - Post-merge automation: retro per merged task, then memory sync
-- Git-aware memory sync with commit-walking + tree-sitter classification (`none|body|structural|deleted`)
+- Git-aware memory sync with commit-walking + diff magnitude classification (`minor|medium|major|deleted|renamed`)
 - Lazy stale-memory refresh during retrieval (only queried stale entries are refreshed)
 - Sync health surfaces in API/UI/MCP (`/status`, memory page banner, `memory_status`)
 - MCP server for agentic orchestration (task, planning, review, memory, and ops tools)
@@ -155,12 +155,13 @@ orca cleanup                 [--dry-run]
   - Task merges run retro automatically per merged task.
   - One sync runs after merge to walk commits since `last_synced_commit`.
 - Retrieval is budgeted in 4 layers: `project-summary`, file-path matches, FTS semantic matches, and sibling active tasks.
-- Git sync uses commit-walking + tree-sitter classification (`orca memory sync`, `POST /api/v1/memory/sync`, MCP `memory_sync`).
-- Sync effects:
-  - `none`: bump `covered_at_commit`
-  - `body`: decay confidence (`x0.95`) and bump `covered_at_commit`
-  - `structural`: mark entry `stale=1` (lazy refresh on retrieval)
+- Git sync uses commit-walking + diff magnitude classification (`orca memory sync`, `POST /api/v1/memory/sync`, MCP `memory_sync`).
+- Sync effects by change magnitude:
+  - `minor` (<20 lines): decay confidence (`×0.95`) and bump `covered_at_commit`
+  - `medium` (20-100 lines): decay confidence (`×0.85`) and bump `covered_at_commit`
+  - `major` (>100 lines): decay confidence (`×0.70`) and mark entry `stale=1` (lazy refresh on retrieval)
   - `deleted`: supersede entry
+  - `renamed`: update file path associations
 - Explore seeding writes `explore` memory with `project-summary` / `explore-seed` tags and file associations, then supersedes older explore entries.
 - Reinforcement rules: successful tasks (`review`) boost confidence for memory used during planning, failed tasks decay those same entries.
 - Batch runs apply bulk confidence decay to stale, unused memory (with a floor).
@@ -208,7 +209,8 @@ internal/
   explore/          Codebase exploration + explore memory seeding
   integrator/       Merge and validation
   interaction/      LLM interaction persistence (tokens, cost, diffs)
-  memory/           RAG memory store + FTS5 search + git sync
+  memory/           RAG memory store + FTS5 search + git sync + retrieval + refresh
+  diffclass/        Git diff magnitude classification for memory sync
   llm/              JSON extraction from LLM output
   logging/          Rotating log writer + querying
   mcp/              MCP server tool handlers/schemas
