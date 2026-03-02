@@ -139,6 +139,7 @@ func runInitAutoExplore(repoDir string, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("auto explore: %w", err)
 	}
+	setInitSyncBaseline(cfg, memoryStore, db, repoDir)
 
 	contextSize := len(strings.TrimSpace(explore.LoadContext(repoDir)))
 	afterSeeded, _ := memoryStore.List(memory.ListOpts{Tag: "explore-seed"})
@@ -149,6 +150,31 @@ func runInitAutoExplore(repoDir string, cfg *config.Config) error {
 
 	fmt.Printf("Initial exploration complete: context=%d bytes, memory seeded=%d, stored=%s\n", contextSize, seededDelta, outPath)
 	return nil
+}
+
+func setInitSyncBaseline(cfg *config.Config, memoryStore *memory.Store, db *state.DB, repoDir string) {
+	if cfg == nil || memoryStore == nil || db == nil {
+		return
+	}
+	syncer := newConfiguredMemorySyncer(cfg, memoryStore, db, repoDir)
+	if syncer == nil {
+		return
+	}
+	head, err := gitHeadSHA(repoDir)
+	if err != nil || head == "" {
+		return
+	}
+	_ = syncer.SetLastSyncedCommit(head)
+}
+
+func gitHeadSHA(repoDir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = repoDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse HEAD: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func runInitPreflight(cwd string, yes bool) (*config.Config, bool, error) {

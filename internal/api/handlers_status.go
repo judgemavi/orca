@@ -40,7 +40,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	contextExists = memoryTotal > 0
-	contextStale = contextStale || memoryStaleCount > 0
 
 	status := map[string]interface{}{
 		"project":             s.cfg.Project.Name,

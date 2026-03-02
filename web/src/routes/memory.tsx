@@ -128,11 +128,6 @@ function MemoryPage() {
     return memoryQuery.data ?? []
   }, [memoryQuery.data, queryText, semanticQuery.data])
 
-  const staleEntries = useMemo(
-    () => (memoryQuery.data ?? []).filter((entry) => entry.stale),
-    [memoryQuery.data],
-  )
-
   const allFilePaths = useMemo(() => {
     const set = new Set<string>()
     for (const entry of memoryQuery.data ?? []) {
@@ -536,6 +531,7 @@ function MemoryPage() {
   const listIsError = hasSemanticQuery
     ? semanticQuery.isError
     : memoryQuery.isError
+  const status = statusQuery.data
 
   return (
     <div className="flex min-h-0 flex-1 flex-col py-4">
@@ -580,13 +576,15 @@ function MemoryPage() {
           >
             {syncMutation.isPending ? 'Syncing…' : 'Sync'}
           </Button>
-          {staleEntries.length > 0 ? (
+          {(status?.memory_stale_count ?? 0) > 0 ? (
             <Button
               variant="default"
               onClick={() =>
                 refreshMutation.mutate(undefined, {
                   onSuccess: () =>
-                    toast.success(`Refreshed ${staleEntries.length} stale entries`),
+                    toast.success(
+                      `Refreshed ${status?.memory_stale_count ?? 0} stale entries`,
+                    ),
                   onError: (error) =>
                     toast.error(
                       error instanceof Error ? error.message : 'Refresh failed',
@@ -601,49 +599,69 @@ function MemoryPage() {
         </div>
       </div>
 
-      {statusQuery.data && (
-        <div
-          className={`mb-3 rounded-md border px-3 py-2 text-sm ${
-            !statusQuery.data.last_synced_commit
-              ? 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
-              : statusQuery.data.sync_needed || statusQuery.data.context_stale
-                ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-          }`}
-        >
-          {!statusQuery.data.last_synced_commit ? (
-            <div className="flex items-center justify-between gap-2">
-              <span>Memory has never been synced.</span>
+      {status && (
+        <div className="mb-3 space-y-2">
+          <div
+            className={`rounded-md border px-3 py-2 text-sm ${
+              !status.last_synced_commit
+                ? 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                : status.sync_needed
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+            }`}
+          >
+            {!status.last_synced_commit ? (
+              <div className="flex items-center justify-between gap-2">
+                <span>Memory sync: never synced.</span>
+                <Button
+                  className="px-2 py-1 text-xs"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                >
+                  {syncMutation.isPending ? 'Syncing…' : 'Sync now'}
+                </Button>
+              </div>
+            ) : status.sync_needed ? (
+              <div className="flex items-center justify-between gap-2">
+                <span>Memory sync: {status.commits_behind} commits behind.</span>
+                <Button
+                  className="px-2 py-1 text-xs"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                >
+                  {syncMutation.isPending ? 'Syncing…' : 'Sync now'}
+                </Button>
+              </div>
+            ) : (
+              <span>Memory sync: up to date ({status.memory_total} entries).</span>
+            )}
+          </div>
+
+          {status.memory_stale_count > 0 ? (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+              <span>{status.memory_stale_count} entries need refresh.</span>
               <Button
                 className="px-2 py-1 text-xs"
-                onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending}
+                onClick={() => refreshMutation.mutate(undefined)}
+                disabled={refreshMutation.isPending}
               >
-                {syncMutation.isPending ? 'Syncing…' : 'Sync now'}
+                {refreshMutation.isPending ? 'Refreshing…' : 'Refresh all'}
               </Button>
             </div>
-          ) : statusQuery.data.sync_needed || statusQuery.data.context_stale ? (
-            <div className="flex items-center justify-between gap-2">
-              <span>
-                Memory is {statusQuery.data.commits_behind} commits behind with{' '}
-                {statusQuery.data.memory_stale_count} stale entries
-                {statusQuery.data.context_stale
-                  ? ' and context is stale.'
-                  : '.'}
-              </span>
+          ) : null}
+
+          {status.context_stale ? (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+              <span>Explore context is stale.</span>
               <Button
                 className="px-2 py-1 text-xs"
-                onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending}
+                onClick={() => exploreMutation.mutate()}
+                disabled={exploreMutation.isPending}
               >
-                {syncMutation.isPending ? 'Syncing…' : 'Sync now'}
+                {exploreMutation.isPending ? 'Exploring…' : 'Re-explore'}
               </Button>
             </div>
-          ) : (
-            <span>
-              Memory up to date ({statusQuery.data.memory_total} entries).
-            </span>
-          )}
+          ) : null}
         </div>
       )}
 
