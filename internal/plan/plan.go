@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/driver"
-	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
+	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -27,6 +28,7 @@ type Generator struct {
 	interactions *interaction.Store
 	memory       *memory.Store
 	syncer       *memory.Syncer
+	taskStore    *task.Store
 }
 
 // New creates a plan Generator.
@@ -49,6 +51,11 @@ func (g *Generator) WithSyncer(syncer *memory.Syncer) *Generator {
 	return g
 }
 
+func (g *Generator) WithTaskStore(store *task.Store) *Generator {
+	g.taskStore = store
+	return g
+}
+
 func (g *Generator) Generate(taskID, title, description string) (string, error) {
 	return g.generate(taskID, title, description, "")
 }
@@ -64,20 +71,25 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 		}
 	}
 
-	memorySection := ""
+	contextSection := ""
 	usedMemoryIDs := []string{}
 	usedProvenanceHashes := []string{}
 	if g.memory != nil {
-		query := strings.TrimSpace(title + "\n\n" + description)
-		entries, err := g.memory.Search(query, 10)
+		retriever := memory.NewRetriever(g.memory, g.taskStore, g.interactions, g.repoDir).WithSyncer(g.syncer)
+		retrieved, err := retriever.Retrieve(memory.RetrievalOpts{
+			TaskTitle:       title,
+			TaskDescription: description,
+			ExcludeTaskID:   taskID,
+		})
 		if err != nil {
-			slog.Warn("plan: memory search failed", "task_id", taskID, "err", err)
+			slog.Warn("plan: retrieval failed", "task_id", taskID, "err", err)
 		} else {
-			memorySection, usedMemoryIDs, usedProvenanceHashes = buildMemorySection(entries)
+			contextSection = retriever.BuildPromptSection(retrieved)
+			usedMemoryIDs, usedProvenanceHashes = collectMemoryUsage(retrieved)
 		}
 	}
 
-	prompt := buildPlanPrompt(explore.LoadContext(g.repoDir), memorySection, title, description)
+	prompt := buildPlanPrompt(contextSection, title, description)
 	selectedModel := g.model
 	if model != "" {
 		selectedModel = model
@@ -145,6 +157,7 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 	if strings.TrimSpace(generatedPlan) == "" {
 		return "", fmt.Errorf("planner returned empty plan")
 	}
+	g.associateTaskFiles(taskID, generatedPlan)
 	return generatedPlan, nil
 }
 
@@ -153,16 +166,12 @@ func parsePlanResponse(stdout string) string {
 	return strings.TrimSpace(stdout)
 }
 
-func buildPlanPrompt(codebaseContext, memorySection, title, description string) string {
-	contextSection := ""
-	if strings.TrimSpace(codebaseContext) != "" {
-		contextSection = "## Codebase Context\n\n" + codebaseContext + "\n\n"
+func buildPlanPrompt(contextSection, title, description string) string {
+	contextBlock := ""
+	if strings.TrimSpace(contextSection) != "" {
+		contextBlock = strings.TrimSpace(contextSection) + "\n\n"
 	}
-	memoryBlock := ""
-	if strings.TrimSpace(memorySection) != "" {
-		memoryBlock = strings.TrimSpace(memorySection) + "\n\n"
-	}
-	prompt := fmt.Sprintf(prompts.Plan, contextSection+memoryBlock, title, description)
+	prompt := fmt.Sprintf(prompts.Plan, contextBlock, title, description)
 	return strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n" + prompt
 }
 
@@ -250,4 +259,83 @@ func normalizeUniqueStrings(values []string) []string {
 		normalized = append(normalized, v)
 	}
 	return normalized
+}
+
+func collectMemoryUsage(retrieved *memory.RetrievalResult) ([]string, []string) {
+	if retrieved == nil {
+		return []string{}, []string{}
+	}
+	ids := make([]string, 0, 16)
+	hashes := make([]string, 0, 16)
+	seenIDs := map[string]struct{}{}
+	seenHashes := map[string]struct{}{}
+
+	appendEntry := func(entry *memory.Entry) {
+		if entry == nil {
+			return
+		}
+		if id := strings.TrimSpace(entry.ID); id != "" {
+			if _, ok := seenIDs[id]; !ok {
+				seenIDs[id] = struct{}{}
+				ids = append(ids, id)
+			}
+		}
+		if hash := strings.TrimSpace(entry.ProvenanceHash); hash != "" {
+			if _, ok := seenHashes[hash]; !ok {
+				seenHashes[hash] = struct{}{}
+				hashes = append(hashes, hash)
+			}
+		}
+	}
+
+	appendEntry(retrieved.Summary)
+	for _, entry := range retrieved.FileMatches {
+		appendEntry(entry)
+	}
+	for _, entry := range retrieved.Relevant {
+		appendEntry(entry)
+	}
+	return ids, hashes
+}
+
+var planFilePathPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9_./-])([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`)
+
+func (g *Generator) associateTaskFiles(taskID, planContent string) {
+	if g.taskStore == nil || strings.TrimSpace(taskID) == "" {
+		return
+	}
+	paths := extractPlanFilePaths(planContent)
+	if len(paths) == 0 {
+		return
+	}
+	if err := g.taskStore.AssociateFiles(taskID, paths); err != nil {
+		slog.Warn("plan: associate task files failed", "task_id", taskID, "err", err)
+	}
+}
+
+func extractPlanFilePaths(planContent string) []string {
+	matches := planFilePathPattern.FindAllStringSubmatch(planContent, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(matches))
+	paths := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		path := strings.TrimSpace(strings.Trim(m[1], ".,:;()[]{}<>\"'`"))
+		if path == "" || strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return paths
 }

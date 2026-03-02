@@ -204,6 +204,7 @@ func (s *Server) HandleTasksRequestPlanChangesTool(argsRaw json.RawMessage) (int
 	memStore := memory.NewStore(s.db)
 	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, s.repoDir, interactions).
 		WithMemory(memStore).
+		WithTaskStore(s.taskStore).
 		WithSyncer(s.newMemorySyncer(memStore))
 	planContent, err := generator.Generate(taskID, t.Title, description)
 	if err != nil {

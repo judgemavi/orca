@@ -16,6 +16,11 @@ Skip:
 
 Keep it under 300 lines. Prioritize insight over completeness.
 
+Output format:
+1. A short "Project Summary" section (5-10 lines max) with stack, architecture style, and key conventions.
+2. Any additional context sections you consider high-signal.
+3. A `## Memory Extraction` section (JSON array only) with discrete, self-contained entries.
+
 ## Memory Extraction
 
 After the context document, add a section exactly titled `## Memory Extraction` and include a JSON array only:
@@ -27,4 +32,5 @@ After the context document, add a section exactly titled `## Memory Extraction` 
 Rules:
 - Use repo-root-relative `file_paths`.
 - Exclude paths that are not tracked by git.
+- Each entry must be understandable on its own without requiring other entries.
 - Return `[]` when there is no durable memory to add.

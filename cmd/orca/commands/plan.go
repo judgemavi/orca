@@ -10,6 +10,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -88,7 +89,10 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 	model := cfg.ResolveModelForPhase(interaction.PhasePlan, "", selectedDriver)
 
 	repoDir, _ := os.Getwd()
-	breaker := breakdown.New(selectedTool, selectedDriver, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
+	breaker := breakdown.New(selectedTool, selectedDriver, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+		WithMemory(memory.NewStore(db)).
+		WithTaskStore(store).
+		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))
 
 	fmt.Printf("Breaking down: %s\n\n", goal)
 	tasks, _, err := breaker.Run(parentTaskID, goal)

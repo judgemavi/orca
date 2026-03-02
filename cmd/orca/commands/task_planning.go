@@ -57,6 +57,7 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 
 	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
 		WithMemory(memory.NewStore(db)).
+		WithTaskStore(store).
 		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))
 	var planContent string
 	fmt.Printf("Generating plan for task %s\n", short(id))
@@ -166,6 +167,9 @@ func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
 	}
 
 	evaluator := evaluate.New(toolName, d, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
+	evaluator.WithMemory(memory.NewStore(db)).
+		WithTaskStore(store).
+		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))
 	var result *evaluate.EvaluationResult
 	fmt.Println("Evaluating task complexity...")
 	done := make(chan struct{})
@@ -326,6 +330,7 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 	description := strings.TrimSpace(tk.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
 	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interactions).
 		WithMemory(memory.NewStore(db)).
+		WithTaskStore(store).
 		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))
 
 	fmt.Printf("Regenerating plan for task %s\n", short(taskID))

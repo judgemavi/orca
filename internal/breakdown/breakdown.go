@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/driver"
-	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
+	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -30,6 +31,9 @@ type Breaker struct {
 	timeout      time.Duration
 	repoDir      string
 	interactions *interaction.Store
+	memoryStore  *memory.Store
+	taskStore    *task.Store
+	syncer       *memory.Syncer
 }
 
 func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Breaker {
@@ -40,10 +44,38 @@ func New(toolName string, d driver.Driver, model string, timeout time.Duration, 
 	return &Breaker{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
+func (b *Breaker) WithMemory(store *memory.Store) *Breaker {
+	b.memoryStore = store
+	return b
+}
+
+func (b *Breaker) WithTaskStore(store *task.Store) *Breaker {
+	b.taskStore = store
+	return b
+}
+
+func (b *Breaker) WithSyncer(syncer *memory.Syncer) *Breaker {
+	b.syncer = syncer
+	return b
+}
+
 func (b *Breaker) Run(taskID *string, goal string) ([]ProposedTask, string, error) {
 	contextSection := ""
-	if ctx := explore.LoadContext(b.repoDir); ctx != "" {
-		contextSection = "## Codebase Context\n\n" + ctx + "\n\n"
+	if b.memoryStore != nil {
+		retriever := memory.NewRetriever(b.memoryStore, b.taskStore, b.interactions, b.repoDir).WithSyncer(b.syncer)
+		excludeTaskID := ""
+		if taskID != nil {
+			excludeTaskID = strings.TrimSpace(*taskID)
+		}
+		if retrieved, err := retriever.Retrieve(memory.RetrievalOpts{
+			TaskTitle:       "Task Breakdown",
+			TaskDescription: goal,
+			ExcludeTaskID:   excludeTaskID,
+		}); err == nil {
+			if section := retriever.BuildPromptSection(retrieved); strings.TrimSpace(section) != "" {
+				contextSection = strings.TrimSpace(section) + "\n\n"
+			}
+		}
 	}
 	prompt := fmt.Sprintf(prompts.Breakdown, contextSection, goal)
 

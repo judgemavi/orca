@@ -203,6 +203,7 @@ func (e *Explorer) Run() (string, error) {
 	return outPath, nil
 }
 
+// Deprecated: retrieval and planning should read from memory entries, not explore_context.
 func LoadContext(repoDir string) string {
 	dbPath := filepath.Join(repoDir, stateDBFile)
 	if info, err := os.Stat(dbPath); err == nil && !info.IsDir() {
@@ -235,6 +236,7 @@ func WriteManualContextFromFile(repoDir, sourcePath string) (string, error) {
 	return WriteManualContext(repoDir, string(data))
 }
 
+// Deprecated: sync staleness should be derived from memory status.
 func IsStale(repoDir string) (bool, error) {
 	dbPath := filepath.Join(repoDir, stateDBFile)
 	if _, err := os.Stat(dbPath); err != nil {
@@ -263,6 +265,7 @@ func IsStale(repoDir string) (bool, error) {
 	return strings.TrimSpace(stored) != current, nil
 }
 
+// Deprecated: context age is legacy explore_context metadata.
 func ContextAge(repoDir string) time.Duration {
 	dbPath := filepath.Join(repoDir, stateDBFile)
 	if _, err := os.Stat(dbPath); err != nil {
@@ -455,7 +458,7 @@ func buildExistingMemorySection(entries []*memory.Entry) string {
 }
 
 func (e *Explorer) seedMemory(contextContent string, entries []extractedMemoryEntry) error {
-	if e.memory == nil || len(entries) == 0 {
+	if e.memory == nil {
 		return nil
 	}
 	tracked, err := trackedFileSet(e.repoDir)
@@ -463,17 +466,49 @@ func (e *Explorer) seedMemory(contextContent string, entries []extractedMemoryEn
 		tracked = map[string]struct{}{}
 	}
 
-	existing, err := e.memory.List(memory.ListOpts{Tag: "explore-seed"})
+	existingSummaries, err := e.memory.List(memory.ListOpts{Tag: "project-summary"})
 	if err != nil {
 		return err
 	}
-	oldIDs := make([]string, 0, len(existing))
-	for _, entry := range existing {
-		oldIDs = append(oldIDs, entry.ID)
+	existingSeeds, err := e.memory.List(memory.ListOpts{Tag: "explore-seed"})
+	if err != nil {
+		return err
+	}
+	coveredAtCommit, _ := currentHeadCommit(e.repoDir)
+	summaryID := ""
+	summaryContent := buildProjectSummary(contextContent)
+	if summaryContent != "" {
+		provenanceHash := hashProjectSummary(contextContent, summaryContent)
+		duplicate, dupErr := e.memory.GetByProvenanceHash(provenanceHash)
+		if dupErr != nil {
+			return dupErr
+		}
+		if duplicate != nil && strings.TrimSpace(duplicate.SupersededBy) == "" {
+			summaryID = duplicate.ID
+			if updateErr := e.memory.Update(duplicate.ID, map[string]interface{}{
+				"covered_at_commit": coveredAtCommit,
+				"stale":             false,
+			}); updateErr != nil {
+				return updateErr
+			}
+		} else {
+			summaryEntry := &memory.Entry{
+				Content:         summaryContent,
+				Category:        "architecture",
+				Tags:            []string{"project-summary"},
+				SourceType:      "explore",
+				CoveredAtCommit: coveredAtCommit,
+				Confidence:      0.95,
+				ProvenanceHash:  provenanceHash,
+			}
+			if err := e.memory.Create(summaryEntry); err != nil {
+				return err
+			}
+			summaryID = summaryEntry.ID
+		}
 	}
 
-	createdIDs := make([]string, 0, len(entries))
-	coveredAtCommit, _ := currentHeadCommit(e.repoDir)
+	createdSeedIDs := make([]string, 0, len(entries))
 	for _, extracted := range entries {
 		if strings.TrimSpace(extracted.Content) == "" {
 			continue
@@ -511,19 +546,34 @@ func (e *Explorer) seedMemory(contextContent string, entries []extractedMemoryEn
 		if err := e.memory.Create(entry); err != nil {
 			return err
 		}
-		createdIDs = append(createdIDs, entry.ID)
+		createdSeedIDs = append(createdSeedIDs, entry.ID)
 	}
 
-	if len(createdIDs) == 0 {
-		return nil
-	}
-	replacementID := createdIDs[0]
-	for _, oldID := range oldIDs {
-		if oldID == replacementID {
-			continue
+	if summaryID != "" {
+		for _, existing := range existingSummaries {
+			if existing.ID == summaryID {
+				continue
+			}
+			if err := e.memory.Supersede(existing.ID, summaryID); err != nil {
+				return err
+			}
 		}
-		if err := e.memory.Supersede(oldID, replacementID); err != nil {
-			return err
+	}
+
+	replacementSeedID := ""
+	if len(createdSeedIDs) > 0 {
+		replacementSeedID = createdSeedIDs[0]
+	} else if summaryID != "" {
+		replacementSeedID = summaryID
+	}
+	if replacementSeedID != "" {
+		for _, existing := range existingSeeds {
+			if existing.ID == replacementSeedID {
+				continue
+			}
+			if err := e.memory.Supersede(existing.ID, replacementSeedID); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -581,6 +631,34 @@ func hashExploreSeed(contextContent, content, category string, filePaths []strin
 		strings.Join(normalizeStrings(filePaths), ","),
 	}, "\n---\n")))
 	return hex.EncodeToString(sum[:])
+}
+
+func hashProjectSummary(contextContent, summary string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		strings.TrimSpace(contextContent),
+		strings.TrimSpace(summary),
+		"project-summary",
+	}, "\n---\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+func buildProjectSummary(contextContent string) string {
+	lines := strings.Split(strings.TrimSpace(contextContent), "\n")
+	summary := make([]string, 0, 10)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "## Memory Extraction") {
+			break
+		}
+		summary = append(summary, line)
+		if len(summary) == 10 {
+			break
+		}
+	}
+	return strings.TrimSpace(strings.Join(summary, "\n"))
 }
 
 func normalizeStrings(values []string) []string {

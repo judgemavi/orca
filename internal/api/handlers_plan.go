@@ -10,6 +10,7 @@ import (
 
 	"github.com/jasjeetmavi/orca/internal/breakdown"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 )
 
 // ========== Plan (Breakdown) ==========
@@ -165,7 +166,11 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		func() {
 			s.hub.Broadcast(Event{Type: "breakdown.started", Data: map[string]string{"session_id": sessionID}})
 			model := s.cfg.ResolveModelForPhase("plan", "", d)
-			breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions)
+			memStore := memory.NewStore(s.db)
+			breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions).
+				WithMemory(memStore).
+				WithTaskStore(s.taskStore).
+				WithSyncer(s.newMemorySyncer(memStore))
 			tasks, interactionID, err := breaker.Run(nil, req.Goal)
 			if err != nil {
 				data := map[string]string{"error": err.Error(), "session_id": sessionID}

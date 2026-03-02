@@ -54,7 +54,11 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 	model := s.config.ResolveModelForPhase(interaction.PhasePlan, "", d)
 
 	interactions := interaction.NewStore(s.db, ".orca/interactions")
-	breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions)
+	memStore := memory.NewStore(s.db)
+	breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions).
+		WithMemory(memStore).
+		WithTaskStore(s.taskStore).
+		WithSyncer(s.newMemorySyncer(memStore))
 	tasks, _, err := breaker.Run(parentTaskID, goal)
 	if err != nil {
 		return nil, fmt.Errorf("breakdown: %w", err)
@@ -145,6 +149,7 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 	memStore := memory.NewStore(s.db)
 	generator := planpkg.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions).
 		WithMemory(memStore).
+		WithTaskStore(s.taskStore).
 		WithSyncer(s.newMemorySyncer(memStore))
 	var planContent string
 	planContent, err = generator.Generate(taskID, t.Title, t.Description)
@@ -196,7 +201,11 @@ func (s *Server) HandleTasksPlanEvaluateTool(argsRaw json.RawMessage) (interface
 	}
 	model := s.config.ResolveModelForPhase(interaction.PhaseExplore, args.Model, d)
 
-	evaluator := evaluate.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions"))
+	memStore := memory.NewStore(s.db)
+	evaluator := evaluate.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions")).
+		WithMemory(memStore).
+		WithTaskStore(s.taskStore).
+		WithSyncer(s.newMemorySyncer(memStore))
 	var evaluationResult *evaluate.EvaluationResult
 	evaluationResult, err = evaluator.Evaluate(taskID, t.Title, t.Description)
 	if err != nil {

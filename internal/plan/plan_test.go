@@ -10,17 +10,24 @@ import (
 )
 
 func TestBuildPlanPromptMemoryPlacement(t *testing.T) {
-	codebaseContext := "Context line"
-	memorySection := "## Relevant Memory\n\n1. Prefer table-driven tests"
+	contextSection := strings.Join([]string{
+		"## Project Context",
+		"",
+		"Context line",
+		"",
+		"## Relevant Knowledge",
+		"",
+		"1. Prefer table-driven tests",
+	}, "\n")
 
-	prompt := buildPlanPrompt(codebaseContext, memorySection, "Task title", "Task description")
+	prompt := buildPlanPrompt(contextSection, "Task title", "Task description")
 	prefix := strings.TrimSpace(prompts.OutputStyle) + "\n\n---\n\n"
 	if !strings.HasPrefix(prompt, prefix) {
 		t.Fatalf("prompt missing output style prefix")
 	}
 
-	contextIdx := strings.Index(prompt, "## Codebase Context")
-	memoryIdx := strings.Index(prompt, "## Relevant Memory")
+	contextIdx := strings.Index(prompt, "## Project Context")
+	memoryIdx := strings.Index(prompt, "## Relevant Knowledge")
 	taskIdx := strings.Index(prompt, "## Task")
 	if contextIdx == -1 || memoryIdx == -1 || taskIdx == -1 {
 		t.Fatalf("prompt missing expected sections: context=%d memory=%d task=%d", contextIdx, memoryIdx, taskIdx)
@@ -107,5 +114,33 @@ func TestParsePlanResponseKeepsRawJSONAsText(t *testing.T) {
 	got := parsePlanResponse(raw)
 	if got != raw {
 		t.Fatalf("parsePlanResponse() = %q, want %q", got, raw)
+	}
+}
+
+func TestExtractPlanFilePaths(t *testing.T) {
+	plan := `
+## Implementation Plan
+1. Update internal/api/server.go.
+2. Add tests in internal/api/server_test.go
+3. Touch web/src/routes/memory.tsx and README.md
+4. Ignore https://example.com/docs.md
+`
+
+	paths := extractPlanFilePaths(plan)
+	joined := strings.Join(paths, ",")
+	if !strings.Contains(joined, "internal/api/server.go") {
+		t.Fatalf("missing server.go in paths: %v", paths)
+	}
+	if !strings.Contains(joined, "internal/api/server_test.go") {
+		t.Fatalf("missing server_test.go in paths: %v", paths)
+	}
+	if !strings.Contains(joined, "web/src/routes/memory.tsx") {
+		t.Fatalf("missing memory.tsx in paths: %v", paths)
+	}
+	if !strings.Contains(joined, "README.md") {
+		t.Fatalf("missing README.md in paths: %v", paths)
+	}
+	if strings.Contains(joined, "https://example.com/docs.md") {
+		t.Fatalf("unexpected url path in paths: %v", paths)
 	}
 }

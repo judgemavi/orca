@@ -12,7 +12,7 @@ Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 4. `start` — execute ready tasks directly (parallel, isolated worktrees)
 5. `review` — approve, request changes, or run AI review
 6. `merge` — merge approved tasks into integration branch
-7. `retro + sync` — post-merge automation extracts memory and syncs staleness/context
+7. `retro + sync` — post-merge automation extracts memory and syncs staleness
 
 Task flow: `pending → planned → running → review → approved → merged`.
 Post-completion phase: `approved/merged → retro → memory sync` (automatic after merge, also available via CLI/MCP/API).
@@ -36,7 +36,8 @@ Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cance
 - Provenance-aware memory lifecycle (provenance hashes, supersession, confidence reinforcement/decay)
 - Auto-explore on `orca init` (cold-start context + seeded memory)
 - Post-merge automation: retro per merged task, then memory sync
-- Git-aware memory sync with incremental context patching and stale fallback
+- Git-aware memory sync with commit-walking + tree-sitter classification (`none|body|structural|deleted`)
+- Lazy stale-memory refresh during retrieval (only queried stale entries are refreshed)
 - Sync health surfaces in API/UI/MCP (`/status`, memory page banner, `memory_status`)
 - MCP server for agentic orchestration (task, planning, review, memory, and ops tools)
 - Single Go binary with embedded web frontend
@@ -124,12 +125,14 @@ orca merge                   [--dry-run]
 orca serve                   [-p/--port] [--orchestrator]
 orca mcp
 orca memory
-  ├── list                   [--category] [--tag] [--source-type] [--file] [--json]
+  ├── list                   [--category] [--tag] [--source-type] [--file] [--stale] [--covered-before] [--json]
   ├── show <id>
   ├── search <query>         [--limit] [--source-type] [--file] [--json]
+  ├── query <query>          [--limit] [--json]
   ├── edit <id>              [--content] [--confidence] [--category]
-  └── delete <id>            [-y]
-  └── sync
+  ├── delete <id>            [-y]
+  ├── sync
+  └── refresh [id]
 orca orc
 orca status
 orca logs                    [--level] [--task] [--since] [--tail] [-f] [--json]
@@ -142,30 +145,36 @@ orca cleanup                 [--dry-run]
 
 ## Memory Lifecycle
 
-| Source | Created by | Confidence | Decay | Invalidated by |
-|--------|------------|------------|-------|----------------|
-| `retro` | Retro phase (`tasks retro`) | LLM-assigned | Batch decay + git sync (`x0.8`) | Supersession, confidence floor |
-| `task` | Explore seeding (`explore`) | Typically high (`~0.95`) | Batch decay + git sync (`x0.9`) | Superseded by newer explore seeds |
-| `commit` | Manual/future commit-linked memory | High | Not auto-decayed by sync | Superseded when affected files change |
+| Source | Created by | Typical confidence | Invalidated by |
+|--------|------------|--------------------|----------------|
+| `explore` | `orca init` / `orca explore` | High (`~0.95`) | Sync marks stale/superseded when files structurally change or are deleted |
+| `retro` | Post-merge retro (`tasks retro`, auto on merge) | LLM-assigned | Supersession, confidence decay, staleness from sync |
 
 - Lifecycle flow:
-  - `orca init` runs initial explore (context + explore-seed memory).
+  - `orca init` runs initial explore and seeds memory with a `project-summary` plus `explore-seed` entries.
   - Task merges run retro automatically per merged task.
-  - One sync runs after merge to decay stale memory and patch `explore_context`.
-- Git sync uses `last_synced_commit` and changed-file matching (`orca memory sync`, `POST /api/v1/memory/sync`, MCP `memory_sync`).
-- Sync incrementally patches `explore_context` from git diff. If diff is too large or LLM update fails, sync marks context stale instead of failing merge.
-- Explore seeding writes new `task` memory with `explore-seed` tags and file associations, then supersedes older explore-seeded entries.
+  - One sync runs after merge to walk commits since `last_synced_commit`.
+- Retrieval is budgeted in 4 layers: `project-summary`, file-path matches, FTS semantic matches, and sibling active tasks.
+- Git sync uses commit-walking + tree-sitter classification (`orca memory sync`, `POST /api/v1/memory/sync`, MCP `memory_sync`).
+- Sync effects:
+  - `none`: bump `covered_at_commit`
+  - `body`: decay confidence (`x0.95`) and bump `covered_at_commit`
+  - `structural`: mark entry `stale=1` (lazy refresh on retrieval)
+  - `deleted`: supersede entry
+- Explore seeding writes `explore` memory with `project-summary` / `explore-seed` tags and file associations, then supersedes older explore entries.
 - Reinforcement rules: successful tasks (`review`) boost confidence for memory used during planning, failed tasks decay those same entries.
 - Batch runs apply bulk confidence decay to stale, unused memory (with a floor).
 - Retro/sync are idempotent; re-triggering after failures is safe.
 
 ## Memory API
 
-- `GET /api/v1/memory` (supports `category`, `tag`, `source_type`, `file_path`, `q`, `limit`)
+- `GET /api/v1/memory` (supports `category`, `tag`, `source_type`, `file_path`, `stale`, `covered_before`, `q`, `limit`)
 - `GET /api/v1/memory/{id}`
+- `GET /api/v1/memory/query?q=...`
 - `PATCH /api/v1/memory/{id}`
 - `DELETE /api/v1/memory/{id}`
 - `POST /api/v1/memory/sync`
+- `POST /api/v1/memory/refresh` (optional body: `{"entry_id":"..."}`)
 - `GET /api/v1/status` (includes `last_synced_commit`, `current_commit`, `sync_needed`, `commits_behind`)
 
 ## MCP
@@ -177,7 +186,7 @@ orca cleanup                 [--dry-run]
 - **Execution:** `tasks_start`, `tasks_stop`, `tasks_resume`
 - **Review/integration:** `tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`
 - **Retro:** `tasks_retro`
-- **Memory:** `memory_list`, `memory_get`, `memory_search`, `memory_update`, `memory_delete`, `memory_sync`, `memory_status`
+- **Memory:** `memory_list`, `memory_get`, `memory_search`, `memory_query`, `memory_update`, `memory_delete`, `memory_sync`, `memory_refresh`, `memory_status`
 - **Interactions:** `interactions_list`, `interaction_get`
 - **Project/config:** `project_status`, `config_get`, `config_update`, `models_list`
 - **Context:** `explore`, `explore_status`
@@ -196,7 +205,7 @@ internal/
   driver/           Pluggable AI tool driver interface
   evaluate/         Task complexity evaluation
   executor/         Batch task execution (RunBatch)
-  explore/          Codebase exploration + staleness
+  explore/          Codebase exploration + explore memory seeding
   integrator/       Merge and validation
   interaction/      LLM interaction persistence (tokens, cost, diffs)
   memory/           RAG memory store + FTS5 search + git sync

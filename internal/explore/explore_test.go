@@ -262,6 +262,17 @@ func TestSeedMemoryCreatesExploreEntriesAndSupersedesOld(t *testing.T) {
 	if err := store.Create(old); err != nil {
 		t.Fatalf("create old seed entry: %v", err)
 	}
+	oldSummary := &memory.Entry{
+		Content:        "Old summary",
+		Category:       "architecture",
+		Tags:           []string{"project-summary"},
+		SourceType:     "explore",
+		Confidence:     0.9,
+		ProvenanceHash: "old-summary-hash",
+	}
+	if err := store.Create(oldSummary); err != nil {
+		t.Fatalf("create old summary entry: %v", err)
+	}
 
 	explorer := &Explorer{repoDir: repoDir, memory: store}
 	err := explorer.seedMemory("context", []extractedMemoryEntry{
@@ -281,26 +292,45 @@ func TestSeedMemoryCreatesExploreEntriesAndSupersedesOld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list memory: %v", err)
 	}
-	if len(current) != 1 {
-		t.Fatalf("list len = %d, want 1 non-superseded entry", len(current))
+	if len(current) != 2 {
+		t.Fatalf("list len = %d, want 2 non-superseded entries", len(current))
 	}
-	newEntry := current[0]
-	if newEntry.SourceType != "explore" {
-		t.Fatalf("source_type = %q, want explore", newEntry.SourceType)
+	var seedEntry, summaryEntry *memory.Entry
+	for _, entry := range current {
+		switch {
+		case contains(entry.Tags, "explore-seed"):
+			seedEntry = entry
+		case contains(entry.Tags, "project-summary"):
+			summaryEntry = entry
+		}
 	}
-	if !contains(newEntry.Tags, "explore-seed") {
-		t.Fatalf("tags = %v, want explore-seed", newEntry.Tags)
+	if seedEntry == nil {
+		t.Fatalf("expected explore-seed entry in %v", current)
 	}
-	if len(newEntry.FilePaths) != 1 || newEntry.FilePaths[0] != "internal/app.go" {
-		t.Fatalf("file_paths = %v, want [internal/app.go]", newEntry.FilePaths)
+	if summaryEntry == nil {
+		t.Fatalf("expected project-summary entry in %v", current)
+	}
+	if seedEntry.SourceType != "explore" || summaryEntry.SourceType != "explore" {
+		t.Fatalf("source types = %q,%q, want explore", seedEntry.SourceType, summaryEntry.SourceType)
+	}
+	if len(seedEntry.FilePaths) != 1 || seedEntry.FilePaths[0] != "internal/app.go" {
+		t.Fatalf("file_paths = %v, want [internal/app.go]", seedEntry.FilePaths)
 	}
 
 	oldReloaded, err := store.Get(old.ID)
 	if err != nil {
 		t.Fatalf("get old entry: %v", err)
 	}
-	if oldReloaded.SupersededBy != newEntry.ID {
-		t.Fatalf("old superseded_by = %q, want %q", oldReloaded.SupersededBy, newEntry.ID)
+	if oldReloaded.SupersededBy != seedEntry.ID {
+		t.Fatalf("old superseded_by = %q, want %q", oldReloaded.SupersededBy, seedEntry.ID)
+	}
+
+	oldSummaryReloaded, err := store.Get(oldSummary.ID)
+	if err != nil {
+		t.Fatalf("get old summary entry: %v", err)
+	}
+	if oldSummaryReloaded.SupersededBy != summaryEntry.ID {
+		t.Fatalf("old summary superseded_by = %q, want %q", oldSummaryReloaded.SupersededBy, summaryEntry.ID)
 	}
 }
 

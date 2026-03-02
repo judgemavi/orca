@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/driver"
-	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/llm"
+	"github.com/jasjeetmavi/orca/internal/memory"
+	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -33,6 +34,9 @@ type Evaluator struct {
 	timeout      time.Duration
 	repoDir      string
 	interactions *interaction.Store
+	memoryStore  *memory.Store
+	taskStore    *task.Store
+	syncer       *memory.Syncer
 }
 
 func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Evaluator {
@@ -41,6 +45,21 @@ func New(toolName string, d driver.Driver, model string, timeout time.Duration, 
 		store = interactions[0]
 	}
 	return &Evaluator{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
+}
+
+func (e *Evaluator) WithMemory(store *memory.Store) *Evaluator {
+	e.memoryStore = store
+	return e
+}
+
+func (e *Evaluator) WithTaskStore(store *task.Store) *Evaluator {
+	e.taskStore = store
+	return e
+}
+
+func (e *Evaluator) WithSyncer(syncer *memory.Syncer) *Evaluator {
+	e.syncer = syncer
+	return e
 }
 
 func (e *Evaluator) Evaluate(taskID, title, description string) (*EvaluationResult, error) {
@@ -52,7 +71,18 @@ func (e *Evaluator) EvaluateWithModel(taskID, title, description, model string) 
 }
 
 func (e *Evaluator) evaluate(taskID, title, description, model string) (*EvaluationResult, error) {
-	prompt := buildEvaluatePrompt(explore.LoadContext(e.repoDir), title, description)
+	contextSection := ""
+	if e.memoryStore != nil {
+		retriever := memory.NewRetriever(e.memoryStore, e.taskStore, e.interactions, e.repoDir).WithSyncer(e.syncer)
+		if retrieved, err := retriever.Retrieve(memory.RetrievalOpts{
+			TaskTitle:       title,
+			TaskDescription: description,
+			ExcludeTaskID:   taskID,
+		}); err == nil {
+			contextSection = retriever.BuildPromptSection(retrieved)
+		}
+	}
+	prompt := buildEvaluatePrompt(contextSection, title, description)
 	descriptionHash := taskDescriptionHash(title, description)
 	selectedModel := e.model
 	if model != "" {
@@ -124,12 +154,12 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 	return evaluationResult, nil
 }
 
-func buildEvaluatePrompt(codebaseContext, title, description string) string {
-	contextSection := ""
-	if strings.TrimSpace(codebaseContext) != "" {
-		contextSection = "## Codebase Context\n\n" + codebaseContext + "\n\n"
+func buildEvaluatePrompt(contextSection, title, description string) string {
+	contextBlock := ""
+	if strings.TrimSpace(contextSection) != "" {
+		contextBlock = strings.TrimSpace(contextSection) + "\n\n"
 	}
-	return fmt.Sprintf(prompts.Evaluate, contextSection, title, description)
+	return fmt.Sprintf(prompts.Evaluate, contextBlock, title, description)
 }
 
 func taskDescriptionHash(title, description string) string {

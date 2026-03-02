@@ -71,7 +71,7 @@ func TestSyncNoOpWhenHeadUnchanged(t *testing.T) {
 func TestSyncClassifiesAndFlagsEntries(t *testing.T) {
 	repoDir := initGitRepoWithCommit(t, map[string]string{
 		"go.mod":              "module example.com/orca\n\ngo 1.22\n",
-		"internal/retro.go":   "package main\n",
+		"internal/retro.go":   "package main\n\nfunc retroValue() int { return 1 }\n",
 		"internal/deleted.go": "package main\n",
 		"internal/other.go":   "package main\n",
 	})
@@ -89,7 +89,7 @@ func TestSyncClassifiesAndFlagsEntries(t *testing.T) {
 		t.Fatalf("set last commit: %v", err)
 	}
 
-	writeRepoFile(t, repoDir, "internal/retro.go", "package main\n// changed\n")
+	writeRepoFile(t, repoDir, "internal/retro.go", "package main\n\nfunc retroValue() int { return 2 }\n")
 	writeRepoFile(t, repoDir, "go.mod", "module example.com/orca\n\ngo 1.23\n")
 	if err := os.Remove(filepath.Join(repoDir, "internal/deleted.go")); err != nil {
 		t.Fatalf("remove deleted file: %v", err)
@@ -208,6 +208,114 @@ func TestSyncStatusIncludesCommitLagAndContextStale(t *testing.T) {
 	}
 	if status.CommitsBehind != 1 {
 		t.Fatalf("commits_behind = %d, want 1", status.CommitsBehind)
+	}
+}
+
+func TestSyncCommitWalkingMarksLatestStructuralAsStale(t *testing.T) {
+	repoDir := initGitRepoWithCommit(t, map[string]string{
+		"internal/retro.go": "package main\n\nfunc retroValue() int { return 1 }\n",
+	})
+	store, db := setupStore(t)
+	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	entry := mustCreateEntryWithOptions(t, store, "retro", "pattern", []string{"sync"}, 1.0, "hash-sync-range", "retro", []string{"internal/retro.go"})
+
+	base := gitOutput(t, repoDir, "rev-parse", "HEAD")
+	if err := syncer.SetLastSyncedCommit(base); err != nil {
+		t.Fatalf("set last synced commit: %v", err)
+	}
+
+	writeRepoFile(t, repoDir, "internal/retro.go", "package main\n\nfunc retroValue() int { return 2 }\n")
+	runGit(t, repoDir, "add", "internal/retro.go")
+	runGit(t, repoDir, "commit", "-m", "body change")
+	bodyCommit := gitOutput(t, repoDir, "rev-parse", "HEAD")
+
+	writeRepoFile(t, repoDir, "internal/retro.go", "package main\n\nfunc retroValue() (int, error) { return 2, nil }\n")
+	runGit(t, repoDir, "add", "internal/retro.go")
+	runGit(t, repoDir, "commit", "-m", "structural change")
+
+	result, err := syncer.Sync()
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if result.CommitCount != 2 {
+		t.Fatalf("commit_count = %d, want 2", result.CommitCount)
+	}
+	if result.Classifications["internal/retro.go"] != "structural" {
+		t.Fatalf("classification = %q, want structural", result.Classifications["internal/retro.go"])
+	}
+	if result.StaleEntries != 1 {
+		t.Fatalf("stale_entries = %d, want 1", result.StaleEntries)
+	}
+
+	reloaded, err := store.Get(entry.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if !reloaded.Stale {
+		t.Fatal("stale = false, want true")
+	}
+	if reloaded.CoveredAtCommit != bodyCommit {
+		t.Fatalf("covered_at_commit = %q, want body commit %q", reloaded.CoveredAtCommit, bodyCommit)
+	}
+}
+
+func TestRefreshWithoutChangesClearsStale(t *testing.T) {
+	repoDir := initGitRepoWithCommit(t, map[string]string{
+		"internal/app.go": "package app\n\nfunc Value() int { return 1 }\n",
+	})
+	store, db := setupStore(t)
+	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
+	entry := mustCreateEntryWithOptions(t, store, "stale", "pattern", []string{"sync"}, 1.0, "hash-sync-refresh", "retro", []string{"internal/app.go"})
+	if err := store.Update(entry.ID, map[string]interface{}{"stale": true, "covered_at_commit": head}); err != nil {
+		t.Fatalf("mark stale: %v", err)
+	}
+
+	result, err := syncer.Refresh(entry.ID)
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if result.Updated != 1 || result.Skipped != 0 {
+		t.Fatalf("refresh result = %+v, want updated=1 skipped=0", result)
+	}
+	reloaded, err := store.Get(entry.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if reloaded.Stale {
+		t.Fatal("stale = true, want false")
+	}
+}
+
+func TestRefreshWithoutLLMSkipsChangedStaleEntry(t *testing.T) {
+	repoDir := initGitRepoWithCommit(t, map[string]string{
+		"internal/app.go": "package app\n\nfunc Value() int { return 1 }\n",
+	})
+	store, db := setupStore(t)
+	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	base := gitOutput(t, repoDir, "rev-parse", "HEAD")
+	entry := mustCreateEntryWithOptions(t, store, "stale", "pattern", []string{"sync"}, 1.0, "hash-sync-refresh-llm", "retro", []string{"internal/app.go"})
+	if err := store.Update(entry.ID, map[string]interface{}{"stale": true, "covered_at_commit": base}); err != nil {
+		t.Fatalf("mark stale: %v", err)
+	}
+
+	writeRepoFile(t, repoDir, "internal/app.go", "package app\n\nfunc Value() int { return 2 }\n")
+	runGit(t, repoDir, "add", "internal/app.go")
+	runGit(t, repoDir, "commit", "-m", "change app")
+
+	result, err := syncer.Refresh(entry.ID)
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if result.Updated != 0 || result.Skipped != 1 {
+		t.Fatalf("refresh result = %+v, want updated=0 skipped=1", result)
+	}
+	reloaded, err := store.Get(entry.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if !reloaded.Stale {
+		t.Fatal("stale = false, want true when llm refresh unavailable")
 	}
 }
 

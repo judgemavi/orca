@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/llm"
+	"github.com/jasjeetmavi/orca/internal/treesitter"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -142,98 +145,100 @@ func (s *Syncer) Sync() (*SyncResult, error) {
 		return result, nil
 	}
 
-	commitCountRaw, err := s.gitOutput("rev-list", "--count", lastCommit+".."+head)
+	commitsRaw, err := s.gitOutput("rev-list", "--reverse", lastCommit+".."+head)
 	if err != nil {
 		return nil, err
 	}
-	commitCountRaw = strings.TrimSpace(commitCountRaw)
-	if commitCountRaw != "" {
-		commitCount, parseErr := strconv.Atoi(commitCountRaw)
-		if parseErr != nil {
-			return nil, fmt.Errorf("parse commit count %q: %w", commitCountRaw, parseErr)
+	commits := splitNonEmptyLines(commitsRaw)
+	result.CommitCount = len(commits)
+	if len(commits) == 0 {
+		result.ContextStale, _ = s.GetContextStaleFlag()
+		if err := s.SetLastSyncedCommit(head); err != nil {
+			return nil, err
 		}
-		result.CommitCount = commitCount
+		return result, nil
 	}
 
-	changedFilesRaw, err := s.gitOutput("diff", "--name-status", lastCommit+".."+head)
-	if err != nil {
-		return nil, err
-	}
-	changedStatusByFile := parseChangedFileStatuses(changedFilesRaw)
-	changedFiles := changedStatusByFile.sortedPaths()
-	classifications := make(map[string]string, len(changedFiles))
-	for _, path := range changedFiles {
-		classifications[path] = classifyChange(path, changedStatusByFile[path])
-	}
-	result.AffectedFiles = changedFiles
-	result.Classifications = classifications
+	classifications := make(map[string]string)
+	affected := make(map[string]struct{})
+	flagged := make(map[string]struct{})
+	staleMarked := make(map[string]struct{})
+	superseded := make(map[string]struct{})
 
-	if len(changedFiles) > 0 {
+	for _, commit := range commits {
+		parent, parentErr := s.parentCommit(commit)
+		if parentErr != nil {
+			return nil, parentErr
+		}
+		changedStatusByFile, changeErr := s.changedFilesForCommit(commit)
+		if changeErr != nil {
+			return nil, changeErr
+		}
+		changedFiles := changedStatusByFile.sortedPaths()
+		if len(changedFiles) == 0 {
+			continue
+		}
+
+		commitClassifications := make(map[string]string, len(changedFiles))
+		for _, path := range changedFiles {
+			classification := s.classifyFileAtCommit(path, changedStatusByFile[path], parent, commit)
+			commitClassifications[path] = classification
+			classifications[path] = mergeClassifications(classifications[path], classification)
+			affected[path] = struct{}{}
+		}
+
 		entries, err := s.store.FindByFilePaths(changedFiles)
 		if err != nil {
 			return nil, err
 		}
-		entryClassification := make(map[string]string, len(entries))
 		for _, entry := range entries {
-			classification := "none"
+			entryClass := "none"
 			for _, path := range entry.FilePaths {
-				if next, ok := classifications[path]; ok {
-					classification = mergeClassifications(classification, next)
+				if next, ok := commitClassifications[path]; ok {
+					entryClass = mergeClassifications(entryClass, next)
 				}
 			}
-			entryClassification[entry.ID] = classification
-		}
-
-		flagged := make(map[string]struct{}, len(entries))
-		for _, entry := range entries {
-			classification := entryClassification[entry.ID]
-			switch classification {
-			case "deleted":
-				if err := s.store.Supersede(entry.ID, entry.ID); err != nil {
-					return nil, err
-				}
-				result.SupersededCount++
-			case "structural":
-				if err := s.store.MarkStale(entry.ID); err != nil {
-					return nil, err
-				}
-				result.StaleEntries++
-			case "body":
-				if err := s.store.DecayEntry(entry.ID, 0.95); err != nil {
-					return nil, err
-				}
-				if err := s.store.UpdateCoveredCommit(entry.ID, head); err != nil {
-					return nil, err
-				}
-			default:
-				if err := s.store.UpdateCoveredCommit(entry.ID, head); err != nil {
-					return nil, err
-				}
+			if entryClass == "none" {
+				continue
 			}
-			if _, ok := flagged[entry.ID]; !ok {
-				flagged[entry.ID] = struct{}{}
-				result.FlaggedEntries++
+			if err := s.applyEntryClassification(entry, entryClass, commit); err != nil {
+				return nil, err
 			}
-		}
-
-		if hasStructuralClassification(classifications) {
-			summaries, listErr := s.store.List(ListOpts{Tag: "project-summary"})
-			if listErr == nil {
-				for _, summary := range summaries {
-					if _, ok := flagged[summary.ID]; ok {
-						continue
-					}
-					if err := s.store.MarkStale(summary.ID); err != nil {
-						return nil, err
-					}
-					flagged[summary.ID] = struct{}{}
-					result.StaleEntries++
-					result.FlaggedEntries++
-				}
+			flagged[entry.ID] = struct{}{}
+			if entryClass == "structural" {
+				staleMarked[entry.ID] = struct{}{}
+			}
+			if entryClass == "deleted" {
+				superseded[entry.ID] = struct{}{}
 			}
 		}
 	}
 
+	result.AffectedFiles = mapKeysSorted(affected)
+	result.Classifications = classifications
+	result.FlaggedEntries = len(flagged)
+	result.StaleEntries = len(staleMarked)
+	result.SupersededCount = len(superseded)
+
+	if hasStructuralClassification(classifications) {
+		summaries, listErr := s.store.List(ListOpts{Tag: "project-summary"})
+		if listErr == nil {
+			for _, summary := range summaries {
+				if _, already := staleMarked[summary.ID]; already {
+					continue
+				}
+				if err := s.store.MarkStale(summary.ID); err != nil {
+					return nil, err
+				}
+				staleMarked[summary.ID] = struct{}{}
+				flagged[summary.ID] = struct{}{}
+			}
+		}
+	}
+	result.FlaggedEntries = len(flagged)
+	result.StaleEntries = len(staleMarked)
+
+	changedFiles := result.AffectedFiles
 	contextUpdated, contextStale := s.tryPatchExploreContext(lastCommit, head, changedFiles)
 	result.ContextUpdated = contextUpdated
 	result.ContextStale = contextStale
@@ -242,6 +247,63 @@ func (s *Syncer) Sync() (*SyncResult, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *Syncer) parentCommit(commit string) (string, error) {
+	raw, err := s.gitOutput("rev-list", "--parents", "-n", "1", strings.TrimSpace(commit))
+	if err != nil {
+		return "", err
+	}
+	parts := strings.Fields(strings.TrimSpace(raw))
+	if len(parts) < 2 {
+		return "", nil
+	}
+	return strings.TrimSpace(parts[1]), nil
+}
+
+func (s *Syncer) changedFilesForCommit(commit string) (changedFileStatuses, error) {
+	raw, err := s.gitOutput("diff-tree", "--no-commit-id", "--name-status", "-r", strings.TrimSpace(commit))
+	if err != nil {
+		return nil, err
+	}
+	return parseChangedFileStatuses(raw), nil
+}
+
+func (s *Syncer) classifyFileAtCommit(path, status, parent, commit string) string {
+	if strings.TrimSpace(status) == "deleted" {
+		return "deleted"
+	}
+	if isStructuralFile(path) {
+		return "structural"
+	}
+	baseCommit := strings.TrimSpace(parent)
+	if baseCommit == "" {
+		baseCommit = strings.TrimSpace(commit) + "^"
+	}
+	changeResult, classifyErr := treesitter.ClassifyFileChange(s.repoDir, path, baseCommit, commit)
+	if classifyErr != nil {
+		return "body"
+	}
+	return string(changeResult.Type)
+}
+
+func (s *Syncer) applyEntryClassification(entry *Entry, classification, commit string) error {
+	if entry == nil {
+		return nil
+	}
+	switch classification {
+	case "deleted":
+		return s.store.Supersede(entry.ID, entry.ID)
+	case "structural":
+		return s.store.MarkStale(entry.ID)
+	case "body":
+		if err := s.store.DecayEntry(entry.ID, 0.95); err != nil {
+			return err
+		}
+		return s.store.UpdateCoveredCommit(entry.ID, commit)
+	default:
+		return s.store.UpdateCoveredCommit(entry.ID, commit)
+	}
 }
 
 func (s *Syncer) Status() (*SyncStatus, error) {
@@ -326,13 +388,11 @@ func (s *Syncer) Refresh(entryID string) (*RefreshResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := s.store.Update(entry.ID, map[string]interface{}{
-			"stale":             false,
-			"covered_at_commit": head,
-		}); err != nil {
-			return nil, err
+		updated, refreshErr := s.refreshEntry(entry, head)
+		if refreshErr != nil {
+			return nil, refreshErr
 		}
-		if entry.Stale {
+		if updated {
 			result.Updated = 1
 		} else {
 			result.Skipped = 1
@@ -345,15 +405,220 @@ func (s *Syncer) Refresh(entryID string) (*RefreshResult, error) {
 		return nil, err
 	}
 	for _, entry := range entries {
+		updated, refreshErr := s.refreshEntry(entry, head)
+		if refreshErr != nil {
+			result.Skipped++
+			continue
+		}
+		if updated {
+			result.Updated++
+		} else {
+			result.Skipped++
+		}
+	}
+	return result, nil
+}
+
+func (s *Syncer) refreshEntry(entry *Entry, head string) (bool, error) {
+	if entry == nil {
+		return false, nil
+	}
+	if !entry.Stale {
+		return false, nil
+	}
+
+	if !s.hasEntryChanges(entry, head) {
 		if err := s.store.Update(entry.ID, map[string]interface{}{
 			"stale":             false,
 			"covered_at_commit": head,
 		}); err != nil {
-			return nil, err
+			return false, err
 		}
-		result.Updated++
+		return true, nil
 	}
-	return result, nil
+
+	// If LLM refresh isn't configured, keep stale entries unchanged.
+	if s.driver == nil || strings.TrimSpace(s.model) == "" {
+		return false, nil
+	}
+
+	updated, filePaths, err := s.refreshEntryWithLLM(entry, head)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(updated) == "" {
+		if err := s.store.Update(entry.ID, map[string]interface{}{
+			"stale":             false,
+			"covered_at_commit": head,
+		}); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	nextFilePaths := entry.FilePaths
+	if len(filePaths) > 0 {
+		nextFilePaths = filePaths
+	}
+
+	nextEntry := &Entry{
+		Content:             strings.TrimSpace(updated),
+		Category:            entry.Category,
+		Tags:                entry.Tags,
+		SourceTaskID:        entry.SourceTaskID,
+		SourceInteractionID: entry.SourceInteractionID,
+		SourceType:          entry.SourceType,
+		FilePaths:           nextFilePaths,
+		CoveredAtCommit:     head,
+		Confidence:          entry.Confidence,
+		ProvenanceHash:      refreshProvenanceHash(entry, updated, head),
+	}
+	if nextEntry.Confidence <= 0 {
+		nextEntry.Confidence = 0.95
+	}
+	if err := s.store.Create(nextEntry); err != nil {
+		return false, err
+	}
+	if err := s.store.Supersede(entry.ID, nextEntry.ID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Syncer) hasEntryChanges(entry *Entry, head string) bool {
+	if entry == nil || len(entry.FilePaths) == 0 {
+		return false
+	}
+	base := strings.TrimSpace(entry.CoveredAtCommit)
+	if base == "" || base == strings.TrimSpace(head) {
+		return false
+	}
+	args := []string{"diff", "--name-only", base + ".." + strings.TrimSpace(head), "--"}
+	args = append(args, entry.FilePaths...)
+	out, err := s.gitOutput(args...)
+	if err != nil {
+		return true
+	}
+	return strings.TrimSpace(out) != ""
+}
+
+type refreshLLMOutput struct {
+	Valid            bool     `json:"valid"`
+	UpdatedContent   string   `json:"updated_content"`
+	UpdatedFilePaths []string `json:"updated_file_paths"`
+}
+
+func (s *Syncer) refreshEntryWithLLM(entry *Entry, head string) (string, []string, error) {
+	base := strings.TrimSpace(entry.CoveredAtCommit)
+	if base == "" {
+		base = head
+	}
+
+	diff := ""
+	if len(entry.FilePaths) > 0 && base != head {
+		args := []string{"diff", base + ".." + head, "--"}
+		args = append(args, entry.FilePaths...)
+		out, err := s.gitOutput(args...)
+		if err == nil {
+			diff = strings.TrimSpace(out)
+		}
+	}
+	if s.maxDiffBytes > 0 && len(diff) > s.maxDiffBytes {
+		return "", nil, nil
+	}
+
+	content := s.collectCurrentFileContent(entry.FilePaths)
+	prompt := buildRefreshPrompt(entry, diff, content)
+	adapter := worker.NewAdapter(s.driver, s.model, s.timeout)
+	runResult, runErr := adapter.Execute(context.Background(), "memory_refresh", prompt, s.repoDir)
+	if runErr != nil || runResult == nil || runResult.ExitCode != 0 {
+		return "", nil, fmt.Errorf("refresh entry %s: llm run failed", entry.ID)
+	}
+
+	response := strings.TrimSpace(runResult.Stdout)
+	if response == "" {
+		return "", nil, nil
+	}
+	var payload refreshLLMOutput
+	found, err := llm.TryExtractJSON(response, &payload)
+	if err != nil || !found {
+		return "", nil, fmt.Errorf("refresh entry %s: parse llm output", entry.ID)
+	}
+	if payload.Valid {
+		return "", nil, nil
+	}
+	return strings.TrimSpace(payload.UpdatedContent), normalizeChangedFilePaths(payload.UpdatedFilePaths), nil
+}
+
+func (s *Syncer) collectCurrentFileContent(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	var blocks []string
+	for _, path := range normalizeChangedFilePaths(paths) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		out, err := s.gitOutput("show", "HEAD:"+path)
+		if err != nil {
+			continue
+		}
+		if s.maxDiffBytes > 0 && len(out) > s.maxDiffBytes/2 {
+			out = out[:s.maxDiffBytes/2]
+		}
+		blocks = append(blocks, "### "+path+"\n"+strings.TrimSpace(out))
+	}
+	return strings.TrimSpace(strings.Join(blocks, "\n\n"))
+}
+
+func buildRefreshPrompt(entry *Entry, diff, currentFiles string) string {
+	type entryPayload struct {
+		Content   string   `json:"content"`
+		Category  string   `json:"category"`
+		Source    string   `json:"source_type"`
+		FilePaths []string `json:"file_paths"`
+	}
+	raw, _ := json.MarshalIndent(entryPayload{
+		Content:   strings.TrimSpace(entry.Content),
+		Category:  strings.TrimSpace(entry.Category),
+		Source:    strings.TrimSpace(entry.SourceType),
+		FilePaths: normalizeChangedFilePaths(entry.FilePaths),
+	}, "", "  ")
+	return strings.TrimSpace(fmt.Sprintf(`
+You are refreshing a stale memory entry.
+
+Return valid JSON only using this schema:
+{
+  "valid": boolean,
+  "updated_content": string,
+  "updated_file_paths": string[]
+}
+
+Rules:
+- If the entry is still accurate, return {"valid": true, "updated_content": "", "updated_file_paths": []}
+- If it is outdated, return {"valid": false, ...} with concise updated content.
+- Keep content self-contained and specific to the codebase.
+- Use repo-relative file paths only.
+
+Current entry:
+%s
+
+Diff since it was last covered:
+%s
+
+Current file content:
+%s
+`, string(raw), emptyIfBlank(diff), emptyIfBlank(currentFiles)))
+}
+
+func refreshProvenanceHash(entry *Entry, updatedContent, head string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		strings.TrimSpace(entry.ProvenanceHash),
+		strings.TrimSpace(updatedContent),
+		strings.TrimSpace(head),
+	}, "\n---\n")))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Syncer) GetLastSyncedCommit() (string, error) {
@@ -588,6 +853,38 @@ func parseChangedFileStatuses(raw string) changedFileStatuses {
 	return statuses
 }
 
+func splitNonEmptyLines(raw string) []string {
+	lines := strings.Split(raw, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func mapKeysSorted(values map[string]struct{}) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func emptyIfBlank(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "(none)"
+	}
+	return strings.TrimSpace(value)
+}
+
 func normalizeSinglePath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -612,19 +909,6 @@ func statusPriority(status string) int {
 	default:
 		return 0
 	}
-}
-
-func classifyChange(path, fileStatus string) string {
-	if strings.TrimSpace(fileStatus) == "deleted" {
-		return "deleted"
-	}
-	if !isCodeOrStructuralPath(path) {
-		return "none"
-	}
-	if isStructuralFile(path) {
-		return "structural"
-	}
-	return "body"
 }
 
 func mergeClassifications(current, next string) string {

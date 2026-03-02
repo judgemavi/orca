@@ -2,8 +2,6 @@ package api
 
 import (
 	"net/http"
-
-	"github.com/jasjeetmavi/orca/internal/explore"
 )
 
 // ========== Status ==========
@@ -19,14 +17,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	projectTotal, _ := s.interactions.ProjectTotal()
 	runningInteractions, _ := s.interactions.ListByStatus("running")
-	contextExists := explore.LoadContext(s.repoDir) != ""
-	staleByHash, _ := explore.IsStale(s.repoDir)
-	age := explore.ContextAge(s.repoDir)
+	contextExists := false
 	lastSyncedCommit := ""
 	currentCommit := ""
 	syncNeeded := false
 	commitsBehind := 0
-	contextStale := staleByHash
+	contextStale := false
 	memoryTotal := 0
 	memoryStaleCount := 0
 
@@ -43,6 +39,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			memoryStaleCount = health.StaleCount
 		}
 	}
+	contextExists = memoryTotal > 0
+	contextStale = contextStale || memoryStaleCount > 0
 
 	status := map[string]interface{}{
 		"project":             s.cfg.Project.Name,
@@ -53,7 +51,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"failed":              counts["failed"],
 		"context_exists":      contextExists,
 		"context_stale":       contextStale,
-		"context_age_minutes": int(age.Minutes()),
+		"context_age_minutes": 0,
 		"total_cost":          projectTotal,
 		"running_operations":  len(runningInteractions),
 		"last_synced_commit":  lastSyncedCommit,

@@ -96,19 +96,23 @@ func (s *Server) HandleConfigUpdateTool(argsRaw json.RawMessage) (interface{}, e
 }
 
 func (s *Server) HandleExploreStatusTool(_ json.RawMessage) (interface{}, error) {
-	exists := explore.LoadContext(s.repoDir) != ""
-	stale, err := explore.IsStale(s.repoDir)
+	store, err := s.getMemoryStore()
 	if err != nil {
 		return nil, fmt.Errorf("explore status: %w", err)
 	}
-	ageMinutes := int(explore.ContextAge(s.repoDir) / time.Minute)
-	if ageMinutes < 0 {
-		ageMinutes = 0
+	exists := false
+	stale := false
+	if health, err := store.BuildHealthSummary(); err == nil && health != nil {
+		exists = health.TotalEntries > 0
+		stale = health.StaleCount > 0
+	}
+	if status, err := s.newMemorySyncer(store).Status(); err == nil && status != nil {
+		stale = stale || status.ContextStale
 	}
 	return map[string]interface{}{
 		"exists":      exists,
 		"stale":       stale,
-		"age_minutes": ageMinutes,
+		"age_minutes": 0,
 	}, nil
 }
 

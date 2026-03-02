@@ -220,6 +220,7 @@ func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteracti
 		memoryStore := memory.NewStore(s.db)
 		generator := plan.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
 			WithMemory(memoryStore).
+			WithTaskStore(s.taskStore).
 			WithSyncer(s.newMemorySyncer(memoryStore))
 		content, genErr := generator.Generate(taskID, title, description)
 		if genErr != nil {
@@ -324,7 +325,11 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 	})
 
 	go func(taskID, title, description string) {
-		evaluator := evaluate.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
+		memStore := memory.NewStore(s.db)
+		evaluator := evaluate.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
+			WithMemory(memStore).
+			WithTaskStore(s.taskStore).
+			WithSyncer(s.newMemorySyncer(memStore))
 		result, evalErr := evaluator.Evaluate(taskID, title, description)
 		if evalErr != nil {
 			s.hub.Broadcast(Event{
@@ -413,7 +418,11 @@ func (s *Server) handleBreakdownTask(w http.ResponseWriter, r *http.Request) {
 	})
 
 	go func(taskID, title, description string) {
-		breaker := breakdown.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
+		memStore := memory.NewStore(s.db)
+		breaker := breakdown.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
+			WithMemory(memStore).
+			WithTaskStore(s.taskStore).
+			WithSyncer(s.newMemorySyncer(memStore))
 		proposed, interactionID, breakdownErr := breaker.Run(&taskID, strings.TrimSpace(title+"\n\n"+description))
 		if breakdownErr != nil {
 			s.hub.Broadcast(Event{

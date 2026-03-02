@@ -22,7 +22,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/driver"
-	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/monitor"
@@ -78,6 +77,7 @@ type taskInfo struct {
 	args            []string
 	resumeSessionID string
 	resumeFeedback  string
+	contextContent  string
 }
 
 // ExecutorOptions configures optional executor dependencies and callbacks.
@@ -127,7 +127,7 @@ type Executor struct {
 
 // --- private helpers ---
 
-func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts RunOpts) ([]taskInfo, []string, error) {
+func (e *Executor) prepareTasks(taskIDs []string, contextSection string, opts RunOpts) ([]taskInfo, []string, error) {
 	prepared := make([]taskInfo, 0, len(taskIDs))
 	createdTaskIDs := make([]string, 0, len(taskIDs))
 
@@ -163,8 +163,12 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts Run
 		if t.Plan != "" {
 			prompt = "## Implementation Plan\n\n" + t.Plan + "\n\n---\n\n## Task\n\n" + prompt
 		}
-		if contextPrefix != "" {
-			prompt = contextPrefix + prompt
+		taskContextSection := contextSection
+		if strings.TrimSpace(taskContextSection) == "" {
+			taskContextSection = e.buildTaskContextSection(taskID, t.Title, t.Description, nil)
+		}
+		if strings.TrimSpace(taskContextSection) != "" {
+			prompt = strings.TrimSpace(taskContextSection) + "\n\n---\n\n" + prompt
 		}
 		prompt = strings.TrimSpace(prompts.OutputStyle) + "\n\n" + strings.TrimSpace(prompts.ExecutorStyle) + "\n\n---\n\n" + prompt
 
@@ -180,15 +184,16 @@ func (e *Executor) prepareTasks(taskIDs []string, contextPrefix string, opts Run
 		}
 
 		prepared = append(prepared, taskInfo{
-			taskID:       taskID,
-			taskTitle:    t.Title,
-			toolName:     toolName,
-			driver:       d,
-			timeout:      timeout,
-			logWriter:    writer,
-			worktreePath: wtPath,
-			prompt:       prompt,
-			model:        model,
+			taskID:         taskID,
+			taskTitle:      t.Title,
+			toolName:       toolName,
+			driver:         d,
+			timeout:        timeout,
+			logWriter:      writer,
+			worktreePath:   wtPath,
+			prompt:         prompt,
+			model:          model,
+			contextContent: taskContextSection,
 		})
 	}
 
@@ -202,6 +207,7 @@ func (e *Executor) finalizeRun(results []TaskResult) error {
 		if e.wasStopped(r.TaskID) {
 			continue
 		}
+		e.associateTaskFiles(r.TaskID, r.FilesChanged)
 		if err := e.taskStore.Update(r.TaskID, map[string]interface{}{"status": r.Status}); err != nil {
 			slog.Warn("complete task failed", "task_id", r.TaskID, "run_id", e.runID, "err", err)
 		}
@@ -377,12 +383,7 @@ func (e *Executor) RunBatch(taskIDs []string, opts RunOpts) ([]TaskResult, error
 		e.runID = ""
 	}()
 
-	contextPrefix := ""
-	if cctx := explore.LoadContext(e.repoDir); cctx != "" {
-		contextPrefix = "## Codebase Context\n\n" + cctx + "\n\n---\n\n"
-	}
-
-	prepared, _, err := e.prepareTasks(taskIDs, contextPrefix, opts)
+	prepared, _, err := e.prepareTasks(taskIDs, "", opts)
 	if err != nil {
 		e.rollbackPreparation(taskIDs)
 		return nil, err
@@ -562,17 +563,14 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		wtPath = createdPath
 	}
 
-	contextPrefix := ""
-	if cctx := explore.LoadContext(e.repoDir); cctx != "" {
-		contextPrefix = "## Codebase Context\n\n" + cctx + "\n\n---\n\n"
-	}
+	contextSection := e.buildTaskContextSection(taskID, t.Title, t.Description, nil)
 
 	prompt := t.Title + "\n\n" + t.Description
 	if t.Plan != "" {
 		prompt = "## Implementation Plan\n\n" + t.Plan + "\n\n---\n\n## Task\n\n" + prompt
 	}
-	if contextPrefix != "" {
-		prompt = contextPrefix + prompt
+	if strings.TrimSpace(contextSection) != "" {
+		prompt = strings.TrimSpace(contextSection) + "\n\n---\n\n" + prompt
 	}
 
 	resumeState, err := e.resolveResumeRunState(taskID, t.SessionID, d, model, wtPath, requireStopped)
@@ -641,6 +639,7 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		args:            resumeState.args,
 		resumeSessionID: resumeState.resumeSessionID,
 		resumeFeedback:  resumeState.feedback,
+		contextContent:  contextSection,
 	}
 
 	result := e.runTask(ctx, info, outputCh)
@@ -649,6 +648,7 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	e.emitDone(taskID, result.ExitCode)
 
 	if !e.wasStopped(taskID) {
+		e.associateTaskFiles(taskID, result.FilesChanged)
 		if err := e.taskStore.Update(taskID, map[string]interface{}{"status": result.Status}); err != nil {
 			slog.Warn("update task status failed", "task_id", taskID, "status", result.Status, "err", err)
 		}
@@ -687,6 +687,33 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 	}
 
 	return &result, nil
+}
+
+func (e *Executor) associateTaskFiles(taskID string, files []string) {
+	if e.taskStore == nil || strings.TrimSpace(taskID) == "" || len(files) == 0 {
+		return
+	}
+	if err := e.taskStore.AssociateFiles(taskID, files); err != nil {
+		slog.Warn("associate task files failed", "task_id", taskID, "err", err)
+	}
+}
+
+func (e *Executor) buildTaskContextSection(taskID, title, description string, filePaths []string) string {
+	if e.memoryStore == nil {
+		return ""
+	}
+	retriever := memory.NewRetriever(e.memoryStore, e.taskStore, e.interactions, e.repoDir)
+	retrieved, err := retriever.Retrieve(memory.RetrievalOpts{
+		TaskTitle:       title,
+		TaskDescription: description,
+		FilePaths:       filePaths,
+		ExcludeTaskID:   taskID,
+	})
+	if err != nil {
+		slog.Warn("retrieve context failed", "task_id", taskID, "err", err)
+		return ""
+	}
+	return retriever.BuildPromptSection(retrieved)
 }
 
 // RunSingleWithOpts re-runs a single task with optional tool/model overrides.
