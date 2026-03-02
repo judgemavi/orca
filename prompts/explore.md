@@ -17,9 +17,9 @@ Skip:
 Keep it under 300 lines. Prioritize insight over completeness.
 
 Output format:
-1. A short "Project Summary" section (5-10 lines max) with stack, architecture style, and key conventions.
+1. A short "Project Summary" section (5-10 lines max) with stack, architecture style, and key conventions. This section is extracted as a single memory entry tagged "project-summary" with source_type="explore".
 2. Any additional context sections you consider high-signal.
-3. A `## Memory Extraction` section (JSON array only) with discrete, self-contained entries.
+3. A `## Memory Extraction` section (JSON array only) with discrete, self-contained entries. Each entry is stored as a memory entry tagged "explore-seed" with source_type="explore". Entries include covered_at_commit tracking and are superseded on subsequent explore runs.
 
 ## Memory Extraction
 

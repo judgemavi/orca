@@ -18,5 +18,6 @@ Rules:
 - Remove or rewrite statements that are no longer true.
 - Do not include anything from `.orca/`.
 - Do not reference gitignored files.
+- Memory entries associated with changed files are automatically flagged stale by git sync based on diff magnitude (minor ≤20 lines, medium ≤100, major >100, deleted, renamed). This context update handles the explore-context portion; individual entry staleness is managed separately.
 
 Output the full updated context markdown only. No preamble, no JSON.

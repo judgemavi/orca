@@ -49,7 +49,8 @@ Rules:
 - `confidence` must be between 0.0 and 1.0.
 - Keep each `content` concrete and reusable across similar tasks.
 - `tags` should be short, lowercase, and specific.
-- Include relevant `file_paths` that this memory applies to. Use repository-root-relative paths only.
+- Include relevant `file_paths` that this memory applies to. Use repository-root-relative paths only. Extract these from the diffs above — include paths that are semantically relevant to the insight, not every file touched.
+- Entries are stored with source_type="retro" and file_paths are validated against tracked git files.
 - Return `[]` when there is no useful memory to add.
 
 Do not rephrase existing memory:
