@@ -26,6 +26,10 @@ export function useConfigQuery() {
   return useQuery({ queryKey: queryKeys.config, queryFn: api.getConfig })
 }
 
+export function useStatusQuery() {
+  return useQuery({ queryKey: queryKeys.status, queryFn: api.getStatus })
+}
+
 // ── Models ──────────────────────────────────────────────────────────────
 
 export function useModelsQuery(tool?: string) {

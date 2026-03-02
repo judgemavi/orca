@@ -11,6 +11,7 @@ import type {
   ProposedTask,
   MemoryEntry,
   MemorySyncResult,
+  ProjectStatus,
   ListMemoryParams,
   UpdateMemoryInput,
 } from './types'
@@ -129,6 +130,7 @@ export const api = {
   deleteMemory: (id: string) =>
     del<{ deleted: string }>(`/memory/${encodeURIComponent(id)}`),
   syncMemory: () => post<MemorySyncResult>('/memory/sync'),
+  getStatus: () => request<ProjectStatus>('/status'),
 
   merge: () => post<{ operation_id: string }>('/merge'),
   startTasks: (taskIds?: string[], tool?: string, model?: string) =>

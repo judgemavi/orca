@@ -16,6 +16,7 @@ import {
   useDeleteMemoryMutation,
   useMemoryMutation,
   useMemoryQuery,
+  useStatusQuery,
   useSyncMemoryMutation,
 } from '../hooks/queries'
 import { controlClass } from '../lib/constants'
@@ -95,6 +96,7 @@ function MemoryPage() {
   }, [search, category, sourceType, filePath])
 
   const memoryQuery = useMemoryQuery(listParams)
+  const statusQuery = useStatusQuery()
   const updateMutation = useMemoryMutation()
   const deleteMutation = useDeleteMemoryMutation()
   const syncMutation = useSyncMemoryMutation()
@@ -485,6 +487,49 @@ function MemoryPage() {
           </Button>
         </div>
       </div>
+
+      {statusQuery.data && (
+        <div
+          className={`mb-3 rounded-md border px-3 py-2 text-sm ${
+            !statusQuery.data.last_synced_commit
+              ? 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+              : statusQuery.data.sync_needed || statusQuery.data.context_stale
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+          }`}
+        >
+          {!statusQuery.data.last_synced_commit ? (
+            <div className="flex items-center justify-between gap-2">
+              <span>Memory has never been synced.</span>
+              <Button
+                className="px-2 py-1 text-xs"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+              >
+                {syncMutation.isPending ? 'Syncing…' : 'Sync now'}
+              </Button>
+            </div>
+          ) : statusQuery.data.sync_needed || statusQuery.data.context_stale ? (
+            <div className="flex items-center justify-between gap-2">
+              <span>
+                Memory is {statusQuery.data.commits_behind} commits behind
+                {statusQuery.data.context_stale
+                  ? ' and context is stale.'
+                  : '.'}
+              </span>
+              <Button
+                className="px-2 py-1 text-xs"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+              >
+                {syncMutation.isPending ? 'Syncing…' : 'Sync now'}
+              </Button>
+            </div>
+          ) : (
+            <span>Memory up to date.</span>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-2 pb-3 sm:grid-cols-[minmax(0,1fr)_220px_180px_minmax(0,1fr)_auto]">
         <input

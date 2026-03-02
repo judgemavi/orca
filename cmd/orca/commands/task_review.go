@@ -65,6 +65,16 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 
 	repoDir, _ := os.Getwd()
 	ig := integrator.New(repoDir, cfg.Project.IntegrationBranch, cfg.Validation.Commands, interactions)
+	ig.OnPostMerge = func(taskID string) {
+		if retroErr := runPostMergeRetro(cfg, db, repoDir, taskID); retroErr != nil {
+			recordPostMergeFailure(interactions, taskID, "retro", retroErr)
+			warnf("post-merge retro failed for task %s: %v (retry: orca tasks retro %s)", short(taskID), retroErr, taskID)
+		}
+		if _, syncErr := runPostMergeSync(cfg, db, repoDir); syncErr != nil {
+			recordPostMergeFailure(interactions, taskID, "sync", syncErr)
+			warnf("post-merge memory sync failed: %v (retry: orca memory sync)", syncErr)
+		}
+	}
 	if auto {
 		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
 			if _, err := store.Get(taskID); err != nil {

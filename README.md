@@ -6,16 +6,16 @@ Multi-agent CLI orchestrator for AI coding tools. Orca coordinates Claude Code, 
 
 Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 
-1. `explore` — generate/refresh codebase context
+1. `init` — initialize project state and run initial explore automatically
 2. `breakdown` — break goals into dependency-aware tasks
 3. `tasks plan` / `tasks evaluate` — refine task implementation plans
 4. `start` — execute ready tasks directly (parallel, isolated worktrees)
 5. `review` — approve, request changes, or run AI review
-6. `retro` — extract reusable memory from approved/merged tasks
-7. `merge` — merge approved tasks into integration branch
+6. `merge` — merge approved tasks into integration branch
+7. `retro + sync` — post-merge automation extracts memory and syncs staleness/context
 
 Task flow: `pending → planned → running → review → approved → merged`.
-Post-completion phase: `approved/merged → retro` (memory extraction via CLI/MCP/API).
+Post-completion phase: `approved/merged → retro → memory sync` (automatic after merge, also available via CLI/MCP/API).
 Breakdown branch: `pending → broken_down` (when a parent task is split into child tasks).
 Stop path: `running → stopped` (via `tasks_stop`); `stopped → running` (resume via `tasks_resume`).
 Failure path: `running → failed`.
@@ -31,10 +31,13 @@ Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cance
 - Interaction-based tracking: tokens, cost, diffs, and quality per LLM invocation
 - Web UI with live status/events via WebSocket
 - Task table, 3-phase timeline, diff viewer, inline review, terminal console
-- RAG memory system: retro and explore extract reusable patterns, pitfalls, preferences, conventions, architecture, and dependency insights
+- RAG memory system: explore and retro extract reusable patterns, pitfalls, preferences, conventions, architecture, and dependency insights
 - Memory-informed planning with FTS5/BM25 retrieval
 - Provenance-aware memory lifecycle (provenance hashes, supersession, confidence reinforcement/decay)
-- Git-aware memory sync for staleness detection by changed file paths
+- Auto-explore on `orca init` (cold-start context + seeded memory)
+- Post-merge automation: retro per merged task, then memory sync
+- Git-aware memory sync with incremental context patching and stale fallback
+- Sync health surfaces in API/UI/MCP (`/status`, memory page banner, `memory_status`)
 - MCP server for agentic orchestration (task, planning, review, memory, and ops tools)
 - Single Go binary with embedded web frontend
 
@@ -63,7 +66,7 @@ Binary output: `dist/orca`.
 cd your-project
 orca init
 
-# Generate context
+# Optional manual re-explore
 orca explore
 
 # Add or break down work
@@ -145,10 +148,16 @@ orca cleanup                 [--dry-run]
 | `task` | Explore seeding (`explore`) | Typically high (`~0.95`) | Batch decay + git sync (`x0.9`) | Superseded by newer explore seeds |
 | `commit` | Manual/future commit-linked memory | High | Not auto-decayed by sync | Superseded when affected files change |
 
-- Git sync uses `last_synced_commit` and changed-file matching to flag stale memory (`orca memory sync`, `POST /api/v1/memory/sync`, MCP `memory_sync`).
+- Lifecycle flow:
+  - `orca init` runs initial explore (context + explore-seed memory).
+  - Task merges run retro automatically per merged task.
+  - One sync runs after merge to decay stale memory and patch `explore_context`.
+- Git sync uses `last_synced_commit` and changed-file matching (`orca memory sync`, `POST /api/v1/memory/sync`, MCP `memory_sync`).
+- Sync incrementally patches `explore_context` from git diff. If diff is too large or LLM update fails, sync marks context stale instead of failing merge.
 - Explore seeding writes new `task` memory with `explore-seed` tags and file associations, then supersedes older explore-seeded entries.
 - Reinforcement rules: successful tasks (`review`) boost confidence for memory used during planning, failed tasks decay those same entries.
 - Batch runs apply bulk confidence decay to stale, unused memory (with a floor).
+- Retro/sync are idempotent; re-triggering after failures is safe.
 
 ## Memory API
 
@@ -157,6 +166,7 @@ orca cleanup                 [--dry-run]
 - `PATCH /api/v1/memory/{id}`
 - `DELETE /api/v1/memory/{id}`
 - `POST /api/v1/memory/sync`
+- `GET /api/v1/status` (includes `last_synced_commit`, `current_commit`, `sync_needed`, `commits_behind`)
 
 ## MCP
 
@@ -167,7 +177,7 @@ orca cleanup                 [--dry-run]
 - **Execution:** `tasks_start`, `tasks_stop`, `tasks_resume`
 - **Review/integration:** `tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`
 - **Retro:** `tasks_retro`
-- **Memory:** `memory_list`, `memory_get`, `memory_search`, `memory_update`, `memory_delete`, `memory_sync`
+- **Memory:** `memory_list`, `memory_get`, `memory_search`, `memory_update`, `memory_delete`, `memory_sync`, `memory_status`
 - **Interactions:** `interactions_list`, `interaction_get`
 - **Project/config:** `project_status`, `config_get`, `config_update`, `models_list`
 - **Context:** `explore`, `explore_status`

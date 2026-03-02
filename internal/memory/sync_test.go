@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSyncFirstRunSetsHeadOnly(t *testing.T) {
@@ -14,7 +15,7 @@ func TestSyncFirstRunSetsHeadOnly(t *testing.T) {
 	})
 
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir)
+	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
 	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
 
 	result, err := syncer.Sync()
@@ -49,7 +50,7 @@ func TestSyncNoOpWhenHeadUnchanged(t *testing.T) {
 	})
 
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir)
+	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
 	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
 	if err := syncer.SetLastSyncedCommit(head); err != nil {
 		t.Fatalf("seed last synced commit: %v", err)
@@ -76,7 +77,7 @@ func TestSyncAppliesSourceTypePolicies(t *testing.T) {
 	})
 
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir)
+	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
 
 	retro := mustCreateEntryWithOptions(t, store, "retro", "pattern", []string{"sync"}, 1.0, "hash-sync-retro", "retro", []string{"internal/retro.go"})
 	taskEntry := mustCreateEntryWithOptions(t, store, "task", "pattern", []string{"sync"}, 1.0, "hash-sync-task", "task", []string{"internal/task.go"})
@@ -138,6 +139,53 @@ func TestSyncAppliesSourceTypePolicies(t *testing.T) {
 	}
 	if gotUnaffected.Confidence != 1.0 {
 		t.Fatalf("unaffected confidence = %v, want 1.0", gotUnaffected.Confidence)
+	}
+}
+
+func TestSyncStatusIncludesCommitLagAndContextStale(t *testing.T) {
+	repoDir := initGitRepoWithCommit(t, map[string]string{
+		"internal/app.go": "package app\n",
+	})
+
+	store, db := setupStore(t)
+	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+
+	if err := syncer.SetContextStaleFlag(true); err != nil {
+		t.Fatalf("set context stale flag: %v", err)
+	}
+
+	status, err := syncer.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !status.SyncNeeded {
+		t.Fatalf("sync_needed = false, want true when never synced")
+	}
+	if !status.ContextStale {
+		t.Fatalf("context_stale = false, want true")
+	}
+
+	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
+	if err := syncer.SetLastSyncedCommit(head); err != nil {
+		t.Fatalf("set last synced commit: %v", err)
+	}
+	if err := syncer.SetContextStaleFlag(false); err != nil {
+		t.Fatalf("clear context stale flag: %v", err)
+	}
+
+	writeRepoFile(t, repoDir, "internal/app.go", "package app\n// changed\n")
+	runGit(t, repoDir, "add", "internal/app.go")
+	runGit(t, repoDir, "commit", "-m", "change")
+
+	status, err = syncer.Status()
+	if err != nil {
+		t.Fatalf("status after change: %v", err)
+	}
+	if !status.SyncNeeded {
+		t.Fatalf("sync_needed = false, want true")
+	}
+	if status.CommitsBehind != 1 {
+		t.Fatalf("commits_behind = %d, want 1", status.CommitsBehind)
 	}
 }
 

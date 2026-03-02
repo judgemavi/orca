@@ -43,7 +43,7 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		}
 		explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions).
 			WithMemory(memoryStore).
-			WithSyncer(memory.NewSyncer(memoryStore, s.db.DB, s.repoDir))
+			WithSyncer(s.newMemorySyncer(memoryStore))
 		outPath, err := explorer.Run()
 		if err != nil {
 			s.hub.Broadcast(Event{Type: "explore.failed", Data: map[string]string{"error": err.Error()}})

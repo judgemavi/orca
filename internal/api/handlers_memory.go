@@ -216,12 +216,16 @@ func (s *Server) handleSyncMemory(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "memory store not configured", http.StatusInternalServerError)
 		return
 	}
-	syncer := memory.NewSyncer(s.memoryStore, s.db.DB, s.repoDir)
+	syncer := s.newMemorySyncer(s.memoryStore)
 	result, err := syncer.Sync()
 	if err != nil {
+		s.hub.Broadcast(Event{Type: "sync.failed", Data: map[string]string{"error": err.Error()}})
+		s.hub.Broadcast(Event{Type: "memory.sync.failed", Data: map[string]string{"error": err.Error()}})
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
+	s.hub.Broadcast(Event{Type: "sync.completed", Data: result})
+	s.hub.Broadcast(Event{Type: "memory.sync.completed", Data: result})
 	jsonOK(w, result)
 }
 

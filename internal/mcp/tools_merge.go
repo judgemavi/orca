@@ -23,6 +23,15 @@ func (s *Server) HandleMergeTool(_ json.RawMessage) (interface{}, error) {
 	}
 
 	ig := integrator.New(s.repoDir, s.config.Project.IntegrationBranch, s.config.Validation.Commands, interaction.NewStore(s.db, ".orca/interactions"))
+	ig.OnPostMerge = func(taskID string) {
+		_ = s.runPostMergeRetro(taskID)
+	}
+	ig.OnPostMergeBatchComplete = func(taskIDs []string) {
+		if len(taskIDs) == 0 {
+			return
+		}
+		_, _ = s.runPostMergeSync(taskIDs)
+	}
 	merged, failed, err := ig.MergeBatch(taskIDs)
 	if err != nil {
 		return nil, err
@@ -65,6 +74,10 @@ func (s *Server) HandleTasksMergeTool(argsRaw json.RawMessage) (interface{}, err
 	}
 
 	ig := integrator.New(s.repoDir, s.config.Project.IntegrationBranch, s.config.Validation.Commands, interaction.NewStore(s.db, ".orca/interactions"))
+	ig.OnPostMerge = func(taskID string) {
+		_ = s.runPostMergeRetro(taskID)
+		_, _ = s.runPostMergeSync([]string{taskID})
+	}
 	if err := ig.MergeAndValidate(taskID); err != nil {
 		return nil, fmt.Errorf("merge task %s: %w", taskID, err)
 	}

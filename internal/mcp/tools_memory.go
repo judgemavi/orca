@@ -202,12 +202,28 @@ func (s *Server) HandleMemorySyncTool(argsRaw json.RawMessage) (interface{}, err
 	if s.db == nil {
 		return nil, fmt.Errorf("memory_sync: db not configured")
 	}
-	syncer := memory.NewSyncer(store, s.db.DB, s.repoDir)
+	syncer := s.newMemorySyncer(store)
 	result, err := syncer.Sync()
 	if err != nil {
 		return nil, fmt.Errorf("memory_sync: %w", err)
 	}
 	return result, nil
+}
+
+func (s *Server) HandleMemoryStatusTool(argsRaw json.RawMessage) (interface{}, error) {
+	if _, err := parseArgs[struct{}](argsRaw); err != nil {
+		return nil, fmt.Errorf("memory_status: %w", err)
+	}
+	store, err := s.getMemoryStore()
+	if err != nil {
+		return nil, fmt.Errorf("memory_status: %w", err)
+	}
+	syncer := s.newMemorySyncer(store)
+	status, err := syncer.Status()
+	if err != nil {
+		return nil, fmt.Errorf("memory_status: %w", err)
+	}
+	return status, nil
 }
 
 func (s *Server) getMemoryStore() (*memory.Store, error) {

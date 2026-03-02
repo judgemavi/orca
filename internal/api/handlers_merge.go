@@ -49,6 +49,14 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request) {
 		}
 
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
+		ig.OnPostMerge = func(id string) {
+			if err := s.runPostMergeRetro(id); err != nil {
+				slog.Warn("post-merge retro failed", "task_id", id, "err", err)
+			}
+			if _, err := s.runPostMergeSync([]string{id}); err != nil {
+				slog.Warn("post-merge sync failed", "task_id", id, "err", err)
+			}
+		}
 		mode := strings.TrimSpace(req.Mode)
 		s.runAsyncHandler(w, interaction.PhaseMerge, map[string]string{"status": "merging"}, func() {
 			taskID := tk.ID
@@ -165,6 +173,11 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 
 	s.runAsyncHandler(w, interaction.PhaseMerge, map[string]string{"status": "merging"}, func() {
 		ig := integrator.New(s.repoDir, s.cfg.Project.IntegrationBranch, s.cfg.Validation.Commands, s.interactions)
+		ig.OnPostMerge = func(id string) {
+			if err := s.runPostMergeRetro(id); err != nil {
+				slog.Warn("post-merge retro failed", "task_id", id, "err", err)
+			}
+		}
 		merged := make([]string, 0, len(taskIDs))
 		failed := make([]string, 0)
 		failedSet := make(map[string]bool)
@@ -220,6 +233,11 @@ func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {
 				"task_id": taskID,
 				"status":  "merged",
 			}})
+		}
+		if len(merged) > 0 {
+			if _, err := s.runPostMergeSync(merged); err != nil {
+				slog.Warn("post-merge sync failed", "merged_count", len(merged), "err", err)
+			}
 		}
 
 		s.hub.Broadcast(Event{Type: "merge.completed", Data: map[string]interface{}{

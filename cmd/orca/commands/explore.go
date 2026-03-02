@@ -106,7 +106,7 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 	memoryStore := memory.NewStore(db)
 	explorer := explore.New(selectedTool, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
 		WithMemory(memoryStore).
-		WithSyncer(memory.NewSyncer(memoryStore, db.DB, repoDir))
+		WithSyncer(newConfiguredMemorySyncer(cfg, memoryStore, db, repoDir))
 	if explore.LoadContext(repoDir) != "" {
 		if stale, err := explore.IsStale(repoDir); err == nil && stale {
 			fmt.Println("Note: existing context was stale (codebase changed since last explore). Refreshing...")

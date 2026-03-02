@@ -145,7 +145,7 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 	memStore := memory.NewStore(s.db)
 	generator := planpkg.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions).
 		WithMemory(memStore).
-		WithSyncer(memory.NewSyncer(memStore, s.db.DB, s.repoDir))
+		WithSyncer(s.newMemorySyncer(memStore))
 	var planContent string
 	planContent, err = generator.Generate(taskID, t.Title, t.Description)
 	if err != nil {

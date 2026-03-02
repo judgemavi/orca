@@ -711,6 +711,14 @@ func (s *Server) toolDefinitions() []toolDef {
 				"properties": map[string]interface{}{},
 			},
 		},
+		{
+			Name:        "memory_status",
+			Description: "Get memory sync status, including commit lag and context staleness.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
 	}
 }
 

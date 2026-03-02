@@ -63,5 +63,6 @@ func (s *Server) toolHandlers() map[string]toolHandler {
 		"memory_update":              s.HandleMemoryUpdateTool,
 		"memory_delete":              s.HandleMemoryDeleteTool,
 		"memory_sync":                s.HandleMemorySyncTool,
+		"memory_status":              s.HandleMemoryStatusTool,
 	}
 }

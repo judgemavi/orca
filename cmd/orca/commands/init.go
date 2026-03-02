@@ -7,12 +7,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/banner"
 	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -76,6 +79,11 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := runInitAutoExplore(cwd, &cfg); err != nil {
+		warnf("initial explore failed: %v", err)
+		fmt.Println("Init will continue. You can run `orca explore` later.")
+	}
+
 	fmt.Printf("\n✓ Orca initialized in %s\n\n", cwd)
 	fmt.Println("Getting started:")
 	fmt.Println("  orca explore                      Analyze codebase for context")
@@ -88,6 +96,58 @@ func (r *Registry) runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("  orca status                       Show project overview")
 	fmt.Println("  orca serve                        Open web UI")
 	fmt.Println("  orca orc                          Launch orchestrator (autopilot)")
+	return nil
+}
+
+func runInitAutoExplore(repoDir string, cfg *config.Config) error {
+	if cfg == nil {
+		fmt.Println("Skipping initial exploration (no config available).")
+		return nil
+	}
+	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
+	if err != nil {
+		fmt.Printf("Skipping initial exploration: %v\n", err)
+		return nil
+	}
+	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
+
+	hasTrackedCode, err := explore.HasTrackedCode(repoDir)
+	if err != nil {
+		return fmt.Errorf("inspect tracked files: %w", err)
+	}
+	if !hasTrackedCode {
+		fmt.Printf("Skipping initial exploration: %s\n", explore.NoTrackedCodeMessage)
+		return nil
+	}
+
+	dbPath := filepath.Join(repoDir, ".orca", "state.db")
+	db, err := state.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open state db for init explore: %w", err)
+	}
+	defer db.Close()
+
+	memoryStore := memory.NewStore(db)
+	beforeSeeded, _ := memoryStore.List(memory.ListOpts{Tag: "explore-seed"})
+
+	fmt.Println("Running initial codebase exploration...")
+	explorer := explore.New(toolName, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+		WithMemory(memoryStore).
+		WithSyncer(newConfiguredMemorySyncer(cfg, memoryStore, db, repoDir))
+
+	outPath, err := explorer.Run()
+	if err != nil {
+		return fmt.Errorf("auto explore: %w", err)
+	}
+
+	contextSize := len(strings.TrimSpace(explore.LoadContext(repoDir)))
+	afterSeeded, _ := memoryStore.List(memory.ListOpts{Tag: "explore-seed"})
+	seededDelta := len(afterSeeded) - len(beforeSeeded)
+	if seededDelta < 0 {
+		seededDelta = 0
+	}
+
+	fmt.Printf("Initial exploration complete: context=%d bytes, memory seeded=%d, stored=%s\n", contextSize, seededDelta, outPath)
 	return nil
 }
 

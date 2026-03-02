@@ -35,6 +35,12 @@ type Integrator struct {
 
 	mu       sync.Mutex
 	lockPath string
+
+	// Optional post-merge hooks wired by callers.
+	// OnPostMerge runs after each successfully merged task.
+	OnPostMerge func(taskID string)
+	// OnPostMergeBatchComplete runs once at the end of MergeBatch for all merged tasks.
+	OnPostMergeBatchComplete func(taskIDs []string)
 }
 
 // New creates an Integrator.
@@ -125,7 +131,11 @@ func (i *Integrator) mergeUnlocked(taskID string) error {
 // then continues the rebase and retries the merge.
 func (i *Integrator) MergeWithRerun(taskID string) error {
 	return i.withIntegrationLock(func() error {
-		return i.mergeWithRerunUnlocked(taskID)
+		if err := i.mergeWithRerunUnlocked(taskID); err != nil {
+			return err
+		}
+		i.runOnPostMerge(taskID)
+		return nil
 	})
 }
 
@@ -370,6 +380,7 @@ func (i *Integrator) MergeAndValidate(taskID string) error {
 		return fmt.Errorf("task-%s merged but validation failed (reverted): %w", taskID, err)
 	}
 
+	i.runOnPostMerge(taskID)
 	return nil
 }
 
@@ -415,7 +426,20 @@ func (i *Integrator) MergeBatch(taskIDs []string) (merged []string, failed []str
 			merged = append(merged, id)
 		}
 	}
+	i.runOnPostMergeBatchComplete(merged)
 	return merged, failed, nil
+}
+
+func (i *Integrator) runOnPostMerge(taskID string) {
+	if i.OnPostMerge != nil {
+		i.OnPostMerge(taskID)
+	}
+}
+
+func (i *Integrator) runOnPostMergeBatchComplete(taskIDs []string) {
+	if i.OnPostMergeBatchComplete != nil {
+		i.OnPostMergeBatchComplete(taskIDs)
+	}
 }
 
 // git runs a git command in the repo dir, returning a wrapped error with stderr on failure.

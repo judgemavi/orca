@@ -304,7 +304,7 @@ func isValidMemorySourceType(sourceType string) bool {
 }
 
 func (r *Registry) runMemorySync(cmd *cobra.Command, args []string) error {
-	db, _, err := r.openStoreOrErr()
+	db, cfg, _, err := r.loadRuntimeOrErr()
 	if err != nil {
 		return err
 	}
@@ -315,17 +315,22 @@ func (r *Registry) runMemorySync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolve repo dir: %w", err)
 	}
 	store := memory.NewStore(db)
-	syncer := memory.NewSyncer(store, db.DB, repoDir)
+	syncer := newConfiguredMemorySyncer(cfg, store, db, repoDir)
 	result, err := syncer.Sync()
 	if err != nil {
 		return fmt.Errorf("sync memory: %w", err)
 	}
 
-	fmt.Printf("Last commit: %s\n", emptyDash(result.LastCommit))
-	fmt.Printf("New commit: %s\n", emptyDash(result.NewCommit))
-	fmt.Printf("Commits since last sync: %d\n", result.CommitCount)
+	fmt.Printf("Synced: %s -> %s (%d commits)\n", emptyDash(result.LastCommit), emptyDash(result.NewCommit), result.CommitCount)
 	fmt.Printf("Affected files: %d\n", len(result.AffectedFiles))
 	fmt.Printf("Flagged entries: %d\n", result.FlaggedEntries)
+	context := "unchanged"
+	if result.ContextUpdated {
+		context = "updated ✓"
+	} else if result.ContextStale {
+		context = "stale (re-explore recommended)"
+	}
+	fmt.Printf("Context: %s\n", context)
 	return nil
 }
 

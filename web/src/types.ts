@@ -194,6 +194,26 @@ export interface MemorySyncResult {
   commit_count: number
   affected_files: string[]
   flagged_entries: number
+  context_updated: boolean
+  context_stale: boolean
+}
+
+export interface ProjectStatus {
+  project: string
+  total_tasks: number
+  pending: number
+  in_progress: number
+  completed: number
+  failed: number
+  context_exists: boolean
+  context_stale: boolean
+  context_age_minutes: number
+  total_cost: number
+  running_operations: number
+  last_synced_commit: string
+  current_commit: string
+  sync_needed: boolean
+  commits_behind: number
 }
 
 export type KnownWSEvent =

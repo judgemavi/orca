@@ -33,3 +33,6 @@ var OutputStyle string
 
 //go:embed executor_style.md
 var ExecutorStyle string
+
+//go:embed sync_context.md
+var SyncContext string
