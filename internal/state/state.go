@@ -72,8 +72,14 @@ func (db *DB) migrate() error {
 			return err
 		}
 		if !applied {
-			if _, err := tx.Exec(m.sql); err != nil {
-				return err
+			if m.apply != nil {
+				if err := m.apply(tx); err != nil {
+					return err
+				}
+			} else {
+				if _, err := tx.Exec(m.sql); err != nil {
+					return err
+				}
 			}
 		}
 		if _, err := tx.Exec(
@@ -101,6 +107,7 @@ func (db *DB) currentMigrationVersion(tx *sql.Tx) (int, error) {
 type migration struct {
 	version   int
 	sql       string
+	apply     func(tx *sql.Tx) error
 	isApplied func(tx *sql.Tx) (bool, error)
 }
 
@@ -129,6 +136,11 @@ var migrations = []migration{
 		version:   5,
 		sql:       schemaV5,
 		isApplied: schemaV5Applied,
+	},
+	{
+		version:   6,
+		apply:     schemaV6Apply,
+		isApplied: schemaV6Applied,
 	},
 }
 
@@ -197,6 +209,198 @@ func schemaV5Applied(tx *sql.Tx) (bool, error) {
 		return false, err
 	}
 	return updateTrigger, nil
+}
+
+func schemaV6Applied(tx *sql.Tx) (bool, error) {
+	hasSourceType, err := hasColumn(tx, "memory_entries", "source_type")
+	if err != nil {
+		return false, err
+	}
+	if !hasSourceType {
+		return false, nil
+	}
+	return hasTable(tx, "memory_file_associations")
+}
+
+func schemaV6Apply(tx *sql.Tx) error {
+	hasKnowledgeTable, err := hasTable(tx, "knowledge_entries")
+	if err != nil {
+		return err
+	}
+	hasMemoryTable, err := hasTable(tx, "memory_entries")
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+DROP TRIGGER IF EXISTS memory_version_insert;
+DROP TRIGGER IF EXISTS memory_version_update;
+DROP TABLE IF EXISTS memory_fts;
+DROP TABLE IF EXISTS knowledge_fts;
+`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+CREATE TABLE memory_entries_new (
+	id                    TEXT PRIMARY KEY,
+	content               TEXT NOT NULL,
+	category              TEXT NOT NULL CHECK(category IN ('pattern','pitfall','preference','convention','architecture','dependency')),
+	tags                  TEXT NOT NULL DEFAULT '[]',
+	source_task_id        TEXT REFERENCES tasks(id),
+	source_interaction_id TEXT REFERENCES task_interactions(id),
+	confidence            REAL NOT NULL DEFAULT 1.0,
+	provenance_hash       TEXT NOT NULL,
+	superseded_by         TEXT REFERENCES memory_entries_new(id),
+	source_type           TEXT NOT NULL DEFAULT 'retro' CHECK(source_type IN ('retro','task','commit')),
+	created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`); err != nil {
+		return err
+	}
+
+	if hasMemoryTable {
+		if _, err := tx.Exec(`
+INSERT INTO memory_entries_new (
+	id,
+	content,
+	category,
+	tags,
+	source_task_id,
+	source_interaction_id,
+	confidence,
+	provenance_hash,
+	superseded_by,
+	source_type,
+	created_at,
+	updated_at
+)
+SELECT
+	id,
+	content,
+	category,
+	tags,
+	source_task_id,
+	source_interaction_id,
+	confidence,
+	provenance_hash,
+	superseded_by,
+	'retro',
+	created_at,
+	updated_at
+FROM memory_entries;
+`); err != nil {
+			return err
+		}
+	}
+	if hasKnowledgeTable {
+		if _, err := tx.Exec(`
+INSERT OR IGNORE INTO memory_entries_new (
+	id,
+	content,
+	category,
+	tags,
+	source_task_id,
+	source_interaction_id,
+	confidence,
+	provenance_hash,
+	superseded_by,
+	source_type,
+	created_at,
+	updated_at
+)
+SELECT
+	id,
+	content,
+	category,
+	tags,
+	source_task_id,
+	source_interaction_id,
+	confidence,
+	provenance_hash,
+	superseded_by,
+	'retro',
+	created_at,
+	updated_at
+FROM knowledge_entries;
+`); err != nil {
+			return err
+		}
+	}
+
+	if hasMemoryTable {
+		if _, err := tx.Exec(`DROP TABLE memory_entries;`); err != nil {
+			return err
+		}
+	}
+	if hasKnowledgeTable {
+		if _, err := tx.Exec(`DROP TABLE knowledge_entries;`); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`ALTER TABLE memory_entries_new RENAME TO memory_entries;`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+CREATE INDEX IF NOT EXISTS idx_memory_category ON memory_entries(category);
+CREATE INDEX IF NOT EXISTS idx_memory_source_task ON memory_entries(source_task_id);
+CREATE INDEX IF NOT EXISTS idx_memory_superseded ON memory_entries(superseded_by);
+
+CREATE TRIGGER IF NOT EXISTS memory_version_insert
+AFTER INSERT ON memory_entries
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_version_update
+AFTER UPDATE ON memory_entries
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+	id UNINDEXED,
+	content,
+	tags,
+	tokenize='porter'
+);
+
+INSERT INTO memory_fts (id, content, tags)
+SELECT id, content, tags FROM memory_entries;
+
+CREATE TABLE IF NOT EXISTS memory_file_associations (
+	memory_id TEXT NOT NULL REFERENCES memory_entries(id) ON DELETE CASCADE,
+	file_path TEXT NOT NULL,
+	PRIMARY KEY (memory_id, file_path)
+);
+CREATE INDEX IF NOT EXISTS idx_mfa_file_path ON memory_file_associations(file_path);
+
+CREATE TRIGGER IF NOT EXISTS memory_file_associations_version_insert
+AFTER INSERT ON memory_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_file_associations_version_update
+AFTER UPDATE ON memory_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_file_associations_version_delete
+AFTER DELETE ON memory_file_associations
+BEGIN
+	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
+END;
+
+INSERT OR IGNORE INTO meta (key, value) VALUES ('last_synced_commit', '');
+`); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func hasTable(tx *sql.Tx, table string) (bool, error) {
