@@ -30,7 +30,7 @@ function buildTaskTree(tasks: Task[]): TaskNode[] {
   for (const node of map.values()) {
     if (node.parent_id && map.has(node.parent_id)) {
       const parent = map.get(node.parent_id)!
-      ;(parent.subRows ??= []).push(node)
+        ; (parent.subRows ??= []).push(node)
     } else {
       roots.push(node)
     }
@@ -156,7 +156,7 @@ function Page() {
 
   if (!tasks || tasks.length === 0)
     return (
-      <div className="flex flex-col flex-1 items-center gap-3 text-center self-center justify-self-center">
+      <div className="flex flex-col flex-1 items-center gap-3 text-center justify-center">
         <p className="text-sm">No tasks yet.</p>
         <CreateTaskModal />
       </div>
@@ -181,9 +181,9 @@ function Page() {
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
                   </th>
                 ))}
               </tr>

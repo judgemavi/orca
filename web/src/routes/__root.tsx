@@ -97,7 +97,7 @@ const RootLayout = () => {
         </div>
       </header>
 
-      <main className="flex flex-col flex-1 max-w-360 mx-auto w-full px-4">
+      <main className="flex flex-col flex-1 max-w-360 mx-auto w-full px-4 overflow-y-auto">
         <Outlet />
       </main>
       <Toaster theme={themePreference} position="bottom-center" richColors />

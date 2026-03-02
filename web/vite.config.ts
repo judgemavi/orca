@@ -20,6 +20,11 @@ export default defineConfig({
         ws: true,
         rewriteWsOrigin: true,
       },
+      '/api/v1/terminal': {
+        target: 'ws://localhost:8080',
+        ws: true,
+        rewriteWsOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
       },

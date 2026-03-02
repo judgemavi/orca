@@ -19,8 +19,8 @@ export function OrchestratorDialog({ orchestratorId }: Props) {
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content className="dialog-content fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2">
-          <div className="dialog-content-inner">
+        <Dialog.Content className="dialog-content fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[70vw] h-[70vh]">
+          <div className="dialog-content-inner h-full">
             <DialogChrome title="Orchestrator" />
             {orchestratorId ? (
               <TerminalPane sessionId={orchestratorId} className="flex-1" />

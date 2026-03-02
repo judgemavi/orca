@@ -258,7 +258,7 @@ export const api = {
   getConfig: () => request<Config>('/config'),
   updateConfig: (cfgPatch: Partial<Config>) => put<Config>('/config', cfgPatch),
   listModels: (tool?: string): Promise<Record<string, ModelInfo[]>> =>
-    request<Record<string, ModelInfo[]>>(withQuery('/models', { tool })),
+    request<{ tools: Record<string, ModelInfo[]> }>(withQuery('/models', { tool })).then(r => r.tools),
   getTaskPlan: async (taskId: string): Promise<string> =>
     normalizePlanText(await request<unknown>(`/tasks/${taskId}/plan`)),
   saveTaskPlan: (taskId: string, plan: string): Promise<void> =>
