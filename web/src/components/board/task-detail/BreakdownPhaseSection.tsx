@@ -1,37 +1,11 @@
 import { Button } from '../../Button'
 import type { Interaction, ProposedTask } from '../../../types'
 import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
-
-type ParsedBreakdown = {
-  accepted: boolean
-  rejected: boolean
-  proposed: ProposedTask[]
-}
-
-function parseBreakdownResult(
-  qualityJSON: string | undefined,
-): ParsedBreakdown {
-  if (!qualityJSON) {
-    return { accepted: false, rejected: false, proposed: [] }
-  }
-  try {
-    const parsed = JSON.parse(qualityJSON) as {
-      accepted?: unknown
-      rejected?: unknown
-      proposed?: unknown[]
-    }
-    const proposed = Array.isArray(parsed.proposed)
-      ? (parsed.proposed as ProposedTask[])
-      : []
-    return {
-      accepted: parsed.accepted === true,
-      rejected: parsed.rejected === true,
-      proposed,
-    }
-  } catch {
-    return { accepted: false, rejected: false, proposed: [] }
-  }
-}
+import {
+  parseBreakdownPayload,
+  parseJSONText,
+} from '../../../lib/orchestratorRichContent'
+import { BreakdownCard } from '../../shared/BreakdownCard'
 
 type Props = {
   interaction: Interaction
@@ -62,8 +36,6 @@ export function BreakdownPhaseSection({
     )
   }
 
-  const result = parseBreakdownResult(interaction.quality_json)
-
   const showProposals =
     proposals &&
     proposals.proposed.length > 0 &&
@@ -71,36 +43,8 @@ export function BreakdownPhaseSection({
 
   if (showProposals) {
     return (
-      <div className="rounded-lg bg-orange-500/10 p-3 shadow-sm shadow-orange-500/10">
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em]">
-          Proposed Subtasks
-        </div>
-        <div className="flex flex-col gap-2">
-          {proposals.proposed.map((task, index) => (
-            <div
-              key={`${proposals.interactionId}-${index}`}
-              className="rounded border border-border-subtle bg-surface-alt/60 p-2 text-xs"
-            >
-              <div className="font-medium">
-                {index + 1}. {task.title}
-              </div>
-              <div className="mt-1 whitespace-pre-wrap text-muted">
-                {task.description}
-              </div>
-              <div className="mt-1 text-[11px] text-muted">
-                Depends On:{' '}
-                {task.depends_on_indices.length > 0
-                  ? task.depends_on_indices.map((dep) => dep + 1).join(', ')
-                  : 'None'}
-              </div>
-              {task.suggested_tool && (
-                <div className="text-[11px] text-muted">
-                  Suggested Tool: {task.suggested_tool}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+      <div>
+        <BreakdownCard proposed={proposals.proposed} />
         <div className="mt-3 flex flex-wrap gap-2">
           <Button
             variant="primary"
@@ -121,45 +65,14 @@ export function BreakdownPhaseSection({
     )
   }
 
-  const statusLabel = result.accepted
-    ? 'Breakdown accepted'
-    : result.rejected
-      ? 'Breakdown rejected'
-      : `Breakdown proposed ${result.proposed.length} subtasks`
+  const result = parseBreakdownPayload(parseJSONText(interaction.quality_json ?? ''))
+  if (!result) return null
 
   return (
-    <div
-      className={[
-        'rounded-lg p-3',
-        result.accepted
-          ? 'bg-emerald-500/10 shadow-sm shadow-emerald-500/10'
-          : result.rejected
-            ? 'bg-surface-alt/70'
-            : 'bg-orange-500/10 shadow-sm shadow-orange-500/10',
-      ].join(' ')}
-    >
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.05em]">
-        <span>{statusLabel}</span>
-      </div>
-      {result.proposed.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {result.proposed.map((task, index) => (
-            <div
-              key={`${interaction.id}-settled-${index}`}
-              className="rounded border border-border-subtle bg-surface-alt/60 p-2 text-xs"
-            >
-              <div className="font-medium">
-                {index + 1}. {task.title}
-              </div>
-              {task.description && (
-                <div className="mt-1 whitespace-pre-wrap text-muted">
-                  {task.description}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <BreakdownCard
+      proposed={result.proposed}
+      accepted={result.accepted}
+      rejected={result.rejected}
+    />
   )
 }

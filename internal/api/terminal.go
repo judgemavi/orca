@@ -90,18 +90,24 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	if session.Scrollback == nil {
+		closeBridge()
+		return
+	}
+
+	if snapshot := session.Scrollback.Snapshot(); len(snapshot) > 0 {
+		if err := writeWS(websocket.BinaryMessage, snapshot); err != nil {
+			closeBridge()
+			return
+		}
+	}
+
+	ch, unsub := session.Scrollback.Subscribe()
+	defer unsub()
+
 	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := session.Pty.Read(buf)
-			if n > 0 {
-				if werr := writeWS(websocket.BinaryMessage, buf[:n]); werr != nil {
-					closeBridge()
-					return
-				}
-			}
-			if err != nil {
-				sendClose()
+		for data := range ch {
+			if err := writeWS(websocket.BinaryMessage, data); err != nil {
 				closeBridge()
 				return
 			}
@@ -111,6 +117,14 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 			default:
 			}
 		}
+
+		select {
+		case <-done:
+			return
+		default:
+		}
+		sendClose()
+		closeBridge()
 	}()
 
 	for {

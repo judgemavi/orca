@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasjeetmavi/orca/internal/executor"
+	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
 
@@ -160,6 +161,7 @@ func (s *Server) HandleTasksDeleteTool(argsRaw json.RawMessage) (interface{}, er
 		return nil, err
 	}
 	_ = s.executor.Worktrees().Remove(taskID)
+	_ = interaction.NewStore(s.db, ".orca/interactions").RemoveTaskLogs(taskID)
 	return map[string]interface{}{"task_id": taskID, "deleted": true}, nil
 }
 
@@ -286,6 +288,14 @@ func (s *Server) HandleTasksStartTool(argsRaw json.RawMessage) (interface{}, err
 		}
 		for _, t := range ready {
 			taskIDs = append(taskIDs, t.ID)
+		}
+	} else {
+		for i, id := range taskIDs {
+			resolved, err := s.taskStore.ResolveID(id)
+			if err != nil {
+				return nil, fmt.Errorf("resolve task_id %q: %w", id, err)
+			}
+			taskIDs[i] = resolved
 		}
 	}
 

@@ -185,9 +185,12 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusBadRequest)
 		return
 	}
-	// Best-effort worktree cleanup.
+	// Best-effort worktree + log cleanup.
 	if err := s.executor.Worktrees().Remove(resolved); err != nil {
 		slog.Warn("cleanup worktree after delete", "task_id", resolved[:8], "err", err)
+	}
+	if err := s.interactions.RemoveTaskLogs(resolved); err != nil {
+		slog.Warn("cleanup logs after delete", "task_id", resolved[:8], "err", err)
 	}
 	s.hub.Broadcast(Event{Type: "task.deleted", Data: map[string]string{"id": resolved}})
 	jsonOK(w, map[string]string{"deleted": resolved})

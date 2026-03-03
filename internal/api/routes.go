@@ -83,6 +83,9 @@ func (s *Server) Routes() http.Handler {
 
 	// Orchestrator
 	mux.HandleFunc("POST /api/v1/orchestrator/start", s.handleStartOrchestrator)
+	mux.HandleFunc("POST /api/v1/orchestrator/chat", s.handleOrchestratorChat)
+	mux.HandleFunc("GET /api/v1/orchestrator/chat/history", s.handleOrchestratorHistory)
+	mux.HandleFunc("POST /api/v1/orchestrator/chat/new", s.handleOrchestratorNewSession)
 
 	// Frontend served under /ui/ with SPA fallback for client-side routing.
 	if s.frontendFS != nil {

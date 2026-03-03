@@ -148,6 +148,11 @@ var migrations = []migration{
 		apply:     schemaV7Apply,
 		isApplied: schemaV7Applied,
 	},
+	{
+		version:   8,
+		apply:     schemaV8Apply,
+		isApplied: schemaV8Applied,
+	},
 }
 
 // DBVersion returns the current persisted db_version sentinel value.
@@ -251,6 +256,10 @@ func schemaV7Applied(tx *sql.Tx) (bool, error) {
 		return false, nil
 	}
 	return hasColumn(tx, "memory_entries", "stale")
+}
+
+func schemaV8Applied(tx *sql.Tx) (bool, error) {
+	return hasTable(tx, "orchestrator_messages")
 }
 
 func schemaV6Apply(tx *sql.Tx) error {
@@ -547,6 +556,35 @@ AFTER DELETE ON task_file_associations
 BEGIN
 	UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'db_version';
 END;
+`); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func schemaV8Apply(tx *sql.Tx) error {
+	if _, err := tx.Exec(`
+CREATE TABLE IF NOT EXISTS orchestrator_sessions (
+	id                TEXT PRIMARY KEY,
+	tool              TEXT NOT NULL,
+	model             TEXT NOT NULL DEFAULT '',
+	claude_session_id TEXT DEFAULT '',
+	status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','closed')),
+	created_at        DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS orchestrator_messages (
+	id         TEXT PRIMARY KEY,
+	session_id TEXT NOT NULL,
+	role       TEXT NOT NULL CHECK(role IN ('user','assistant','tool_use','tool_result')),
+	content    TEXT NOT NULL,
+	metadata   TEXT DEFAULT '{}',
+	created_at DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_orch_msg_session
+	ON orchestrator_messages(session_id, created_at);
 `); err != nil {
 		return err
 	}

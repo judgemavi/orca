@@ -38,9 +38,9 @@ export function usePlanEditor({
       ) ?? null
 
   const currentPlanText =
-    taskPlanQuery.data ??
-    task.plan ??
-    latestCompletedPlanInteraction?.diff ??
+    taskPlanQuery.data ||
+    task.plan ||
+    latestCompletedPlanInteraction?.diff ||
     ''
 
   const latestCompletedPlanId = latestCompletedPlanInteraction?.id ?? null

@@ -101,6 +101,7 @@ function handleKnownEvent(qc: QueryClient, event: KnownWSEvent): boolean {
       qc.setQueryData<TasksCache>(queryKeys.tasks, (old) =>
         (old ?? []).filter((t) => t.id !== id),
       )
+      qc.removeQueries({ queryKey: queryKeys.task(id) })
       return true
     }
 

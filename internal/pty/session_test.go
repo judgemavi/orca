@@ -1,7 +1,6 @@
 package pty
 
 import (
-	"bufio"
 	"os/exec"
 	"strings"
 	"testing"
@@ -37,37 +36,24 @@ func TestManagerCreateWriteReadKill(t *testing.T) {
 		t.Fatalf("expected default size 80x24, got %dx%d", s.Cols, s.Rows)
 	}
 
-	r, err := m.Reader(s.ID)
-	if err != nil {
-		t.Fatalf("reader: %v", err)
-	}
+	ch, _ := s.Scrollback.Subscribe()
 
 	if _, err := m.Write(s.ID, []byte("echo hello\n")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	lines := make(chan string, 32)
-	errs := make(chan error, 1)
-	go func() {
-		scanner := bufio.NewScanner(r)
-		for scanner.Scan() {
-			lines <- scanner.Text()
-		}
-		errs <- scanner.Err()
-	}()
-
+	var out strings.Builder
 	deadline := time.After(5 * time.Second)
 	for {
 		select {
-		case line := <-lines:
-			if strings.Contains(line, "hello") {
+		case data, ok := <-ch:
+			if !ok {
+				t.Fatal("scrollback subscriber closed before expected output")
+			}
+			out.Write(data)
+			if strings.Contains(out.String(), "hello") {
 				goto found
 			}
-		case err := <-errs:
-			if err != nil {
-				t.Fatalf("read error: %v", err)
-			}
-			t.Fatal("pty closed before expected output")
 		case <-deadline:
 			t.Fatal("timed out waiting for hello output")
 		}
@@ -77,7 +63,26 @@ found:
 	if err := m.Kill(s.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
-	if m.Get(s.ID) != nil {
-		t.Fatalf("session %s still active after kill", s.ID)
+
+	removeDeadline := time.After(2 * time.Second)
+	for m.Get(s.ID) != nil {
+		select {
+		case <-removeDeadline:
+			t.Fatalf("session %s still active after kill", s.ID)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	closeDeadline := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+		case <-closeDeadline:
+			t.Fatal("scrollback subscriber channel not closed after kill")
+		}
 	}
 }

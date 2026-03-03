@@ -17,6 +17,7 @@ import type {
   ProjectStatus,
   ListMemoryParams,
   UpdateMemoryInput,
+  OrchestratorMessage,
 } from './types'
 
 const BASE = '/api/v1'
@@ -122,9 +123,7 @@ export const api = {
         source_type: params?.source_type,
         file_path: params?.file_path,
         stale:
-          typeof params?.stale === 'boolean'
-            ? String(params.stale)
-            : undefined,
+          typeof params?.stale === 'boolean' ? String(params.stale) : undefined,
         covered_before: params?.covered_before,
         q: params?.q,
         limit:
@@ -258,7 +257,9 @@ export const api = {
   getConfig: () => request<Config>('/config'),
   updateConfig: (cfgPatch: Partial<Config>) => put<Config>('/config', cfgPatch),
   listModels: (tool?: string): Promise<Record<string, ModelInfo[]>> =>
-    request<{ tools: Record<string, ModelInfo[]> }>(withQuery('/models', { tool })).then(r => r.tools),
+    request<{ tools: Record<string, ModelInfo[]> }>(
+      withQuery('/models', { tool }),
+    ).then((r) => r.tools),
   getTaskPlan: async (taskId: string): Promise<string> =>
     normalizePlanText(await request<unknown>(`/tasks/${taskId}/plan`)),
   saveTaskPlan: (taskId: string, plan: string): Promise<void> =>
@@ -282,4 +283,17 @@ export const api = {
       }>
     >('/sessions'),
   startOrchestrator: () => post<{ status: string }>('/orchestrator/start'),
+  sendOrchestratorMessage: (
+    message: string,
+    signal?: AbortSignal,
+  ): Promise<Response> =>
+    fetch(`${BASE}/orchestrator/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+      signal,
+    }),
+  getOrchestratorHistory: () =>
+    request<OrchestratorMessage[]>('/orchestrator/chat/history'),
+  newOrchestratorSession: () => post<{ id: string }>('/orchestrator/chat/new'),
 }

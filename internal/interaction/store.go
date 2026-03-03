@@ -509,6 +509,18 @@ func (s *Store) MarkStaleAsFailed() error {
 	return nil
 }
 
+// RemoveTaskLogs deletes the on-disk log directory for a task.
+func (s *Store) RemoveTaskLogs(taskID string) error {
+	if strings.TrimSpace(taskID) == "" {
+		return nil
+	}
+	dir := filepath.Join(s.baseDir, taskID)
+	if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove task log dir: %w", err)
+	}
+	return nil
+}
+
 // SupersedeReviewPhase marks prior review interactions as failed when a new revise rerun starts.
 func (s *Store) SupersedeReviewPhase(taskID string) error {
 	_, err := s.db.Exec(

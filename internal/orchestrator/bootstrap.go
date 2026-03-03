@@ -114,8 +114,9 @@ var AllowedTools = []string{
 	"mcp__orca__tasks_create",
 	"mcp__orca__tasks_update",
 	"mcp__orca__tasks_delete",
-	"mcp__orca__tasks_cancel",
-	"mcp__orca__tasks_reopen",
+	"mcp__orca__tasks_start",
+	"mcp__orca__tasks_stop",
+	"mcp__orca__tasks_resume",
 	"mcp__orca__tasks_add_dependency",
 	// Planning
 	"mcp__orca__breakdown",
@@ -123,16 +124,22 @@ var AllowedTools = []string{
 	"mcp__orca__tasks_plan_generate",
 	"mcp__orca__tasks_approve_plan",
 	"mcp__orca__tasks_request_plan_changes",
-	// Execution
-	"mcp__orca__tasks_run",
 	// Review
 	"mcp__orca__tasks_approve",
 	"mcp__orca__tasks_request_changes",
 	"mcp__orca__ai_review",
 	"mcp__orca__tasks_reviews",
+	"mcp__orca__tasks_retro",
 	// Integration
 	"mcp__orca__merge",
 	"mcp__orca__tasks_merge",
+	// Memory
+	"mcp__orca__memory_list",
+	"mcp__orca__memory_search",
+	"mcp__orca__memory_query",
+	"mcp__orca__memory_sync",
+	"mcp__orca__memory_refresh",
+	"mcp__orca__memory_status",
 	// Interactions
 	"mcp__orca__interactions_list",
 	"mcp__orca__interaction_get",

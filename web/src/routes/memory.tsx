@@ -81,6 +81,7 @@ function MemoryPage() {
   const [expandedContent, setExpandedContent] = useState<
     Record<string, boolean>
   >({})
+  const [overflowing, setOverflowing] = useState<Record<string, boolean>>({})
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState<EditDraft | null>(null)
@@ -215,7 +216,7 @@ function MemoryPage() {
           const isEditing = editingId === row.original.id
           const content = getValue()
           const isExpanded = expandedContent[row.original.id] ?? false
-          const showToggle = content.length > 140
+          const showToggle = overflowing[row.original.id] || content.length > 140
 
           if (isEditing) {
             return (
@@ -240,6 +241,11 @@ function MemoryPage() {
                 onClick={() => setSelectedEntryId(row.original.id)}
               >
                 <p
+                  ref={(el) => {
+                    if (el && !isExpanded && el.scrollHeight > el.clientHeight) {
+                      setOverflowing((prev) => prev[row.original.id] ? prev : { ...prev, [row.original.id]: true })
+                    }
+                  }}
                   className={
                     isExpanded
                       ? 'whitespace-pre-wrap break-words text-sm'
@@ -513,6 +519,7 @@ function MemoryPage() {
       draft,
       editingId,
       expandedContent,
+      overflowing,
       refreshMutation,
       updateMutation.isPending,
     ],
@@ -804,7 +811,7 @@ function MemoryPage() {
               </div>
               <div>
                 <p className="text-xs font-medium text-muted">Used by tasks</p>
-                {detailQuery.data.used_by_tasks.length === 0 ? (
+                {!detailQuery.data.used_by_tasks?.length ? (
                   <p className="text-xs text-muted">None</p>
                 ) : (
                   <div className="flex flex-wrap gap-2 pt-1">

@@ -83,6 +83,15 @@ export interface InteractionWithContent extends Interaction {
   content: string
 }
 
+export interface OrchestratorMessage {
+  id: string
+  session_id: string
+  role: 'user' | 'assistant' | 'tool_use' | 'tool_result'
+  content: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
 export interface Operation {
   id: string
   type: string

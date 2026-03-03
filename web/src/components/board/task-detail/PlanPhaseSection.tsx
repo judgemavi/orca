@@ -9,6 +9,7 @@ import {
 } from '../../../lib/phases'
 import type { usePlanEditor } from './usePlanEditor'
 import { Button } from '../../Button'
+import { PlanMarkdownCard } from '../../shared/PlanMarkdownCard'
 
 type PlanEditorState = ReturnType<typeof usePlanEditor>
 
@@ -110,11 +111,11 @@ export function PlanPhaseSection({
       )}
 
       {!isEditableLatestPlan && nonEditablePlanMarkdown && (
-        <div className="prose prose-invert prose-sm max-h-[300px] max-w-none overflow-auto rounded-lg bg-surface p-4 text-xs">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {nonEditablePlanMarkdown}
-          </ReactMarkdown>
-        </div>
+        <PlanMarkdownCard
+          planText={nonEditablePlanMarkdown}
+          taskId={interaction.task_id ?? undefined}
+          collapsible={false}
+        />
       )}
 
       {planReviews.length > 0 && (

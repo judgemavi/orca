@@ -28,6 +28,9 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 	assertColumnExists(t, db.DB, "memory_entries", "stale")
 	assertTableExists(t, db.DB, "memory_file_associations")
 	assertTableExists(t, db.DB, "task_file_associations")
+	assertTableExists(t, db.DB, "orchestrator_sessions")
+	assertTableExists(t, db.DB, "orchestrator_messages")
+	assertIndexExists(t, db.DB, "idx_orch_msg_session")
 	assertTableExists(t, db.DB, "explore_context")
 	assertVirtualTableExists(t, db.DB, "memory_fts")
 	assertVirtualTableExists(t, db.DB, "tasks_fts")
@@ -63,6 +66,9 @@ func TestOpenAppliesVersionedMigrationsAndIsIdempotent(t *testing.T) {
 	assertColumnExists(t, db.DB, "memory_entries", "stale")
 	assertTableExists(t, db.DB, "memory_file_associations")
 	assertTableExists(t, db.DB, "task_file_associations")
+	assertTableExists(t, db.DB, "orchestrator_sessions")
+	assertTableExists(t, db.DB, "orchestrator_messages")
+	assertIndexExists(t, db.DB, "idx_orch_msg_session")
 	assertTableExists(t, db.DB, "explore_context")
 	assertVirtualTableExists(t, db.DB, "memory_fts")
 	assertVirtualTableExists(t, db.DB, "tasks_fts")
@@ -110,6 +116,9 @@ func TestOpenMigratesLegacyUnversionedDB(t *testing.T) {
 	assertColumnExists(t, db.DB, "memory_entries", "stale")
 	assertTableExists(t, db.DB, "memory_file_associations")
 	assertTableExists(t, db.DB, "task_file_associations")
+	assertTableExists(t, db.DB, "orchestrator_sessions")
+	assertTableExists(t, db.DB, "orchestrator_messages")
+	assertIndexExists(t, db.DB, "idx_orch_msg_session")
 	assertTableExists(t, db.DB, "explore_context")
 	assertVirtualTableExists(t, db.DB, "memory_fts")
 	assertVirtualTableExists(t, db.DB, "tasks_fts")
@@ -154,6 +163,9 @@ func TestOpenMigratesPreV6KnowledgeTablesToMemory(t *testing.T) {
 	assertColumnExists(t, db.DB, "memory_entries", "stale")
 	assertTableExists(t, db.DB, "memory_file_associations")
 	assertTableExists(t, db.DB, "task_file_associations")
+	assertTableExists(t, db.DB, "orchestrator_sessions")
+	assertTableExists(t, db.DB, "orchestrator_messages")
+	assertIndexExists(t, db.DB, "idx_orch_msg_session")
 	assertVirtualTableExists(t, db.DB, "memory_fts")
 	assertVirtualTableExists(t, db.DB, "tasks_fts")
 	assertMetaValue(t, db.DB, "last_synced_commit", "")
@@ -359,6 +371,20 @@ func assertTriggerExists(t *testing.T, db *sql.DB, trigger string) {
 	}
 	if count != 1 {
 		t.Fatalf("trigger %s missing", trigger)
+	}
+}
+
+func assertIndexExists(t *testing.T, db *sql.DB, index string) {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(
+		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'index' AND name = ?`,
+		index,
+	).Scan(&count); err != nil {
+		t.Fatalf("check index %s: %v", index, err)
+	}
+	if count != 1 {
+		t.Fatalf("index %s missing", index)
 	}
 }
 

@@ -1,6 +1,8 @@
 import type { AIReviewResult, Interaction } from '../../../types'
 import { INTERACTION_STATUSES } from '../../../lib/phases'
 import { useInteractionDetailContext } from './InteractionDetailContext'
+import { parseJSONText } from '../../../lib/orchestratorRichContent'
+import { ReviewResultCard } from '../../shared/ReviewResultCard'
 
 interface Props {
   interaction: Interaction
@@ -65,60 +67,30 @@ export function AIReviewResultCard({
 
   if (!ri.quality_json) return null
 
-  try {
-    const result: AIReviewResult = JSON.parse(ri.quality_json)
-    const costLabel = [
-      ri.tool,
-      ri.estimated_cost > 0 ? `$${ri.estimated_cost.toFixed(2)}` : null,
-    ]
-      .filter(Boolean)
-      .join(' · ')
-
-    const isDismissed = dismissed && !result.approved
-
-    return (
-      <div
-        className={[
-          'rounded-lg p-2.5',
-          isDismissed
-            ? 'bg-surface-alt opacity-60'
-            : result.approved
-              ? 'bg-emerald-500/10 shadow-sm shadow-emerald-500/10'
-              : 'bg-amber-500/10 shadow-sm shadow-amber-500/10',
-        ].join(' ')}
-      >
-        <div className="mb-1 flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.05em]">
-            AI Review
-          </span>
-          <span
-            className={[
-              'text-[10px] font-semibold uppercase',
-              isDismissed
-                ? 'text-muted'
-                : result.approved
-                  ? 'text-emerald-400'
-                  : 'text-amber-400',
-            ].join(' ')}
-          >
-            {isDismissed
-              ? 'Dismissed'
-              : result.approved
-                ? 'Approved'
-                : 'Changes Suggested'}
-          </span>
-          {costLabel && <span className="text-[10px]">{costLabel}</span>}
-          {logButton}
-        </div>
-        {result.prompt && (
-          <div className="mb-1.5 rounded bg-surface px-2 py-1.5 text-[11px] italic">
-            {result.prompt}
-          </div>
-        )}
-        <div className="whitespace-pre-wrap text-xs">{result.feedback}</div>
-      </div>
-    )
-  } catch {
+  const parsed = parseJSONText(ri.quality_json)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return null
   }
+
+  const result = parsed as Partial<AIReviewResult>
+  if (typeof result.feedback !== 'string') return null
+  const cost = ri.estimated_cost > 0 ? `$${ri.estimated_cost.toFixed(2)}` : undefined
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.05em]">
+        <span>AI Review</span>
+        {logButton}
+      </div>
+      <ReviewResultCard
+        approved={result.approved === true}
+        feedback={result.feedback}
+        taskId={result.task_id}
+        tool={typeof result.tool === 'string' ? result.tool : ri.tool}
+        prompt={typeof result.prompt === 'string' ? result.prompt : undefined}
+        cost={cost}
+        dismissed={dismissed}
+      />
+    </div>
+  )
 }

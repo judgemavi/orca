@@ -3,7 +3,6 @@ package pty
 import (
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -27,21 +26,22 @@ const (
 
 // Session owns one PTY process and its metadata.
 type Session struct {
-	ID        string
-	Type      SessionType
-	Cmd       *exec.Cmd
-	Pty       *os.File
-	Dir       string
-	Tool      string
-	TaskID    string
-	Cols      uint16
-	Rows      uint16
-	CreatedAt time.Time
-	ExitCode  int
-	mu        sync.Mutex
-	exited    chan struct{}
-	eventOnce sync.Once
-	closeOnce sync.Once
+	ID         string
+	Type       SessionType
+	Cmd        *exec.Cmd
+	Pty        *os.File
+	Scrollback *Scrollback
+	Dir        string
+	Tool       string
+	TaskID     string
+	Cols       uint16
+	Rows       uint16
+	CreatedAt  time.Time
+	ExitCode   int
+	mu         sync.Mutex
+	exited     chan struct{}
+	eventOnce  sync.Once
+	closeOnce  sync.Once
 }
 
 // CreateOpts defines inputs for creating a PTY session.
@@ -121,19 +121,33 @@ func (m *Manager) Create(opts CreateOpts) (*Session, error) {
 	}
 
 	s := &Session{
-		ID:        uuid.NewString(),
-		Type:      opts.Type,
-		Cmd:       cmd,
-		Pty:       ptmx,
-		Dir:       opts.Dir,
-		Tool:      opts.Tool,
-		TaskID:    opts.TaskID,
-		Cols:      cols,
-		Rows:      rows,
-		CreatedAt: time.Now().UTC(),
-		ExitCode:  -1,
-		exited:    make(chan struct{}),
+		ID:         uuid.NewString(),
+		Type:       opts.Type,
+		Cmd:        cmd,
+		Pty:        ptmx,
+		Scrollback: NewScrollback(256 * 1024),
+		Dir:        opts.Dir,
+		Tool:       opts.Tool,
+		TaskID:     opts.TaskID,
+		Cols:       cols,
+		Rows:       rows,
+		CreatedAt:  time.Now().UTC(),
+		ExitCode:   -1,
+		exited:     make(chan struct{}),
 	}
+
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				_, _ = s.Scrollback.Write(buf[:n])
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 
 	m.mu.Lock()
 	m.sessions[s.ID] = s
@@ -229,15 +243,6 @@ func (m *Manager) Write(id string, data []byte) (int, error) {
 	return s.Pty.Write(data)
 }
 
-// Reader returns the PTY master reader.
-func (m *Manager) Reader(id string) (io.Reader, error) {
-	s := m.Get(id)
-	if s == nil {
-		return nil, fmt.Errorf("session %q not found", id)
-	}
-	return s.Pty, nil
-}
-
 // Cleanup terminates all active sessions.
 func (m *Manager) Cleanup() {
 	for _, s := range m.List() {
@@ -260,6 +265,9 @@ func (m *Manager) waitForExit(s *Session) {
 
 func (m *Manager) finalizeSession(s *Session) {
 	s.closeOnce.Do(func() {
+		if s.Scrollback != nil {
+			s.Scrollback.Close()
+		}
 		if s.Pty != nil {
 			_ = s.Pty.Close()
 		}

@@ -152,12 +152,13 @@ func (m *Manager) Remove(taskID string) error {
 	worktreePath := ResolveTaskDir(m.worktreeDir, taskID)
 	branchName := "orca/" + filepath.Base(worktreePath)
 
-	if err := m.gitCmd("worktree", "remove", worktreePath); err != nil {
-		return fmt.Errorf("git worktree remove: %w", err)
+	if err := m.gitCmd("worktree", "remove", "--force", worktreePath); err != nil {
+		// If worktree dir is already gone, just prune stale entries.
+		m.gitCmd("worktree", "prune")
 	}
 
-	if err := m.gitCmd("branch", "-d", branchName); err != nil {
-		return fmt.Errorf("git branch -d: %w", err)
+	if err := m.gitCmd("branch", "-D", branchName); err != nil {
+		// Branch may already be deleted or never existed; ignore.
 	}
 
 	return nil
