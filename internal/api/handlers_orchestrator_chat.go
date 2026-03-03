@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/orchestrator"
 	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 )
 
 var orchestratorChatExecCommandContext = exec.CommandContext
@@ -99,9 +99,14 @@ func (s *Server) handleOrchestratorChat(w http.ResponseWriter, r *http.Request) 
 	}
 	prompt := buildOrchestratorChatPrompt(historyRows)
 
-	d, ok := driver.Get(session.Tool)
-	if !ok {
-		jsonError(w, fmt.Sprintf("tool %q not found", session.Tool), http.StatusInternalServerError)
+	toolDef, err := orchestrator.ResolveToolDefinition(s.repoDir, session.Tool)
+	if err != nil {
+		jsonError(w, fmt.Errorf("resolve tool definition: %w", err), http.StatusInternalServerError)
+		return
+	}
+	toolBinary := strings.TrimSpace(toolDef.Binary)
+	if toolBinary == "" {
+		jsonError(w, fmt.Errorf("tool %q binary is empty", session.Tool), http.StatusInternalServerError)
 		return
 	}
 
@@ -116,8 +121,8 @@ func (s *Server) handleOrchestratorChat(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	args := buildOrchestratorChatArgs(d, session, prompt, req.Message, mcpConfigPath, s.repoDir)
-	cmd := s.runOrchestratorCommand(r.Context(), d.Binary(), args)
+	args := buildOrchestratorChatArgs(toolDef, session, prompt, req.Message, mcpConfigPath, s.repoDir)
+	cmd := s.runOrchestratorCommand(r.Context(), toolBinary, args)
 	cmd.Dir = s.repoDir
 	cmd.Env = append(filteredOrchestratorChatEnv(), "ORCA_MCP_CONFIG="+mcpConfigPath)
 
@@ -133,7 +138,7 @@ func (s *Server) handleOrchestratorChat(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := cmd.Start(); err != nil {
-		jsonError(w, fmt.Errorf("start %s: %w", d.Binary(), err), http.StatusInternalServerError)
+		jsonError(w, fmt.Errorf("start %s: %w", toolBinary, err), http.StatusInternalServerError)
 		return
 	}
 
@@ -154,12 +159,12 @@ func (s *Server) handleOrchestratorChat(w http.ResponseWriter, r *http.Request) 
 	}()
 
 	var (
-		assistantText  strings.Builder
-		sessionID      string
-		inputTokens    int64
-		outputTokens   int64
-		totalCost      float64
-		lastTaskID     string
+		assistantText strings.Builder
+		sessionID     string
+		inputTokens   int64
+		outputTokens  int64
+		totalCost     float64
+		lastTaskID    string
 	)
 
 	// flushAssistantText persists the accumulated assistant text segment
@@ -191,6 +196,9 @@ func (s *Server) handleOrchestratorChat(w http.ResponseWriter, r *http.Request) 
 	stdoutScanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	for stdoutScanner.Scan() {
 		line := append([]byte(nil), stdoutScanner.Bytes()...)
+		if sid := toolcfg.ExtractSessionID(toolDef.SessionID, string(line)); sid != "" {
+			sessionID = sid
+		}
 
 		if uses, results := parser.parse(line); len(uses) > 0 || len(results) > 0 {
 			for _, tu := range uses {
@@ -248,12 +256,12 @@ func (s *Server) handleOrchestratorChat(w http.ResponseWriter, r *http.Request) 
 			flusher.Flush()
 		}
 
-		event, err := d.ParseEvent(line)
+		event, err := toolcfg.ParseEvent(session.Tool, line)
 		if err != nil {
 			continue
 		}
 		switch event.Type {
-		case driver.EventText:
+		case toolcfg.EventText:
 			if event.Text == "" {
 				continue
 			}
@@ -263,7 +271,7 @@ func (s *Server) handleOrchestratorChat(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 			flusher.Flush()
-		case driver.EventCost:
+		case toolcfg.EventCost:
 			if event.Cost != nil {
 				inputTokens += event.Cost.InputTokens
 				outputTokens += event.Cost.OutputTokens
@@ -272,7 +280,7 @@ func (s *Server) handleOrchestratorChat(w http.ResponseWriter, r *http.Request) 
 			if event.SessionID != "" {
 				sessionID = event.SessionID
 			}
-		case driver.EventSession:
+		case toolcfg.EventSession:
 			if event.SessionID != "" {
 				sessionID = event.SessionID
 			}
@@ -419,7 +427,7 @@ func (s *Server) getOrCreateActiveOrchestratorSession() (*state.OrchestratorSess
 }
 
 func (s *Server) createOrchestratorSession() (*state.OrchestratorSessionRow, error) {
-	toolName, _, model, err := orchestrator.ResolveSupervisorTool(s.cfg)
+	toolName, _, model, err := orchestrator.ResolveSupervisorTool(s.cfg, s.repoDir)
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +480,7 @@ func buildOrchestratorChatPrompt(history []state.OrchestratorMessageRow) string 
 }
 
 func buildOrchestratorChatArgs(
-	d driver.Driver,
+	tool toolcfg.Tool,
 	session *state.OrchestratorSessionRow,
 	prompt string,
 	userMessage string,
@@ -488,21 +496,48 @@ func buildOrchestratorChatArgs(
 		resumeID = strings.TrimSpace(session.ClaudeSessionID)
 	}
 
-	var args []string
+	vars := map[string]string{
+		"prompt":        prompt,
+		"feedback":      userMessage,
+		"model":         model,
+		"dir":           repoDir,
+		"mcp_config":    mcpConfigPath,
+		"allowed_tools": strings.Join(orchestrator.AllowedTools, ","),
+		"context":       orchestrator.SystemPrompt,
+	}
+	var mode string
 	if resumeID != "" {
-		args = d.ResumeArgs(resumeID, userMessage, model, repoDir)
+		mode = toolcfg.ArgsModeResume
+		vars["session_id"] = resumeID
 	} else {
-		args = d.HeadlessArgs(prompt, model, repoDir)
+		mode = toolcfg.ArgsModeHeadless
 	}
+	return compactOrchestratorArgs(tool.ResolveArgs(mode, vars))
+}
 
-	if strings.EqualFold(d.Name(), "claude") {
-		prefix := []string{
-			"--mcp-config", mcpConfigPath,
-			"--allowedTools", strings.Join(orchestrator.AllowedTools, ","),
+func compactOrchestratorArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		current := strings.TrimSpace(args[i])
+		if current == "" {
+			continue
 		}
-		args = append(prefix, args...)
+		if takesOrchestratorValueFlag(current) && i+1 < len(args) && strings.TrimSpace(args[i+1]) == "" {
+			i++
+			continue
+		}
+		out = append(out, args[i])
 	}
-	return args
+	return out
+}
+
+func takesOrchestratorValueFlag(arg string) bool {
+	switch arg {
+	case "--model", "--mcp-config", "--allowedTools", "--append-system-prompt", "--resume", "-C", "--prompt", "-p":
+		return true
+	default:
+		return false
+	}
 }
 
 func filteredOrchestratorChatEnv() []string {

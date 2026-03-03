@@ -3,7 +3,7 @@ package executor
 // Package executor orchestrates parallel task execution: worktree creation,
 // worker spawning, result collection, and artifact storage.
 //
-// Depends on: worker, driver, interaction, monitor, worktree, quality
+// Depends on: worker, interaction, monitor, worktree, quality
 // Consumed by: orchestrator, API handlers
 // Key flow: RunBatch → prepareTasks → collectResult → finalizeRun
 
@@ -21,7 +21,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/monitor"
@@ -29,6 +28,7 @@ import (
 	"github.com/jasjeetmavi/orca/internal/quality"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/jasjeetmavi/orca/prompts"
@@ -68,13 +68,12 @@ type taskInfo struct {
 	taskID          string
 	taskTitle       string
 	toolName        string
-	driver          driver.Driver
+	tool            toolcfg.Tool
 	timeout         time.Duration
 	logWriter       *interaction.Writer
 	worktreePath    string
 	prompt          string
 	model           string
-	args            []string
 	resumeSessionID string
 	resumeFeedback  string
 	contextContent  string
@@ -137,16 +136,12 @@ func (e *Executor) prepareTasks(taskIDs []string, contextSection string, opts Ru
 			return nil, createdTaskIDs, fmt.Errorf("get task %s: %w", taskID, err)
 		}
 
-		toolName, d, err := e.resolveTaskToolConfig(interaction.PhaseRun, opts.ToolOverride)
+		toolName, tool, timeout, err := e.resolveTaskToolConfig(interaction.PhaseRun, opts.ToolOverride)
 		if err != nil {
 			e.closePreparedWriters(prepared)
 			return nil, createdTaskIDs, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 		}
-		model := e.config.ResolveModelForPhase(interaction.PhaseRun, opts.ModelOverride, d)
-		timeout := 10 * time.Minute
-		if parsed, parseErr := time.ParseDuration("600s"); parseErr == nil {
-			timeout = parsed
-		}
+		model := e.config.ResolveModelForPhase(interaction.PhaseRun, opts.ModelOverride, toolName)
 
 		wtPath := worktree.ResolveTaskDir(e.config.Project.WorktreeDir, taskID)
 		if _, statErr := os.Stat(wtPath); os.IsNotExist(statErr) {
@@ -187,7 +182,7 @@ func (e *Executor) prepareTasks(taskIDs []string, contextSection string, opts Ru
 			taskID:         taskID,
 			taskTitle:      t.Title,
 			toolName:       toolName,
-			driver:         d,
+			tool:           tool,
 			timeout:        timeout,
 			logWriter:      writer,
 			worktreePath:   wtPath,
@@ -255,8 +250,16 @@ func (e *Executor) closePreparedWriters(prepared []taskInfo) {
 	}
 }
 
-func (e *Executor) resolveTaskToolConfig(phase string, override string) (string, driver.Driver, error) {
-	return e.config.ResolveToolForPhase(phase, override)
+func (e *Executor) resolveTaskToolConfig(phase string, override string) (string, toolcfg.Tool, time.Duration, error) {
+	toolName, tool, err := e.config.ResolveToolForPhase(phase, override)
+	if err != nil {
+		return "", toolcfg.Tool{}, 0, err
+	}
+	timeout, err := tool.TimeoutDuration()
+	if err != nil || timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	return toolName, tool, timeout, nil
 }
 
 // --- exported functions/methods ---
@@ -494,11 +497,10 @@ func normalizeMemoryIDs(values []string) []string {
 type resumeRunState struct {
 	reviewID        string
 	feedback        string
-	args            []string
 	resumeSessionID string
 }
 
-func (e *Executor) resolveResumeRunState(taskID, sessionID string, d driver.Driver, model, worktreePath string, requireSession bool) (resumeRunState, error) {
+func (e *Executor) resolveResumeRunState(taskID, sessionID string, requireSession bool) (resumeRunState, error) {
 	reviewID, feedback, err := e.taskStore.GetPendingReview(taskID)
 	if err != nil && err != sql.ErrNoRows {
 		return resumeRunState{}, fmt.Errorf("get pending review for task %s: %w", taskID, err)
@@ -512,17 +514,14 @@ func (e *Executor) resolveResumeRunState(taskID, sessionID string, d driver.Driv
 		return resumeRunState{}, fmt.Errorf("task %s cannot resume without session_id", taskID)
 	}
 
-	var args []string
 	resumeSessionID := ""
 	if sessionID != "" {
-		args = d.ResumeArgs(sessionID, feedback, model, worktreePath)
 		resumeSessionID = sessionID
 	}
 
 	return resumeRunState{
 		reviewID:        reviewID,
 		feedback:        feedback,
-		args:            args,
 		resumeSessionID: resumeSessionID,
 	}, nil
 }
@@ -544,12 +543,11 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		return nil, fmt.Errorf("task %s cannot resume without session_id", taskID)
 	}
 
-	toolName, d, err := e.resolveTaskToolConfig(interaction.PhaseRun, opts.ToolOverride)
+	toolName, tool, timeout, err := e.resolveTaskToolConfig(interaction.PhaseRun, opts.ToolOverride)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tool for task %s: %w", taskID, err)
 	}
-	model := e.config.ResolveModelForPhase(interaction.PhaseRun, opts.ModelOverride, d)
-	timeout, _ := time.ParseDuration("600s")
+	model := e.config.ResolveModelForPhase(interaction.PhaseRun, opts.ModelOverride, toolName)
 
 	wtPath := worktree.ResolveTaskDir(e.config.Project.WorktreeDir, taskID)
 	if _, err := os.Stat(wtPath); err != nil {
@@ -573,7 +571,7 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		prompt = strings.TrimSpace(contextSection) + "\n\n---\n\n" + prompt
 	}
 
-	resumeState, err := e.resolveResumeRunState(taskID, t.SessionID, d, model, wtPath, requireStopped)
+	resumeState, err := e.resolveResumeRunState(taskID, t.SessionID, requireStopped)
 	if err != nil {
 		return nil, err
 	}
@@ -631,12 +629,11 @@ func (e *Executor) runSingleWithOpts(ctx context.Context, taskID string, opts Ru
 		taskID:          taskID,
 		taskTitle:       t.Title,
 		toolName:        toolName,
-		driver:          d,
+		tool:            tool,
 		timeout:         timeout,
 		worktreePath:    wtPath,
 		prompt:          prompt,
 		model:           model,
-		args:            resumeState.args,
 		resumeSessionID: resumeState.resumeSessionID,
 		resumeFeedback:  resumeState.feedback,
 		contextContent:  contextSection,

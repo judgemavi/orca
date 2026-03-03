@@ -2,24 +2,39 @@ package worker
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/config"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 )
 
 func TestNewAdapter(t *testing.T) {
-	d, _ := driver.Get("claude")
-	a := NewAdapter(d, "claude-sonnet-4-6", time.Minute)
-	if a == nil || a.Driver == nil {
-		t.Fatal("expected adapter with driver")
+	tool, ok := config.ToolDefinition("claude")
+	if !ok {
+		t.Fatal("expected built-in claude tool definition")
+	}
+	a := NewAdapter("claude", tool, "claude-sonnet-4-6", time.Minute)
+	if a == nil || a.ToolName != "claude" {
+		t.Fatal("expected adapter with tool name")
 	}
 }
 
 func TestSessionIDCallbackFiresBeforeExecuteReturns(t *testing.T) {
-	a := NewAdapter(&streamingSessionDriver{}, "", 3*time.Second)
+	a := NewAdapter("streaming-session-test", toolcfg.Tool{
+		Binary: "sh",
+		Args: []toolcfg.Arg{
+			{Param: "-c", Value: "printf 'session:sess-123\\n'; sleep 0.25; printf 'text:done\\n'", UsedIn: []string{"headless", "resume"}},
+			{Param: "--prompt", Variable: "prompt", UsedIn: []string{"headless"}},
+			{Param: "--resume", Variable: "session_id", UsedIn: []string{"resume"}},
+			{Param: "--prompt", Variable: "feedback", UsedIn: []string{"resume"}},
+		},
+		SessionID: toolcfg.SessionID{
+			Mode:    "pattern",
+			Pattern: `session:([a-zA-Z0-9-]+)`,
+		},
+		Timeout: "3s",
+	}, "", 3*time.Second)
 
 	sessionCh := make(chan string, 1)
 	a.SetSessionIDCallback(func(sessionID string) {
@@ -62,48 +77,4 @@ func TestSessionIDCallbackFiresBeforeExecuteReturns(t *testing.T) {
 	if result.SessionID != "sess-123" {
 		t.Fatalf("result session_id=%q want %q", result.SessionID, "sess-123")
 	}
-}
-
-type streamingSessionDriver struct{}
-
-func (d *streamingSessionDriver) Name() string { return "streaming-session-test" }
-func (d *streamingSessionDriver) Binary() string {
-	return "sh"
-}
-func (d *streamingSessionDriver) Models() []string { return nil }
-func (d *streamingSessionDriver) HeadlessArgs(prompt, model, dir string) []string {
-	return []string{
-		"-c",
-		"printf 'session:sess-123\\n'; sleep 0.25; printf 'text:done\\n'",
-	}
-}
-func (d *streamingSessionDriver) ResumeArgs(sessionID, feedback, model, dir string) []string {
-	return d.HeadlessArgs("", model, dir)
-}
-
-func (d *streamingSessionDriver) ParseEvent(line []byte) (driver.Event, error) {
-	text := strings.TrimSpace(string(line))
-	switch {
-	case strings.HasPrefix(text, "session:"):
-		return driver.Event{Type: driver.EventSession, SessionID: strings.TrimPrefix(text, "session:")}, nil
-	case strings.HasPrefix(text, "cost:"):
-		return driver.Event{
-			Type:      driver.EventCost,
-			SessionID: strings.TrimPrefix(text, "cost:"),
-			Cost:      &driver.Cost{},
-		}, nil
-	case strings.HasPrefix(text, "text:"):
-		return driver.Event{Type: driver.EventText, Text: strings.TrimPrefix(text, "text:")}, nil
-	default:
-		return driver.Event{}, fmt.Errorf("unknown line %q", text)
-	}
-}
-func (d *streamingSessionDriver) FormatEvent(line []byte) string { return string(line) }
-func (d *streamingSessionDriver) ParseSessionID(events []driver.Event) string {
-	for _, e := range events {
-		if e.SessionID != "" {
-			return e.SessionID
-		}
-	}
-	return ""
 }

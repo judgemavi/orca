@@ -44,18 +44,18 @@ func (r *Registry) runTaskPlan(cmd *cobra.Command, args []string) error {
 	toolOverride, _ := cmd.Flags().GetString("tool")
 	modelOverride, _ := cmd.Flags().GetString("model")
 
-	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolOverride)
+	toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolOverride)
 	if err != nil {
 		return err
 	}
-	modelName := cfg.ResolveModelForPhase(interaction.PhasePlan, modelOverride, d)
+	modelName := cfg.ResolveModelForPhase(interaction.PhasePlan, modelOverride, toolName)
 
 	repoDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+	generator := planpkg.New(toolName, tool, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
 		WithMemory(memory.NewStore(db)).
 		WithTaskStore(store).
 		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))
@@ -155,18 +155,18 @@ func (r *Registry) runTaskEvaluate(cmd *cobra.Command, args []string) error {
 	modelOverride, _ := cmd.Flags().GetString("model")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
-	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseExplore, toolOverride)
+	toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhaseExplore, toolOverride)
 	if err != nil {
 		return err
 	}
-	modelName := cfg.ResolveModelForPhase(interaction.PhaseExplore, modelOverride, d)
+	modelName := cfg.ResolveModelForPhase(interaction.PhaseExplore, modelOverride, toolName)
 
 	repoDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	evaluator := evaluate.New(toolName, d, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
+	evaluator := evaluate.New(toolName, tool, modelName, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions"))
 	evaluator.WithMemory(memory.NewStore(db)).
 		WithTaskStore(store).
 		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))
@@ -312,11 +312,11 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 
 	toolOverride, _ := cmd.Flags().GetString("tool")
 	modelOverride, _ := cmd.Flags().GetString("model")
-	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolOverride)
+	toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolOverride)
 	if err != nil {
 		return err
 	}
-	modelName := cfg.ResolveModelForPhase(interaction.PhasePlan, modelOverride, d)
+	modelName := cfg.ResolveModelForPhase(interaction.PhasePlan, modelOverride, toolName)
 
 	reviewID, err := store.AddReview(taskID, feedback, latestPlanInteractionID)
 	if err != nil {
@@ -328,7 +328,7 @@ func (r *Registry) runTaskRequestPlanChanges(cmd *cobra.Command, args []string) 
 		return fmt.Errorf("get working directory: %w", err)
 	}
 	description := strings.TrimSpace(tk.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
-	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, repoDir, interactions).
+	generator := planpkg.New(toolName, tool, modelName, 10*time.Minute, repoDir, interactions).
 		WithMemory(memory.NewStore(db)).
 		WithTaskStore(store).
 		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))

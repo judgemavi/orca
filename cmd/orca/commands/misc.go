@@ -149,16 +149,13 @@ func (r *Registry) runOrc(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write mcp config: %w", err)
 	}
 
-	toolName, d, model, err := orchestrator.ResolveSupervisorTool(cfg)
+	_, tool, model, err := orchestrator.ResolveSupervisorTool(cfg, repoDir)
 	if err != nil {
 		return fmt.Errorf("resolve supervisor tool: %w", err)
 	}
-	if d == nil {
-		return fmt.Errorf("resolve supervisor tool %q: nil driver", toolName)
-	}
 
-	launchArgs := orchestrator.BuildLaunchArgs(d, model, mcpConfigPath)
-	c := exec.Command(d.Binary(), launchArgs...)
+	launchArgs := orchestrator.BuildLaunchArgs(tool, model, mcpConfigPath)
+	c := exec.Command(tool.Binary, launchArgs...)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr

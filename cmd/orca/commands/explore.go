@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/spf13/cobra"
 )
 
@@ -87,24 +87,24 @@ func (r *Registry) runExplore(cmd *cobra.Command, args []string) error {
 
 	toolName, _ := cmd.Flags().GetString("tool")
 	var selectedTool string
-	var d driver.Driver
+	var selectedToolDef toolcfg.Tool
 	if toolName != "" {
 		var err error
-		selectedTool, d, err = cfg.ResolveToolForPhase(interaction.PhaseExplore, toolName)
+		selectedTool, selectedToolDef, err = cfg.ResolveToolForPhase(interaction.PhaseExplore, toolName)
 		if err != nil {
 			return err
 		}
 	} else {
 		var err error
-		selectedTool, d, err = cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
+		selectedTool, selectedToolDef, err = cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
 		if err != nil {
 			return err
 		}
 	}
-	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
+	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", selectedTool)
 
 	memoryStore := memory.NewStore(db)
-	explorer := explore.New(selectedTool, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+	explorer := explore.New(selectedTool, selectedToolDef, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
 		WithMemory(memoryStore).
 		WithSyncer(newConfiguredMemorySyncer(cfg, memoryStore, db, repoDir))
 	if explore.LoadContext(repoDir) != "" {

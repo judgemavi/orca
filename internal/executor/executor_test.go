@@ -2,12 +2,10 @@ package executor
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"testing"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -118,16 +116,7 @@ func TestResolveResumeRunStateIncludesPendingReviewForFailedTask(t *testing.T) {
 		t.Fatalf("add review: %v", err)
 	}
 
-	d, ok := driver.Get("codex")
-	if !ok {
-		t.Fatal("driver codex not found")
-	}
-	wtPath := t.TempDir()
-	if err := os.MkdirAll(wtPath, 0o755); err != nil {
-		t.Fatalf("create worktree path: %v", err)
-	}
-
-	state, err := e.resolveResumeRunState(tk.ID, "sess-123", d, "gpt-5-codex", wtPath, false)
+	state, err := e.resolveResumeRunState(tk.ID, "sess-123", false)
 	if err != nil {
 		t.Fatalf("resolve resume state: %v", err)
 	}
@@ -139,9 +128,6 @@ func TestResolveResumeRunStateIncludesPendingReviewForFailedTask(t *testing.T) {
 	}
 	if state.resumeSessionID != "sess-123" {
 		t.Fatalf("resumeSessionID = %q", state.resumeSessionID)
-	}
-	if len(state.args) == 0 {
-		t.Fatal("expected resume args for session-based revise")
 	}
 
 	phase := interaction.PhaseRun

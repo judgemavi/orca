@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
 	"github.com/jasjeetmavi/orca/internal/testutil"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 )
 
 func TestBuildRetroPrompt(t *testing.T) {
@@ -154,7 +154,16 @@ func TestRetroGeneratorRunCreatesMemoryAndSupersedes(t *testing.T) {
 	)
 	generator := New(
 		"retro-test-tool",
-		&retroTestDriver{output: output},
+		toolcfg.Tool{
+			Binary: "sh",
+			Args: []toolcfg.Arg{
+				{Param: "-c", Value: "cat <<'EOF'\n" + output + "\nEOF", UsedIn: []string{"headless", "resume"}},
+				{Param: "--prompt", Variable: "prompt", UsedIn: []string{"headless"}},
+				{Param: "--resume", Variable: "session_id", UsedIn: []string{"resume"}},
+				{Param: "--prompt", Variable: "feedback", UsedIn: []string{"resume"}},
+			},
+			Timeout: "60s",
+		},
 		"retro-test-model",
 		time.Minute,
 		repoDir,
@@ -337,37 +346,3 @@ func runGit(t *testing.T, repoDir string, args ...string) {
 		t.Fatalf("git %v failed: %v\n%s", args, err, string(out))
 	}
 }
-
-type retroTestDriver struct {
-	output string
-}
-
-func (d *retroTestDriver) Name() string { return "retro-test-driver" }
-
-func (d *retroTestDriver) Binary() string { return "sh" }
-
-func (d *retroTestDriver) Models() []string { return nil }
-
-func (d *retroTestDriver) HeadlessArgs(prompt, model, dir string) []string {
-	script := "cat <<'EOF'\ntext:" + d.output + "\nEOF"
-	return []string{"-c", script}
-}
-
-func (d *retroTestDriver) ResumeArgs(sessionID, feedback, model, dir string) []string {
-	return d.HeadlessArgs("", model, dir)
-}
-
-func (d *retroTestDriver) ParseEvent(line []byte) (driver.Event, error) {
-	text := strings.TrimSpace(string(line))
-	if strings.HasPrefix(text, "text:") {
-		return driver.Event{
-			Type: driver.EventText,
-			Text: strings.TrimPrefix(text, "text:"),
-		}, nil
-	}
-	return driver.Event{}, fmt.Errorf("unknown line %q", text)
-}
-
-func (d *retroTestDriver) FormatEvent(line []byte) string { return string(line) }
-
-func (d *retroTestDriver) ParseSessionID(_ []driver.Event) string { return "" }

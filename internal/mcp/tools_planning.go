@@ -48,15 +48,15 @@ func (s *Server) HandleBreakdownTool(argsRaw json.RawMessage) (interface{}, erro
 		parentTaskID = &taskID
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhasePlan, args.Tool)
+	toolName, tool, err := s.config.ResolveToolForPhase(interaction.PhasePlan, args.Tool)
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase(interaction.PhasePlan, "", d)
+	model := s.config.ResolveModelForPhase(interaction.PhasePlan, "", toolName)
 
 	interactions := interaction.NewStore(s.db, ".orca/interactions")
 	memStore := memory.NewStore(s.db)
-	breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions).
+	breaker := breakdown.New(toolName, tool, model, 10*time.Minute, s.repoDir, interactions).
 		WithMemory(memStore).
 		WithTaskStore(s.taskStore).
 		WithSyncer(s.newMemorySyncer(memStore))
@@ -140,15 +140,15 @@ func (s *Server) HandleTasksPlanGenerateTool(argsRaw json.RawMessage) (interface
 		return nil, err
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhasePlan, args.Tool)
+	toolName, tool, err := s.config.ResolveToolForPhase(interaction.PhasePlan, args.Tool)
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase(interaction.PhasePlan, args.Model, d)
+	model := s.config.ResolveModelForPhase(interaction.PhasePlan, args.Model, toolName)
 
 	interactions := interaction.NewStore(s.db, ".orca/interactions")
 	memStore := memory.NewStore(s.db)
-	generator := planpkg.New(toolName, d, model, 10*time.Minute, s.repoDir, interactions).
+	generator := planpkg.New(toolName, tool, model, 10*time.Minute, s.repoDir, interactions).
 		WithMemory(memStore).
 		WithTaskStore(s.taskStore).
 		WithSyncer(s.newMemorySyncer(memStore))
@@ -196,14 +196,14 @@ func (s *Server) HandleTasksPlanEvaluateTool(argsRaw json.RawMessage) (interface
 		return nil, err
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhaseExplore, args.Tool)
+	toolName, tool, err := s.config.ResolveToolForPhase(interaction.PhaseExplore, args.Tool)
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase(interaction.PhaseExplore, args.Model, d)
+	model := s.config.ResolveModelForPhase(interaction.PhaseExplore, args.Model, toolName)
 
 	memStore := memory.NewStore(s.db)
-	evaluator := evaluate.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions")).
+	evaluator := evaluate.New(toolName, tool, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions")).
 		WithMemory(memStore).
 		WithTaskStore(s.taskStore).
 		WithSyncer(s.newMemorySyncer(memStore))

@@ -10,8 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/spf13/cobra"
 )
 
@@ -126,7 +126,7 @@ func printTaskInteractionContent(
 
 	content := rawContent
 	if !raw {
-		content = driver.FormatLog(selected.Tool, rawContent)
+		content = toolcfg.FormatLog(selected.Tool, rawContent)
 	}
 
 	if jsonOut {
@@ -211,7 +211,7 @@ func printTaskInteractionContent(
 			}
 
 			if !raw && pending != "" {
-				if tail := driver.FormatLine(current.Tool, []byte(pending)); tail != "" {
+				if tail := toolcfg.FormatLine(current.Tool, []byte(pending)); tail != "" {
 					fmt.Print(tail)
 				}
 			}
@@ -300,7 +300,7 @@ func formatInteractionDelta(toolName, chunk string, pendingLine *string) string 
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		formatted := driver.FormatLine(toolName, []byte(line))
+		formatted := toolcfg.FormatLine(toolName, []byte(line))
 		if formatted == "" {
 			continue
 		}

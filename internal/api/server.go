@@ -113,12 +113,12 @@ func (s *Server) BootstrapOrchestrator() {
 		return
 	}
 
-	toolName, supervisorTool, model, err := orchestrator.ResolveSupervisorTool(s.cfg)
+	toolName, supervisorTool, model, err := orchestrator.ResolveSupervisorTool(s.cfg, s.repoDir)
 	if err != nil {
 		slog.Error("resolve supervisor tool failed", "err", err)
 		return
 	}
-	if supervisorTool == nil || strings.TrimSpace(supervisorTool.Binary()) == "" {
+	if strings.TrimSpace(supervisorTool.Binary) == "" {
 		slog.Error("resolve supervisor tool binary empty", "tool", toolName)
 		return
 	}
@@ -126,7 +126,7 @@ func (s *Server) BootstrapOrchestrator() {
 	args := orchestrator.BuildLaunchArgs(supervisorTool, model, mcpConfigPath)
 	sess, err := s.sessionMgr.Create(pty.CreateOpts{
 		Type:    pty.SessionOrchestrator,
-		Command: supervisorTool.Binary(),
+		Command: supervisorTool.Binary,
 		Args:    args,
 		Dir:     s.repoDir,
 		Tool:    "orchestrator",

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/llm"
 	"github.com/jasjeetmavi/orca/internal/worker"
 )
@@ -114,7 +115,12 @@ func (r *Refresher) refreshEntry(entry *Entry, head string) (bool, error) {
 	}
 
 	// If LLM refresh isn't configured, keep stale entries unchanged.
-	if syncer.driver == nil || strings.TrimSpace(syncer.model) == "" {
+	if strings.TrimSpace(syncer.tool.Binary) == "" && strings.TrimSpace(syncer.toolName) != "" {
+		if resolved, ok := config.ToolDefinition(syncer.toolName); ok {
+			syncer.tool = resolved
+		}
+	}
+	if strings.TrimSpace(syncer.model) == "" || strings.TrimSpace(syncer.tool.Binary) == "" {
 		return false, nil
 	}
 
@@ -206,7 +212,7 @@ func (r *Refresher) refreshEntryWithLLM(entry *Entry, head string) (string, []st
 
 	content := r.collectCurrentFileContent(entry.FilePaths)
 	prompt := buildRefreshPrompt(entry, diff, content)
-	adapter := worker.NewAdapter(syncer.driver, syncer.model, syncer.timeout)
+	adapter := worker.NewAdapter(syncer.toolName, syncer.tool, syncer.model, syncer.timeout)
 	runResult, runErr := adapter.Execute(context.Background(), "memory_refresh", prompt, syncer.repoDir)
 	if runErr != nil || runResult == nil || runResult.ExitCode != 0 {
 		return "", nil, fmt.Errorf("refresh entry %s: llm run failed", entry.ID)

@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/llm"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -29,7 +29,7 @@ const NoTrackedCodeMessage = "No meaningful tracked source files found. Add sour
 
 type Explorer struct {
 	toolName     string
-	driver       driver.Driver
+	tool         toolcfg.Tool
 	model        string
 	timeout      time.Duration
 	repoDir      string
@@ -70,12 +70,12 @@ var nonCodeTrackedFiles = map[string]struct{}{
 	"composer.lock":     {},
 }
 
-func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Explorer {
+func New(toolName string, tool toolcfg.Tool, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Explorer {
 	var store *interaction.Store
 	if len(interactions) > 0 {
 		store = interactions[0]
 	}
-	return &Explorer{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
+	return &Explorer{toolName: toolName, tool: tool, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
 func (e *Explorer) WithMemory(store *memory.Store) *Explorer {
@@ -128,7 +128,7 @@ func (e *Explorer) Run() (string, error) {
 		}
 	}
 
-	adapter := worker.NewAdapter(e.driver, e.model, e.timeout)
+	adapter := worker.NewAdapter(e.toolName, e.tool, e.model, e.timeout)
 
 	prompt := prompts.Explore
 	if e.memory != nil {

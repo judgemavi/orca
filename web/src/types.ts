@@ -10,6 +10,7 @@ export interface Task {
   title: string
   description: string
   parent_id: string | null
+  session_id?: string
   status: TaskStatus
   depends_on: string[]
   plan: string | null
@@ -34,6 +35,8 @@ export interface Config {
     worktree_dir: string
   }
   tools: string[]
+  default_tool: string
+  default_model: string
   validation: { commands: string[] }
   workers: { max_parallel: number }
   orchestrator: {
@@ -81,6 +84,7 @@ export interface Interaction {
 
 export interface InteractionWithContent extends Interaction {
   content: string
+  raw_content?: string
 }
 
 export interface OrchestratorMessage {

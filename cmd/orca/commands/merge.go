@@ -5,10 +5,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/spf13/cobra"
 )
 
@@ -79,16 +79,16 @@ func (r *Registry) runMerge(cmd *cobra.Command, args []string) error {
 				warnf("post-merge memory sync failed: %v (retry: orca memory sync)", syncErr)
 			}
 		}
-		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
+		ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, toolcfg.Tool, string, time.Duration, error) {
 			if _, err := store.Get(taskID); err != nil {
-				return "", nil, "", 0, err
+				return "", toolcfg.Tool{}, "", 0, err
 			}
-			toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
+			toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
 			if err != nil {
-				return "", nil, "", 0, err
+				return "", toolcfg.Tool{}, "", 0, err
 			}
-			model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
-			return toolName, d, model, 10 * time.Minute, nil
+			model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", toolName)
+			return toolName, tool, model, 10 * time.Minute, nil
 		})
 		merged, failed, err := ig.MergeBatch(taskIDs)
 		if err != nil {

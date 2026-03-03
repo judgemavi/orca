@@ -31,15 +31,15 @@ func (s *Server) runPostMergeRetro(taskID string) error {
 		}
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseRetro, "")
+	toolName, tool, err := s.cfg.ResolveToolForPhase(interaction.PhaseRetro, "")
 	if err != nil {
 		return nil
 	}
-	modelName := s.cfg.ResolveModelForPhase(interaction.PhaseRetro, "", d)
+	modelName := s.cfg.ResolveModelForPhase(interaction.PhaseRetro, "", toolName)
 
 	generator := retro.New(
 		toolName,
-		d,
+		tool,
 		modelName,
 		10*time.Minute,
 		s.repoDir,

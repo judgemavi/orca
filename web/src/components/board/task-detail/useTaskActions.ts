@@ -153,7 +153,15 @@ export function useTaskActions(task: Task) {
       api.retroTask(args.taskId, args.tool, args.model),
   })
   const resumeTaskMutation = useMutation({
-    mutationFn: (taskId: string) => api.resumeTask(taskId),
+    mutationFn: (args: {
+      taskId: string
+      sessionId?: string
+      feedback?: string
+    }) =>
+      api.resumeTask(args.taskId, {
+        session_id: args.sessionId,
+        feedback: args.feedback,
+      }),
   })
   const generateTaskPlanMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
@@ -205,6 +213,7 @@ export function useTaskActions(task: Task) {
   const [requestPlanFeedback, setRequestPlanFeedback] = useState('')
   const [aiReviewExpanded, setAIReviewExpanded] = useState(false)
   const [aiReviewPrompt, setAIReviewPrompt] = useState('')
+  const [resumeFeedback, setResumeFeedback] = useState('')
   const [aiFeedbackAppliedNotice, setAIFeedbackAppliedNotice] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [evaluateStarted, setEvaluateStarted] = useState(false)
@@ -399,6 +408,7 @@ export function useTaskActions(task: Task) {
     setRequestPlanFeedback('')
     setAIReviewExpanded(false)
     setAIReviewPrompt('')
+    setResumeFeedback('')
     setAIFeedbackAppliedNotice(false)
     setActionError(null)
     setEvaluateStarted(false)
@@ -575,9 +585,20 @@ export function useTaskActions(task: Task) {
   }
 
   const handleResume = async () => {
+    const sessionId = task.session_id?.trim() ?? ''
+    if (!sessionId) {
+      setActionError('Task has no session ID to resume')
+      return
+    }
+
     setActionError(null)
     try {
-      await resumeTaskMutation.mutateAsync(task.id)
+      await resumeTaskMutation.mutateAsync({
+        taskId: task.id,
+        sessionId,
+        feedback: resumeFeedback.trim() || undefined,
+      })
+      setResumeFeedback('')
     } catch (err: unknown) {
       setActionError(getErrorMessage(err, 'Resume failed'))
     }
@@ -807,6 +828,8 @@ export function useTaskActions(task: Task) {
     setAIReviewExpanded,
     aiReviewPrompt,
     setAIReviewPrompt,
+    resumeFeedback,
+    setResumeFeedback,
     aiFeedbackAppliedNotice,
     setAIFeedbackAppliedNotice,
     startTaskPending: startTaskMutation.isPending,

@@ -35,7 +35,20 @@ func LoadFromDB(db *sql.DB) (*Config, error) {
 	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
-	if err := cfg.Validate(); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(data), &raw); err == nil {
+		if _, ok := raw["default_tool"]; !ok {
+			if len(cfg.Tools) > 0 {
+				cfg.DefaultTool = cfg.Tools[0]
+			}
+		}
+		if _, ok := raw["default_model"]; !ok {
+			if models, hasTool := ToolModels(cfg.DefaultTool); hasTool && len(models) > 0 {
+				cfg.DefaultModel = models[0]
+			}
+		}
+	}
+	if err := cfg.validateLoaded(); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 	return &cfg, nil

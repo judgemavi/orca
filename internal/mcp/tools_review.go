@@ -190,11 +190,11 @@ func (s *Server) HandleTasksRequestPlanChangesTool(argsRaw json.RawMessage) (int
 		return nil, fmt.Errorf("plan generation already in progress")
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase("plan", tool)
+	toolName, toolDef, err := s.config.ResolveToolForPhase("plan", tool)
 	if err != nil {
 		return nil, err
 	}
-	modelName := s.config.ResolveModelForPhase("plan", model, d)
+	modelName := s.config.ResolveModelForPhase("plan", model, toolName)
 
 	reviewID, err := s.taskStore.AddReview(taskID, feedback, interactionID)
 	if err != nil {
@@ -203,7 +203,7 @@ func (s *Server) HandleTasksRequestPlanChangesTool(argsRaw json.RawMessage) (int
 
 	description := strings.TrimSpace(t.Description + "\n\nPlan feedback to incorporate:\n" + feedback)
 	memStore := memory.NewStore(s.db)
-	generator := planpkg.New(toolName, d, modelName, 10*time.Minute, s.repoDir, interactions).
+	generator := planpkg.New(toolName, toolDef, modelName, 10*time.Minute, s.repoDir, interactions).
 		WithMemory(memStore).
 		WithTaskStore(s.taskStore).
 		WithSyncer(s.newMemorySyncer(memStore))
@@ -270,11 +270,11 @@ func (s *Server) HandleAIReviewTool(argsRaw json.RawMessage) (interface{}, error
 		return nil, fmt.Errorf("task must be in review status, got %q", t.Status)
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase("review", args.Tool)
+	toolName, toolDef, err := s.config.ResolveToolForPhase("review", args.Tool)
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase("review", args.Model, d)
+	model := s.config.ResolveModelForPhase("review", args.Model, toolName)
 
 	interactionStore := interaction.NewStore(s.db, ".orca/interactions")
 	runInteractions, err := interactionStore.ListByPhase(taskID, "run")
@@ -292,7 +292,7 @@ func (s *Server) HandleAIReviewTool(argsRaw json.RawMessage) (interface{}, error
 		return nil, fmt.Errorf("no completed run interaction with diff found")
 	}
 
-	reviewer := review.New(toolName, d, model, 10*time.Minute, s.repoDir, interactionStore)
+	reviewer := review.New(toolName, toolDef, model, 10*time.Minute, s.repoDir, interactionStore)
 	userPrompt := strings.TrimSpace(args.Prompt)
 	result, err := reviewer.Review(taskID, t.Title, t.Description, diff, userPrompt)
 	if err != nil {

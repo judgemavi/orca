@@ -158,7 +158,10 @@ export const api = {
       ...(model ? { model } : {}),
     }),
   stopTask: (id: string) => post<{ status: string }>(`/tasks/${id}/stop`),
-  resumeTask: (id: string) => post<{ status: string }>(`/tasks/${id}/resume`),
+  resumeTask: (
+    id: string,
+    opts?: { session_id?: string; feedback?: string },
+  ) => post<{ status: string }>(`/tasks/${id}/resume`, opts ?? {}),
   cancelTask: (id: string) => api.stopTask(id),
   mergeTask: (taskId: string, mode?: string, tool?: string, model?: string) =>
     request<{ operation_id: string }>(`/tasks/${taskId}/merge`, {

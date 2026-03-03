@@ -29,19 +29,19 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
+	toolName, tool, err := s.cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
 	if err != nil {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	model := s.cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
+	model := s.cfg.ResolveModelForPhase(interaction.PhaseExplore, "", toolName)
 
 	s.runAsyncHandler(w, interaction.PhaseExplore, map[string]string{"status": "exploring"}, func() {
 		memoryStore := s.memoryStore
 		if memoryStore == nil && s.db != nil {
 			memoryStore = memory.NewStore(s.db)
 		}
-		explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions).
+		explorer := explore.New(toolName, tool, model, 10*time.Minute, s.repoDir, s.interactions).
 			WithMemory(memoryStore).
 			WithSyncer(s.newMemorySyncer(memoryStore))
 		outPath, err := explorer.Run()

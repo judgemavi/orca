@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 
+import { LogViewer } from '../../LogViewer'
 import {
   useInteractionContent,
   useInteractionsQuery,
@@ -59,16 +60,8 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
 
   const content =
     selectedInteraction?.status === INTERACTION_STATUSES.running
-      ? stream.content || contentQuery.data?.content || ''
-      : contentQuery.data?.content || ''
-
-  const logBodyRef = useRef<HTMLPreElement | null>(null)
-
-  useEffect(() => {
-    const el = logBodyRef.current
-    if (!el) return
-    el.scrollTop = el.scrollHeight
-  }, [content])
+      ? stream.content || contentQuery.data?.raw_content || ''
+      : contentQuery.data?.raw_content || ''
 
   const titlePrefix =
     PHASE_LABELS[selectedInteraction?.phase ?? ''] ?? 'Interaction'
@@ -100,17 +93,16 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
             </header>
 
             <div className="min-h-0 flex-1 px-4 pb-4">
-              <pre
-                ref={logBodyRef}
-                className="h-full overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed text-foreground"
-              >
-                {!selectedInteraction
-                  ? 'Interaction not found.'
-                  : content ||
-                    (selectedInteraction.status === INTERACTION_STATUSES.running
+              <LogViewer
+                content={selectedInteraction ? content : ''}
+                placeholder={
+                  !selectedInteraction
+                    ? 'Interaction not found.'
+                    : selectedInteraction.status === INTERACTION_STATUSES.running
                       ? 'Waiting for streaming output...'
-                      : 'No content.')}
-              </pre>
+                      : 'No content.'
+                }
+              />
 
               {selectedInteraction?.status === INTERACTION_STATUSES.failed &&
                 (selectedInteraction.error || contentQuery.data?.error) && (

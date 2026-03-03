@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 )
 
 func (s *Server) handleListInteractions(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +65,7 @@ func (s *Server) handleGetInteraction(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err, http.StatusInternalServerError)
 		return
 	}
-	formatted := driver.FormatLog(in.Tool, content)
+	formatted := toolcfg.FormatLog(in.Tool, content)
 
 	jsonOK(w, map[string]interface{}{
 		"id":             in.ID,
@@ -128,7 +128,7 @@ func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request)
 	if in.Status == "completed" || in.Status == "failed" {
 		content, err := s.interactions.ReadLog(logID)
 		if err == nil && content != "" {
-			if err := sendData(driver.FormatLog(in.Tool, content)); err != nil {
+			if err := sendData(toolcfg.FormatLog(in.Tool, content)); err != nil {
 				return
 			}
 		}
@@ -139,7 +139,6 @@ func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request)
 
 	offset := int64(0)
 	pendingLine := ""
-	drv, _ := driver.Get(in.Tool)
 	for {
 		select {
 		case <-r.Context().Done():
@@ -153,7 +152,7 @@ func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request)
 		}
 		offset = nextOffset
 		if delta != "" {
-			formattedDelta := formatInteractionDelta(drv, delta, &pendingLine)
+			formattedDelta := formatInteractionDelta(in.Tool, delta, &pendingLine)
 			if formattedDelta != "" {
 				if err := sendData(formattedDelta); err != nil {
 					return
@@ -169,10 +168,7 @@ func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request)
 		if current.Status == "completed" || current.Status == "failed" {
 			finalDelta, _, err := readInteractionDelta(current.LogPath, offset)
 			if err == nil && finalDelta != "" {
-				if drv == nil {
-					drv, _ = driver.Get(current.Tool)
-				}
-				formattedFinal := formatInteractionDelta(drv, finalDelta, &pendingLine)
+				formattedFinal := formatInteractionDelta(current.Tool, finalDelta, &pendingLine)
 				if formattedFinal != "" {
 					if err := sendData(formattedFinal); err != nil {
 						return
@@ -180,11 +176,7 @@ func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request)
 				}
 			}
 			if pendingLine != "" {
-				if drv == nil {
-					if err := sendData(pendingLine); err != nil {
-						return
-					}
-				} else if tail := drv.FormatEvent([]byte(pendingLine)); tail != "" {
+				if tail := toolcfg.FormatLine(current.Tool, []byte(pendingLine)); tail != "" {
 					if err := sendData(tail); err != nil {
 						return
 					}
@@ -202,7 +194,7 @@ func (s *Server) handleStreamInteraction(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-func formatInteractionDelta(d driver.Driver, chunk string, pendingLine *string) string {
+func formatInteractionDelta(toolName, chunk string, pendingLine *string) string {
 	if pendingLine == nil {
 		return ""
 	}
@@ -222,9 +214,7 @@ func formatInteractionDelta(d driver.Driver, chunk string, pendingLine *string) 
 			continue
 		}
 		formatted := line
-		if d != nil {
-			formatted = d.FormatEvent([]byte(line))
-		}
+		formatted = toolcfg.FormatLine(toolName, []byte(line))
 		if formatted == "" {
 			continue
 		}

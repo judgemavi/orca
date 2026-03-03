@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/banner"
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
@@ -104,12 +103,12 @@ func runInitAutoExplore(repoDir string, cfg *config.Config) error {
 		fmt.Println("Skipping initial exploration (no config available).")
 		return nil
 	}
-	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
+	toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhaseExplore, "")
 	if err != nil {
 		fmt.Printf("Skipping initial exploration: %v\n", err)
 		return nil
 	}
-	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", d)
+	model := cfg.ResolveModelForPhase(interaction.PhaseExplore, "", toolName)
 
 	hasTrackedCode, err := explore.HasTrackedCode(repoDir)
 	if err != nil {
@@ -131,7 +130,7 @@ func runInitAutoExplore(repoDir string, cfg *config.Config) error {
 	beforeSeeded, _ := memoryStore.List(memory.ListOpts{Tag: "explore-seed"})
 
 	fmt.Println("Running initial codebase exploration...")
-	explorer := explore.New(toolName, d, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+	explorer := explore.New(toolName, tool, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
 		WithMemory(memoryStore).
 		WithSyncer(newConfiguredMemorySyncer(cfg, memoryStore, db, repoDir))
 
@@ -269,8 +268,8 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 
 	var toolModels []toolModelInfo
 	for _, name := range available {
-		if d, ok := driver.Get(name); ok {
-			toolModels = append(toolModels, toolModelInfo{name: name, models: d.Models()})
+		if models, ok := config.ToolModels(name); ok {
+			toolModels = append(toolModels, toolModelInfo{name: name, models: models})
 		}
 	}
 
@@ -411,6 +410,18 @@ func runInteractiveConfig(cwd string, yes bool, existingCfg *config.Config, dete
 	cfg.Project.IntegrationBranch = integrationBranch
 	cfg.Workers.MaxParallel = maxParallel
 	cfg.Tools = append([]string(nil), available...)
+	cfg.DefaultTool = supervisorTool
+	if strings.TrimSpace(cfg.DefaultTool) == "" && len(cfg.Tools) > 0 {
+		cfg.DefaultTool = cfg.Tools[0]
+	}
+	cfg.DefaultModel = ""
+	if strings.TrimSpace(cfg.DefaultTool) != "" {
+		if strings.TrimSpace(supervisorModel) != "" && config.ValidateModel(cfg.DefaultTool, supervisorModel) != "" {
+			cfg.DefaultModel = supervisorModel
+		} else if models, ok := config.ToolModels(cfg.DefaultTool); ok && len(models) > 0 {
+			cfg.DefaultModel = models[0]
+		}
+	}
 	cfg.Orchestrator.SupervisorTool = supervisorTool
 	cfg.Orchestrator.SupervisorModel = supervisorModel
 
@@ -508,6 +519,12 @@ func serializeConfig(cwd string, cfg *config.Config, integrationBranch string) e
 	if err := os.MkdirAll(orcaDir, 0755); err != nil {
 		return fmt.Errorf("create .orca directory: %w", err)
 	}
+	if _, err := config.EnsureDefaultToolConfig(cwd); err != nil {
+		return fmt.Errorf("ensure default tools config: %w", err)
+	}
+	if _, _, err := config.LoadToolConfigForRepo(cwd); err != nil {
+		return fmt.Errorf("load tools config: %w", err)
+	}
 	dbPath := filepath.Join(orcaDir, "state.db")
 	db, err := state.Open(dbPath)
 	if err != nil {
@@ -579,7 +596,7 @@ func loadConfigFromDBPath(dbPath string) (*config.Config, error) {
 }
 
 func detectTools() []string {
-	candidates := driver.Available()
+	candidates := config.AvailableTools()
 	var found []string
 	for _, name := range candidates {
 		if _, err := exec.LookPath(name); err == nil {

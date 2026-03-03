@@ -190,14 +190,14 @@ func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteracti
 	model = strings.TrimSpace(model)
 	feedback = strings.TrimSpace(feedback)
 
-	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhasePlan, tool)
+	toolName, toolDef, err := s.cfg.ResolveToolForPhase(interaction.PhasePlan, tool)
 	if err != nil {
 		if tool != "" {
 			return http.StatusBadRequest, err
 		}
 		return http.StatusInternalServerError, err
 	}
-	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhasePlan, model, d)
+	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhasePlan, model, toolName)
 
 	description := tk.Description
 	if feedback != "" {
@@ -219,7 +219,7 @@ func (s *Server) generateTaskPlan(taskID, tool, model, feedback, reviewInteracti
 
 	go func(taskID, title, description, reviewID string) {
 		memoryStore := memory.NewStore(s.db)
-		generator := plan.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
+		generator := plan.New(toolName, toolDef, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
 			WithMemory(memoryStore).
 			WithTaskStore(s.taskStore).
 			WithSyncer(s.newMemorySyncer(memoryStore))
@@ -300,7 +300,7 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseExplore, req.Tool)
+	toolName, toolDef, err := s.cfg.ResolveToolForPhase(interaction.PhaseExplore, req.Tool)
 	if err != nil {
 		if strings.TrimSpace(req.Tool) != "" {
 			jsonError(w, err, http.StatusBadRequest)
@@ -310,7 +310,7 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhaseExplore, strings.TrimSpace(req.Model), d)
+	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhaseExplore, strings.TrimSpace(req.Model), toolName)
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]string{
 			"task_id": resolved,
@@ -327,7 +327,7 @@ func (s *Server) handleEvaluateTask(w http.ResponseWriter, r *http.Request) {
 
 	go func(taskID, title, description string) {
 		memStore := memory.NewStore(s.db)
-		evaluator := evaluate.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
+		evaluator := evaluate.New(toolName, toolDef, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
 			WithMemory(memStore).
 			WithTaskStore(s.taskStore).
 			WithSyncer(s.newMemorySyncer(memStore))
@@ -393,7 +393,7 @@ func (s *Server) handleBreakdownTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhasePlan, req.Tool)
+	toolName, toolDef, err := s.cfg.ResolveToolForPhase(interaction.PhasePlan, req.Tool)
 	if err != nil {
 		if strings.TrimSpace(req.Tool) != "" {
 			jsonError(w, err, http.StatusBadRequest)
@@ -403,7 +403,7 @@ func (s *Server) handleBreakdownTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhasePlan, strings.TrimSpace(req.Model), d)
+	modelOverride := s.cfg.ResolveModelForPhase(interaction.PhasePlan, strings.TrimSpace(req.Model), toolName)
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]string{
 			"task_id": taskID,
@@ -420,7 +420,7 @@ func (s *Server) handleBreakdownTask(w http.ResponseWriter, r *http.Request) {
 
 	go func(taskID, title, description string) {
 		memStore := memory.NewStore(s.db)
-		breaker := breakdown.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
+		breaker := breakdown.New(toolName, toolDef, modelOverride, 10*time.Minute, s.repoDir, s.interactions).
 			WithMemory(memStore).
 			WithTaskStore(s.taskStore).
 			WithSyncer(s.newMemorySyncer(memStore))

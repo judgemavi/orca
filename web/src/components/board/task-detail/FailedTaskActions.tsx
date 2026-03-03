@@ -1,7 +1,7 @@
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
 import { TASK_STATUSES } from '../../../lib/phases'
 import { Button } from '../../Button'
-import { TaskActionsLayout } from './TaskActionsLayout'
+import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout'
 import { useTaskActions } from './useTaskActions'
 
 export function FailedTaskActions() {
@@ -9,6 +9,9 @@ export function FailedTaskActions() {
   const actions = useTaskActions(task)
 
   const isStopped = task.status === TASK_STATUSES.stopped
+  const hasSession = Boolean(task.session_id?.trim())
+  const showResume = isStopped && hasSession
+  const busy = actions.runningBusy || (showResume ? actions.resumePending : false)
 
   return (
     <TaskActionsLayout
@@ -21,21 +24,30 @@ export function FailedTaskActions() {
       onModelChange={actions.setActionModel}
       showToolModelSelector={!isStopped}
       actionError={actions.actionError}
+      feedback={
+        showResume ? (
+          <TaskFeedbackBox
+            value={actions.resumeFeedback}
+            onChange={actions.setResumeFeedback}
+            placeholder={`Resume feedback for session ${task.session_id} (optional)`}
+          />
+        ) : null
+      }
       actions={
         <Button
           variant="primary"
-          onClick={isStopped ? actions.handleResume : actions.handleStart}
-          disabled={
-            actions.runningBusy || (isStopped ? actions.resumePending : false)
-          }
+          onClick={showResume ? actions.handleResume : actions.handleStart}
+          disabled={busy || (isStopped && !showResume)}
         >
-          {isStopped
-            ? actions.runningBusy || actions.resumePending
+          {showResume
+            ? busy
               ? 'Resuming…'
               : 'Resume'
-            : actions.runningBusy
-              ? 'Re-running…'
-              : 'Re-run'}
+            : isStopped
+              ? 'Resume unavailable'
+              : actions.runningBusy
+                ? 'Re-running…'
+                : 'Re-run'}
         </Button>
       }
     />

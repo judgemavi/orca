@@ -52,11 +52,11 @@ func (r *Registry) runTaskRetro(cmd *cobra.Command, args []string) error {
 	modelOverride, _ := cmd.Flags().GetString("model")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
-	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseRetro, toolOverride)
+	toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhaseRetro, toolOverride)
 	if err != nil {
 		return err
 	}
-	modelName := cfg.ResolveModelForPhase(interaction.PhaseRetro, modelOverride, d)
+	modelName := cfg.ResolveModelForPhase(interaction.PhaseRetro, modelOverride, toolName)
 
 	repoDir, err := os.Getwd()
 	if err != nil {
@@ -65,7 +65,7 @@ func (r *Registry) runTaskRetro(cmd *cobra.Command, args []string) error {
 
 	retroGenerator := retro.New(
 		toolName,
-		d,
+		tool,
 		modelName,
 		10*time.Minute,
 		repoDir,

@@ -48,15 +48,42 @@ func (rt *runtimeState) init() error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
+
+	repoDir, err := os.Getwd()
+	if err != nil {
+		db.Close()
+		return fmt.Errorf("get working directory: %w", err)
+	}
+	if _, toolConfigPath, err := config.LoadToolConfigForRepo(repoDir); err != nil {
+		db.Close()
+		return fmt.Errorf("load tool config: %w", err)
+	} else if toolConfigPath != "" {
+		slog.Info("tool config loaded", "path", toolConfigPath)
+	}
+
 	cfg, err := config.LoadFromDB(db.DB)
 	if err != nil {
 		db.Close()
 		return fmt.Errorf("load config: %w", err)
 	}
-	repoDir, err := os.Getwd()
-	if err != nil {
+	activeTools := config.AvailableToolConfig()
+	changes := cfg.SanitizeOrchestrator(activeTools)
+	if err := cfg.ValidateDefaults(activeTools); err != nil {
 		db.Close()
-		return fmt.Errorf("get working directory: %w", err)
+		return fmt.Errorf("validate default tool/model: %w", err)
+	}
+	if len(changes) > 0 {
+		for _, change := range changes {
+			slog.Warn("config sanitized", "change", change)
+		}
+		if err := cfg.SaveToDB(db.DB); err != nil {
+			db.Close()
+			return fmt.Errorf("persist sanitized config: %w", err)
+		}
+	}
+	if err := cfg.Validate(); err != nil {
+		db.Close()
+		return fmt.Errorf("validate config: %w", err)
 	}
 	wm := worktree.NewManager(repoDir, cfg.Project.WorktreeDir)
 	taskStore := task.NewStore(db)

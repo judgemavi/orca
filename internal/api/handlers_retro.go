@@ -66,7 +66,7 @@ func (s *Server) handleRetroTask(w http.ResponseWriter, r *http.Request) {
 	toolOverride := strings.TrimSpace(req.Tool)
 	modelOverride := strings.TrimSpace(req.Model)
 
-	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseRetro, toolOverride)
+	toolName, tool, err := s.cfg.ResolveToolForPhase(interaction.PhaseRetro, toolOverride)
 	if err != nil {
 		if toolOverride != "" {
 			jsonError(w, err, http.StatusBadRequest)
@@ -75,7 +75,7 @@ func (s *Server) handleRetroTask(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	modelName := s.cfg.ResolveModelForPhase(interaction.PhaseRetro, modelOverride, d)
+	modelName := s.cfg.ResolveModelForPhase(interaction.PhaseRetro, modelOverride, toolName)
 
 	jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]string{
@@ -94,7 +94,7 @@ func (s *Server) handleRetroTask(w http.ResponseWriter, r *http.Request) {
 	go func(taskID string) {
 		generator := retro.New(
 			toolName,
-			d,
+			tool,
 			modelName,
 			10*time.Minute,
 			s.repoDir,

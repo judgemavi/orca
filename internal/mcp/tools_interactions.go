@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 )
 
 func (s *Server) HandleInteractionsListTool(argsRaw json.RawMessage) (interface{}, error) {
@@ -79,7 +79,7 @@ func (s *Server) HandleInteractionGetTool(argsRaw json.RawMessage) (interface{},
 
 	content := rawLog
 	if !args.Raw {
-		content = driver.FormatLog(in.Tool, rawLog)
+		content = toolcfg.FormatLog(in.Tool, rawLog)
 	}
 
 	return map[string]interface{}{

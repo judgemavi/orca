@@ -12,15 +12,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
 
-	"regexp"
-
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/procutil"
 	"github.com/jasjeetmavi/orca/internal/pty"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 )
 
@@ -49,7 +48,7 @@ func (e *Executor) streamPipe(ctx context.Context, info taskInfo, outputCh chan<
 		WorktreePath: info.worktreePath,
 	}
 
-	workerAdapter, err := worker.NewWorker(info.driver, info.model, info.timeout)
+	workerAdapter, err := worker.NewWorker(info.toolName, info.tool, info.model, info.timeout)
 	if err != nil {
 		result.Stderr = fmt.Sprintf("create adapter: %v", err)
 		return result
@@ -136,14 +135,16 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 		return result
 	}
 
-	args := info.args
-	if len(args) == 0 {
-		args = buildWorkerArgs(info, info.prompt, info.model, info.worktreePath)
+	args := buildWorkerArgs(info, info.prompt, info.model, info.worktreePath)
+	binary := strings.TrimSpace(info.tool.Binary)
+	if binary == "" {
+		result.Stderr = "invalid tool config: empty binary"
+		return result
 	}
-	slog.Info("worker.starting (pty)", "task_id", info.taskID, "binary", info.driver.Binary(), "dir", info.worktreePath, "args_count", len(args))
+	slog.Info("worker.starting (pty)", "task_id", info.taskID, "binary", binary, "dir", info.worktreePath, "args_count", len(args))
 	sess, err := e.sessionMgr.Create(pty.CreateOpts{
 		Type:    pty.SessionWorker,
-		Command: info.driver.Binary(),
+		Command: binary,
 		Args:    args,
 		Dir:     info.worktreePath,
 		Tool:    info.toolName,
@@ -176,11 +177,13 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 
 	start := time.Now()
 	var rawOutput bytes.Buffer
-	var parsedText strings.Builder
-	var totalCost driver.Cost
 	observedSessionID := ""
-	persistSessionID := func(sessionID string) {
-		if sessionID == "" || sessionID == observedSessionID {
+	detectSession := func(line string) {
+		sessionID := toolcfg.ExtractSessionID(info.tool.SessionID, line)
+		if sessionID == "" {
+			return
+		}
+		if sessionID == observedSessionID {
 			return
 		}
 		observedSessionID = sessionID
@@ -190,57 +193,25 @@ func (e *Executor) streamPTY(ctx context.Context, info taskInfo, outputCh chan<-
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
+		lineText := string(line)
 		rawOutput.WriteString(string(line))
 		rawOutput.WriteByte('\n')
+		detectSession(lineText)
+
 		now := time.Now()
 		if outputCh != nil {
 			outputCh <- worker.OutputLine{
 				TaskID: info.taskID,
 				Stream: "raw",
-				Line:   string(line),
+				Line:   lineText,
 				Time:   now,
 			}
-		}
-		event, err := info.driver.ParseEvent(line)
-		if err != nil {
-			slog.Warn("parse PTY event failed", "task_id", info.taskID, "err", err)
-			continue
-		}
-		switch event.Type {
-		case driver.EventText:
-			if event.Text == "" {
-				continue
-			}
-			parsedText.WriteString(event.Text)
-			if outputCh != nil {
-				outputCh <- worker.OutputLine{
-					TaskID: info.taskID,
-					Stream: "stdout",
-					Line:   event.Text,
-					Time:   now,
-				}
-			}
-		case driver.EventCost:
-			if event.Cost != nil {
-				totalCost.InputTokens += event.Cost.InputTokens
-				totalCost.OutputTokens += event.Cost.OutputTokens
-				totalCost.TotalCost += event.Cost.TotalCost
-			}
-			persistSessionID(event.SessionID)
-		case driver.EventSession:
-			persistSessionID(event.SessionID)
 		}
 	}
 	streamErr := scanner.Err()
 	close(readDone)
 	result.Duration = time.Since(start)
-	result.Stdout = parsedText.String()
-	if result.Stdout == "" {
-		result.Stdout = rawOutput.String()
-	}
-	result.InputTokens = totalCost.InputTokens
-	result.OutputTokens = totalCost.OutputTokens
-	result.TotalCost = totalCost.TotalCost
+	result.Stdout = rawOutput.String()
 
 	if streamErr != nil {
 		slog.Warn("stream PTY failed", "task_id", info.taskID, "err", streamErr)
@@ -348,11 +319,46 @@ func detectSilentFailure(diff, stdout string) string {
 
 func buildWorkerArgs(info taskInfo, prompt, model, worktreePath string) []string {
 	contextContent := strings.TrimSpace(info.contextContent)
-	args := info.driver.HeadlessArgs(prompt, model, worktreePath)
-	for i := range args {
-		args[i] = strings.ReplaceAll(args[i], "{{context}}", contextContent)
+	vars := map[string]string{
+		"prompt":  prompt,
+		"model":   model,
+		"dir":     worktreePath,
+		"context": contextContent,
 	}
-	return args
+	var mode string
+	if strings.TrimSpace(info.resumeSessionID) != "" {
+		mode = toolcfg.ArgsModeResume
+		vars["session_id"] = info.resumeSessionID
+		vars["feedback"] = info.resumeFeedback
+	} else {
+		mode = toolcfg.ArgsModeHeadless
+	}
+	return compactInterpolatedArgs(info.tool.ResolveArgs(mode, vars))
+}
+
+func compactInterpolatedArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		current := strings.TrimSpace(args[i])
+		if current == "" {
+			continue
+		}
+		if flagRequiresValue(current) && i+1 < len(args) && strings.TrimSpace(args[i+1]) == "" {
+			i++
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
+}
+
+func flagRequiresValue(arg string) bool {
+	switch arg {
+	case "--model", "--mcp-config", "--allowedTools", "--append-system-prompt", "--resume", "-C", "--prompt", "-p":
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Executor) killProcess(taskID string) {

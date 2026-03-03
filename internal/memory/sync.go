@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/diffclass"
-	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -52,7 +52,7 @@ type Syncer struct {
 	repoDir string
 
 	toolName string
-	driver   driver.Driver
+	tool     toolcfg.Tool
 	model    string
 	timeout  time.Duration
 
@@ -85,7 +85,7 @@ type SyncStatus struct {
 	ContextStale     bool   `json:"context_stale"`
 }
 
-func NewSyncer(store *Store, db *sql.DB, repoDir, toolName string, d driver.Driver, model string, timeout time.Duration) *Syncer {
+func NewSyncer(store *Store, db *sql.DB, repoDir, toolName string, tool toolcfg.Tool, model string, timeout time.Duration) *Syncer {
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
 	}
@@ -94,7 +94,7 @@ func NewSyncer(store *Store, db *sql.DB, repoDir, toolName string, d driver.Driv
 		db:                db,
 		repoDir:           repoDir,
 		toolName:          strings.TrimSpace(toolName),
-		driver:            d,
+		tool:              tool,
 		model:             strings.TrimSpace(model),
 		timeout:           timeout,
 		maxDiffBytes:      200_000,
@@ -476,7 +476,7 @@ func (s *Syncer) tryPatchExploreContext(lastCommit, head string, changedFiles []
 		return false, true
 	}
 
-	adapter := worker.NewAdapter(s.driver, s.model, s.timeout)
+	adapter := worker.NewAdapter(s.toolName, s.tool, s.model, s.timeout)
 	prompt := fmt.Sprintf(prompts.SyncContext, contextText, diff, strings.Join(changedFiles, "\n"))
 	runResult, runErr := adapter.Execute(context.Background(), "sync_context", prompt, s.repoDir)
 	if runErr != nil || runResult == nil || runResult.ExitCode != 0 {
@@ -499,7 +499,7 @@ func (s *Syncer) tryPatchExploreContext(lastCommit, head string, changedFiles []
 }
 
 func (s *Syncer) canPatchContext() bool {
-	return s.driver != nil && s.toolName != ""
+	return strings.TrimSpace(s.tool.Binary) != "" && strings.TrimSpace(s.toolName) != ""
 }
 
 func (s *Syncer) loadExploreContext() (string, error) {

@@ -65,11 +65,11 @@ export function useInteractionStream(
     setIsStreaming(true)
 
     const eventSource = new EventSource(
-      `/api/v1/tasks/${taskId}/interactions/${logId}/stream`,
+      `/api/v1/tasks/${taskId}/interactions/${logId}/stream?raw=1`,
     )
 
     eventSource.onmessage = (event) => {
-      setContent((prev) => prev + event.data + '\n')
+      setContent((prev) => prev + event.data)
     }
 
     eventSource.addEventListener('done', () => {

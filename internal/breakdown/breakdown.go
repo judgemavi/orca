@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -26,7 +26,7 @@ type ProposedTask struct {
 
 type Breaker struct {
 	toolName     string
-	driver       driver.Driver
+	tool         toolcfg.Tool
 	model        string
 	timeout      time.Duration
 	repoDir      string
@@ -36,12 +36,12 @@ type Breaker struct {
 	syncer       *memory.Syncer
 }
 
-func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Breaker {
+func New(toolName string, tool toolcfg.Tool, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Breaker {
 	var store *interaction.Store
 	if len(interactions) > 0 {
 		store = interactions[0]
 	}
-	return &Breaker{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
+	return &Breaker{toolName: toolName, tool: tool, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
 func (b *Breaker) WithMemory(store *memory.Store) *Breaker {
@@ -79,7 +79,7 @@ func (b *Breaker) Run(taskID *string, goal string) ([]ProposedTask, string, erro
 	}
 	prompt := fmt.Sprintf(prompts.Breakdown, contextSection, goal)
 
-	adapter := worker.NewAdapter(b.driver, b.model, b.timeout)
+	adapter := worker.NewAdapter(b.toolName, b.tool, b.model, b.timeout)
 
 	interactionID := ""
 	result, err := interaction.RunWithTracking(

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/llm"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -59,7 +59,7 @@ type RetroResult struct {
 
 type RetroGenerator struct {
 	toolName     string
-	driver       driver.Driver
+	tool         toolcfg.Tool
 	model        string
 	timeout      time.Duration
 	repoDir      string
@@ -70,7 +70,7 @@ type RetroGenerator struct {
 
 func New(
 	toolName string,
-	d driver.Driver,
+	tool toolcfg.Tool,
 	model string,
 	timeout time.Duration,
 	repoDir string,
@@ -84,7 +84,7 @@ func New(
 	}
 	return &RetroGenerator{
 		toolName:     toolName,
-		driver:       d,
+		tool:         tool,
 		model:        model,
 		timeout:      timeout,
 		repoDir:      repoDir,
@@ -172,7 +172,7 @@ func (g *RetroGenerator) Run(taskID string) (*RetroResult, error) {
 		trackedFiles = map[string]struct{}{}
 	}
 
-	adapter := worker.NewAdapter(g.driver, g.model, g.timeout)
+	adapter := worker.NewAdapter(g.toolName, g.tool, g.model, g.timeout)
 	var (
 		exitCode      = -1
 		stderr        string

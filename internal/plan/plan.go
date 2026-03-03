@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -21,7 +21,7 @@ import (
 // Generator produces markdown implementation plans for tasks.
 type Generator struct {
 	toolName     string
-	driver       driver.Driver
+	tool         toolcfg.Tool
 	model        string
 	timeout      time.Duration
 	repoDir      string
@@ -32,12 +32,12 @@ type Generator struct {
 }
 
 // New creates a plan Generator.
-func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Generator {
+func New(toolName string, tool toolcfg.Tool, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Generator {
 	var store *interaction.Store
 	if len(interactions) > 0 {
 		store = interactions[0]
 	}
-	return &Generator{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
+	return &Generator{toolName: toolName, tool: tool, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
 // WithMemory attaches an optional memory store for prompt-time retrieval.
@@ -95,7 +95,7 @@ func (g *Generator) generate(taskID, title, description, model string) (string, 
 		selectedModel = model
 	}
 
-	adapter := worker.NewAdapter(g.driver, selectedModel, g.timeout)
+	adapter := worker.NewAdapter(g.toolName, g.tool, selectedModel, g.timeout)
 	var (
 		stdout        string
 		exitCode      = -1

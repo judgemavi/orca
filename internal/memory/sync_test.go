@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/diffclass"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 )
 
 func TestSyncFirstRunSetsHeadOnly(t *testing.T) {
@@ -17,7 +18,7 @@ func TestSyncFirstRunSetsHeadOnly(t *testing.T) {
 	})
 
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	syncer := NewSyncer(store, db.DB, repoDir, "", toolcfg.Tool{}, "", time.Minute)
 	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
 
 	result, err := syncer.Sync()
@@ -52,7 +53,7 @@ func TestSyncNoOpWhenHeadUnchanged(t *testing.T) {
 	})
 
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	syncer := NewSyncer(store, db.DB, repoDir, "", toolcfg.Tool{}, "", time.Minute)
 	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
 	if err := syncer.SetLastSyncedCommit(head); err != nil {
 		t.Fatalf("seed last synced commit: %v", err)
@@ -80,7 +81,7 @@ func TestSyncClassifiesAndFlagsEntries(t *testing.T) {
 	})
 
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	syncer := NewSyncer(store, db.DB, repoDir, "", toolcfg.Tool{}, "", time.Minute)
 
 	retro := mustCreateEntryWithOptions(t, store, "retro", "pattern", []string{"sync"}, 1.0, "hash-sync-retro", "retro", []string{"internal/retro.go"})
 	majorEntry := mustCreateEntryWithOptions(t, store, "major", "architecture", []string{"sync"}, 1.0, "hash-sync-major", "explore", []string{"go.mod"})
@@ -176,7 +177,7 @@ func TestSyncStatusIncludesCommitLagAndContextStale(t *testing.T) {
 	})
 
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	syncer := NewSyncer(store, db.DB, repoDir, "", toolcfg.Tool{}, "", time.Minute)
 
 	if err := syncer.SetContextStaleFlag(true); err != nil {
 		t.Fatalf("set context stale flag: %v", err)
@@ -222,7 +223,7 @@ func TestSyncAcrossMultipleCommitsUsesRangeDiff(t *testing.T) {
 		"internal/retro.go": "package main\n\nfunc retroValue() int { return 1 }\n",
 	})
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	syncer := NewSyncer(store, db.DB, repoDir, "", toolcfg.Tool{}, "", time.Minute)
 	entry := mustCreateEntryWithOptions(t, store, "retro", "pattern", []string{"sync"}, 1.0, "hash-sync-range", "retro", []string{"internal/retro.go"})
 
 	base := gitOutput(t, repoDir, "rev-parse", "HEAD")
@@ -273,7 +274,7 @@ func TestSyncRenameUpdatesFileAssociations(t *testing.T) {
 		"internal/old_name.go": "package main\n\nfunc Value() int { return 1 }\n",
 	})
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	syncer := NewSyncer(store, db.DB, repoDir, "", toolcfg.Tool{}, "", time.Minute)
 	entry := mustCreateEntryWithOptions(t, store, "rename", "pattern", []string{"sync"}, 1.0, "hash-sync-rename", "retro", []string{"internal/old_name.go"})
 
 	base := gitOutput(t, repoDir, "rev-parse", "HEAD")
@@ -316,7 +317,7 @@ func TestRefreshWithoutChangesClearsStale(t *testing.T) {
 		"internal/app.go": "package app\n\nfunc Value() int { return 1 }\n",
 	})
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	syncer := NewSyncer(store, db.DB, repoDir, "", toolcfg.Tool{}, "", time.Minute)
 	head := gitOutput(t, repoDir, "rev-parse", "HEAD")
 	entry := mustCreateEntryWithOptions(t, store, "stale", "pattern", []string{"sync"}, 1.0, "hash-sync-refresh", "retro", []string{"internal/app.go"})
 	if err := store.Update(entry.ID, UpdateFields{Stale: Ptr(true), CoveredAtCommit: Ptr(head)}); err != nil {
@@ -344,7 +345,7 @@ func TestRefreshWithoutLLMSkipsChangedStaleEntry(t *testing.T) {
 		"internal/app.go": "package app\n\nfunc Value() int { return 1 }\n",
 	})
 	store, db := setupStore(t)
-	syncer := NewSyncer(store, db.DB, repoDir, "", nil, "", time.Minute)
+	syncer := NewSyncer(store, db.DB, repoDir, "", toolcfg.Tool{}, "", time.Minute)
 	base := gitOutput(t, repoDir, "rev-parse", "HEAD")
 	entry := mustCreateEntryWithOptions(t, store, "stale", "pattern", []string{"sync"}, 1.0, "hash-sync-refresh-llm", "retro", []string{"internal/app.go"})
 	if err := store.Update(entry.ID, UpdateFields{Stale: Ptr(true), CoveredAtCommit: Ptr(base)}); err != nil {

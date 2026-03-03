@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 	"github.com/jasjeetmavi/orca/prompts"
@@ -30,7 +30,7 @@ type Integrator struct {
 
 	// For auto-rebase re-run support.
 	worktreeDir  string
-	toolResolver func(taskID string) (string, driver.Driver, string, time.Duration, error)
+	toolResolver func(taskID string) (string, toolcfg.Tool, string, time.Duration, error)
 	interactions *interaction.Store
 
 	mu       sync.Mutex
@@ -59,7 +59,7 @@ func New(repoDir, integrationBranch string, validationCmds []string, interaction
 }
 
 // SetRerunConfig configures the integrator for auto-rebase re-run support.
-func (i *Integrator) SetRerunConfig(worktreeDir string, resolver func(string) (string, driver.Driver, string, time.Duration, error)) {
+func (i *Integrator) SetRerunConfig(worktreeDir string, resolver func(string) (string, toolcfg.Tool, string, time.Duration, error)) {
 	i.worktreeDir = worktreeDir
 	i.toolResolver = resolver
 }
@@ -162,13 +162,13 @@ func (i *Integrator) mergeWithRerunUnlocked(taskID string) error {
 	rebaseCmd.CombinedOutput() // ignore error — conflict is expected
 
 	// Resolve tool.
-	toolName, d, model, timeout, err := i.toolResolver(taskID)
+	toolName, tool, model, timeout, err := i.toolResolver(taskID)
 	if err != nil {
 		i.abortRebaseInWorktree(wtPath)
 		return fmt.Errorf("resolve tool for conflict resolution: %w", err)
 	}
 
-	adapter := worker.NewAdapter(d, model, timeout)
+	adapter := worker.NewAdapter(toolName, tool, model, timeout)
 	taskRef := taskID
 	_, err = interaction.RunWithTracking(
 		i.interactions,

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/llm"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -29,7 +29,7 @@ type EvaluationResult struct {
 
 type Evaluator struct {
 	toolName     string
-	driver       driver.Driver
+	tool         toolcfg.Tool
 	model        string
 	timeout      time.Duration
 	repoDir      string
@@ -39,12 +39,12 @@ type Evaluator struct {
 	syncer       *memory.Syncer
 }
 
-func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Evaluator {
+func New(toolName string, tool toolcfg.Tool, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Evaluator {
 	var store *interaction.Store
 	if len(interactions) > 0 {
 		store = interactions[0]
 	}
-	return &Evaluator{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
+	return &Evaluator{toolName: toolName, tool: tool, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
 func (e *Evaluator) WithMemory(store *memory.Store) *Evaluator {
@@ -89,7 +89,7 @@ func (e *Evaluator) evaluate(taskID, title, description, model string) (*Evaluat
 		selectedModel = model
 	}
 
-	adapter := worker.NewAdapter(e.driver, selectedModel, e.timeout)
+	adapter := worker.NewAdapter(e.toolName, e.tool, selectedModel, e.timeout)
 	var (
 		exitCode         = -1
 		stderr           string

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worktree"
 )
 
@@ -68,7 +68,7 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request) {
 
 			var mergeErr error
 			if mode == "auto" {
-				ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (string, driver.Driver, string, time.Duration, error) {
+				ig.SetRerunConfig(s.cfg.Project.WorktreeDir, func(id string) (string, toolcfg.Tool, string, time.Duration, error) {
 					return s.resolveToolConfigForTask(id, req.Tool, req.Model)
 				})
 				s.hub.Broadcast(Event{Type: "merge.progress", Data: map[string]string{
@@ -113,17 +113,17 @@ func (s *Server) handleMergeTask(w http.ResponseWriter, r *http.Request) {
 	})(w, r)
 }
 
-func (s *Server) resolveToolConfigForTask(taskID string, toolOverride string, modelOverride string) (string, driver.Driver, string, time.Duration, error) {
+func (s *Server) resolveToolConfigForTask(taskID string, toolOverride string, modelOverride string) (string, toolcfg.Tool, string, time.Duration, error) {
 	if _, err := s.taskStore.Get(taskID); err != nil {
-		return "", nil, "", 0, err
+		return "", toolcfg.Tool{}, "", 0, err
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseMerge, toolOverride)
+	toolName, tool, err := s.cfg.ResolveToolForPhase(interaction.PhaseMerge, toolOverride)
 	if err != nil {
-		return "", nil, "", 0, err
+		return "", toolcfg.Tool{}, "", 0, err
 	}
-	model := s.cfg.ResolveModelForPhase(interaction.PhaseMerge, modelOverride, d)
-	return toolName, d, model, 10 * time.Minute, nil
+	model := s.cfg.ResolveModelForPhase(interaction.PhaseMerge, modelOverride, toolName)
+	return toolName, tool, model, 10 * time.Minute, nil
 }
 
 func (s *Server) handleMerge(w http.ResponseWriter, r *http.Request) {

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/explore"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/logging"
@@ -21,17 +20,17 @@ import (
 )
 
 func (s *Server) HandleExploreTool(_ json.RawMessage) (interface{}, error) {
-	toolName, d, err := s.config.ResolveToolForPhase("explore", "")
+	toolName, tool, err := s.config.ResolveToolForPhase("explore", "")
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase("explore", "", d)
+	model := s.config.ResolveModelForPhase("explore", "", toolName)
 
 	memStore, err := s.getMemoryStore()
 	if err != nil {
 		return nil, err
 	}
-	explorer := explore.New(toolName, d, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions")).
+	explorer := explore.New(toolName, tool, model, 10*time.Minute, s.repoDir, interaction.NewStore(s.db, ".orca/interactions")).
 		WithMemory(memStore).
 		WithSyncer(s.newMemorySyncer(memStore))
 	outPath, err := explorer.Run()
@@ -61,12 +60,12 @@ func (s *Server) HandleModelsListTool(argsRaw json.RawMessage) (interface{}, err
 
 	requestedTool := strings.TrimSpace(args.Tool)
 	if requestedTool != "" {
-		d, ok := driver.Get(requestedTool)
-		if !ok {
+		if !config.IsKnownTool(requestedTool) {
 			return nil, fmt.Errorf("tool %q not found", requestedTool)
 		}
+		models, _ := model.ForTool(requestedTool)
 		return map[string][]model.Model{
-			requestedTool: model.FromDriver(requestedTool, d),
+			requestedTool: models,
 		}, nil
 	}
 

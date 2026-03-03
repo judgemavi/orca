@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/config"
 	"github.com/jasjeetmavi/orca/internal/model"
 	"github.com/spf13/cobra"
 )
@@ -22,7 +22,7 @@ func (r *Registry) runModels(cmd *cobra.Command, args []string) error {
 	var toolNames []string
 	if len(args) == 1 {
 		toolName := args[0]
-		if _, ok := driver.Get(toolName); !ok {
+		if !config.IsKnownTool(toolName) {
 			return fmt.Errorf("tool %q not found in config", toolName)
 		}
 		toolNames = []string{toolName}
@@ -32,8 +32,7 @@ func (r *Registry) runModels(cmd *cobra.Command, args []string) error {
 
 	multi := len(toolNames) > 1
 	for i, toolName := range toolNames {
-		d, _ := driver.Get(toolName)
-		models := model.FromDriver(toolName, d)
+		models, _ := model.ForTool(toolName)
 
 		if multi {
 			if i > 0 {

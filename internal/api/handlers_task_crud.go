@@ -1,12 +1,10 @@
 package api
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/model"
 	"github.com/jasjeetmavi/orca/internal/task"
 )
@@ -215,13 +213,13 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	requestedTool := strings.TrimSpace(r.URL.Query().Get("tool"))
 
 	if requestedTool != "" {
-		d, ok := driver.Get(requestedTool)
+		models, ok := model.ForTool(requestedTool)
 		if !ok {
-			jsonError(w, fmt.Sprintf("tool %q not found", requestedTool), http.StatusBadRequest)
+			jsonError(w, "tool "+requestedTool+" not found", http.StatusBadRequest)
 			return
 		}
 		resp := map[string][]model.Model{
-			requestedTool: model.FromDriver(requestedTool, d),
+			requestedTool: models,
 		}
 		jsonOK(w, map[string]interface{}{"tools": resp})
 		return

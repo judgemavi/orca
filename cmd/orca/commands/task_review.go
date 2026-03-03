@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/executor"
 	"github.com/jasjeetmavi/orca/internal/integrator"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/review"
 	"github.com/jasjeetmavi/orca/internal/task"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/spf13/cobra"
 )
 
@@ -71,16 +71,16 @@ func (r *Registry) runTaskMerge(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if auto {
-			ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, driver.Driver, string, time.Duration, error) {
+			ig.SetRerunConfig(cfg.Project.WorktreeDir, func(taskID string) (string, toolcfg.Tool, string, time.Duration, error) {
 				if _, err := store.Get(taskID); err != nil {
-					return "", nil, "", 0, err
+					return "", toolcfg.Tool{}, "", 0, err
 				}
-				toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
+				toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhaseMerge, "")
 				if err != nil {
-					return "", nil, "", 0, err
+					return "", toolcfg.Tool{}, "", 0, err
 				}
-				model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", d)
-				return toolName, d, model, 10 * time.Minute, nil
+				model := cfg.ResolveModelForPhase(interaction.PhaseMerge, "", toolName)
+				return toolName, tool, model, 10 * time.Minute, nil
 			})
 		}
 
@@ -266,11 +266,11 @@ func (r *Registry) runReviewAI(cmd *cobra.Command, args []string) error {
 	modelFlag, _ := cmd.Flags().GetString("model")
 	promptFlag, _ := cmd.Flags().GetString("prompt")
 
-	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseReview, strings.TrimSpace(toolFlag))
+	toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhaseReview, strings.TrimSpace(toolFlag))
 	if err != nil {
 		return err
 	}
-	model := cfg.ResolveModelForPhase(interaction.PhaseReview, strings.TrimSpace(modelFlag), d)
+	model := cfg.ResolveModelForPhase(interaction.PhaseReview, strings.TrimSpace(modelFlag), toolName)
 
 	interactions := interaction.NewStore(db, ".orca/interactions")
 	runInteractions, err := interactions.ListByPhase(taskID, interaction.PhaseRun)
@@ -290,7 +290,7 @@ func (r *Registry) runReviewAI(cmd *cobra.Command, args []string) error {
 	}
 
 	repoDir, _ := os.Getwd()
-	reviewer := review.New(toolName, d, model, 10*time.Minute, repoDir, interactions)
+	reviewer := review.New(toolName, tool, model, 10*time.Minute, repoDir, interactions)
 	result, err := reviewer.Review(taskID, tk.Title, tk.Description, diff, strings.TrimSpace(promptFlag))
 	if err != nil {
 		return fmt.Errorf("run ai review for task %s: %w", short(taskID), err)

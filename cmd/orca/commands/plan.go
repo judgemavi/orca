@@ -8,7 +8,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/jasjeetmavi/orca/internal/breakdown"
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/memory"
 	"github.com/jasjeetmavi/orca/internal/task"
@@ -69,27 +68,14 @@ func (r *Registry) runPlan(cmd *cobra.Command, args []string) error {
 		parentTaskTitle = parentTask.Title
 	}
 
-	var selectedTool string
-	var selectedDriver driver.Driver
-	if toolName != "" {
-		name, drv, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolName)
-		if err != nil {
-			return err
-		}
-		selectedTool = name
-		selectedDriver = drv
-	} else {
-		name, drv, err := cfg.ResolveToolForPhase(interaction.PhasePlan, "")
-		if err != nil {
-			return err
-		}
-		selectedTool = name
-		selectedDriver = drv
+	selectedTool, selectedToolDef, err := cfg.ResolveToolForPhase(interaction.PhasePlan, toolName)
+	if err != nil {
+		return err
 	}
-	model := cfg.ResolveModelForPhase(interaction.PhasePlan, "", selectedDriver)
+	model := cfg.ResolveModelForPhase(interaction.PhasePlan, "", selectedTool)
 
 	repoDir, _ := os.Getwd()
-	breaker := breakdown.New(selectedTool, selectedDriver, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
+	breaker := breakdown.New(selectedTool, selectedToolDef, model, 10*time.Minute, repoDir, interaction.NewStore(db, ".orca/interactions")).
 		WithMemory(memory.NewStore(db)).
 		WithTaskStore(store).
 		WithSyncer(newConfiguredMemorySyncer(cfg, memory.NewStore(db), db, repoDir))

@@ -149,7 +149,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		sessionID = "default"
 	}
 
-	toolName, d, err := s.cfg.ResolveToolForPhase("plan", req.Tool)
+	toolName, tool, err := s.cfg.ResolveToolForPhase("plan", req.Tool)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if req.Tool != "" {
@@ -165,9 +165,9 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		map[string]string{"status": "breaking_down"},
 		func() {
 			s.hub.Broadcast(Event{Type: "breakdown.started", Data: map[string]string{"session_id": sessionID}})
-			model := s.cfg.ResolveModelForPhase("plan", "", d)
+			model := s.cfg.ResolveModelForPhase("plan", "", toolName)
 			memStore := memory.NewStore(s.db)
-			breaker := breakdown.New(toolName, d, model, 10*time.Minute, s.repoDir, s.interactions).
+			breaker := breakdown.New(toolName, tool, model, 10*time.Minute, s.repoDir, s.interactions).
 				WithMemory(memStore).
 				WithTaskStore(s.taskStore).
 				WithSyncer(s.newMemorySyncer(memStore))

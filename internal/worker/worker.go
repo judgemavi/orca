@@ -1,8 +1,8 @@
-// Package worker spawns CLI tool processes and captures output.
+// Package worker spawns CLI tool processes and captures raw output.
 //
-// Depends on: driver.Driver, procutil
+// Depends on: procutil, toolcfg
 // Consumed by: executor
-// Key flow: Adapter.Execute → spawn process → parse NDJSON events → Result
+// Key flow: Adapter.Execute → spawn process → capture raw stdout/stderr → Result
 package worker
 
 import (
@@ -17,8 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/orchestrator"
 	"github.com/jasjeetmavi/orca/internal/procutil"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 )
 
 // Worker executes tasks via headless adapter mode.
@@ -30,6 +31,7 @@ type Worker interface {
 	SetTaskTitle(string)
 	SetOutputChan(chan<- OutputLine)
 	SetSessionIDCallback(func(string))
+	SetToolDefinition(toolName string, tool toolcfg.Tool)
 }
 
 // Result holds the output of a completed worker execution.
@@ -41,7 +43,6 @@ type Result struct {
 	Duration     time.Duration
 	Diff         string
 	FilesChanged []string
-	Events       []driver.Event
 	SessionID    string
 	InputTokens  int64
 	OutputTokens int64
@@ -58,7 +59,8 @@ type OutputLine struct {
 
 // Adapter wraps a CLI tool binary for headless execution.
 type Adapter struct {
-	Driver    driver.Driver
+	ToolName  string
+	Tool      toolcfg.Tool
 	TaskTitle string
 	Timeout   time.Duration
 	Model     string
@@ -66,14 +68,24 @@ type Adapter struct {
 	CmdCallback func(*exec.Cmd)
 	// OutputChan receives live worker output lines.
 	OutputChan chan<- OutputLine
-	// SessionIDCallback receives observed session IDs during stream parsing.
+	// SessionIDCallback receives observed session IDs from raw output scan.
 	SessionIDCallback func(string)
 }
 
 // --- private helpers ---
 
-func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []string, worktreePath string) (*Result, error) {
-	ctx, cancel := context.WithTimeout(ctx, a.Timeout)
+func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, tool toolcfg.Tool, args []string, worktreePath string) (*Result, error) {
+	timeout := a.Timeout
+	if timeout <= 0 {
+		parsed, err := tool.TimeoutDuration()
+		if err == nil && parsed > 0 {
+			timeout = parsed
+		} else {
+			timeout = 10 * time.Minute
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	if worktreePath != "" {
@@ -81,8 +93,12 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 			return nil, fmt.Errorf("worktree dir %s: %w", worktreePath, err)
 		}
 	}
+	binary := strings.TrimSpace(tool.Binary)
+	if binary == "" {
+		return nil, fmt.Errorf("tool binary is empty")
+	}
 
-	cmd := exec.CommandContext(ctx, a.Driver.Binary(), args...)
+	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = worktreePath
 	cmd.Env = filteredEnv()
 
@@ -99,79 +115,46 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 		a.CmdCallback(cmd)
 	}
 
-	slog.Info("worker.starting", "task_id", taskID, "binary", a.Driver.Binary(), "dir", worktreePath, "args_count", len(args))
+	slog.Info("worker.starting", "task_id", taskID, "binary", binary, "dir", worktreePath, "args_count", len(args))
 
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("exec %s in %s: %w", a.Driver.Binary(), worktreePath, err)
+		return nil, fmt.Errorf("exec %s in %s: %w", binary, worktreePath, err)
 	}
-	slog.Info("worker.spawned", "task_id", taskID, "binary", a.Driver.Binary(), "pid", cmd.Process.Pid, "dir", worktreePath)
+	slog.Info("worker.spawned", "task_id", taskID, "binary", binary, "pid", cmd.Process.Pid, "dir", worktreePath)
 
 	var stderr bytes.Buffer
-	var (
-		resultText strings.Builder
-		totalCost  driver.Cost
-		sessionID  string
-		allEvents  []driver.Event
-	)
+	var stdout bytes.Buffer
+	sessionID := ""
+	observeSessionID := func(rawLine string) {
+		matched := toolcfg.ExtractSessionID(tool.SessionID, rawLine)
+		if matched == "" || matched == sessionID {
+			return
+		}
+		sessionID = matched
+		if a.SessionIDCallback != nil {
+			a.SessionIDCallback(matched)
+		}
+	}
 	done := make(chan struct{}, 2)
 
-	// Parse NDJSON from stdout in real-time.
+	// Capture stdout as raw text and scan for session ID.
 	go func() {
 		defer func() { done <- struct{}{} }()
 		scanner := newScanner(stdoutPipe)
 		for scanner.Scan() {
-			line := append([]byte(nil), scanner.Bytes()...)
+			line := scanner.Text()
 			now := time.Now()
+			stdout.WriteString(line)
+			stdout.WriteByte('\n')
+			observeSessionID(line)
 
 			if a.OutputChan != nil {
 				a.OutputChan <- OutputLine{
 					TaskID: taskID,
 					Stream: "raw",
-					Line:   string(line),
+					Line:   line,
 					Time:   now,
-				}
-			}
-
-			event, err := a.Driver.ParseEvent(line)
-			if err != nil {
-				slog.Warn("worker parse event failed", "task_id", taskID, "err", err)
-				continue
-			}
-			allEvents = append(allEvents, event)
-
-			switch event.Type {
-			case driver.EventText:
-				if event.Text == "" {
-					continue
-				}
-				resultText.WriteString(event.Text)
-				if a.OutputChan != nil {
-					a.OutputChan <- OutputLine{
-						TaskID: taskID,
-						Stream: "stdout",
-						Line:   event.Text,
-						Time:   now,
-					}
-				}
-			case driver.EventCost:
-				if event.Cost != nil {
-					totalCost.InputTokens += event.Cost.InputTokens
-					totalCost.OutputTokens += event.Cost.OutputTokens
-					totalCost.TotalCost += event.Cost.TotalCost
-				}
-				if event.SessionID != "" {
-					sessionID = event.SessionID
-					if a.SessionIDCallback != nil {
-						a.SessionIDCallback(event.SessionID)
-					}
-				}
-			case driver.EventSession:
-				if event.SessionID != "" {
-					sessionID = event.SessionID
-					if a.SessionIDCallback != nil {
-						a.SessionIDCallback(event.SessionID)
-					}
 				}
 			}
 		}
@@ -208,20 +191,16 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 	duration := time.Since(start)
 
 	result := &Result{
-		TaskID:       taskID,
-		Stdout:       resultText.String(),
-		Stderr:       stderr.String(),
-		Duration:     duration,
-		Events:       allEvents,
-		SessionID:    sessionID,
-		InputTokens:  totalCost.InputTokens,
-		OutputTokens: totalCost.OutputTokens,
-		TotalCost:    totalCost.TotalCost,
+		TaskID:    taskID,
+		Stdout:    stdout.String(),
+		Stderr:    stderr.String(),
+		Duration:  duration,
+		SessionID: sessionID,
 	}
 
 	if ctx.Err() == context.DeadlineExceeded {
 		result.ExitCode = -1
-		result.Stderr += "\norca: process killed after timeout (" + a.Timeout.String() + ")"
+		result.Stderr += "\norca: process killed after timeout (" + timeout.String() + ")"
 	} else if ctx.Err() == context.Canceled {
 		result.ExitCode = -1
 		result.Stderr += "\norca: process cancelled"
@@ -230,7 +209,7 @@ func (a *Adapter) executeWithArgs(ctx context.Context, taskID string, args []str
 			result.ExitCode = ee.ExitCode()
 		} else {
 			slog.Info("worker.exited", "task_id", taskID, "exit_code", -1, "duration", duration)
-			return nil, fmt.Errorf("exec %s: %w", a.Driver.Binary(), runErr)
+			return nil, fmt.Errorf("exec %s: %w", binary, runErr)
 		}
 	}
 	logFields := []any{"task_id", taskID, "exit_code", result.ExitCode, "duration", duration, "dir", worktreePath}
@@ -287,45 +266,46 @@ func newScanner(r io.Reader) *bufio.Scanner {
 
 // --- exported functions/methods ---
 
-// NewAdapter creates an Adapter from a driver and runtime settings.
-func NewAdapter(d driver.Driver, model string, timeout time.Duration) *Adapter {
-	return &Adapter{Driver: d, Timeout: timeout, Model: model}
+// NewAdapter creates an Adapter from a tool and runtime settings.
+func NewAdapter(toolName string, tool toolcfg.Tool, model string, timeout time.Duration) *Adapter {
+	return &Adapter{ToolName: strings.TrimSpace(toolName), Tool: tool, Timeout: timeout, Model: model}
 }
 
 // NewWorker creates a worker adapter.
-func NewWorker(d driver.Driver, model string, timeout time.Duration) (Worker, error) {
-	if d == nil {
-		return nil, fmt.Errorf("driver is nil")
-	}
+func NewWorker(toolName string, tool toolcfg.Tool, model string, timeout time.Duration) (Worker, error) {
 	if timeout <= 0 {
 		return nil, fmt.Errorf("timeout must be > 0")
 	}
-	return NewAdapter(d, model, timeout), nil
+	return NewAdapter(toolName, tool, model, timeout), nil
 }
 
 // Execute runs the CLI tool headlessly with the given prompt in the specified worktree.
 func (a *Adapter) Execute(ctx context.Context, taskID, prompt, worktreePath string) (*Result, error) {
-	if a.Driver == nil {
-		return nil, fmt.Errorf("driver is nil")
+	tool, err := a.resolveToolDefinition(worktreePath)
+	if err != nil {
+		return nil, err
 	}
-	if a.Timeout <= 0 {
-		return nil, fmt.Errorf("timeout must be > 0")
-	}
-
-	args := a.Driver.HeadlessArgs(prompt, a.Model, worktreePath)
-	return a.executeWithArgs(ctx, taskID, args, worktreePath)
+	args := a.buildArgs(tool, toolcfg.ArgsModeHeadless, map[string]string{
+		"prompt": prompt,
+		"model":  a.Model,
+		"dir":    worktreePath,
+	})
+	return a.executeWithArgs(ctx, taskID, tool, args, worktreePath)
 }
 
 // ExecuteResume resumes a prior session and applies follow-up feedback.
 func (a *Adapter) ExecuteResume(ctx context.Context, taskID, sessionID, feedback, worktreePath string) (*Result, error) {
-	if a.Driver == nil {
-		return nil, fmt.Errorf("driver is nil")
+	tool, err := a.resolveToolDefinition(worktreePath)
+	if err != nil {
+		return nil, err
 	}
-	if a.Timeout <= 0 {
-		return nil, fmt.Errorf("timeout must be > 0")
-	}
-	args := a.Driver.ResumeArgs(sessionID, feedback, a.Model, worktreePath)
-	return a.executeWithArgs(ctx, taskID, args, worktreePath)
+	args := a.buildArgs(tool, toolcfg.ArgsModeResume, map[string]string{
+		"session_id": sessionID,
+		"feedback":   feedback,
+		"model":      a.Model,
+		"dir":        worktreePath,
+	})
+	return a.executeWithArgs(ctx, taskID, tool, args, worktreePath)
 }
 
 // SetCmdCallback sets the pre-start callback.
@@ -340,3 +320,58 @@ func (a *Adapter) SetOutputChan(ch chan<- OutputLine) { a.OutputChan = ch }
 
 // SetSessionIDCallback sets the callback for observed session IDs.
 func (a *Adapter) SetSessionIDCallback(cb func(string)) { a.SessionIDCallback = cb }
+
+// SetToolDefinition sets an explicit tool definition for this adapter.
+func (a *Adapter) SetToolDefinition(toolName string, tool toolcfg.Tool) {
+	a.ToolName = strings.TrimSpace(toolName)
+	a.Tool = tool
+}
+
+func (a *Adapter) resolveToolDefinition(pathHint string) (toolcfg.Tool, error) {
+	if strings.TrimSpace(a.Tool.Binary) != "" {
+		return a.Tool, nil
+	}
+	toolName := strings.TrimSpace(a.ToolName)
+	if toolName == "" {
+		return toolcfg.Tool{}, fmt.Errorf("tool name is required")
+	}
+
+	tool, err := orchestrator.ResolveToolDefinition(pathHint, toolName)
+	if err != nil {
+		return toolcfg.Tool{}, fmt.Errorf("resolve tool %q definition: %w", toolName, err)
+	}
+	a.Tool = tool
+	if strings.TrimSpace(a.ToolName) == "" {
+		a.ToolName = toolName
+	}
+	return tool, nil
+}
+
+func (a *Adapter) buildArgs(tool toolcfg.Tool, mode string, vars map[string]string) []string {
+	return compactArgs(tool.ResolveArgs(mode, vars))
+}
+
+func compactArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		current := strings.TrimSpace(args[i])
+		if current == "" {
+			continue
+		}
+		if takesValueFlag(current) && i+1 < len(args) && strings.TrimSpace(args[i+1]) == "" {
+			i++
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
+}
+
+func takesValueFlag(arg string) bool {
+	switch arg {
+	case "--model", "--mcp-config", "--allowedTools", "--append-system-prompt", "--resume", "-C", "--prompt", "-p":
+		return true
+	default:
+		return false
+	}
+}

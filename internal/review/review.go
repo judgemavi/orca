@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/interaction"
 	"github.com/jasjeetmavi/orca/internal/llm"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 	"github.com/jasjeetmavi/orca/internal/worker"
 	"github.com/jasjeetmavi/orca/prompts"
 )
@@ -24,19 +24,19 @@ type ReviewResult struct {
 
 type Reviewer struct {
 	toolName     string
-	driver       driver.Driver
+	tool         toolcfg.Tool
 	model        string
 	timeout      time.Duration
 	repoDir      string
 	interactions *interaction.Store
 }
 
-func New(toolName string, d driver.Driver, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Reviewer {
+func New(toolName string, tool toolcfg.Tool, model string, timeout time.Duration, repoDir string, interactions ...*interaction.Store) *Reviewer {
 	var store *interaction.Store
 	if len(interactions) > 0 {
 		store = interactions[0]
 	}
-	return &Reviewer{toolName: toolName, driver: d, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
+	return &Reviewer{toolName: toolName, tool: tool, model: model, timeout: timeout, repoDir: repoDir, interactions: store}
 }
 
 type reviewResponse struct {
@@ -51,7 +51,7 @@ func (r *Reviewer) Review(taskID, title, description, diff, userPrompt string) (
 	}
 	prompt := fmt.Sprintf(prompts.Review, title, description, diff, instructions)
 
-	adapter := worker.NewAdapter(r.driver, r.model, r.timeout)
+	adapter := worker.NewAdapter(r.toolName, r.tool, r.model, r.timeout)
 	var (
 		stdout       string
 		exitCode     = -1

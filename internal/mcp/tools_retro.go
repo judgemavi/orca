@@ -54,15 +54,15 @@ func (s *Server) HandleTasksRetroTool(argsRaw json.RawMessage) (interface{}, err
 		}
 	}
 
-	toolName, d, err := s.config.ResolveToolForPhase(interaction.PhaseRetro, strings.TrimSpace(args.Tool))
+	toolName, tool, err := s.config.ResolveToolForPhase(interaction.PhaseRetro, strings.TrimSpace(args.Tool))
 	if err != nil {
 		return nil, err
 	}
-	model := s.config.ResolveModelForPhase(interaction.PhaseRetro, strings.TrimSpace(args.Model), d)
+	model := s.config.ResolveModelForPhase(interaction.PhaseRetro, strings.TrimSpace(args.Model), toolName)
 
 	generator := retro.New(
 		toolName,
-		d,
+		tool,
 		model,
 		10*time.Minute,
 		s.repoDir,

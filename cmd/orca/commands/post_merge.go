@@ -37,15 +37,15 @@ func runPostMergeRetro(cfg *config.Config, db *state.DB, repoDir, taskID string)
 		}
 	}
 
-	toolName, d, err := cfg.ResolveToolForPhase(interaction.PhaseRetro, "")
+	toolName, tool, err := cfg.ResolveToolForPhase(interaction.PhaseRetro, "")
 	if err != nil {
 		return nil
 	}
-	model := cfg.ResolveModelForPhase(interaction.PhaseRetro, "", d)
+	model := cfg.ResolveModelForPhase(interaction.PhaseRetro, "", toolName)
 
 	generator := retro.New(
 		toolName,
-		d,
+		tool,
 		model,
 		10*time.Minute,
 		repoDir,

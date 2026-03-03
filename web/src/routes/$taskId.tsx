@@ -267,6 +267,14 @@ function TaskDetailForm({
                 <span>
                   {task.status} {formatRelativeTime(task.updated_at)}
                 </span>
+                {task.session_id && (
+                  <>
+                    <span>·</span>
+                    <span className="font-mono text-[11px]">
+                      session {task.session_id}
+                    </span>
+                  </>
+                )}
               </div>
               {!isExpanded && description && (
                 <p className="mt-1 line-clamp-2 text-xs text-muted">

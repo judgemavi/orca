@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/driver"
+	"github.com/jasjeetmavi/orca/internal/orchestrator"
 	"github.com/jasjeetmavi/orca/internal/state"
 	"github.com/jasjeetmavi/orca/internal/testutil"
 )
@@ -181,12 +181,12 @@ func TestHandleOrchestratorHistoryAndNewSession(t *testing.T) {
 }
 
 func TestBuildOrchestratorChatArgsPrefersResumeWhenAvailable(t *testing.T) {
-	d, ok := driver.Get("claude")
-	if !ok {
-		t.Fatal("claude driver missing")
+	tool, err := orchestrator.ResolveToolDefinition(t.TempDir(), "claude")
+	if err != nil {
+		t.Fatalf("resolve tool definition: %v", err)
 	}
 	args := buildOrchestratorChatArgs(
-		d,
+		tool,
 		&state.OrchestratorSessionRow{
 			Tool:            "claude",
 			Model:           "claude-sonnet-4-6",

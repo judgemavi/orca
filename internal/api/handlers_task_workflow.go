@@ -140,7 +140,7 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.withTaskValidation("task must be in review status for ai review", []string{"review"}, func(w http.ResponseWriter, r *http.Request, tk *task.Task) {
-		toolName, d, err := s.cfg.ResolveToolForPhase(interaction.PhaseReview, strings.TrimSpace(req.Tool))
+		toolName, tool, err := s.cfg.ResolveToolForPhase(interaction.PhaseReview, strings.TrimSpace(req.Tool))
 		if err != nil {
 			if strings.TrimSpace(req.Tool) != "" {
 				jsonError(w, err, http.StatusBadRequest)
@@ -150,7 +150,7 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		modelOverride := s.cfg.ResolveModelForPhase(interaction.PhaseReview, strings.TrimSpace(req.Model), d)
+		modelOverride := s.cfg.ResolveModelForPhase(interaction.PhaseReview, strings.TrimSpace(req.Model), toolName)
 		runInteractions, err := s.interactions.ListByPhase(tk.ID, interaction.PhaseRun)
 		if err != nil {
 			jsonError(w, err, http.StatusInternalServerError)
@@ -168,7 +168,7 @@ func (s *Server) handleAIReview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		reviewer := review.New(toolName, d, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
+		reviewer := review.New(toolName, tool, modelOverride, 10*time.Minute, s.repoDir, s.interactions)
 		jsonResponse(w, http.StatusAccepted, map[string]interface{}{
 			"status":  "reviewing",
 			"task_id": tk.ID,

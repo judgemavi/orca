@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasjeetmavi/orca/internal/driver"
 	"github.com/jasjeetmavi/orca/internal/state"
+	"github.com/jasjeetmavi/orca/internal/toolcfg"
 )
 
 func TestResolveToolForPhase(t *testing.T) {
@@ -15,12 +15,12 @@ func TestResolveToolForPhase(t *testing.T) {
 			"run": {Tool: "codex"},
 		}},
 	}
-	name, d, err := cfg.ResolveToolForPhase("run", "")
+	name, tool, err := cfg.ResolveToolForPhase("run", "")
 	if err != nil {
 		t.Fatalf("ResolveToolForPhase: %v", err)
 	}
-	if name != "codex" || d.Name() != "codex" {
-		t.Fatalf("got %q/%q, want codex", name, d.Name())
+	if name != "codex" || tool.Binary != "codex" {
+		t.Fatalf("got %q/%q, want codex/codex", name, tool.Binary)
 	}
 	// Falls back to Tools[0] when no phase config
 	name2, _, err := cfg.ResolveToolForPhase("review", "")
@@ -34,19 +34,69 @@ func TestResolveToolForPhase(t *testing.T) {
 
 func TestResolveModelForPhase(t *testing.T) {
 	cfg := Config{
+		DefaultTool:  "claude",
+		DefaultModel: "claude-sonnet-4-6",
 		Orchestrator: OrchestratorConfig{Phases: map[string]PhaseConfig{
 			"plan": {Model: "claude-opus-4-6"},
 		}},
 	}
-	d, _ := driver.Get("claude")
-	if got := cfg.ResolveModelForPhase("plan", "", d); got != "claude-opus-4-6" {
+	if got := cfg.ResolveModelForPhase("plan", "", "claude"); got != "claude-opus-4-6" {
 		t.Fatalf("phase model = %q", got)
 	}
-	// Falls back to driver's first model when no phase config
-	got := cfg.ResolveModelForPhase("review", "", d)
-	models := d.Models()
-	if len(models) > 0 && got != models[0] {
-		t.Fatalf("fallback model = %q, want %q", got, models[0])
+	// Falls back to first configured model when no phase model override.
+	got := cfg.ResolveModelForPhase("review", "", "claude")
+	if got != "claude-sonnet-4-6" {
+		t.Fatalf("fallback model = %q, want claude-sonnet-4-6", got)
+	}
+}
+
+func TestValidateDefaults(t *testing.T) {
+	tc := &toolcfg.Config{
+		Tools: map[string]toolcfg.Tool{
+			"claude": {Models: []string{"claude-sonnet-4-6", "claude-opus-4-6"}},
+		},
+	}
+	cfg := Config{DefaultTool: "claude", DefaultModel: "claude-sonnet-4-6"}
+	if err := cfg.ValidateDefaults(tc); err != nil {
+		t.Fatalf("ValidateDefaults: %v", err)
+	}
+}
+
+func TestSanitizeOrchestratorReplacesStaleRefs(t *testing.T) {
+	tc := &toolcfg.Config{
+		Tools: map[string]toolcfg.Tool{
+			"claude": {Models: []string{"claude-sonnet-4-6"}},
+			"codex":  {Models: []string{"gpt-5.3-codex"}},
+		},
+	}
+	cfg := Config{
+		Tools:        []string{"missing-tool", "codex"},
+		DefaultTool:  "claude",
+		DefaultModel: "claude-sonnet-4-6",
+		Orchestrator: OrchestratorConfig{
+			SupervisorTool:  "missing-tool",
+			SupervisorModel: "missing-model",
+			Phases: map[string]PhaseConfig{
+				"run": {Tool: "missing-tool", Model: "missing-model"},
+			},
+		},
+	}
+
+	changes := cfg.SanitizeOrchestrator(tc)
+	if len(changes) == 0 {
+		t.Fatal("expected sanitize changes")
+	}
+	if cfg.Tools[0] != "codex" {
+		t.Fatalf("tools = %v, want [codex]", cfg.Tools)
+	}
+	if cfg.Orchestrator.SupervisorTool != "claude" {
+		t.Fatalf("supervisor tool = %q, want claude", cfg.Orchestrator.SupervisorTool)
+	}
+	if cfg.Orchestrator.SupervisorModel != "claude-sonnet-4-6" {
+		t.Fatalf("supervisor model = %q, want claude-sonnet-4-6", cfg.Orchestrator.SupervisorModel)
+	}
+	if run := cfg.Orchestrator.Phases["run"]; run.Tool != "claude" || run.Model != "claude-sonnet-4-6" {
+		t.Fatalf("run phase = %#v", run)
 	}
 }
 

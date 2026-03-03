@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	"github.com/jasjeetmavi/orca/internal/config"
-	"github.com/jasjeetmavi/orca/internal/driver"
 )
 
-func TestFromDriver(t *testing.T) {
-	d, _ := driver.Get("claude")
-	got := FromDriver("claude", d)
+func TestForTool(t *testing.T) {
+	got, ok := ForTool("claude")
+	if !ok {
+		t.Fatal("expected claude models")
+	}
 	if len(got) == 0 {
 		t.Fatal("expected models")
 	}
