@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { detectAction } from '../lib/orchestratorActions'
-import {
-  detectPhaseActions,
-  parseToolResultPayload,
-} from '../lib/orchestratorPhaseActions'
-import { normalizeToolName } from '../lib/orchestratorRichContent'
 import type { OrchestratorMessage } from '../types'
-import { subscribeWS } from '../ws'
 
 interface OrchestratorToolUseEvent {
   id?: string
@@ -36,14 +29,10 @@ function getErrorMessage(error: unknown): string {
   return 'Unknown error'
 }
 
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
 function extractTaskIdFromJSON(text: string): string | null {
   try {
     const obj = JSON.parse(text)
-    if (typeof obj?.task_id === 'string' && obj.task_id.trim()) return obj.task_id.trim()
+    if (typeof obj?.taskId === 'string' && obj.taskId.trim()) return obj.taskId.trim()
     if (typeof obj?.task?.id === 'string' && obj.task.id.trim()) return obj.task.id.trim()
   } catch { /* not JSON */ }
   return null
@@ -91,6 +80,15 @@ function parseJSON<T>(value: string): T | null {
   }
 }
 
+function parseTextChunk(value: string): string {
+  const parsed = parseJSON<unknown>(value)
+  if (typeof parsed === 'string') return parsed
+  if (parsed && typeof parsed === 'object' && typeof (parsed as { text?: unknown }).text === 'string') {
+    return (parsed as { text: string }).text
+  }
+  return value
+}
+
 async function getResponseError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { error?: unknown }
@@ -103,24 +101,12 @@ async function getResponseError(response: Response): Promise<string> {
 
 export function useOrchestratorChat() {
   const [messages, setMessages] = useState<OrchestratorMessage[]>([])
-  const [actedMessages, setActedMessages] = useState<Set<string>>(new Set())
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [deletedTaskIds, setDeletedTaskIds] = useState<Set<string>>(new Set())
   const localCounterRef = useRef(0)
   const requestAbortRef = useRef<AbortController | null>(null)
-  const messagesRef = useRef<OrchestratorMessage[]>([])
-  const actedMessagesRef = useRef<Set<string>>(new Set())
-
-  useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
-
-  useEffect(() => {
-    actedMessagesRef.current = actedMessages
-  }, [actedMessages])
 
   const nextLocalMessage = useCallback(
     (
@@ -132,11 +118,11 @@ export function useOrchestratorChat() {
       localCounterRef.current += 1
       return {
         id: `local-${Date.now()}-${n}`,
-        session_id: 'local',
+        sessionId: 'local',
         role,
         content,
         metadata,
-        created_at: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
       }
     },
     [],
@@ -151,62 +137,6 @@ export function useOrchestratorChat() {
       try {
         const history = await api.getOrchestratorHistory()
         setMessages(history)
-        // Mark assistant messages as acted if a user message follows them.
-        const acted = new Set<string>()
-        for (let i = 0; i < history.length; i += 1) {
-          if (history[i].role !== 'assistant') continue
-          if (!detectAction(history[i].content)) continue
-          for (let j = i + 1; j < history.length; j += 1) {
-            if (history[j].role === 'user') {
-              acted.add(history[i].id)
-              break
-            }
-            if (history[j].role === 'assistant') break
-          }
-        }
-        for (let i = 0; i < history.length; i += 1) {
-          const message = history[i]
-          if (message.role !== 'tool_use') continue
-          const toolUseID = asString(message.metadata.tool_use_id)
-          let matchedToolResult: OrchestratorMessage | undefined
-
-          for (let j = i + 1; j < history.length; j += 1) {
-            const candidate = history[j]
-            if (candidate.role !== 'tool_result') continue
-
-            const resultToolUseID = asString(candidate.metadata.tool_use_id)
-            const resultName = asString(candidate.metadata.name)
-            const matchesByID =
-              toolUseID !== '' &&
-              resultToolUseID !== '' &&
-              resultToolUseID === toolUseID
-            const matchesByName =
-              resultName !== '' && resultName === message.content
-            if (!matchesByID && !matchesByName) continue
-
-            matchedToolResult = candidate
-            break
-          }
-
-          if (!matchedToolResult) continue
-          if (Boolean(matchedToolResult.metadata.is_error)) continue
-
-          const toolName = normalizeToolName(message.content)
-          const payload = parseToolResultPayload(
-            toolName,
-            matchedToolResult.content,
-          )
-          const actionSet = detectPhaseActions(toolName, payload)
-          if (!actionSet || actionSet.actions.length === 0) continue
-
-          for (let j = i + 1; j < history.length; j += 1) {
-            if (history[j].role === 'user') {
-              acted.add(message.id)
-              break
-            }
-          }
-        }
-        setActedMessages(acted)
       } catch (err) {
         setError(getErrorMessage(err))
       } finally {
@@ -224,49 +154,10 @@ export function useOrchestratorChat() {
     }
   }, [loadHistory])
 
-  useEffect(() => {
-    return subscribeWS((event) => {
-      if (event.type !== 'task.deleted') return
-      const id = typeof event.data.id === 'string' ? event.data.id : ''
-      if (!id) return
-      setDeletedTaskIds((prev) => {
-        if (prev.has(id)) return prev
-        const next = new Set(prev)
-        next.add(id)
-        return next
-      })
-    })
-  }, [])
-
-  const markMessageActed = useCallback((messageId: string) => {
-    const id = messageId.trim()
-    if (!id) return
-    setActedMessages((prev) => {
-      if (prev.has(id)) return prev
-      const next = new Set(prev)
-      next.add(id)
-      return next
-    })
-  }, [])
-
-  const markLatestActionedMessage = useCallback(() => {
-    const currentMessages = messagesRef.current
-    const currentActed = actedMessagesRef.current
-    for (let i = currentMessages.length - 1; i >= 0; i -= 1) {
-      const candidate = currentMessages[i]
-      if (candidate.role !== 'assistant') continue
-      if (currentActed.has(candidate.id)) continue
-      if (!detectAction(candidate.content)) continue
-      markMessageActed(candidate.id)
-      break
-    }
-  }, [markMessageActed])
-
   const sendMessage = useCallback(
     async (text: string) => {
       const message = text.trim()
       if (!message || isStreaming) return
-      markLatestActionedMessage()
 
       let currentAssistantId = `local-assistant-${Date.now()}-${localCounterRef.current}`
       localCounterRef.current += 1
@@ -280,15 +171,14 @@ export function useOrchestratorChat() {
         userMessage,
         {
           id: currentAssistantId,
-          session_id: 'local',
+          sessionId: 'local',
           role: 'assistant',
           content: '',
           metadata: {},
-          created_at: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
         },
       ])
 
-      // Track all assistant segment IDs so we can clean up empty ones later.
       const assistantSegmentIds = new Set<string>([currentAssistantId])
 
       const abortController = new AbortController()
@@ -312,12 +202,14 @@ export function useOrchestratorChat() {
         const handleEvent = (evt: ParsedSSEEvent) => {
           switch (evt.event) {
             case 'text': {
-              setStreamingText((prev) => prev + evt.data)
+              const text = parseTextChunk(evt.data)
+              if (!text) break
+              setStreamingText((prev) => prev + text)
               const targetId = currentAssistantId
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === targetId
-                    ? { ...msg, content: msg.content + evt.data }
+                    ? { ...msg, content: msg.content + text }
                     : msg,
                 ),
               )
@@ -326,34 +218,31 @@ export function useOrchestratorChat() {
             case 'tool_use': {
               const toolUse = parseJSON<OrchestratorToolUseEvent>(evt.data)
               if (!toolUse) break
-              const argsStr = toPayloadString(toolUse.args, '{}', true)
-              const tid = extractTaskIdFromJSON(argsStr)
 
-              // Start a new assistant segment for text that comes after this tool call.
+              // Start a new assistant segment for text after this tool call.
               const nextSegId = `local-assistant-${Date.now()}-${localCounterRef.current}`
               localCounterRef.current += 1
               assistantSegmentIds.add(nextSegId)
               currentAssistantId = nextSegId
 
+              const argsStr = toPayloadString(toolUse.args, '{}', true)
+              const tid = extractTaskIdFromJSON(argsStr)
               setMessages((prev) => [
                 ...prev,
                 nextLocalMessage('tool_use', toolUse.name ?? 'tool', {
                   tool_use_id: toolUse.id ?? '',
                   args: argsStr,
-                  ...(tid ? { task_id: tid } : {}),
+                  ...(tid ? { taskId: tid } : {}),
                 }),
               ])
               break
             }
             case 'tool_result': {
-              const toolResult = parseJSON<OrchestratorToolResultEvent>(
-                evt.data,
-              )
+              const toolResult = parseJSON<OrchestratorToolResultEvent>(evt.data)
               if (!toolResult) break
               const contentStr = toPayloadString(toolResult.content, '')
               const tid = extractTaskIdFromJSON(contentStr)
 
-              // Add tool_result, then the new assistant segment for post-tool text.
               const segId = currentAssistantId
               setMessages((prev) => [
                 ...prev,
@@ -364,16 +253,16 @@ export function useOrchestratorChat() {
                     tool_use_id: toolResult.tool_use_id ?? '',
                     name: toolResult.name ?? '',
                     is_error: Boolean(toolResult.is_error),
-                    ...(tid ? { task_id: tid } : {}),
+                    ...(tid ? { taskId: tid } : {}),
                   },
                 ),
                 {
                   id: segId,
-                  session_id: 'local',
+                  sessionId: 'local',
                   role: 'assistant',
                   content: '',
                   metadata: {},
-                  created_at: new Date().toISOString(),
+                  createdAt: new Date().toISOString(),
                 },
               ])
               break
@@ -415,7 +304,6 @@ export function useOrchestratorChat() {
         requestAbortRef.current = null
         setIsStreaming(false)
         setStreamingText('')
-        // Remove empty assistant segments created during streaming.
         setMessages((prev) =>
           prev.filter(
             (msg) =>
@@ -427,7 +315,7 @@ export function useOrchestratorChat() {
         }
       }
     },
-    [isStreaming, loadHistory, markLatestActionedMessage, nextLocalMessage],
+    [isStreaming, loadHistory, nextLocalMessage],
   )
 
   const newSession = useCallback(async () => {
@@ -436,8 +324,6 @@ export function useOrchestratorChat() {
     setIsStreaming(false)
     setStreamingText('')
     setError(null)
-    setActedMessages(new Set())
-    setDeletedTaskIds(new Set())
     try {
       await api.newOrchestratorSession()
       setMessages([])
@@ -446,27 +332,14 @@ export function useOrchestratorChat() {
     }
   }, [])
 
-  const handleAction = useCallback(
-    async (messageId: string, response: string) => {
-      const trimmed = response.trim()
-      if (!trimmed || isStreaming) return
-      markMessageActed(messageId)
-      await sendMessage(trimmed)
-    },
-    [isStreaming, markMessageActed, sendMessage],
-  )
-
   return {
     messages,
-    actedMessages,
-    deletedTaskIds,
     isLoadingHistory,
     isStreaming,
     streamingText,
     error,
     loadHistory,
     sendMessage,
-    handleAction,
     newSession,
   }
 }

@@ -1,5 +1,5 @@
 import type { Interaction, Task } from '../../../types'
-import { INTERACTION_STATUSES, isRunLike } from '../../../lib/phases'
+import { INTERACTION_STATUSES, isRunLike } from '@orca/types'
 import { DiffViewer } from '../../blocks/DiffViewer'
 
 type Props = {
@@ -19,10 +19,10 @@ export function RunPhaseSection({ interaction, task }: Props) {
   return (
     <DiffViewer
       data={{
-        task_id: task.id,
+        taskId: task.id,
         title: task.title,
         diff: interaction.diff,
-        files_changed: [],
+        filesChanged: [],
         actions: [],
       }}
     />

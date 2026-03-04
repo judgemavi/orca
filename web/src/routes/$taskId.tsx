@@ -48,14 +48,14 @@ function formatRelativeTime(iso: string) {
     unit: Intl.RelativeTimeFormatUnit
     inSeconds: number
   }> = [
-    { limit: 60, unit: 'second', inSeconds: 1 },
-    { limit: 3600, unit: 'minute', inSeconds: 60 },
-    { limit: 86400, unit: 'hour', inSeconds: 3600 },
-    { limit: 604800, unit: 'day', inSeconds: 86400 },
-    { limit: 2629800, unit: 'week', inSeconds: 604800 },
-    { limit: 31557600, unit: 'month', inSeconds: 2629800 },
-    { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
-  ]
+      { limit: 60, unit: 'second', inSeconds: 1 },
+      { limit: 3600, unit: 'minute', inSeconds: 60 },
+      { limit: 86400, unit: 'hour', inSeconds: 3600 },
+      { limit: 604800, unit: 'day', inSeconds: 86400 },
+      { limit: 2629800, unit: 'week', inSeconds: 604800 },
+      { limit: 31557600, unit: 'month', inSeconds: 2629800 },
+      { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
+    ]
 
   for (const range of ranges) {
     if (Math.abs(deltaSeconds) < range.limit) {
@@ -66,7 +66,7 @@ function formatRelativeTime(iso: string) {
   return 'just now'
 }
 
-export function TaskDetailPage() {
+function TaskDetailPage() {
   const { taskId } = useParams({ from: '/$taskId' })
   const { data: task } = useTaskQuery(taskId)
   const { data: configData } = useConfigQuery()
@@ -223,7 +223,7 @@ function TaskDetailForm({
     setIsExpanded(isEditable)
   }, [task.id, isEditable])
 
-  const dependencies = task.depends_on ?? []
+  const dependencies = task.dependsOn ?? []
   const {
     dependencyChoices,
     selectedDependencyId,
@@ -265,13 +265,13 @@ function TaskDetailForm({
                 <span>{dependencyCount} dependencies</span>
                 <span>·</span>
                 <span>
-                  {task.status} {formatRelativeTime(task.updated_at)}
+                  {task.status} {formatRelativeTime(task.updatedAt)}
                 </span>
-                {task.session_id && (
+                {task.sessionId && (
                   <>
                     <span>·</span>
                     <span className="font-mono text-[11px]">
-                      session {task.session_id}
+                      session {task.sessionId}
                     </span>
                   </>
                 )}

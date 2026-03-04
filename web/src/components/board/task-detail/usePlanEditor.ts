@@ -1,24 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Interaction, Task } from '../../../types'
+import type { InteractionStub, Task } from '../../../types'
 import { useSavePlanMutation, useTaskPlanQuery } from '../../../hooks/queries'
 import {
   INTERACTION_STATUSES,
   PHASES,
   TASK_STATUSES,
-} from '../../../lib/phases'
+} from '@orca/types'
 import { getErrorMessage } from '../../../lib/utils'
 
 type Args = {
   taskId: string
   task: Task
-  interactions: Interaction[]
+  stubs: InteractionStub[]
   readOnly?: boolean
 }
 
 export function usePlanEditor({
   taskId,
   task,
-  interactions,
+  stubs,
   readOnly = false,
 }: Args) {
   const taskPlanQuery = useTaskPlanQuery(taskId)
@@ -28,8 +28,8 @@ export function usePlanEditor({
   const [planEditing, setPlanEditing] = useState(true)
   const [planSaveError, setPlanSaveError] = useState<string | null>(null)
 
-  const latestCompletedPlanInteraction =
-    [...interactions]
+  const latestCompletedPlanStub =
+    [...stubs]
       .reverse()
       .find(
         (item) =>
@@ -40,10 +40,9 @@ export function usePlanEditor({
   const currentPlanText =
     taskPlanQuery.data ||
     task.plan ||
-    latestCompletedPlanInteraction?.diff ||
     ''
 
-  const latestCompletedPlanId = latestCompletedPlanInteraction?.id ?? null
+  const latestCompletedPlanId = latestCompletedPlanStub?.id ?? null
 
   const planEditable = useMemo(() => {
     if (readOnly) return false

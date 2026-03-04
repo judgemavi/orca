@@ -1,7 +1,7 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
 import type { Interaction } from '../../../types'
 import { controlClass } from '../../../lib/constants'
-import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
+import { INTERACTION_STATUSES, PHASES } from '@orca/types'
 import { ToolModelSelector } from '../../common/ToolModelSelector'
 import type { useMergeHandler } from './useMergeHandler'
 import { Button } from '../../Button'

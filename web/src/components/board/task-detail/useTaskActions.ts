@@ -9,7 +9,7 @@ import {
   INTERACTION_STATUSES,
   PHASES,
   TASK_STATUSES,
-} from '../../../lib/phases'
+} from '@orca/types'
 import { queryKeys } from '../../../lib/queryKeys'
 import { getErrorMessage } from '../../../lib/utils'
 import {
@@ -35,9 +35,9 @@ async function sha256Hex(value: string): Promise<string> {
 function parseEvaluationDescriptionHash(qualityJSON?: string): string | null {
   if (!qualityJSON) return null
   try {
-    const parsed = JSON.parse(qualityJSON) as { description_hash?: unknown }
-    if (typeof parsed.description_hash !== 'string') return null
-    const hash = parsed.description_hash.trim()
+    const parsed = JSON.parse(qualityJSON) as { descriptionHash?: unknown }
+    if (typeof parsed.descriptionHash !== 'string') return null
+    const hash = parsed.descriptionHash.trim()
     return hash || null
   } catch {
     return null
@@ -48,19 +48,19 @@ function parseAIReviewResult(qualityJSON?: string): AIReviewResult | null {
   if (!qualityJSON) return null
   try {
     const parsed = JSON.parse(qualityJSON) as {
-      task_id?: unknown
+      taskId?: unknown
       approved?: unknown
       feedback?: unknown
       tool?: unknown
       prompt?: unknown
     }
-    if (typeof parsed.task_id !== 'string') return null
+    if (typeof parsed.taskId !== 'string') return null
     if (typeof parsed.approved !== 'boolean') return null
     if (typeof parsed.feedback !== 'string') return null
     if (typeof parsed.tool !== 'string') return null
     if (parsed.prompt != null && typeof parsed.prompt !== 'string') return null
     return {
-      task_id: parsed.task_id,
+      taskId: parsed.taskId,
       approved: parsed.approved,
       feedback: parsed.feedback,
       tool: parsed.tool,
@@ -74,9 +74,9 @@ function parseAIReviewResult(qualityJSON?: string): AIReviewResult | null {
 function parseEvaluationNeedsBreakdown(qualityJSON?: string): boolean | null {
   if (!qualityJSON) return null
   try {
-    const parsed = JSON.parse(qualityJSON) as { needs_breakdown?: unknown }
-    if (typeof parsed.needs_breakdown === 'boolean') {
-      return parsed.needs_breakdown
+    const parsed = JSON.parse(qualityJSON) as { needsBreakdown?: unknown }
+    if (typeof parsed.needsBreakdown === 'boolean') {
+      return parsed.needsBreakdown
     }
     return null
   } catch {
@@ -105,9 +105,6 @@ export function useTaskActions(task: Task) {
   })
   const mergeInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByPhase(PHASES.merge),
-  })
-  const retroInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase(PHASES.retro),
   })
 
   const startTaskMutation = useMutation({
@@ -148,18 +145,14 @@ export function useTaskActions(task: Task) {
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
       api.mergeTask(args.taskId, undefined, args.tool, args.model),
   })
-  const retroTaskMutation = useMutation({
-    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
-      api.retroTask(args.taskId, args.tool, args.model),
-  })
-  const resumeTaskMutation = useMutation({
+const resumeTaskMutation = useMutation({
     mutationFn: (args: {
       taskId: string
       sessionId?: string
       feedback?: string
     }) =>
       api.resumeTask(args.taskId, {
-        session_id: args.sessionId,
+        sessionId: args.sessionId,
         feedback: args.feedback,
       }),
   })
@@ -237,7 +230,6 @@ export function useTaskActions(task: Task) {
   const reviewInteractions = reviewInteractionsQuery.data ?? []
   const breakdownInteractions = breakdownInteractionsQuery.data ?? []
   const mergeInteractions = mergeInteractionsQuery.data ?? []
-  const retroInteractions = retroInteractionsQuery.data ?? []
 
   const planLoading = taskPlanQuery.isLoading
   const planGenerating = isOperationRunning('plan_generate', task.id)
@@ -284,12 +276,12 @@ export function useTaskActions(task: Task) {
     [evaluateInteractions],
   )
   const latestEvaluationDescriptionHash = useMemo(
-    () => parseEvaluationDescriptionHash(latestCompletedEvaluate?.quality_json),
-    [latestCompletedEvaluate?.quality_json],
+    () => parseEvaluationDescriptionHash(latestCompletedEvaluate?.qualityJson),
+    [latestCompletedEvaluate?.qualityJson],
   )
   const latestEvaluateNeedsBreakdown = useMemo(
-    () => parseEvaluationNeedsBreakdown(latestCompletedEvaluate?.quality_json),
-    [latestCompletedEvaluate?.quality_json],
+    () => parseEvaluationNeedsBreakdown(latestCompletedEvaluate?.qualityJson),
+    [latestCompletedEvaluate?.qualityJson],
   )
   const hideBreakdownAction = latestEvaluateNeedsBreakdown !== true
   const descriptionUnchangedSinceLastEvaluation =
@@ -312,7 +304,7 @@ export function useTaskActions(task: Task) {
       (item) => item.status === INTERACTION_STATUSES.completed,
     )
     if (!latestCompletedRun) return NaN
-    return Date.parse(latestCompletedRun.started_at)
+    return Date.parse(latestCompletedRun.startedAt)
   }, [runInteractions])
   const latestCompletedPlanId = useMemo(
     () =>
@@ -325,9 +317,9 @@ export function useTaskActions(task: Task) {
     const latest = [...breakdownInteractions]
       .reverse()
       .find((item) => item.status === INTERACTION_STATUSES.completed)
-    if (!latest?.quality_json) return null
+    if (!latest?.qualityJson) return null
     try {
-      const parsed = JSON.parse(latest.quality_json) as {
+      const parsed = JSON.parse(latest.qualityJson) as {
         accepted?: unknown
         rejected?: unknown
         proposed?: ProposedTask[]
@@ -382,13 +374,7 @@ export function useTaskActions(task: Task) {
     ) ||
     isOperationRunning(PHASES.merge, task.id) ||
     mergeTaskMutation.isPending
-  const retroPhaseInProgress =
-    retroInteractions.some(
-      (item) => item.status === INTERACTION_STATUSES.running,
-    ) ||
-    isOperationRunning(PHASES.retro, task.id) ||
-    retroTaskMutation.isPending
-  const approvedPhaseInProgress = mergePhaseInProgress || retroPhaseInProgress
+  const approvedPhaseInProgress = mergePhaseInProgress
 
   const phaseInProgress =
     task.status === TASK_STATUSES.pending
@@ -397,8 +383,6 @@ export function useTaskActions(task: Task) {
         ? reviewPhaseInProgress
         : task.status === TASK_STATUSES.approved
           ? approvedPhaseInProgress
-          : task.status === TASK_STATUSES.merged
-            ? retroPhaseInProgress
           : false
 
   useEffect(() => {
@@ -458,15 +442,15 @@ export function useTaskActions(task: Task) {
       }
       return
     }
-    if (evt.type === 'plan.failed' && evt.data.task_id === task.id) {
+    if (evt.type === 'plan.failed' && evt.data.taskId === task.id) {
       setActionError(evt.data.error || 'Failed to generate plan')
       return
     }
-    if (evt.type === 'evaluate.started' && evt.data.task_id === task.id) {
+    if (evt.type === 'evaluate.started' && evt.data.taskId === task.id) {
       setEvaluateStarted(true)
       return
     }
-    if (evt.type === 'evaluate.completed' && evt.data.task_id === task.id) {
+    if (evt.type === 'evaluate.completed' && evt.data.taskId === task.id) {
       setEvaluateStarted(false)
       setActionError(null)
       void queryClient.invalidateQueries({
@@ -474,7 +458,7 @@ export function useTaskActions(task: Task) {
       })
       return
     }
-    if (evt.type === 'evaluate.failed' && evt.data.task_id === task.id) {
+    if (evt.type === 'evaluate.failed' && evt.data.taskId === task.id) {
       setEvaluateStarted(false)
       setActionError(evt.data.error || 'Evaluate failed')
       void queryClient.invalidateQueries({
@@ -482,11 +466,11 @@ export function useTaskActions(task: Task) {
       })
       return
     }
-    if (evt.type === 'breakdown.started' && evt.data.task_id === task.id) {
+    if (evt.type === 'breakdown.started' && evt.data.taskId === task.id) {
       setBreakdownStarted(true)
       return
     }
-    if (evt.type === 'breakdown.completed' && evt.data.task_id === task.id) {
+    if (evt.type === 'breakdown.completed' && evt.data.taskId === task.id) {
       setBreakdownStarted(false)
       setActionError(null)
       void queryClient.invalidateQueries({
@@ -498,7 +482,7 @@ export function useTaskActions(task: Task) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.tasks })
       return
     }
-    if (evt.type === 'breakdown.failed' && evt.data.task_id === task.id) {
+    if (evt.type === 'breakdown.failed' && evt.data.taskId === task.id) {
       setBreakdownStarted(false)
       setActionError(evt.data.error || 'Breakdown failed')
       void queryClient.invalidateQueries({
@@ -506,7 +490,7 @@ export function useTaskActions(task: Task) {
       })
       return
     }
-    if (evt.type === 'ai_review.completed' && evt.data.task_id === task.id) {
+    if (evt.type === 'ai_review.completed' && evt.data.taskId === task.id) {
       if (
         task.status === TASK_STATUSES.review &&
         !evt.data.approved &&
@@ -522,7 +506,7 @@ export function useTaskActions(task: Task) {
     const latestCompletedReview = reviewInteractions.find((item) => {
       if (item.status !== INTERACTION_STATUSES.completed) return false
       if (!Number.isFinite(latestCompletedRunStartedAtMS)) return true
-      return Date.parse(item.started_at) > latestCompletedRunStartedAtMS
+      return Date.parse(item.startedAt) > latestCompletedRunStartedAtMS
     })
     if (!latestCompletedReview) return
     if (
@@ -530,10 +514,10 @@ export function useTaskActions(task: Task) {
     ) {
       return
     }
-    const reviewResult = parseAIReviewResult(latestCompletedReview.quality_json)
+    const reviewResult = parseAIReviewResult(latestCompletedReview.qualityJson)
     if (
       reviewResult &&
-      reviewResult.task_id === task.id &&
+      reviewResult.taskId === task.id &&
       !reviewResult.approved &&
       reviewResult.feedback
     ) {
@@ -585,7 +569,7 @@ export function useTaskActions(task: Task) {
   }
 
   const handleResume = async () => {
-    const sessionId = task.session_id?.trim() ?? ''
+    const sessionId = task.sessionId?.trim() ?? ''
     if (!sessionId) {
       setActionError('Task has no session ID to resume')
       return
@@ -781,19 +765,6 @@ export function useTaskActions(task: Task) {
     }
   }
 
-  const handleRetro = async () => {
-    setActionError(null)
-    try {
-      await retroTaskMutation.mutateAsync({
-        taskId: task.id,
-        tool: actionTool || undefined,
-        model: actionModel || undefined,
-      })
-    } catch (err: unknown) {
-      setActionError(getErrorMessage(err, 'Retro failed'))
-    }
-  }
-
   return {
     tools,
     actionTool,
@@ -838,9 +809,7 @@ export function useTaskActions(task: Task) {
     requestChangesPending: requestChangesMutation.isPending,
     aiReviewPending: aiReviewMutation.isPending,
     mergePending: mergeTaskMutation.isPending,
-    retroPending: retroTaskMutation.isPending,
     mergeInProgress: mergePhaseInProgress,
-    retroInProgress: retroPhaseInProgress,
     resumePending: resumeTaskMutation.isPending,
     generatePlanPending: generateTaskPlanMutation.isPending,
     approvePlanPending: approvePlanMutation.isPending,
@@ -863,6 +832,5 @@ export function useTaskActions(task: Task) {
     handleRejectBreakdown,
     handleAIReview,
     handleMerge,
-    handleRetro,
   }
 }

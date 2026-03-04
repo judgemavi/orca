@@ -1,23 +1,32 @@
-import type { AIReviewResult, Interaction } from '../../../types'
-import { INTERACTION_STATUSES } from '../../../lib/phases'
+import type { AIReviewResult, InteractionStub } from '../../../types'
+import { INTERACTION_STATUSES } from '@orca/types'
 import { useInteractionDetailContext } from './InteractionDetailContext'
+import { useInteractionMetaQuery } from './useInteractions'
 import { parseJSONText } from '../../../lib/orchestratorRichContent'
 import { ReviewResultCard } from '../../shared/ReviewResultCard'
 
 interface Props {
-  interaction: Interaction
+  stub: InteractionStub
   dismissed?: boolean
   showLogButton?: boolean
 }
 
 export function AIReviewResultCard({
-  interaction: ri,
+  stub,
   dismissed,
   showLogButton = false,
 }: Props) {
   const detailContext = useInteractionDetailContext()
   const activeLogId = detailContext?.activeLogId ?? null
   const onToggleLog = detailContext?.onToggleLog
+  const needsFull =
+    stub.status === INTERACTION_STATUSES.completed ||
+    stub.status === INTERACTION_STATUSES.failed
+  const metaQuery = useInteractionMetaQuery(
+    stub.taskId ?? '',
+    stub.id,
+    needsFull,
+  )
 
   const logButton =
     showLogButton && onToggleLog ? (
@@ -25,15 +34,15 @@ export function AIReviewResultCard({
         type="button"
         className={[
           'ml-auto text-[10px]',
-          activeLogId === ri.id ? 'text-accent' : 'text-muted',
+          activeLogId === stub.id ? 'text-accent' : 'text-muted',
         ].join(' ')}
-        onClick={() => onToggleLog(ri.id)}
+        onClick={() => onToggleLog(stub.id)}
       >
         log
       </button>
     ) : null
 
-  if (ri.status === INTERACTION_STATUSES.running) {
+  if (stub.status === INTERACTION_STATUSES.running) {
     return (
       <div className="rounded-lg bg-surface-alt p-2.5">
         <div className="flex items-center gap-2">
@@ -41,12 +50,24 @@ export function AIReviewResultCard({
             AI Review
           </span>
           <span className="text-[10px] font-semibold uppercase">Running…</span>
-          {ri.tool && <span className="text-[10px]">{ri.tool}</span>}
+          {stub.tool && <span className="text-[10px]">{stub.tool}</span>}
           {logButton}
         </div>
       </div>
     )
   }
+
+  const ri = metaQuery.data
+  if (!ri && metaQuery.isLoading) {
+    return (
+      <div className="rounded-lg bg-surface-alt p-2.5">
+        <div className="flex items-center gap-2 text-[10px] text-muted">
+          Loading review...
+        </div>
+      </div>
+    )
+  }
+  if (!ri) return null
 
   if (ri.status === INTERACTION_STATUSES.failed) {
     return (
@@ -65,16 +86,16 @@ export function AIReviewResultCard({
     )
   }
 
-  if (!ri.quality_json) return null
+  if (!ri.qualityJson) return null
 
-  const parsed = parseJSONText(ri.quality_json)
+  const parsed = parseJSONText(ri.qualityJson)
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return null
   }
 
   const result = parsed as Partial<AIReviewResult>
   if (typeof result.feedback !== 'string') return null
-  const cost = ri.estimated_cost > 0 ? `$${ri.estimated_cost.toFixed(2)}` : undefined
+  const cost = ri.estimatedCost > 0 ? `$${ri.estimatedCost.toFixed(2)}` : undefined
 
   return (
     <div className="space-y-1">
@@ -85,7 +106,7 @@ export function AIReviewResultCard({
       <ReviewResultCard
         approved={result.approved === true}
         feedback={result.feedback}
-        taskId={result.task_id}
+        taskId={result.taskId}
         tool={typeof result.tool === 'string' ? result.tool : ri.tool}
         prompt={typeof result.prompt === 'string' ? result.prompt : undefined}
         cost={cost}

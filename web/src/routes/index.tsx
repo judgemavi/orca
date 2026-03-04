@@ -28,8 +28,8 @@ function buildTaskTree(tasks: Task[]): TaskNode[] {
 
   const roots: TaskNode[] = []
   for (const node of map.values()) {
-    if (node.parent_id && map.has(node.parent_id)) {
-      const parent = map.get(node.parent_id)!
+    if (node.parentId && map.has(node.parentId)) {
+      const parent = map.get(node.parentId)!
         ; (parent.subRows ??= []).push(node)
     } else {
       roots.push(node)
@@ -66,15 +66,15 @@ const columns = [
     header: 'Status',
     cell: (info) => info.getValue(),
   }),
-  columnHelper.accessor('depends_on', {
+  columnHelper.accessor('dependsOn', {
     header: 'Dependencies',
     cell: (info) => info.getValue(),
   }),
-  columnHelper.accessor('created_at', {
+  columnHelper.accessor('createdAt', {
     header: 'Created',
     cell: (info) => info.getValue(),
   }),
-  columnHelper.accessor('updated_at', {
+  columnHelper.accessor('updatedAt', {
     header: 'Updated',
     cell: (info) => info.getValue(),
   }),

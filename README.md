@@ -40,25 +40,23 @@ Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cance
 - Lazy stale-memory refresh during retrieval (only queried stale entries are refreshed)
 - Sync health surfaces in API/UI/MCP (`/status`, memory page banner, `memory_status`)
 - MCP server for agentic orchestration (task, planning, review, memory, and ops tools)
-- Single Go binary with embedded web frontend
+- Bun/TypeScript backend + React frontend monorepo
 
 ## Requirements
 
-- Go 1.25+
 - Git
 - At least one supported AI CLI tool: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), or [Aider](https://aider.chat)
-- [Task](https://taskfile.dev) (optional)
-- [Bun](https://bun.sh) (for web build)
+- [Bun](https://bun.sh) (required)
 
 ## Installation
 
 ```bash
 git clone https://github.com/jasjeetmavi/orca.git
 cd orca
-task build
+bun install
+bun run build:web
+bun run build:server
 ```
-
-Binary output: `dist/orca`.
 
 ## Quick Start
 
@@ -197,40 +195,23 @@ orca cleanup                 [--dry-run]
 ## Project Structure
 
 ```text
-cmd/orca/           CLI entrypoint + command registration
-internal/
-  api/              HTTP/WebSocket API server
-  banner/           ASCII art logo
-  breakdown/        Goal -> task breakdown
-  config/           YAML config and defaults
-  driver/           Pluggable AI tool driver interface
-  evaluate/         Task complexity evaluation
-  executor/         Batch task execution (RunBatch)
-  explore/          Codebase exploration + explore memory seeding
-  integrator/       Merge and validation
-  interaction/      LLM interaction persistence (tokens, cost, diffs)
-  memory/           RAG memory store + FTS5 search + git sync + retrieval + refresh
-  diffclass/        Git diff magnitude classification for memory sync
-  llm/              JSON extraction from LLM output
-  logging/          Rotating log writer + querying
-  mcp/              MCP server tool handlers/schemas
-  model/            LLM model aggregation from drivers
-  monitor/          Runtime monitors
-  nullable/         Nil-safe pointer utils
-  orchestrator/     Supervisor agent bootstrap
-  plan/             Implementation plan generation
-  procutil/         Process/git utilities
-  pty/              Interactive terminal sessions
-  quality/          Quality gates
-  recovery/         Startup recovery + graceful shutdown
-  retro/            Post-task retrospective extraction
-  review/           Review flows
-  state/            SQLite migrations + watcher
-  task/             Task store + dependency graph
-  worker/           Worker adapter
-  worktree/         Worktree lifecycle
-prompts/            Prompt templates
-web/                React + Vite frontend
+server/                      Bun + TypeScript backend
+  src/
+    bootstrap.ts             Shared foundation (DB, stores, config, registry, queue, executor)
+    entrypoints/
+      cli.ts                 Short-lived CLI entrypoint
+      mcp.ts                 Long-lived MCP entrypoint (blocks until client disconnects)
+      serve.ts               Full stack: processor, recovery, HTTP/WS, shutdown
+    api/                     HTTP routes + WebSocket
+    cli/                     Commander subcommands
+    mcp/                     MCP server + tools
+    store/                   SQLite stores (tasks, config, interactions, memory)
+    executor/                Task execution engine
+    domain/                  Business logic (review, plan, merge, recovery, etc.)
+    queue/                   Job queue + processor
+    prompts/md/              Prompt templates
+web/                         React + Vite frontend
+packages/types/              Shared API/domain types
 ```
 
 ## License

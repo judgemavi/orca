@@ -7,6 +7,7 @@ import type {
   Operation,
   Config,
   Interaction,
+  InteractionStub,
   InteractionWithContent,
   ProposedTask,
   MemoryEntry,
@@ -18,14 +19,15 @@ import type {
   ListMemoryParams,
   UpdateMemoryInput,
   OrchestratorMessage,
+  Job,
 } from './types'
 
 const BASE = '/api/v1'
 
 type ApiError = Error & {
   conflict?: boolean
-  task_id?: string
-  worktree_path?: string
+  taskId?: string
+  worktreePath?: string
 }
 
 function withQuery(
@@ -103,14 +105,14 @@ export const api = {
   listTasks: () => request<Task[]>('/tasks'),
   getTask: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (data: Partial<Task>) => post<{ task: Task }>('/tasks', data),
-  updateTask: (id: string, data: Partial<Task> & { session_id?: string }) =>
+  updateTask: (id: string, data: Partial<Task> & { sessionId?: string }) =>
     patch<{ task: Task }>(`/tasks/${id}`, data),
   deleteTask: (id: string) => del<string>(`/tasks/${id}`),
 
-  listOperations: (params?: { target_id?: string; type?: string }) =>
+  listOperations: (params?: { targetId?: string; type?: string }) =>
     request<Operation[]>(
       withQuery('/operations', {
-        target_id: params?.target_id,
+        targetId: params?.targetId,
         type: params?.type,
       }),
     ),
@@ -120,11 +122,11 @@ export const api = {
       withQuery('/memory', {
         category: params?.category,
         tag: params?.tag,
-        source_type: params?.source_type,
-        file_path: params?.file_path,
+        sourceType: params?.sourceType,
+        filePath: params?.filePath,
         stale:
           typeof params?.stale === 'boolean' ? String(params.stale) : undefined,
-        covered_before: params?.covered_before,
+        coveredBefore: params?.coveredBefore,
         q: params?.q,
         limit:
           typeof params?.limit === 'number' ? String(params.limit) : undefined,
@@ -146,25 +148,25 @@ export const api = {
   syncMemory: () => post<MemorySyncResult>('/memory/sync'),
   refreshMemory: (entryId?: string) =>
     post<MemoryRefreshResult>('/memory/refresh', {
-      ...(entryId ? { entry_id: entryId } : {}),
+      ...(entryId ? { entryId: entryId } : {}),
     }),
   getStatus: () => request<ProjectStatus>('/status'),
 
-  merge: () => post<{ operation_id: string }>('/merge'),
+  merge: () => post<{ operationId: string }>('/merge'),
   startTasks: (taskIds?: string[], tool?: string, model?: string) =>
-    post<{ operation_id: string; task_ids: string[] }>('/tasks/start', {
-      ...(taskIds ? { task_ids: taskIds } : {}),
+    post<{ operationId: string; taskIds: string[] }>('/tasks/start', {
+      ...(taskIds ? { taskIds: taskIds } : {}),
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),
   stopTask: (id: string) => post<{ status: string }>(`/tasks/${id}/stop`),
   resumeTask: (
     id: string,
-    opts?: { session_id?: string; feedback?: string },
+    opts?: { sessionId?: string; feedback?: string },
   ) => post<{ status: string }>(`/tasks/${id}/resume`, opts ?? {}),
   cancelTask: (id: string) => api.stopTask(id),
   mergeTask: (taskId: string, mode?: string, tool?: string, model?: string) =>
-    request<{ operation_id: string }>(`/tasks/${taskId}/merge`, {
+    request<{ operationId: string }>(`/tasks/${taskId}/merge`, {
       method: 'POST',
       body:
         mode || tool || model
@@ -175,18 +177,19 @@ export const api = {
             })
           : undefined,
     }),
-  retroTask: (taskId: string, tool?: string, model?: string) =>
-    post<{ task_id: string; status: string }>(`/tasks/${taskId}/retro`, {
-      ...(tool ? { tool } : {}),
-      ...(model ? { model } : {}),
-    }),
-  runExplore: () => post<{ status: string }>('/explore'),
+runExplore: () => post<{ status: string }>('/explore'),
   getTaskReviews: (id: string) => request<TaskReview[]>(`/tasks/${id}/reviews`),
   listInteractions: (taskId: string) =>
     request<Interaction[]>(`/tasks/${taskId}/interactions`),
+  listInteractionStubs: (taskId: string) =>
+    request<InteractionStub[]>(`/tasks/${taskId}/interactions?fields=stub`),
   getInteraction: (taskId: string, logId: string) =>
     request<InteractionWithContent>(
       `/tasks/${taskId}/interactions/${encodeURIComponent(logId)}`,
+    ),
+  getInteractionMeta: (taskId: string, id: string) =>
+    request<Interaction>(
+      `/tasks/${taskId}/interactions/${encodeURIComponent(id)}?content=0`,
     ),
   approveTask: (id: string) => post<Task>(`/tasks/${id}/approve`),
   approvePlan: (id: string) => post<Task>(`/tasks/${id}/approve-plan`),
@@ -197,21 +200,21 @@ export const api = {
     tool?: string,
     model?: string,
   ) =>
-    post<{ status: string; task_id: string }>(`/tasks/${id}/request-changes`, {
+    post<{ status: string; taskId: string }>(`/tasks/${id}/request-changes`, {
       feedback,
-      ...(interactionId ? { interaction_id: interactionId } : {}),
+      ...(interactionId ? { interactionId: interactionId } : {}),
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),
   aiReview: (id: string, tool?: string, model?: string, prompt?: string) =>
-    post<{ status: string; task_id: string }>(`/tasks/${id}/ai-review`, {
+    post<{ status: string; taskId: string }>(`/tasks/${id}/ai-review`, {
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
       ...(prompt ? { prompt } : {}),
     }),
   evaluateTask: (id: string, tool?: string, model?: string) =>
     post<{
-      task_id: string
+      taskId: string
       status: string
     }>(`/tasks/${id}/evaluate`, {
       ...(tool ? { tool } : {}),
@@ -219,7 +222,7 @@ export const api = {
     }),
   breakdownTask: (id: string, tool?: string, model?: string) =>
     post<{
-      task_id: string
+      taskId: string
       status: string
     }>(`/tasks/${id}/breakdown`, {
       ...(tool ? { tool } : {}),
@@ -232,17 +235,17 @@ export const api = {
   ) =>
     post<{
       created: number
-      task_ids: string[]
-      parent_id?: string
+      taskIds: string[]
+      parentId?: string
     }>(`/tasks/${id}/breakdown/accept`, {
-      interaction_id: interactionId,
+      interactionId: interactionId,
       ...(tasks ? { tasks } : {}),
     }),
   rejectBreakdown: (id: string, interactionId: string) =>
     post<{
       rejected: boolean
     }>(`/tasks/${id}/breakdown/reject`, {
-      interaction_id: interactionId,
+      interactionId: interactionId,
     }),
   requestPlanChanges: (
     id: string,
@@ -253,7 +256,7 @@ export const api = {
   ) =>
     post<{ status: string }>(`/tasks/${id}/request-plan-changes`, {
       feedback,
-      ...(interactionId ? { interaction_id: interactionId } : {}),
+      ...(interactionId ? { interactionId: interactionId } : {}),
       ...(tool ? { tool } : {}),
       ...(model ? { model } : {}),
     }),
@@ -272,17 +275,17 @@ export const api = {
     opts?: { tool?: string; model?: string },
   ): Promise<void> => post<void>(`/tasks/${taskId}/plan/generate`, opts ?? {}),
   addDependency: (taskId: string, dependsOn: string) =>
-    post(`/tasks/${taskId}/deps`, { depends_on: dependsOn }),
+    post(`/tasks/${taskId}/deps`, { dependsOn: dependsOn }),
   listSessions: () =>
     request<
       Array<{
         id: string
         type: string
         tool: string
-        task_id: string
+        taskId: string
         cols: number
         rows: number
-        created_at: string
+        createdAt: string
       }>
     >('/sessions'),
   startOrchestrator: () => post<{ status: string }>('/orchestrator/start'),
@@ -299,4 +302,17 @@ export const api = {
   getOrchestratorHistory: () =>
     request<OrchestratorMessage[]>('/orchestrator/chat/history'),
   newOrchestratorSession: () => post<{ id: string }>('/orchestrator/chat/new'),
+
+  listQueue: (params?: { status?: string; taskId?: string; limit?: number }) =>
+    request<Job[]>(
+      withQuery('/queue', {
+        status: params?.status,
+        taskId: params?.taskId,
+        limit: params?.limit != null ? String(params.limit) : undefined,
+      }),
+    ),
+  getQueueJob: (id: string) => request<Job>(`/queue/${id}`),
+  getQueueCounts: () => request<Record<string, number>>('/queue/counts'),
+  cancelQueueJob: (id: string) => del<{ cancelled: boolean }>(`/queue/${id}`),
+  drainQueue: () => del<{ cancelled: number }>('/queue'),
 }

@@ -5,10 +5,10 @@ import { Button } from '../Button'
 
 interface Props {
   data: {
-    task_id: string
+    taskId: string
     title: string
     diff: string
-    files_changed: string[]
+    filesChanged: string[]
     actions: string[]
   }
   onAction?: (action: string) => void
@@ -68,7 +68,7 @@ function splitDiffByFile(raw: string): Record<string, string> {
 }
 
 export function DiffViewer({ data, onAction }: Props) {
-  const filesChanged = data?.files_changed ?? []
+  const filesChanged = data?.filesChanged ?? []
   const actions = data?.actions ?? []
   const diffByFile = useMemo(
     () => splitDiffByFile(data?.diff ?? ''),
@@ -78,7 +78,7 @@ export function DiffViewer({ data, onAction }: Props) {
 
   useEffect(() => {
     setActiveFile(filesChanged[0] ?? '')
-  }, [data?.task_id, data?.diff])
+  }, [data?.taskId, data?.diff])
 
   const selectedDiff = activeFile
     ? (diffByFile[activeFile] ?? data?.diff ?? '')

@@ -1,4 +1,4 @@
-export interface EvaluationCardProps {
+interface EvaluationCardProps {
   complexity?: string
   needsBreakdown: boolean
   confidence?: number

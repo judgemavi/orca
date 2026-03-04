@@ -22,18 +22,9 @@ export function MergedTaskActions({ onClose }: Props) {
       onModelChange={actions.setActionModel}
       actionError={actions.actionError}
       actions={
-        <>
-          <Button
-            variant="default"
-            onClick={actions.handleRetro}
-            disabled={actions.phaseInProgress}
-          >
-            {actions.retroInProgress ? 'Running Retro…' : 'Run Retro'}
-          </Button>
-          <Button variant="default" onClick={onClose} type="button">
-            Close
-          </Button>
-        </>
+        <Button variant="default" onClick={onClose} type="button">
+          Close
+        </Button>
       }
     />
   )

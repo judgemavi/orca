@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import { api } from '../../../api'
-import { isRunLike } from '../../../lib/phases'
+import { isRunLike } from '@orca/types'
 import { queryKeys } from '../../../lib/queryKeys'
 import type { Interaction } from '../../../types'
 
@@ -15,13 +15,13 @@ export function selectByPhase(phase: string) {
   return (interactions: Interaction[]) =>
     [...interactions]
       .filter((i) => i.phase === phase)
-      .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))
+      .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
 }
 
 export function selectByRunLike(interactions: Interaction[]) {
   return [...interactions]
     .filter((i) => isRunLike(i.phase))
-    .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))
+    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
 }
 
 export function useInteractionsQuery<TSelected = Interaction[]>(
@@ -35,6 +35,28 @@ export function useInteractionsQuery<TSelected = Interaction[]>(
     staleTime: 0,
     refetchOnMount: 'always',
     ...options,
+  })
+}
+
+export function useInteractionStubsQuery(taskId: string) {
+  return useQuery({
+    queryKey: queryKeys.interactionStubs(taskId),
+    queryFn: () => api.listInteractionStubs(taskId),
+    enabled: Boolean(taskId),
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+}
+
+export function useInteractionMetaQuery(
+  taskId: string,
+  id: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.interactionMeta(taskId, id),
+    queryFn: () => api.getInteractionMeta(taskId, id),
+    enabled: Boolean(taskId && id && enabled),
   })
 }
 

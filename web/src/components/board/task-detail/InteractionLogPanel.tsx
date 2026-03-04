@@ -7,7 +7,7 @@ import {
   useInteractionsQuery,
   useInteractionStream,
 } from './useInteractions'
-import { INTERACTION_STATUSES, PHASE_LABELS } from '../../../lib/phases'
+import { INTERACTION_STATUSES, PHASE_LABELS } from '@orca/types'
 
 interface Props {
   taskId: string
@@ -60,8 +60,8 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
 
   const content =
     selectedInteraction?.status === INTERACTION_STATUSES.running
-      ? stream.content || contentQuery.data?.raw_content || ''
-      : contentQuery.data?.raw_content || ''
+      ? stream.content || contentQuery.data?.rawContent || ''
+      : contentQuery.data?.rawContent || ''
 
   const titlePrefix =
     PHASE_LABELS[selectedInteraction?.phase ?? ''] ?? 'Interaction'
@@ -115,17 +115,17 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
 
             <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border-subtle px-5 py-3 text-xs text-muted">
               <span>
-                Tokens: {formatTokenCount(selectedInteraction?.input_tokens)} in
-                / {formatTokenCount(selectedInteraction?.output_tokens)} out
+                Tokens: {formatTokenCount(selectedInteraction?.inputTokens)} in
+                / {formatTokenCount(selectedInteraction?.outputTokens)} out
               </span>
               <span>
-                Cost: {formatCost(selectedInteraction?.estimated_cost)}
+                Cost: {formatCost(selectedInteraction?.estimatedCost)}
               </span>
               <span>
                 Duration:{' '}
                 {formatDuration(
-                  contentQuery.data?.duration_ms ??
-                    selectedInteraction?.duration_ms,
+                  contentQuery.data?.durationMs ??
+                    selectedInteraction?.durationMs,
                 )}
               </span>
               {stream.isStreaming && (

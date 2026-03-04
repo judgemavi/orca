@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { parsePlanSections } from '../../lib/orchestratorRichContent'
 
-export interface PlanMarkdownCardProps {
+interface PlanMarkdownCardProps {
   planText: string
   taskId?: string
   saved?: boolean

@@ -1,5 +1,5 @@
 import type { Interaction } from '../../../types'
-import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
+import { INTERACTION_STATUSES, PHASES } from '@orca/types'
 import {
   parseEvaluationPayload,
   parseJSONText,
@@ -14,12 +14,12 @@ export function EvaluatePhaseSection({ interaction }: Props) {
   if (
     interaction.phase !== PHASES.evaluate ||
     interaction.status !== INTERACTION_STATUSES.completed ||
-    !interaction.quality_json
+    !interaction.qualityJson
   ) {
     return null
   }
 
-  const evaluation = parseEvaluationPayload(parseJSONText(interaction.quality_json))
+  const evaluation = parseEvaluationPayload(parseJSONText(interaction.qualityJson))
   if (!evaluation) return null
 
   return (

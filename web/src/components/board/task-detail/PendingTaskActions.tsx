@@ -1,5 +1,5 @@
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { TASK_STATUSES } from '../../../lib/phases'
+import { TASK_STATUSES } from '@orca/types'
 import { Button } from '../../Button'
 import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout'
 import { useTaskActions } from './useTaskActions'

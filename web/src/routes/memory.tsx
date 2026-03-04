@@ -92,8 +92,8 @@ function MemoryPage() {
     const filePathTrimmed = filePath.trim()
     return {
       ...(category !== 'all' ? { category } : {}),
-      ...(sourceType !== 'all' ? { source_type: sourceType } : {}),
-      ...(filePathTrimmed ? { file_path: filePathTrimmed } : {}),
+      ...(sourceType !== 'all' ? { sourceType: sourceType } : {}),
+      ...(filePathTrimmed ? { filePath: filePathTrimmed } : {}),
       ...(staleOnly ? { stale: true } : {}),
     }
   }, [category, sourceType, filePath, staleOnly])
@@ -132,12 +132,12 @@ function MemoryPage() {
   const allFilePaths = useMemo(() => {
     const set = new Set<string>()
     for (const entry of memoryQuery.data ?? []) {
-      for (const path of entry.file_paths ?? []) {
+      for (const path of entry.filePaths ?? []) {
         if (path) set.add(path)
       }
     }
     for (const item of semanticQuery.data ?? []) {
-      for (const path of item.entry.file_paths ?? []) {
+      for (const path of item.entry.filePaths ?? []) {
         if (path) set.add(path)
       }
     }
@@ -279,7 +279,7 @@ function MemoryPage() {
             <span className="text-xs text-muted">No</span>
           ),
       }),
-      columnHelper.accessor('covered_at_commit', {
+      columnHelper.accessor('coveredAtCommit', {
         header: 'Covered At',
         cell: ({ getValue }) => {
           const value = getValue()
@@ -333,7 +333,7 @@ function MemoryPage() {
           )
         },
       }),
-      columnHelper.accessor('source_type', {
+      columnHelper.accessor('sourceType', {
         header: 'Source Type',
         cell: ({ getValue }) => {
           const value = getValue()
@@ -367,7 +367,7 @@ function MemoryPage() {
           )
         },
       }),
-      columnHelper.accessor('file_paths', {
+      columnHelper.accessor('filePaths', {
         header: 'Files',
         cell: ({ getValue }) => {
           const paths = getValue() ?? []
@@ -429,7 +429,7 @@ function MemoryPage() {
           )
         },
       }),
-      columnHelper.accessor('source_task_id', {
+      columnHelper.accessor('sourceTaskId', {
         header: 'Task',
         cell: ({ getValue }) => {
           const sourceTaskId = getValue()
@@ -447,7 +447,7 @@ function MemoryPage() {
           )
         },
       }),
-      columnHelper.accessor('created_at', {
+      columnHelper.accessor('createdAt', {
         header: 'Created',
         cell: ({ getValue }) => (
           <span className="text-xs text-muted">{formatDate(getValue())}</span>
@@ -561,13 +561,13 @@ function MemoryPage() {
               syncMutation.mutate(undefined, {
                 onSuccess: (result) => {
                   const range =
-                    result.last_commit && result.new_commit
-                      ? `${result.last_commit.slice(0, 8)}→${result.new_commit.slice(0, 8)}`
-                      : result.new_commit
-                        ? `synced to ${result.new_commit.slice(0, 8)}`
+                    result.lastCommit && result.newCommit
+                      ? `${result.lastCommit.slice(0, 8)}→${result.newCommit.slice(0, 8)}`
+                      : result.newCommit
+                        ? `synced to ${result.newCommit.slice(0, 8)}`
                         : 'synced'
                   toast.success(
-                    `Memory sync complete: ${result.flagged_entries} flagged, ${result.stale_entries} stale, ${result.superseded_count} superseded, ${result.affected_files.length} files, ${range}`,
+                    `Memory sync complete: ${result.flaggedEntries} flagged, ${result.staleEntries} stale, ${result.supersededCount} superseded, ${result.affectedFiles.length} files, ${range}`,
                   )
                 },
                 onError: (error) => {
@@ -583,14 +583,14 @@ function MemoryPage() {
           >
             {syncMutation.isPending ? 'Syncing…' : 'Sync'}
           </Button>
-          {(status?.memory_stale_count ?? 0) > 0 ? (
+          {(status?.memoryStaleCount ?? 0) > 0 ? (
             <Button
               variant="default"
               onClick={() =>
                 refreshMutation.mutate(undefined, {
                   onSuccess: () =>
                     toast.success(
-                      `Refreshed ${status?.memory_stale_count ?? 0} stale entries`,
+                      `Refreshed ${status?.memoryStaleCount ?? 0} stale entries`,
                     ),
                   onError: (error) =>
                     toast.error(
@@ -610,14 +610,14 @@ function MemoryPage() {
         <div className="mb-3 space-y-2">
           <div
             className={`rounded-md border px-3 py-2 text-sm ${
-              !status.last_synced_commit
+              !status.lastSyncedCommit
                 ? 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                : status.sync_needed
+                : status.syncNeeded
                   ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
                   : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
             }`}
           >
-            {!status.last_synced_commit ? (
+            {!status.lastSyncedCommit ? (
               <div className="flex items-center justify-between gap-2">
                 <span>Memory sync: never synced.</span>
                 <Button
@@ -628,9 +628,9 @@ function MemoryPage() {
                   {syncMutation.isPending ? 'Syncing…' : 'Sync now'}
                 </Button>
               </div>
-            ) : status.sync_needed ? (
+            ) : status.syncNeeded ? (
               <div className="flex items-center justify-between gap-2">
-                <span>Memory sync: {status.commits_behind} commits behind.</span>
+                <span>Memory sync: {status.commitsBehind} commits behind.</span>
                 <Button
                   className="px-2 py-1 text-xs"
                   onClick={() => syncMutation.mutate()}
@@ -640,13 +640,13 @@ function MemoryPage() {
                 </Button>
               </div>
             ) : (
-              <span>Memory sync: up to date ({status.memory_total} entries).</span>
+              <span>Memory sync: up to date ({status.memoryTotal} entries).</span>
             )}
           </div>
 
-          {status.memory_stale_count > 0 ? (
+          {status.memoryStaleCount > 0 ? (
             <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-              <span>{status.memory_stale_count} entries need refresh.</span>
+              <span>{status.memoryStaleCount} entries need refresh.</span>
               <Button
                 className="px-2 py-1 text-xs"
                 onClick={() => refreshMutation.mutate(undefined)}
@@ -657,7 +657,7 @@ function MemoryPage() {
             </div>
           ) : null}
 
-          {status.context_stale ? (
+          {status.contextStale ? (
             <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
               <span>Explore context is stale.</span>
               <Button
@@ -766,28 +766,28 @@ function MemoryPage() {
                 {detailQuery.data.entry.content}
               </p>
               <p className="text-xs text-muted">
-                Source: {detailQuery.data.entry.source_type} • Confidence:{' '}
+                Source: {detailQuery.data.entry.sourceType} • Confidence:{' '}
                 {Math.round(detailQuery.data.entry.confidence * 100)}% • Stale:{' '}
                 {detailQuery.data.entry.stale ? 'yes' : 'no'} • Covered:{' '}
-                {detailQuery.data.entry.covered_at_commit
-                  ? detailQuery.data.entry.covered_at_commit.slice(0, 8)
+                {detailQuery.data.entry.coveredAtCommit
+                  ? detailQuery.data.entry.coveredAtCommit.slice(0, 8)
                   : '—'}
               </p>
               <p className="text-xs text-muted">
                 Origin task:{' '}
-                {detailQuery.data.entry.source_task_id ? (
+                {detailQuery.data.entry.sourceTaskId ? (
                   <Link
                     to="/$taskId"
-                    params={{ taskId: detailQuery.data.entry.source_task_id }}
+                    params={{ taskId: detailQuery.data.entry.sourceTaskId }}
                     className="underline"
                   >
-                    {detailQuery.data.entry.source_task_id.slice(0, 8)}
+                    {detailQuery.data.entry.sourceTaskId.slice(0, 8)}
                   </Link>
                 ) : (
                   '—'
                 )}{' '}
                 • Source interaction:{' '}
-                {detailQuery.data.entry.source_interaction_id || '—'}
+                {detailQuery.data.entry.sourceInteractionId || '—'}
               </p>
               <p className="text-xs text-muted">
                 Supersedes:{' '}
@@ -795,10 +795,10 @@ function MemoryPage() {
                   ? detailQuery.data.supersedes.join(', ')
                   : '—'}{' '}
                 • Superseded by:{' '}
-                {detailQuery.data.entry.superseded_by || '—'}
+                {detailQuery.data.entry.supersededBy || '—'}
               </p>
               <div className="flex flex-wrap gap-1">
-                {(detailQuery.data.entry.file_paths ?? []).map((path) => (
+                {(detailQuery.data.entry.filePaths ?? []).map((path) => (
                   <button
                     key={path}
                     type="button"
@@ -811,15 +811,15 @@ function MemoryPage() {
               </div>
               <div>
                 <p className="text-xs font-medium text-muted">Used by tasks</p>
-                {!detailQuery.data.used_by_tasks?.length ? (
+                {!detailQuery.data.usedByTasks?.length ? (
                   <p className="text-xs text-muted">None</p>
                 ) : (
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {detailQuery.data.used_by_tasks.map((task) => (
+                    {detailQuery.data.usedByTasks.map((task) => (
                       <Link
-                        key={task.task_id}
+                        key={task.taskId}
                         to="/$taskId"
-                        params={{ taskId: task.task_id }}
+                        params={{ taskId: task.taskId }}
                         className="text-xs"
                       >
                         {task.title} ({task.status})

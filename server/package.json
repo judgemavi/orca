@@ -1,0 +1,30 @@
+{
+  "name": "server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "typecheck": "bunx tsc --noEmit",
+    "db:generate": "bunx drizzle-kit generate"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@orca/types": "../packages/types",
+    "commander": "^14.0.3",
+    "deepmerge": "^4.3.1",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.12.4",
+    "ms": "^2.1.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/ms": "^2.1.0",
+    "bun-types": "^1.3.10",
+    "drizzle-kit": "^0.31.9",
+    "typescript": "^5.9.3"
+  }
+}

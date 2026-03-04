@@ -1,10 +1,10 @@
-export interface ReviewResultCheck {
+interface ReviewResultCheck {
   key: string
   label: string
   passed: boolean
 }
 
-export interface ReviewResultFinding {
+interface ReviewResultFinding {
   id: string
   summary: string
   detail: string
@@ -13,7 +13,7 @@ export interface ReviewResultFinding {
   line?: number
 }
 
-export interface ReviewResultCardProps {
+interface ReviewResultCardProps {
   approved: boolean
   feedback: string
   taskId?: string

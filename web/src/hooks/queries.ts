@@ -42,11 +42,11 @@ export function useModelsQuery(tool?: string) {
 // ── Operations ──────────────────────────────────────────────────────────
 
 interface OperationsFilters {
-  target_id?: string
+  targetId?: string
   type?: string
 }
 
-export function useOperationsQuery(filters?: OperationsFilters) {
+function useOperationsQuery(filters?: OperationsFilters) {
   return useQuery({
     queryKey: queryKeys.operations(filters),
     queryFn: () => api.listOperations(filters),
@@ -68,7 +68,7 @@ export function useRunningOperations() {
           op.type === type &&
           (targetId === undefined ||
             targetId === '' ||
-            op.target_id === targetId),
+            op.targetId === targetId),
       ) ?? false,
     [runningOperations],
   )

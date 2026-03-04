@@ -1,6 +1,6 @@
 import { Button } from '../../Button'
 import type { Interaction, ProposedTask } from '../../../types'
-import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
+import { INTERACTION_STATUSES, PHASES } from '@orca/types'
 import {
   parseBreakdownPayload,
   parseJSONText,
@@ -65,7 +65,7 @@ export function BreakdownPhaseSection({
     )
   }
 
-  const result = parseBreakdownPayload(parseJSONText(interaction.quality_json ?? ''))
+  const result = parseBreakdownPayload(parseJSONText(interaction.qualityJson ?? ''))
   if (!result) return null
 
   return (

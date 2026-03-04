@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as QueueRouteImport } from './routes/queue'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as ConfigRouteImport } from './routes/config'
 import { Route as TaskIdRouteImport } from './routes/$taskId'
 import { Route as IndexRouteImport } from './routes/index'
 
+const QueueRoute = QueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MemoryRoute = MemoryRouteImport.update({
   id: '/memory',
   path: '/memory',
@@ -40,12 +46,14 @@ export interface FileRoutesByFullPath {
   '/$taskId': typeof TaskIdRoute
   '/config': typeof ConfigRoute
   '/memory': typeof MemoryRoute
+  '/queue': typeof QueueRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$taskId': typeof TaskIdRoute
   '/config': typeof ConfigRoute
   '/memory': typeof MemoryRoute
+  '/queue': typeof QueueRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/$taskId': typeof TaskIdRoute
   '/config': typeof ConfigRoute
   '/memory': typeof MemoryRoute
+  '/queue': typeof QueueRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$taskId' | '/config' | '/memory'
+  fullPaths: '/' | '/$taskId' | '/config' | '/memory' | '/queue'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$taskId' | '/config' | '/memory'
-  id: '__root__' | '/' | '/$taskId' | '/config' | '/memory'
+  to: '/' | '/$taskId' | '/config' | '/memory' | '/queue'
+  id: '__root__' | '/' | '/$taskId' | '/config' | '/memory' | '/queue'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,10 +76,18 @@ export interface RootRouteChildren {
   TaskIdRoute: typeof TaskIdRoute
   ConfigRoute: typeof ConfigRoute
   MemoryRoute: typeof MemoryRoute
+  QueueRoute: typeof QueueRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/queue': {
+      id: '/queue'
+      path: '/queue'
+      fullPath: '/queue'
+      preLoaderRoute: typeof QueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/memory': {
       id: '/memory'
       path: '/memory'
@@ -107,6 +124,7 @@ const rootRouteChildren: RootRouteChildren = {
   TaskIdRoute: TaskIdRoute,
   ConfigRoute: ConfigRoute,
   MemoryRoute: MemoryRoute,
+  QueueRoute: QueueRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

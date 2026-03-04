@@ -18,22 +18,13 @@ export function ApprovedTaskActions() {
       onModelChange={actions.setActionModel}
       actionError={actions.actionError}
       actions={
-        <>
-          <Button
-            variant="default"
-            onClick={actions.handleRetro}
-            disabled={actions.phaseInProgress}
-          >
-            {actions.retroInProgress ? 'Running Retro…' : 'Run Retro'}
-          </Button>
-          <Button
-            variant="primary"
-            onClick={actions.handleMerge}
-            disabled={actions.phaseInProgress}
-          >
-            {actions.mergeInProgress ? 'Merging…' : 'Merge'}
-          </Button>
-        </>
+        <Button
+          variant="primary"
+          onClick={actions.handleMerge}
+          disabled={actions.phaseInProgress}
+        >
+          {actions.mergeInProgress ? 'Merging…' : 'Merge'}
+        </Button>
       }
     />
   )

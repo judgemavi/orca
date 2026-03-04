@@ -1,5 +1,5 @@
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { TASK_STATUSES } from '../../../lib/phases'
+import { TASK_STATUSES } from '@orca/types'
 import { Button } from '../../Button'
 import { ApprovedTaskActions } from './ApprovedTaskActions'
 import { FailedTaskActions } from './FailedTaskActions'

@@ -40,7 +40,7 @@ const inputClass =
 
 const sectionClass = 'rounded-lg border'
 
-export function ConfigPage() {
+function ConfigPage() {
   const { data, isLoading } = useConfigQuery()
   const { data: modelsByTool = {} } = useModelsQuery()
   const [draft, setDraft] = useState<Config | null>(null)
@@ -90,8 +90,8 @@ export function ConfigPage() {
     )
   }
 
-  const supervisorModels = draft.orchestrator.supervisor_tool
-    ? (modelsByTool[draft.orchestrator.supervisor_tool] ?? [])
+  const supervisorModels = draft.orchestrator.supervisorTool
+    ? (modelsByTool[draft.orchestrator.supervisorTool] ?? [])
     : []
 
   return (
@@ -113,21 +113,21 @@ export function ConfigPage() {
           />
           <LabeledInput
             label="Integration branch"
-            value={draft.project.integration_branch}
+            value={draft.project.integrationBranch}
             onChange={(value) =>
               updateSection('project', {
                 ...draft.project,
-                integration_branch: value,
+                integrationBranch: value,
               })
             }
           />
           <LabeledInput
             label="Worktree dir"
-            value={draft.project.worktree_dir}
+            value={draft.project.worktreeDir}
             onChange={(value) =>
               updateSection('project', {
                 ...draft.project,
-                worktree_dir: value,
+                worktreeDir: value,
               })
             }
           />
@@ -178,10 +178,10 @@ export function ConfigPage() {
           <LabeledInput
             label="Max parallel"
             type="number"
-            value={String(draft.workers.max_parallel)}
+            value={String(draft.workers.maxParallel)}
             onChange={(value) =>
               updateSection('workers', {
-                max_parallel: Number(value) || 0,
+                maxParallel: Number(value) || 0,
               })
             }
           />
@@ -201,12 +201,12 @@ export function ConfigPage() {
               Supervisor tool
               <select
                 className={inputClass}
-                value={draft.orchestrator.supervisor_tool}
+                value={draft.orchestrator.supervisorTool}
                 onChange={(e) =>
                   updateSection('orchestrator', {
                     ...draft.orchestrator,
-                    supervisor_tool: e.target.value,
-                    supervisor_model: '',
+                    supervisorTool: e.target.value,
+                    supervisorModel: '',
                   })
                 }
               >
@@ -223,11 +223,11 @@ export function ConfigPage() {
               Supervisor model
               <select
                 className={inputClass}
-                value={draft.orchestrator.supervisor_model}
+                value={draft.orchestrator.supervisorModel}
                 onChange={(e) =>
                   updateSection('orchestrator', {
                     ...draft.orchestrator,
-                    supervisor_model: e.target.value,
+                    supervisorModel: e.target.value,
                   })
                 }
               >
@@ -311,32 +311,32 @@ export function ConfigPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <LabeledInput
               label="Stuck check interval"
-              value={draft.monitor.stuck_check_interval}
+              value={draft.monitor.stuckCheckInterval}
               onChange={(value) =>
                 updateSection('monitor', {
                   ...draft.monitor,
-                  stuck_check_interval: value,
+                  stuckCheckInterval: value as typeof draft.monitor.stuckCheckInterval,
                 })
               }
             />
             <LabeledInput
               label="Max stuck cycles"
               type="number"
-              value={String(draft.monitor.max_stuck_cycles)}
+              value={String(draft.monitor.maxStuckCycles)}
               onChange={(value) =>
                 updateSection('monitor', {
                   ...draft.monitor,
-                  max_stuck_cycles: Number(value) || 0,
+                  maxStuckCycles: Number(value) || 0,
                 })
               }
             />
             <LabeledInput
               label="Conflict check interval"
-              value={draft.monitor.conflict_check_interval}
+              value={draft.monitor.conflictCheckInterval}
               onChange={(value) =>
                 updateSection('monitor', {
                   ...draft.monitor,
-                  conflict_check_interval: value,
+                  conflictCheckInterval: value as typeof draft.monitor.conflictCheckInterval,
                 })
               }
             />
@@ -359,21 +359,21 @@ export function ConfigPage() {
           />
           <Toggle
             label="Scope check"
-            checked={draft.quality.scope_check}
+            checked={draft.quality.scopeCheck}
             onChange={(checked) =>
               updateSection('quality', {
                 ...draft.quality,
-                scope_check: checked,
+                scopeCheck: checked,
               })
             }
           />
           <Toggle
             label="Test delta"
-            checked={draft.quality.test_delta}
+            checked={draft.quality.testDelta}
             onChange={(checked) =>
               updateSection('quality', {
                 ...draft.quality,
-                test_delta: checked,
+                testDelta: checked,
               })
             }
           />
@@ -415,9 +415,9 @@ export function ConfigPage() {
             />
             <LabeledInput
               label="Max size"
-              value={draft.logging.max_size}
+              value={draft.logging.maxSize}
               onChange={(value) =>
-                updateSection('logging', { ...draft.logging, max_size: value })
+                updateSection('logging', { ...draft.logging, maxSize: value })
               }
             />
           </div>

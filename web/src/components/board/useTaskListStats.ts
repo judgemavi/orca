@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { Task } from '../../types'
-import { TASK_STATUSES } from '../../lib/phases'
+import { TASK_STATUSES } from '@orca/types'
 
 interface TaskListStats {
   totalTasks: number

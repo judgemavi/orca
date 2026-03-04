@@ -1,6 +1,6 @@
 import type { ProposedTask } from '../../types'
 
-export interface BreakdownCardProps {
+interface BreakdownCardProps {
   proposed: ProposedTask[]
   accepted?: boolean
   rejected?: boolean
@@ -41,12 +41,12 @@ export function BreakdownCard({ proposed, accepted, rejected }: BreakdownCardPro
               ) : null}
               <div className="mt-1 text-[11px] text-muted">
                 Depends On:{' '}
-                {task.depends_on_indices.length > 0
-                  ? task.depends_on_indices.map((dep) => dep + 1).join(', ')
+                {task.dependsOnIndices.length > 0
+                  ? task.dependsOnIndices.map((dep) => dep + 1).join(', ')
                   : 'None'}
               </div>
-              {task.suggested_tool ? (
-                <div className="text-[11px] text-muted">Suggested Tool: {task.suggested_tool}</div>
+              {task.suggestedTool ? (
+                <div className="text-[11px] text-muted">Suggested Tool: {task.suggestedTool}</div>
               ) : null}
             </div>
           ))}

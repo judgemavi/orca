@@ -1,5 +1,5 @@
 import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { TASK_STATUSES } from '../../../lib/phases'
+import { TASK_STATUSES } from '@orca/types'
 import { Button } from '../../Button'
 import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout'
 import { useTaskActions } from './useTaskActions'
@@ -9,7 +9,7 @@ export function FailedTaskActions() {
   const actions = useTaskActions(task)
 
   const isStopped = task.status === TASK_STATUSES.stopped
-  const hasSession = Boolean(task.session_id?.trim())
+  const hasSession = Boolean(task.sessionId?.trim())
   const showResume = isStopped && hasSession
   const busy = actions.runningBusy || (showResume ? actions.resumePending : false)
 
@@ -29,7 +29,7 @@ export function FailedTaskActions() {
           <TaskFeedbackBox
             value={actions.resumeFeedback}
             onChange={actions.setResumeFeedback}
-            placeholder={`Resume feedback for session ${task.session_id} (optional)`}
+            placeholder={`Resume feedback for session ${task.sessionId} (optional)`}
           />
         ) : null
       }

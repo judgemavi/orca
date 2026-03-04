@@ -6,7 +6,7 @@ import {
   INTERACTION_STATUSES,
   PHASES,
   REVIEW_STATUSES,
-} from '../../../lib/phases'
+} from '@orca/types'
 import type { usePlanEditor } from './usePlanEditor'
 import { Button } from '../../Button'
 import { PlanMarkdownCard } from '../../shared/PlanMarkdownCard'
@@ -113,7 +113,7 @@ export function PlanPhaseSection({
       {!isEditableLatestPlan && nonEditablePlanMarkdown && (
         <PlanMarkdownCard
           planText={nonEditablePlanMarkdown}
-          taskId={interaction.task_id ?? undefined}
+          taskId={interaction.taskId ?? undefined}
           collapsible={false}
         />
       )}
@@ -135,7 +135,7 @@ export function PlanPhaseSection({
                   {review.status}
                 </span>
                 <span className="text-xs">
-                  {formatRelativeTime(review.created_at)}
+                  {formatRelativeTime(review.createdAt)}
                 </span>
               </div>
               <div className="whitespace-pre-wrap text-xs">

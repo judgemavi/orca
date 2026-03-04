@@ -1,15 +1,15 @@
-import type { Interaction, TaskReview } from '../../../types'
+import type { Interaction, InteractionStub, TaskReview } from '../../../types'
 import {
   INTERACTION_STATUSES,
   PHASES,
   REVIEW_STATUSES,
   isRunLike,
-} from '../../../lib/phases'
+} from '@orca/types'
 import { AIReviewResultCard } from './AIReviewResultCard'
 
 type Props = {
   interaction: Interaction
-  runReviewInteractions: Interaction[]
+  runReviewInteractions: InteractionStub[]
   runReviews: TaskReview[]
   latestCompletedRunStartedAt?: string
 }
@@ -28,13 +28,13 @@ export function ReviewPhaseSection({
   const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS)
   const visibleRunReviewInteractions = hasReviewCutoff
     ? runReviewInteractions.filter(
-        (item) => Date.parse(item.started_at) > latestCompletedRunStartedAtMS,
+        (item) => Date.parse(item.startedAt) > latestCompletedRunStartedAtMS,
       )
     : runReviewInteractions
   const visibleRunReviews = hasReviewCutoff
     ? runReviews.filter(
         (review) =>
-          Date.parse(review.created_at) > latestCompletedRunStartedAtMS,
+          Date.parse(review.createdAt) > latestCompletedRunStartedAtMS,
       )
     : runReviews
 
@@ -44,10 +44,10 @@ export function ReviewPhaseSection({
     <>
       {showRunReviews && visibleRunReviewInteractions.length > 0 && (
         <div className="flex flex-col gap-2">
-          {visibleRunReviewInteractions.map((reviewInteraction) => (
+          {visibleRunReviewInteractions.map((reviewStub) => (
             <AIReviewResultCard
-              key={reviewInteraction.id}
-              interaction={reviewInteraction}
+              key={reviewStub.id}
+              stub={reviewStub}
               showLogButton
             />
           ))}
@@ -94,7 +94,18 @@ export function ReviewPhaseSection({
         )}
 
       {showReviewInteraction && (
-        <AIReviewResultCard interaction={interaction} />
+        <AIReviewResultCard stub={{
+          id: interaction.id,
+          taskId: interaction.taskId,
+          phase: interaction.phase,
+          attempt: interaction.attempt,
+          tool: interaction.tool,
+          status: interaction.status,
+          durationMs: interaction.durationMs,
+          estimatedCost: interaction.estimatedCost,
+          startedAt: interaction.startedAt,
+          finishedAt: interaction.finishedAt,
+        }} />
       )}
     </>
   )

@@ -1,11 +1,11 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
 import type { ReactNode } from 'react'
-import type { Interaction } from '../../../types'
-import { INTERACTION_STATUSES, PHASES } from '../../../lib/phases'
+import type { InteractionStub } from '../../../types'
+import { INTERACTION_STATUSES, PHASES } from '@orca/types'
 import { useInteractionDetailContext } from './InteractionDetailContext'
 
 interface Props {
-  interaction: Interaction
+  stub: InteractionStub
   phase?: string
   collapsible?: boolean
   expanded?: boolean
@@ -26,28 +26,10 @@ function formatCost(value: number | undefined): string {
   return `$${(value ?? 0).toFixed(2)}`
 }
 
-function statusIcon(status: Interaction['status']) {
+function statusIcon(status: InteractionStub['status']) {
   if (status === INTERACTION_STATUSES.completed) return '✓'
   if (status === INTERACTION_STATUSES.failed) return '✗'
   return '●'
-}
-
-function summarizeDiff(diff: string | undefined): string | null {
-  if (!diff) return null
-  let added = 0
-  let removed = 0
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('+++') || line.startsWith('---')) continue
-    if (line.startsWith('+')) {
-      added++
-      continue
-    }
-    if (line.startsWith('-')) {
-      removed++
-    }
-  }
-  if (added === 0 && removed === 0) return null
-  return `+${added}/-${removed}`
 }
 
 function phaseBadgeTone(phase: string | undefined): string {
@@ -68,7 +50,7 @@ function phaseBadgeTone(phase: string | undefined): string {
 }
 
 export function InteractionEntry({
-  interaction,
+  stub,
   phase,
   collapsible = false,
   expanded = false,
@@ -80,10 +62,10 @@ export function InteractionEntry({
   const detailContext = useInteractionDetailContext()
   const activeLogId = detailContext?.activeLogId ?? null
   const onToggleLog = detailContext?.onToggleLog
-  const isRunning = interaction.status === INTERACTION_STATUSES.running
+  const isRunning = stub.status === INTERACTION_STATUSES.running
   const phaseLabel = phase?.trim()
   const open = collapsible ? alwaysExpanded || expanded : true
-  const diffSummary = showDiffSummary ? summarizeDiff(interaction.diff) : null
+  const diffSummary = showDiffSummary ? stub.diffSummary : null
   const rowClass = [
     'flex w-full items-center justify-between gap-2 rounded-md px-1 py-0.5 text-left transition-colors',
     alwaysExpanded ? '' : 'cursor-pointer hover:bg-surface/50',
@@ -109,17 +91,17 @@ export function InteractionEntry({
               <span
                 className={[
                   'inline-flex h-4 w-4 items-center justify-center rounded-full border text-xs',
-                  interaction.status === INTERACTION_STATUSES.completed
+                  stub.status === INTERACTION_STATUSES.completed
                     ? 'border-emerald-500 text-emerald-500'
-                    : interaction.status === INTERACTION_STATUSES.failed
+                    : stub.status === INTERACTION_STATUSES.failed
                       ? 'border-danger text-danger'
                       : 'animate-pulse border-accent text-accent',
                 ].join(' ')}
                 aria-hidden
               >
-                {statusIcon(interaction.status)}
+                {statusIcon(stub.status)}
               </span>
-              <span className="font-mono">#{interaction.attempt}</span>
+              <span className="font-mono">#{stub.attempt}</span>
               {phaseLabel && (
                 <span
                   className={[
@@ -130,12 +112,12 @@ export function InteractionEntry({
                   [{phaseLabel.toUpperCase()}]
                 </span>
               )}
-              <span className="truncate">{interaction.tool || '-'}</span>
+              <span className="truncate">{stub.tool || '-'}</span>
               <span className="font-mono">
-                {isRunning ? '-' : formatDuration(interaction.duration_ms)}
+                {isRunning ? '-' : formatDuration(stub.durationMs)}
               </span>
               <span className="font-mono">
-                {formatCost(interaction.estimated_cost)}
+                {formatCost(stub.estimatedCost)}
               </span>
               {diffSummary && (
                 <span className="font-mono text-muted">{diffSummary}</span>
@@ -154,21 +136,21 @@ export function InteractionEntry({
             type="button"
             className={[
               'rounded border px-2 py-0.5 text-xs transition-colors hover:bg-surface',
-              activeLogId === interaction.id
+              activeLogId === stub.id
                 ? 'border-accent bg-accent/15 text-accent'
                 : 'border-border-subtle',
             ].join(' ')}
             onClick={(event) => {
               event.stopPropagation()
-              onToggleLog(interaction.id)
+              onToggleLog(stub.id)
             }}
             aria-label={
-              activeLogId === interaction.id
+              activeLogId === stub.id
                 ? 'Hide interaction log'
                 : 'Show interaction log'
             }
           >
-            {activeLogId === interaction.id ? 'log open' : 'log'}
+            {activeLogId === stub.id ? 'log open' : 'log'}
           </button>
         )}
       </div>

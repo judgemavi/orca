@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { api } from '../../../api'
 import { useToolModelSelection } from '../../../hooks/useToolModelSelection'
 import { useWebSocket } from '../../../hooks/useWebSocket'
-import { PHASES, TASK_STATUSES } from '../../../lib/phases'
+import { PHASES, TASK_STATUSES } from '@orca/types'
 import { isKnownWSEvent } from '../../../types'
 
 type Args = {
@@ -68,9 +68,9 @@ export function useMergeHandler({
 
         let evtTaskId: string | undefined
         if (evt.type === 'merge.started' || evt.type === 'merge.failed') {
-          evtTaskId = evt.data.task_id
+          evtTaskId = evt.data.taskId
         } else if (evt.type === 'merge.progress') {
-          evtTaskId = evt.data.task_id
+          evtTaskId = evt.data.taskId
         } else if (evt.type === 'merge.completed') {
           evtTaskId = 'id' in evt.data ? evt.data.id : undefined
         } else if (evt.type === 'task.updated') {
@@ -93,7 +93,7 @@ export function useMergeHandler({
           const isConflict = Boolean(evt.data.conflict)
           if (isConflict) {
             setConflictError(evt.data.error)
-            setConflictWorktreePath(evt.data.worktree_path ?? '')
+            setConflictWorktreePath(evt.data.worktreePath ?? '')
           } else {
             setConflictError(null)
             setConflictWorktreePath('')

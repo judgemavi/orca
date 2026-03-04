@@ -9,9 +9,6 @@ interface Props {
 export function OrchestratorSidebar({ orchestratorId }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-border-subtle px-3 py-2 text-xs font-medium text-muted">
-        Orchestrator Chat
-      </div>
       {orchestratorId ? (
         <ChatPane className="flex-1 min-h-0" />
       ) : (
@@ -19,7 +16,7 @@ export function OrchestratorSidebar({ orchestratorId }: Props) {
           <span>No orchestrator session</span>
           <Button
             variant="primary"
-            onClick={() => api.startOrchestrator().catch(() => {})}
+            onClick={() => api.startOrchestrator().catch(() => { })}
           >
             Start Session
           </Button>

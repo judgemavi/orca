@@ -1,7 +1,7 @@
 import { BreakdownPhaseSection } from './BreakdownPhaseSection'
 import { useCallback, useMemo } from 'react'
-import { INTERACTION_STATUSES, PHASES, isRunLike } from '../../../lib/phases'
-import type { Interaction, Task, TaskReview } from '../../../types'
+import { INTERACTION_STATUSES, PHASES, isRunLike } from '@orca/types'
+import type { InteractionStub, Task, TaskReview } from '../../../types'
 import { EvaluatePhaseSection } from './EvaluatePhaseSection'
 import { InteractionEntry } from './InteractionEntry'
 import { MergePhaseSection } from './MergePhaseSection'
@@ -11,9 +11,10 @@ import { RunPhaseSection } from './RunPhaseSection'
 import type { useMergeHandler } from './useMergeHandler'
 import { useTaskActions } from './useTaskActions'
 import type { usePlanEditor } from './usePlanEditor'
+import { useInteractionMetaQuery } from './useInteractions'
 
 type Props = {
-  interactions: Interaction[]
+  stubs: InteractionStub[]
   reviews: TaskReview[]
   task: Task
   tools: string[]
@@ -24,8 +25,99 @@ type Props = {
   merge: ReturnType<typeof useMergeHandler>
 }
 
+function PhaseContent({
+  taskId,
+  stub,
+  expanded,
+  task,
+  tools,
+  readOnly,
+  planEditor,
+  merge,
+  planReviews,
+  runReviews,
+  runReviewStubs,
+  latestCompletedRunStartedAt,
+  isLatestRunningMerge,
+  isLatestFailedMerge,
+  actions,
+}: {
+  taskId: string
+  stub: InteractionStub
+  expanded: boolean
+  task: Task
+  tools: string[]
+  readOnly: boolean
+  planEditor: ReturnType<typeof usePlanEditor>
+  merge: ReturnType<typeof useMergeHandler>
+  planReviews: TaskReview[]
+  runReviews: TaskReview[]
+  runReviewStubs: InteractionStub[]
+  latestCompletedRunStartedAt?: string
+  isLatestRunningMerge: boolean
+  isLatestFailedMerge: boolean
+  actions: ReturnType<typeof useTaskActions>
+}) {
+  const metaQuery = useInteractionMetaQuery(taskId, stub.id, expanded)
+
+  if (!expanded) return null
+  if (metaQuery.isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-2 text-xs text-muted">
+        <span className="inline-block h-3 w-16 animate-pulse rounded bg-surface" />
+        Loading details...
+      </div>
+    )
+  }
+
+  const interaction = metaQuery.data
+  if (!interaction) return null
+
+  return (
+    <>
+      <PlanPhaseSection
+        interaction={interaction}
+        isEditableLatestPlan={
+          stub.phase === PHASES.plan &&
+          stub.status === INTERACTION_STATUSES.completed &&
+          stub.id === planEditor.latestCompletedPlanId &&
+          planEditor.planEditable
+        }
+        planEditor={planEditor}
+        planReviews={planReviews}
+      />
+      <EvaluatePhaseSection interaction={interaction} />
+      <BreakdownPhaseSection
+        interaction={interaction}
+        proposals={actions.latestBreakdownProposals}
+        onAccept={actions.handleAcceptBreakdown}
+        onReject={actions.handleRejectBreakdown}
+        accepting={actions.acceptBreakdownPending}
+        rejecting={actions.rejectBreakdownPending}
+      />
+      <RunPhaseSection interaction={interaction} task={task} />
+      <ReviewPhaseSection
+        interaction={interaction}
+        runReviewInteractions={
+          isRunLike(stub.phase) ? runReviewStubs : []
+        }
+        runReviews={runReviews}
+        latestCompletedRunStartedAt={latestCompletedRunStartedAt}
+      />
+      <MergePhaseSection
+        interaction={interaction}
+        readOnly={readOnly}
+        tools={tools}
+        isLatestRunning={isLatestRunningMerge}
+        isLatestFailed={isLatestFailedMerge}
+        merge={merge}
+      />
+    </>
+  )
+}
+
 export function TaskInteractionItems({
-  interactions,
+  stubs,
   reviews,
   task,
   tools,
@@ -36,79 +128,79 @@ export function TaskInteractionItems({
   merge,
 }: Props) {
   const actions = useTaskActions(task)
-  const runInteractions = useMemo(
-    () => interactions.filter((item) => isRunLike(item.phase)),
-    [interactions],
+  const runStubs = useMemo(
+    () => stubs.filter((item) => isRunLike(item.phase)),
+    [stubs],
   )
-  const reviewInteractions = useMemo(
-    () => interactions.filter((item) => item.phase === PHASES.review),
-    [interactions],
+  const reviewStubs = useMemo(
+    () => stubs.filter((item) => item.phase === PHASES.review),
+    [stubs],
   )
-  const mergeInteractions = useMemo(
-    () => interactions.filter((item) => item.phase === PHASES.merge),
-    [interactions],
+  const mergeStubs = useMemo(
+    () => stubs.filter((item) => item.phase === PHASES.merge),
+    [stubs],
   )
 
-  const planInteractionIds = useMemo(
+  const planStubIds = useMemo(
     () =>
       new Set(
-        interactions
+        stubs
           .filter((item) => item.phase === PHASES.plan)
           .map((item) => item.id),
       ),
-    [interactions],
+    [stubs],
   )
-  const runInteractionIDs = useMemo(
-    () => new Set(runInteractions.map((item) => item.id)),
-    [runInteractions],
+  const runStubIDs = useMemo(
+    () => new Set(runStubs.map((item) => item.id)),
+    [runStubs],
   )
 
   const planReviews = useMemo(
     () =>
       reviews.filter(
         (review) =>
-          Boolean(review.interaction_id) &&
-          planInteractionIds.has(String(review.interaction_id)),
+          Boolean(review.interactionId) &&
+          planStubIds.has(String(review.interactionId)),
       ),
-    [planInteractionIds, reviews],
+    [planStubIds, reviews],
   )
   const runReviews = useMemo(
     () =>
       reviews.filter(
         (review) =>
-          Boolean(review.interaction_id) &&
-          runInteractionIDs.has(String(review.interaction_id)),
+          Boolean(review.interactionId) &&
+          runStubIDs.has(String(review.interactionId)),
       ),
-    [reviews, runInteractionIDs],
+    [reviews, runStubIDs],
   )
 
   const latestFailedMergeId =
-    [...mergeInteractions]
+    [...mergeStubs]
       .reverse()
       .find((item) => item.status === INTERACTION_STATUSES.failed)?.id ?? null
   const latestRunningMergeId =
-    [...mergeInteractions]
+    [...mergeStubs]
       .reverse()
       .find((item) => item.status === INTERACTION_STATUSES.running)?.id ?? null
   const latestCompletedRunStartedAt =
-    runInteractions.find(
+    runStubs.find(
       (item) => item.status === INTERACTION_STATUSES.completed,
-    )?.started_at ?? null
+    )?.startedAt ?? null
   const latestCompletedRunStartedAtMS = latestCompletedRunStartedAt
     ? Date.parse(latestCompletedRunStartedAt)
     : NaN
   const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS)
 
-  const getReviewsForRun = useCallback(
-    (runId: string, runStartedAt: string): Interaction[] => {
-      const runIndex = runInteractions.findIndex((run) => run.id === runId)
+  const getReviewStubsForRun = useCallback(
+    (runId: string, runStartedAt: string): InteractionStub[] => {
+      const runIndex = runStubs.findIndex((run) => run.id === runId)
       const nextRunStartedAt =
-        runIndex < runInteractions.length - 1
-          ? runInteractions[runIndex + 1].started_at
+        runIndex < runStubs.length - 1
+          ? runStubs[runIndex + 1].startedAt
           : null
 
-      return reviewInteractions.filter((reviewInteraction) => {
-        const reviewStart = Date.parse(reviewInteraction.started_at)
+      return reviewStubs.filter((reviewStub) => {
+        const reviewStart = Date.parse(reviewStub.startedAt)
         const runStart = Date.parse(runStartedAt)
         if (!Number.isFinite(reviewStart) || !Number.isFinite(runStart))
           return false
@@ -118,77 +210,61 @@ export function TaskInteractionItems({
         return true
       })
     },
-    [reviewInteractions, runInteractions],
+    [reviewStubs, runStubs],
   )
+
+  const taskId = task.id
 
   return (
     <div className="flex flex-col gap-2">
-      {interactions.map((item) => {
+      {stubs.map((item) => {
         if (
           item.phase === PHASES.review &&
           hasReviewCutoff &&
-          Date.parse(item.started_at) <= latestCompletedRunStartedAtMS
+          Date.parse(item.startedAt) <= latestCompletedRunStartedAtMS
         ) {
           return null
         }
+        const isExpanded =
+          item.status === INTERACTION_STATUSES.running ||
+          expandedInteractions.has(item.id)
         return (
           <InteractionEntry
             key={item.id}
-            interaction={item}
+            stub={item}
             phase={item.phase}
             collapsible
             showDiffSummary={isRunLike(item.phase)}
-            expanded={
-              item.status === INTERACTION_STATUSES.running ||
-              expandedInteractions.has(item.id)
-            }
+            expanded={isExpanded}
             alwaysExpanded={item.status === INTERACTION_STATUSES.running}
             onExpandedChange={() => onToggleInteraction(item.id)}
           >
-            <PlanPhaseSection
-              interaction={item}
-              isEditableLatestPlan={
-                item.phase === PHASES.plan &&
-                item.status === INTERACTION_STATUSES.completed &&
-                item.id === planEditor.latestCompletedPlanId &&
-                planEditor.planEditable
-              }
+            <PhaseContent
+              taskId={taskId}
+              stub={item}
+              expanded={isExpanded}
+              task={task}
+              tools={tools}
+              readOnly={readOnly}
               planEditor={planEditor}
+              merge={merge}
               planReviews={planReviews.filter(
-                (review) => review.interaction_id === item.id,
+                (review) => review.interactionId === item.id,
               )}
-            />
-            <EvaluatePhaseSection interaction={item} />
-            <BreakdownPhaseSection
-              interaction={item}
-              proposals={actions.latestBreakdownProposals}
-              onAccept={actions.handleAcceptBreakdown}
-              onReject={actions.handleRejectBreakdown}
-              accepting={actions.acceptBreakdownPending}
-              rejecting={actions.rejectBreakdownPending}
-            />
-            <RunPhaseSection interaction={item} task={task} />
-            <ReviewPhaseSection
-              interaction={item}
-              runReviewInteractions={
+              runReviews={runReviews.filter(
+                (review) => review.interactionId === item.id,
+              )}
+              runReviewStubs={
                 isRunLike(item.phase)
-                  ? getReviewsForRun(item.id, item.started_at)
+                  ? getReviewStubsForRun(item.id, item.startedAt)
                   : []
               }
-              runReviews={runReviews.filter(
-                (review) => review.interaction_id === item.id,
-              )}
               latestCompletedRunStartedAt={
                 latestCompletedRunStartedAt ?? undefined
               }
-            />
-            <MergePhaseSection
-              interaction={item}
-              readOnly={readOnly}
-              tools={tools}
-              isLatestRunning={item.id === latestRunningMergeId}
-              isLatestFailed={item.id === latestFailedMergeId}
-              merge={merge}
+              isLatestRunningMerge={item.id === latestRunningMergeId}
+              isLatestFailedMerge={item.id === latestFailedMergeId}
+              actions={actions}
             />
           </InteractionEntry>
         )
