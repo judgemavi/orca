@@ -33,7 +33,7 @@ export interface QualityResult {
   blockingIssues: string[];
 }
 
-export function analyzeScope(
+function analyzeScope(
   taskID: string,
   title: string,
   diff: string,
@@ -132,7 +132,7 @@ export async function takeValidationSnapshot(
   };
 }
 
-export function computeTestDelta(
+function computeTestDelta(
   before: ValidationSnapshot | null,
   after: ValidationSnapshot | null,
 ): TestDelta {

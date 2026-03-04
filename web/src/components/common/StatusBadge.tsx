@@ -61,9 +61,9 @@ export function StatusBadge({
   const scale = SIZES[size];
   return (
     <span
-      className={`inline-flex items-center font-medium tracking-wide ${tone.badge} ${scale.badge}`}
+      className={`inline-flex items-center font-medium tracking-wide ${tone?.badge} ${scale.badge}`}
     >
-      <span className={`rounded-full ${tone.dot} ${scale.dot}`} />
+      <span className={`rounded-full ${tone?.dot} ${scale.dot}`} />
       {status}
     </span>
   );

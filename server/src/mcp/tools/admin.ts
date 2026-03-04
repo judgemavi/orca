@@ -6,7 +6,7 @@ import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
-import { InteractionStatus, Phase, TaskStatus } from '../../types';
+import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../../types';
 import { defineTool } from '../define-tool';
 import type { Tool } from '../types';
 
@@ -101,22 +101,23 @@ export function adminTools(deps: {
         return {
           project: 'orca',
           totalTasks: tasks.length,
-          pending: tasks.filter((task) => task.status === TaskStatus.pending)
+          pending: tasks.filter((task) => task.status === TASK_STATUSES.pending)
             .length,
-          inProgress: tasks.filter((task) => task.status === TaskStatus.running)
-            .length,
+          inProgress: tasks.filter(
+            (task) => task.status === TASK_STATUSES.running,
+          ).length,
           completed: tasks.filter(
             (task) =>
-              task.status === TaskStatus.merged ||
-              task.status === TaskStatus.approved ||
-              task.status === TaskStatus.review ||
-              task.status === TaskStatus.broken_down,
+              task.status === TASK_STATUSES.merged ||
+              task.status === TASK_STATUSES.approved ||
+              task.status === TASK_STATUSES.review ||
+              task.status === TASK_STATUSES.broken_down,
           ).length,
-          failed: tasks.filter((task) => task.status === TaskStatus.failed)
+          failed: tasks.filter((task) => task.status === TASK_STATUSES.failed)
             .length,
           totalCost: await deps.interactions.projectTotal(),
           runningOperations: (
-            await deps.interactions.listByStatus(InteractionStatus.running)
+            await deps.interactions.listByStatus(INTERACTION_STATUSES.running)
           ).length,
           lastSyncedCommit: sync.lastSyncedCommit,
           currentCommit: sync.currentCommit,
@@ -142,7 +143,7 @@ export function adminTools(deps: {
       schema: qualityResultsSchema,
       handler: async (input) => {
         const taskID = input.taskId;
-        const items = await deps.interactions.listByPhase(taskID, Phase.run);
+        const items = await deps.interactions.listByPhase(taskID, PHASES.run);
         const latest = items.find((item) => item.qualityJson?.trim());
         if (!latest?.qualityJson) {
           return { taskId: taskID, quality: null };

@@ -9,12 +9,6 @@
     ".": {}
   },
   "ignore": [
-    "packages/xfs-parsers/**",
-    "tools/**",
-    "docs/**",
-    "apps/xfs-bridge/**",
-    "apps/xfs-sim/**",
-    "apps/xfs-sim-ui/**",
     "**/*.gen.*"
   ]
 }

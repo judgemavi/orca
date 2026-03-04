@@ -10,7 +10,7 @@ import type {
   MemoryRefreshResult,
   MemorySyncResult,
 } from '../types';
-import { Phase } from '../types';
+import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import {
   classifyDiffFromGit,
@@ -318,7 +318,7 @@ async function tryPatchExploreContext(
       {
         taskId: null,
         taskRunId: 'sync-context',
-        phase: Phase.explore,
+        phase: PHASES.explore,
         promptName: 'syncContext',
         promptArgs: [
           currentContext.trim(),
@@ -398,7 +398,7 @@ async function refreshOne(
   const execution = resolvePhaseExecution({
     config: options.config,
     registry: options.registry,
-    phase: Phase.explore,
+    phase: PHASES.explore,
     toolOverride: options.toolOverride ?? '',
     modelOverride: options.modelOverride ?? '',
   });
@@ -483,7 +483,7 @@ async function refreshEntryWithLLM(
     {
       taskId: entry.sourceTaskId ?? null,
       taskRunId: `memory-refresh-${entry.id.slice(0, 8)}`,
-      phase: Phase.explore,
+      phase: PHASES.explore,
       prompt,
       toolOverride: options.toolOverride ?? '',
       modelOverride: options.modelOverride ?? '',

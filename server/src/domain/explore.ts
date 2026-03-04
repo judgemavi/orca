@@ -6,7 +6,7 @@ import { createPhaseRunner } from '../shared/phase-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { Config, MemoryCategory } from '../types';
-import { Phase } from '../types';
+import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONArray } from './llm';
 
@@ -47,7 +47,7 @@ export interface RunExploreResult {
   seeded: number;
 }
 
-export function exploreContextPath(repoDir: string): string {
+function exploreContextPath(repoDir: string): string {
   return `${repoDir}/.orca/explore_context.md`;
 }
 
@@ -99,7 +99,7 @@ export async function runExplore(
     {
       taskId: null,
       taskRunId: 'explore',
-      phase: Phase.explore,
+      phase: PHASES.explore,
       prompt,
       toolOverride: input.toolOverride ?? '',
       modelOverride: input.modelOverride ?? '',

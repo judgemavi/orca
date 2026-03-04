@@ -193,7 +193,7 @@ export function TaskInteractionItems({
       const runIndex = runStubs.findIndex((run) => run.id === runId);
       const nextRunStartedAt =
         runIndex < runStubs.length - 1
-          ? runStubs[runIndex + 1].startedAt
+          ? runStubs[runIndex + 1]?.startedAt
           : null;
 
       return reviewStubs.filter((reviewStub) => {

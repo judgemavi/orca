@@ -2,7 +2,7 @@ import type { DriverRegistry } from '../driver/registry';
 import { createPhaseRunner } from '../shared/phase-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { Config, ProposedTask } from '../types';
-import { Phase } from '../types';
+import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 
 export interface RunPlanInput {
@@ -49,7 +49,7 @@ export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
   } = await runPhase(
     {
       taskId: input.taskID,
-      phase: Phase.plan,
+      phase: PHASES.plan,
       promptName: 'plan',
       promptArgs: [memoryContext, title, description],
       extraContext: feedback ? `\n\n## Reviewer Feedback\n${feedback}` : '',

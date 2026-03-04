@@ -26,20 +26,3 @@ export async function getMemoryDetail(memory: MemoryStore, id: string) {
     supersedes: await memory.findSupersededIDs(entry.id),
   };
 }
-
-export async function memorySyncSnapshot(memory: MemoryStore) {
-  const stale = await memory.findStaleEntries();
-  const health = await memory.buildHealthSummary();
-  return {
-    lastCommit: '',
-    newCommit: '',
-    commitCount: 0,
-    affectedFiles: [],
-    flaggedEntries: stale.length,
-    staleEntries: stale.length,
-    supersededCount: 0,
-    classifications: {},
-    contextUpdated: false,
-    contextStale: health.staleCount > 0,
-  };
-}

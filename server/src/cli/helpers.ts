@@ -2,7 +2,6 @@ import {
   cancel as clackCancel,
   confirm as clackConfirm,
   isCancel,
-  multiselect,
   select,
   text,
 } from '@clack/prompts';
@@ -14,9 +13,6 @@ export type TaskFilter = (task: Task) => boolean;
 export const allTasks: TaskFilter = () => true;
 export const pendingTasks: TaskFilter = (task) =>
   task.status === 'pending' || task.status === 'planned';
-export const failedTasks: TaskFilter = (task) => task.status === 'failed';
-export const completedTasks: TaskFilter = (task) =>
-  task.status === 'approved' || task.status === 'merged';
 export const reviewTasks: TaskFilter = (task) => task.status === 'review';
 export const runningTasks: TaskFilter = (task) => task.status === 'running';
 export const stoppedTasks: TaskFilter = (task) => task.status === 'stopped';
@@ -41,7 +37,7 @@ export function short(id: string): string {
   return id.slice(0, 8);
 }
 
-export function formatTaskOption(task: Task): string {
+function formatTaskOption(task: Task): string {
   return `${statusIcon(task.status)} ${short(task.id)}  ${task.title} (${task.status})`;
 }
 
@@ -69,30 +65,6 @@ export async function pickTask(
     throw new Error(`task not found: ${selectedID}`);
   }
   return task;
-}
-
-export async function pickTasks(
-  store: TaskStore,
-  title: string,
-  filter: TaskFilter = allTasks,
-): Promise<Task[]> {
-  const tasks = (await store.list()).filter(filter);
-  if (tasks.length === 0) {
-    return [];
-  }
-
-  const selected = await multiselect<string>({
-    message: title,
-    options: tasks.map((task) => ({
-      value: task.id,
-      label: formatTaskOption(task),
-    })),
-  });
-
-  const selectedIDs = ensureNotCancelled<string[]>(selected);
-  return (await Promise.all(selectedIDs.map((id) => store.get(id)))).filter(
-    (task): task is Task => Boolean(task),
-  );
 }
 
 export async function confirm(

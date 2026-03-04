@@ -18,7 +18,7 @@ import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import type { Config, ProposedTask, Task, TaskEvaluation } from '../types';
-import { InteractionStatus, JOB_PRIORITIES, TaskStatus } from '../types';
+import { INTERACTION_STATUSES, JOB_PRIORITIES, TASK_STATUSES } from '../types';
 
 interface ToolModelOverrides {
   toolOverride?: string;
@@ -189,7 +189,7 @@ export async function acceptBreakdown(
       parentId: normalizedParentID || null,
     });
     createdIDs.push(created.id);
-    await deps.taskStore.updateStatus(created.id, TaskStatus.planned);
+    await deps.taskStore.updateStatus(created.id, TASK_STATUSES.planned);
     if (deps.queue) {
       await deps.queue.enqueue({
         type: 'evaluate',
@@ -212,7 +212,7 @@ export async function acceptBreakdown(
   if (normalizedParentID) {
     await deps.taskStore.updateStatus(
       normalizedParentID,
-      TaskStatus.broken_down,
+      TASK_STATUSES.broken_down,
     );
   }
 
@@ -234,7 +234,7 @@ export async function rejectBreakdown(
   if (!interaction) return;
 
   await deps.interactions.finish(normalizedInteractionID, {
-    status: InteractionStatus.completed,
+    status: INTERACTION_STATUSES.completed,
     qualityJson: JSON.stringify({ taskId: taskID, rejected: true }),
   });
 }
@@ -290,14 +290,14 @@ export async function approvePlan(
 ): Promise<Task> {
   const task = await getTask(taskID, deps.taskStore);
 
-  if (deps.requirePendingStatus && task.status !== TaskStatus.pending) {
+  if (deps.requirePendingStatus && task.status !== TASK_STATUSES.pending) {
     throw new Error(`task ${taskID} is ${task.status}; expected pending`);
   }
   if (!(task.plan ?? '').trim()) {
     throw new Error('task plan is empty');
   }
 
-  return await deps.taskStore.updateStatus(taskID, TaskStatus.planned);
+  return await deps.taskStore.updateStatus(taskID, TASK_STATUSES.planned);
 }
 
 export async function requestPlanChanges(

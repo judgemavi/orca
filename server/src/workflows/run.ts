@@ -1,7 +1,7 @@
 import type { Executor, RunOptions } from '../executor/executor';
 import type { TaskRunResult } from '../executor/task-runner';
 import type { TaskStore } from '../store/tasks';
-import { TaskStatus } from '../types';
+import { TASK_STATUSES } from '../types';
 
 export interface RunOpts {
   taskIds?: string[];
@@ -62,7 +62,7 @@ export async function resumeTask(
   if (!task) {
     throw new RunWorkflowError('task not found', 404);
   }
-  if (task.status !== TaskStatus.stopped) {
+  if (task.status !== TASK_STATUSES.stopped) {
     throw new RunWorkflowError(
       `task ${normalizedTaskID} is "${task.status}", not "stopped"`,
       400,
@@ -98,7 +98,7 @@ export async function stopTask(
   }
 
   try {
-    await taskStore.updateStatus(normalizedTaskID, TaskStatus.stopped);
+    await taskStore.updateStatus(normalizedTaskID, TASK_STATUSES.stopped);
   } catch (error) {
     const message = String(error);
     if (message.includes('not found')) {

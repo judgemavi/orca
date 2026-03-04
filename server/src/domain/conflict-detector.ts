@@ -85,7 +85,7 @@ export class ConflictDetector implements RuntimeMonitor {
   }
 }
 
-export function buildConflictGroups(
+function buildConflictGroups(
   fileOwners: Map<string, Set<string>>,
 ): ConflictDetectionResult[] {
   const grouped = new Map<string, ConflictDetectionResult>();

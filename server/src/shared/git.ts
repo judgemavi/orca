@@ -6,7 +6,7 @@ export interface GitRunResult {
   exitCode: number;
 }
 
-export const REF_LOCK_RETRY_BACKOFF_MS = [100, 200, 400];
+const REF_LOCK_RETRY_BACKOFF_MS = [100, 200, 400];
 
 export async function gitRun(
   cwd: string,
@@ -32,7 +32,7 @@ export async function gitRun(
   };
 }
 
-export function isRefLockError(stderr: string, code: number): boolean {
+function isRefLockError(stderr: string, code: number): boolean {
   return (
     code === 128 &&
     stderr.includes('Unable to create') &&

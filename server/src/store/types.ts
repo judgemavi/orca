@@ -1,10 +1,7 @@
 import type {
-  Config,
   Interaction,
   MemoryCategory,
-  MemoryEntry,
   MemorySourceType,
-  MemoryUsedByTask,
   TaskStatus,
 } from '../types';
 
@@ -23,26 +20,6 @@ export interface TaskUpdateFields {
   sessionId?: string | null;
 }
 
-export interface InteractionBeginInput {
-  taskId?: string | null;
-  phase: string;
-  tool: string;
-}
-
-export interface InteractionFinishFields {
-  status: string;
-  error?: string | null;
-  diff?: string | null;
-  exitCode?: number;
-  durationMs?: number;
-  qualityJson?: string | null;
-  inputTokens?: number;
-  outputTokens?: number;
-  estimatedCost?: number;
-  runId?: string | null;
-  model?: string | null;
-}
-
 export interface StoredInteraction extends Interaction {
   runId?: string | null;
   model?: string | null;
@@ -55,12 +32,6 @@ export interface ToolSummary {
   outputTokens: number;
   cost: number;
 }
-
-export interface ConfigRow {
-  key: string;
-  value: Config;
-}
-
 export interface MemoryHealthSummary {
   totalEntries: number;
   bySource: Record<MemorySourceType, number>;
@@ -101,24 +72,4 @@ export interface MemoryEntryInput {
   confidence?: number;
   provenanceHash: string;
   supersededBy?: string;
-}
-
-export interface MemorySearchResult {
-  entry: MemoryEntry;
-  usedByTasks: MemoryUsedByTask[];
-}
-
-export interface LogQueryFilter {
-  level?: string;
-  taskId?: string;
-  since?: Date;
-  pattern?: string;
-  limit?: number;
-}
-
-export interface LogEntry {
-  time: Date;
-  level: string;
-  msg: string;
-  attrs?: Record<string, unknown>;
 }

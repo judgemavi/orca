@@ -86,10 +86,6 @@ export interface ResultCoordinatorDeps {
 const BLOCKER_PATTERN =
   /(?:BLOCKED:|cannot complete|permission denied|operation not permitted|unable to write|read-only file system|no such file or directory|sandbox.{0,20}(?:block|prevent|restrict))/i;
 
-export function statusFromExitCode(exitCode: number): TaskStatus {
-  return exitCode === 0 ? 'review' : 'failed';
-}
-
 export function evaluateTaskOutcome(input: OutcomeInput): OutcomeResult {
   if (input.aborted) {
     return {
@@ -145,7 +141,7 @@ export function evaluateTaskOutcome(input: OutcomeInput): OutcomeResult {
   };
 }
 
-export function detectBlocker(output: string): string {
+function detectBlocker(output: string): string {
   const tail = output.length > 2_000 ? output.slice(-2_000) : output;
   const match = tail.match(BLOCKER_PATTERN);
   return match?.[0]?.trim() ?? '';

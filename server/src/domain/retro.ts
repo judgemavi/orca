@@ -6,7 +6,7 @@ import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import type { Config, MemoryCategory, MemoryEntry, Task } from '../types';
-import { Phase } from '../types';
+import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONArray, formatTemplate, resolvePhaseExecution } from './llm';
 
@@ -53,7 +53,7 @@ export async function runRetro(
   const execution = resolvePhaseExecution({
     config: deps.config,
     registry: deps.registry,
-    phase: Phase.retro,
+    phase: PHASES.retro,
     toolOverride: deps.toolOverride ?? '',
     modelOverride: deps.modelOverride ?? '',
   });
@@ -95,7 +95,7 @@ export async function runRetro(
       {
         taskId: taskID,
         taskRunId: `retro-${taskID.slice(0, 8)}`,
-        phase: Phase.retro,
+        phase: PHASES.retro,
         prompt,
         toolOverride: deps.toolOverride ?? '',
         modelOverride: deps.modelOverride ?? '',
@@ -172,9 +172,7 @@ function errorInteractionID(error: unknown): string | undefined {
   return normalized || undefined;
 }
 
-export function buildRetroSummary(
-  task: Pick<Task, 'title' | 'status'>,
-): RetroSummary {
+function buildRetroSummary(task: Pick<Task, 'title' | 'status'>): RetroSummary {
   return {
     highlights: [
       `Task ${task.title.trim() || 'untitled'} reached status ${task.status}.`,
@@ -200,12 +198,12 @@ async function collectRetroContext(
   const interactions = await deps.interactionStore.list(task.id);
 
   const planDiffs = interactions
-    .filter((i) => i.phase === Phase.plan && i.diff)
+    .filter((i) => i.phase === PHASES.plan && i.diff)
     .map((i) => i.diff!)
     .join('\n---\n');
 
   const runDiffs = interactions
-    .filter((i) => i.phase === Phase.run && i.diff)
+    .filter((i) => i.phase === PHASES.run && i.diff)
     .map((i) => i.diff!)
     .join('\n---\n');
 
@@ -218,14 +216,14 @@ async function collectRetroContext(
   const planReviewFeedback = reviews
     .filter(
       (r) =>
-        (r as any).phase === Phase.plan ||
+        (r as any).phase === PHASES.plan ||
         r.feedback?.toLowerCase().includes('plan'),
     )
     .map((r) => r.feedback?.trim())
     .filter(Boolean)
     .join('\n---\n');
 
-  const planInteractions = interactions.filter((i) => i.phase === Phase.plan);
+  const planInteractions = interactions.filter((i) => i.phase === PHASES.plan);
   const usedMemoryIDs: string[] = [];
   const usedProvenanceHashes: string[] = [];
   const usedMemoryContent: string[] = [];

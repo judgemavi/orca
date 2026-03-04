@@ -6,7 +6,7 @@ import { fallbackDriverRegistry, toolModels } from '../../driver/registry';
 import { gitRun as sharedGitRun } from '../../shared/git';
 import { ConfigStore } from '../../store/config';
 import type { Config } from '../../types';
-import { Phase } from '../../types';
+import { PHASES } from '../../types';
 import {
   confirm,
   ensureNotCancelled,
@@ -19,12 +19,12 @@ interface RunInitOptions {
 }
 
 const ORCHESTRATOR_PHASES = [
-  Phase.explore,
-  Phase.plan,
-  Phase.run,
-  Phase.review,
-  Phase.merge,
-  Phase.retro,
+  PHASES.explore,
+  PHASES.plan,
+  PHASES.run,
+  PHASES.review,
+  PHASES.merge,
+  PHASES.retro,
 ];
 
 export async function runInitCommand(

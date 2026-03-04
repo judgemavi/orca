@@ -10,8 +10,6 @@ export const PHASES = {
   retro: 'retro',
 } as const;
 
-export const Phase = PHASES;
-
 export type InteractionPhase = (typeof PHASES)[keyof typeof PHASES];
 
 export const INTERACTION_STATUSES = {
@@ -19,8 +17,6 @@ export const INTERACTION_STATUSES = {
   completed: 'completed',
   failed: 'failed',
 } as const;
-
-export const InteractionStatus = INTERACTION_STATUSES;
 
 export type InteractionStatus =
   (typeof INTERACTION_STATUSES)[keyof typeof INTERACTION_STATUSES];
@@ -37,16 +33,12 @@ export const TASK_STATUSES = {
   failed: 'failed',
 } as const;
 
-export const TaskStatus = TASK_STATUSES;
-
 export type TaskStatus = (typeof TASK_STATUSES)[keyof typeof TASK_STATUSES];
 
 export const REVIEW_STATUSES = {
   pending: 'pending',
   addressed: 'addressed',
 } as const;
-
-export const ReviewStatus = REVIEW_STATUSES;
 
 export type ReviewStatus =
   (typeof REVIEW_STATUSES)[keyof typeof REVIEW_STATUSES];
@@ -56,7 +48,7 @@ export const PHASE_LABELS: Record<string, string> = {
   [PHASES.evaluate]: 'Evaluation',
   [PHASES.breakdown]: 'Breakdown',
   [PHASES.run]: 'Run',
-  [PHASES.revise]: 'Run',
+  [PHASES.revise]: 'Revise',
   [PHASES.review]: 'Review',
   [PHASES.merge]: 'Merge',
   [PHASES.retro]: 'Retro',
@@ -381,7 +373,6 @@ export const JOB_STATUSES = {
   cancelled: 'cancelled',
 } as const;
 
-export const JobStatus = JOB_STATUSES;
 export type JobStatus = (typeof JOB_STATUSES)[keyof typeof JOB_STATUSES];
 
 export const JOB_TYPES = {
@@ -394,7 +385,6 @@ export const JOB_TYPES = {
   merge: 'merge',
 } as const;
 
-export const JobType = JOB_TYPES;
 export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
 
 export const JOB_PRIORITIES: Record<JobType, number> = {

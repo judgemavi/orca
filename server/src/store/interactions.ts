@@ -16,7 +16,7 @@ import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import { taskInteractions } from '../db/schema';
 import type { InteractionStatus, InteractionStub } from '../types';
-import { InteractionStatus as InteractionStatusValue, Phase } from '../types';
+import { INTERACTION_STATUSES, PHASES } from '../types';
 import type { StoredInteraction, ToolSummary } from './types';
 
 type InteractionRow = typeof taskInteractions.$inferSelect;
@@ -68,7 +68,7 @@ export class InteractionStore {
       attempt,
       tool,
       logPath,
-      status: InteractionStatusValue.running,
+      status: INTERACTION_STATUSES.running,
       startedAt: sql`(CURRENT_TIMESTAMP)`,
     });
 
@@ -154,9 +154,9 @@ export class InteractionStore {
     if (this.sink) {
       const interaction = await this.get(id);
       if (interaction) {
-        if (interaction.status === InteractionStatusValue.completed) {
+        if (interaction.status === INTERACTION_STATUSES.completed) {
           this.sink.broadcast('interaction.completed', interaction);
-        } else if (interaction.status === InteractionStatusValue.failed) {
+        } else if (interaction.status === INTERACTION_STATUSES.failed) {
           this.sink.broadcast('interaction.failed', interaction);
         } else {
           this.sink.broadcast('interaction.updated', interaction);
@@ -238,7 +238,7 @@ export class InteractionStore {
       .where(
         and(
           eq(taskInteractions.phase, normalizedPhase),
-          eq(taskInteractions.status, InteractionStatusValue.running),
+          eq(taskInteractions.status, INTERACTION_STATUSES.running),
           taskID?.trim() ? eq(taskInteractions.taskId, taskID) : undefined,
         ),
       )
@@ -405,7 +405,7 @@ export class InteractionStore {
       const rows = await this.db
         .select()
         .from(taskInteractions)
-        .where(eq(taskInteractions.status, InteractionStatusValue.running))
+        .where(eq(taskInteractions.status, INTERACTION_STATUSES.running))
         .orderBy(desc(taskInteractions.startedAt))
         .limit(limit);
       return rows.map((row) => this.mapInteraction(row));
@@ -416,7 +416,7 @@ export class InteractionStore {
       .from(taskInteractions)
       .where(
         or(
-          eq(taskInteractions.status, InteractionStatusValue.running),
+          eq(taskInteractions.status, INTERACTION_STATUSES.running),
           gte(taskInteractions.startedAt, sinceISO),
         ),
       )
@@ -429,7 +429,7 @@ export class InteractionStore {
     await this.db
       .update(taskInteractions)
       .set({
-        status: InteractionStatusValue.failed,
+        status: INTERACTION_STATUSES.failed,
         error: sql`case
           when coalesce(${taskInteractions.error}, '') = '' then ${'operation interrupted: server restarted'}
           else ${taskInteractions.error}
@@ -439,7 +439,7 @@ export class InteractionStore {
           else ${taskInteractions.finishedAt}
         end`,
       })
-      .where(eq(taskInteractions.status, InteractionStatusValue.running));
+      .where(eq(taskInteractions.status, INTERACTION_STATUSES.running));
   }
 
   async removeTaskLogs(taskID: string): Promise<void> {
@@ -453,7 +453,7 @@ export class InteractionStore {
     await this.db
       .update(taskInteractions)
       .set({
-        status: InteractionStatusValue.failed,
+        status: INTERACTION_STATUSES.failed,
         error: sql`case
           when coalesce(${taskInteractions.error}, '') = '' then ${'superseded by revise rerun'}
           else ${taskInteractions.error}
@@ -466,8 +466,8 @@ export class InteractionStore {
       .where(
         and(
           eq(taskInteractions.taskId, taskID),
-          eq(taskInteractions.phase, Phase.review),
-          ne(taskInteractions.status, InteractionStatusValue.failed),
+          eq(taskInteractions.phase, PHASES.review),
+          ne(taskInteractions.status, INTERACTION_STATUSES.failed),
         ),
       );
   }

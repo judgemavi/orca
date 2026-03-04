@@ -2,7 +2,7 @@ import type { DriverRegistry } from '../driver/registry';
 import { createPhaseRunner } from '../shared/phase-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { Config, ProposedTask } from '../types';
-import { Phase } from '../types';
+import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONArray } from './llm';
 
@@ -82,8 +82,8 @@ export async function runBreakdown(
     {
       taskId: input.taskID?.trim() || null,
       taskRunId: input.taskID?.trim() || 'breakdown',
-      phase: Phase.breakdown,
-      resolvePhase: Phase.plan,
+      phase: PHASES.breakdown,
+      resolvePhase: PHASES.plan,
       promptName: 'breakdown',
       promptArgs: [contextSection, input.goal.trim()],
       toolOverride: input.toolOverride ?? '',

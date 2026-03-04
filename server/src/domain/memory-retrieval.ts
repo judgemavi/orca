@@ -1,7 +1,7 @@
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import type { MemoryEntry } from '../types';
-import { TaskStatus } from '../types';
+import { TASK_STATUSES } from '../types';
 
 export interface RetrievalBudgets {
   summary: number;
@@ -150,10 +150,10 @@ export async function retrieveBudgetedMemory(
     .filter(
       (task) =>
         task.id !== (input.taskId ?? '') &&
-        (task.status === TaskStatus.planned ||
-          task.status === TaskStatus.running ||
-          task.status === TaskStatus.review ||
-          task.status === TaskStatus.approved),
+        (task.status === TASK_STATUSES.planned ||
+          task.status === TASK_STATUSES.running ||
+          task.status === TASK_STATUSES.review ||
+          task.status === TASK_STATUSES.approved),
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, budgets.siblings * 3);

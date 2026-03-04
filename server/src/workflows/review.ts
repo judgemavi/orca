@@ -6,7 +6,7 @@ import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
 import type { Task } from '../types';
-import { InteractionStatus, Phase, TaskStatus } from '../types';
+import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../types';
 
 export interface RequestChangesWorkflowDeps {
   taskStore: TaskStore;
@@ -54,7 +54,7 @@ export async function approveTask(
   deps: { taskStore: TaskStore },
 ): Promise<Task> {
   await getTaskInReview(taskID, deps.taskStore, 'task must be in review');
-  return await deps.taskStore.updateStatus(taskID, TaskStatus.approved);
+  return await deps.taskStore.updateStatus(taskID, TASK_STATUSES.approved);
 }
 
 export async function requestChanges(
@@ -101,11 +101,12 @@ export async function runAIReviewWorkflow(
 
   const runInteractions = await deps.interactions.listByPhase(
     taskID,
-    Phase.run,
+    PHASES.run,
   );
   const latest = runInteractions.find(
     (item) =>
-      item.status === InteractionStatus.completed && Boolean(item.diff?.trim()),
+      item.status === INTERACTION_STATUSES.completed &&
+      Boolean(item.diff?.trim()),
   );
   const diff = latest?.diff?.trim() ?? '';
   if (!diff) {
@@ -148,7 +149,7 @@ async function getTaskInReview(
 ): Promise<Task> {
   const task = await taskStore.get(taskID);
   if (!task) throw new Error(`task not found: ${taskID}`);
-  if (task.status !== TaskStatus.review) {
+  if (task.status !== TASK_STATUSES.review) {
     if (typeof message === 'string') {
       throw new Error(message);
     }

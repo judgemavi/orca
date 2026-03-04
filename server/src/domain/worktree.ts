@@ -2,10 +2,7 @@ import path from 'node:path';
 import { gitRun as sharedGitRun } from '../shared/git';
 import type { Task } from '../types';
 
-export function resolveWorktreeRoot(
-  repoDir: string,
-  configuredPath: string,
-): string {
+function resolveWorktreeRoot(repoDir: string, configuredPath: string): string {
   const trimmed = configuredPath.trim();
   if (!trimmed) {
     return `${repoDir}/.orca/worktrees`;
@@ -18,7 +15,7 @@ export function resolveWorktreeRoot(
   return trimTrailingSlash(`${repoDir}/${trimmed}`);
 }
 
-export function formatTaskDirName(taskID: string, title: string): string {
+function formatTaskDirName(taskID: string, title: string): string {
   const slug = slugify(title);
   if (!slug) {
     return `task-${taskID}`;
@@ -26,7 +23,7 @@ export function formatTaskDirName(taskID: string, title: string): string {
   return `task-${taskID}--${slug}`;
 }
 
-export function slugify(value: string): string {
+function slugify(value: string): string {
   const source = value.toLowerCase().trim();
   if (!source) return '';
 

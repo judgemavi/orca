@@ -22,24 +22,20 @@ import {
   tasks as tasksTable,
 } from '../db/schema';
 import type { Task, TaskReview, TaskStatus } from '../types';
-import {
-  ReviewStatus as ReviewStatusValue,
-  TaskStatus as TaskStatusValue,
-} from '../types';
+import { REVIEW_STATUSES, TASK_STATUSES } from '../types';
 import { detectCycle, topoSort } from './graph';
 import type { TaskCreateInput, TaskUpdateFields } from './types';
 
 const DELETABLE_STATUS = new Set<TaskStatus>([
-  TaskStatusValue.pending,
-  TaskStatusValue.planned,
-  TaskStatusValue.review,
-  TaskStatusValue.approved,
-  TaskStatusValue.failed,
-  TaskStatusValue.stopped,
+  TASK_STATUSES.pending,
+  TASK_STATUSES.planned,
+  TASK_STATUSES.review,
+  TASK_STATUSES.approved,
+  TASK_STATUSES.failed,
+  TASK_STATUSES.stopped,
 ]);
 
 type TaskRow = typeof tasksTable.$inferSelect;
-type TaskReviewRow = typeof taskReviewsTable.$inferSelect;
 
 export class TaskStore {
   constructor(
@@ -57,7 +53,7 @@ export class TaskStore {
       title,
       description: input.description ?? '',
       parentId: input.parentId ?? null,
-      status: TaskStatusValue.pending,
+      status: TASK_STATUSES.pending,
       createdAt: sql`(CURRENT_TIMESTAMP)`,
       updatedAt: sql`(CURRENT_TIMESTAMP)`,
     });
@@ -114,6 +110,8 @@ export class TaskStore {
         `ambiguous prefix ${JSON.stringify(normalized)} matches ${rows.length} tasks`,
       );
     }
+    if (!rows[0])
+      throw new Error(`no task matching prefix ${JSON.stringify(normalized)}`);
     return rows[0].id;
   }
 
@@ -244,7 +242,7 @@ export class TaskStore {
       .where(
         and(
           eq(depsAlias.taskId, tasksTable.id),
-          ne(depTaskAlias.status, TaskStatusValue.merged),
+          ne(depTaskAlias.status, TASK_STATUSES.merged),
         ),
       );
 
@@ -253,7 +251,7 @@ export class TaskStore {
       .from(tasksTable)
       .where(
         and(
-          eq(tasksTable.status, TaskStatusValue.planned),
+          eq(tasksTable.status, TASK_STATUSES.planned),
           notExists(blockingDeps),
         ),
       )
@@ -292,7 +290,7 @@ export class TaskStore {
       taskId: taskID,
       interactionId: interactionID.trim() || null,
       feedback,
-      status: ReviewStatusValue.pending,
+      status: REVIEW_STATUSES.pending,
     });
     return id;
   }
@@ -309,7 +307,7 @@ export class TaskStore {
       .where(
         and(
           eq(taskReviewsTable.taskId, taskID),
-          eq(taskReviewsTable.status, ReviewStatusValue.pending),
+          eq(taskReviewsTable.status, REVIEW_STATUSES.pending),
         ),
       )
       .orderBy(desc(taskReviewsTable.createdAt))
@@ -321,7 +319,7 @@ export class TaskStore {
     await this.db
       .update(taskReviewsTable)
       .set({
-        status: ReviewStatusValue.addressed,
+        status: REVIEW_STATUSES.addressed,
         addressedAt: sql`(CURRENT_TIMESTAMP)`,
       })
       .where(eq(taskReviewsTable.id, reviewID));

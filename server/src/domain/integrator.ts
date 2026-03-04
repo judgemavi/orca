@@ -9,7 +9,7 @@ import { streamToText } from '../shared/stream';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
 import type { Config } from '../types';
-import { TaskStatus } from '../types';
+import { TASK_STATUSES } from '../types';
 import {
   mergeWithConflictResolutionUnlocked,
   readConflictFiles,
@@ -24,7 +24,7 @@ export interface MergeValidationResult {
 
 export interface MergeResult {
   taskId: string;
-  status: typeof TaskStatus.merged | typeof TaskStatus.failed;
+  status: typeof TASK_STATUSES.merged | typeof TASK_STATUSES.failed;
   branch: string;
   worktreePath: string;
   rebaseAttempted: boolean;
@@ -40,7 +40,7 @@ export interface IntegratorDeps {
   taskStore: TaskStore;
 }
 
-export async function assertTaskMergeable(
+async function assertTaskMergeable(
   taskID: string,
   taskStore: TaskStore,
 ): Promise<void> {
@@ -48,8 +48,8 @@ export async function assertTaskMergeable(
   if (!task) throw new Error(`task ${taskID} not found`);
 
   if (
-    task.status !== TaskStatus.approved &&
-    task.status !== TaskStatus.review
+    task.status !== TASK_STATUSES.approved &&
+    task.status !== TASK_STATUSES.review
   ) {
     throw new Error(
       `task ${taskID} is ${task.status}; expected approved/review`,
@@ -61,34 +61,10 @@ export async function assertTaskMergeable(
     if (!dep) {
       throw new Error(`dependency task ${depID} not found`);
     }
-    if (dep.status !== TaskStatus.merged) {
+    if (dep.status !== TASK_STATUSES.merged) {
       throw new Error(`dependency ${depID} must be merged before ${taskID}`);
     }
   }
-}
-
-export async function mergeApprovedTasks(
-  taskStore: TaskStore,
-): Promise<{ merged: string[]; failed: string[] }> {
-  const approved = await taskStore.listByStatus(TaskStatus.approved);
-  const sorted = await taskStore.sortTasksTopologically(
-    approved.map((task) => task.id),
-  );
-
-  const merged: string[] = [];
-  const failed: string[] = [];
-
-  for (const taskID of sorted) {
-    try {
-      await assertTaskMergeable(taskID, taskStore);
-      await taskStore.updateStatus(taskID, TaskStatus.merged);
-      merged.push(taskID);
-    } catch {
-      failed.push(taskID);
-    }
-  }
-
-  return { merged, failed };
 }
 
 export async function mergeTaskWithGit(
@@ -101,7 +77,7 @@ export async function mergeTaskWithGit(
 export async function mergeApprovedTasksWithGit(
   deps: IntegratorDeps,
 ): Promise<{ merged: string[]; failed: string[]; results: MergeResult[] }> {
-  const approved = await deps.taskStore.listByStatus(TaskStatus.approved);
+  const approved = await deps.taskStore.listByStatus(TASK_STATUSES.approved);
   const sorted = await deps.taskStore.sortTasksTopologically(
     approved.map((task) => task.id),
   );
@@ -122,7 +98,7 @@ export async function mergeApprovedTasksWithGit(
     if (task.dependsOn.some((depID) => failedSet.has(depID))) {
       const skipped: MergeResult = {
         taskId: taskID,
-        status: TaskStatus.failed,
+        status: TASK_STATUSES.failed,
         branch: '',
         worktreePath: '',
         rebaseAttempted: false,
@@ -138,7 +114,7 @@ export async function mergeApprovedTasksWithGit(
 
     const result = await mergeTaskWithGit(taskID, deps);
     results.push(result);
-    if (result.status === TaskStatus.merged) merged.push(taskID);
+    if (result.status === TASK_STATUSES.merged) merged.push(taskID);
     else {
       failed.push(taskID);
       failedSet.add(taskID);
@@ -187,7 +163,7 @@ async function mergeTaskWithGitUnlocked(
     opts?: Partial<MergeResult>,
   ): MergeResult => ({
     taskId: taskID,
-    status: TaskStatus.failed,
+    status: TASK_STATUSES.failed,
     branch,
     worktreePath: worktreePath,
     rebaseAttempted: Boolean(opts?.rebaseAttempted),
@@ -286,7 +262,7 @@ async function mergeTaskWithGitUnlocked(
 
   return {
     taskId: taskID,
-    status: TaskStatus.merged,
+    status: TASK_STATUSES.merged,
     branch,
     worktreePath: worktreePath,
     rebaseAttempted: rebaseAttempted,

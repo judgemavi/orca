@@ -2,7 +2,7 @@ import type { DriverRegistry } from '../driver/registry';
 import { createPhaseRunner } from '../shared/phase-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { Config, Task, TaskEvaluation } from '../types';
-import { Phase } from '../types';
+import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { readExploreContext } from './explore';
 import { extractJSONObject } from './llm';
@@ -32,7 +32,7 @@ export async function evaluateTask(
     {
       taskId: task.id,
       taskRunId: `evaluate-${task.id.slice(0, 8)}`,
-      phase: Phase.evaluate,
+      phase: PHASES.evaluate,
       promptName: 'evaluate',
       promptArgs: [
         context.trim() || '(no codebase context available)',

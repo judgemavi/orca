@@ -75,7 +75,7 @@ export const ORCHESTRATOR_ALLOWED_TOOLS = [
   'WebFetch',
 ];
 
-export function buildSystemPrompt(basePrompt: string): string {
+function buildSystemPrompt(basePrompt: string): string {
   return basePrompt.trim();
 }
 

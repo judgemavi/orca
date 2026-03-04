@@ -7,7 +7,7 @@ import {
   gitRunWithRefLockRetry,
   isRefLockErrorResult,
 } from '../shared/git';
-import { InteractionStatus, Phase, TaskStatus } from '../types';
+import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../types';
 import { runTool } from '../worker/worker';
 import type {
   ConflictResolutionDeps,
@@ -54,7 +54,7 @@ export async function mergeWithConflictResolutionUnlocked(
 ): Promise<MergeResult> {
   const basicResult = await runtime.mergeTaskWithGitUnlocked(taskID, deps);
   if (
-    basicResult.status === TaskStatus.merged ||
+    basicResult.status === TASK_STATUSES.merged ||
     basicResult.conflicts.length === 0
   ) {
     return basicResult;
@@ -73,7 +73,7 @@ export async function mergeWithConflictResolutionUnlocked(
     opts?: Partial<MergeResult>,
   ): MergeResult => ({
     taskId: taskID,
-    status: TaskStatus.failed,
+    status: TASK_STATUSES.failed,
     branch,
     worktreePath: worktreePath,
     rebaseAttempted: true,
@@ -86,7 +86,7 @@ export async function mergeWithConflictResolutionUnlocked(
     return failed('no worktree found for conflict resolution');
   }
 
-  const toolName = resolveToolForPhase(deps.config, Phase.merge, '');
+  const toolName = resolveToolForPhase(deps.config, PHASES.merge, '');
   const driver = toolDefinition(deps.registry, toolName);
   if (!driver) {
     return failed(`merge tool not available: ${toolName}`);
@@ -94,14 +94,14 @@ export async function mergeWithConflictResolutionUnlocked(
   const model = resolveModelForPhase(
     deps.config,
     deps.registry,
-    Phase.merge,
+    PHASES.merge,
     toolName,
     '',
   );
 
   const interaction = await deps.interactionStore.begin({
     taskId: taskID,
-    phase: Phase.merge,
+    phase: PHASES.merge,
     tool: toolName,
   });
 
@@ -119,14 +119,14 @@ export async function mergeWithConflictResolutionUnlocked(
         await runtime.gitRun(worktreePath, ['rebase', '--abort'], true);
         if (isRefLockErrorResult(checkoutBase)) {
           await deps.interactionStore.finish(interaction.id, {
-            status: InteractionStatus.failed,
+            status: INTERACTION_STATUSES.failed,
             error: formatRefLockContentionError(checkoutBase.stderr),
             model,
           });
           return failed(formatRefLockContentionError(checkoutBase.stderr));
         }
         await deps.interactionStore.finish(interaction.id, {
-          status: InteractionStatus.failed,
+          status: INTERACTION_STATUSES.failed,
           error: 'checkout integration branch failed after rebase',
           model,
         });
@@ -143,14 +143,14 @@ export async function mergeWithConflictResolutionUnlocked(
         await runtime.gitRun(deps.repoDir, ['merge', '--abort'], true);
         if (isRefLockErrorResult(finalMerge)) {
           await deps.interactionStore.finish(interaction.id, {
-            status: InteractionStatus.failed,
+            status: INTERACTION_STATUSES.failed,
             error: formatRefLockContentionError(finalMerge.stderr),
             model,
           });
           return failed(formatRefLockContentionError(finalMerge.stderr));
         }
         await deps.interactionStore.finish(interaction.id, {
-          status: InteractionStatus.failed,
+          status: INTERACTION_STATUSES.failed,
           error: 'merge failed after clean rebase',
           model,
         });
@@ -164,7 +164,7 @@ export async function mergeWithConflictResolutionUnlocked(
       if (!validation.passed) {
         const rollbackError = await runtime.rollbackMergedCommit(deps.repoDir);
         await deps.interactionStore.finish(interaction.id, {
-          status: InteractionStatus.failed,
+          status: INTERACTION_STATUSES.failed,
           error: `validation failed${validation.command ? ` (${validation.command})` : ''}`,
           model,
         });
@@ -183,12 +183,12 @@ export async function mergeWithConflictResolutionUnlocked(
         taskID,
       );
       await deps.interactionStore.finish(interaction.id, {
-        status: InteractionStatus.completed,
+        status: INTERACTION_STATUSES.completed,
         model,
       });
       return {
         taskId: taskID,
-        status: TaskStatus.merged,
+        status: TASK_STATUSES.merged,
         branch,
         worktreePath: worktreePath,
         rebaseAttempted: true,
@@ -199,7 +199,7 @@ export async function mergeWithConflictResolutionUnlocked(
 
     if (isRefLockErrorResult(rebaseStart)) {
       await deps.interactionStore.finish(interaction.id, {
-        status: InteractionStatus.failed,
+        status: INTERACTION_STATUSES.failed,
         error: formatRefLockContentionError(rebaseStart.stderr),
         model,
       });
@@ -237,7 +237,7 @@ export async function mergeWithConflictResolutionUnlocked(
       if (isRefLockErrorResult(cont)) {
         await runtime.gitRun(worktreePath, ['rebase', '--abort'], true);
         await deps.interactionStore.finish(interaction.id, {
-          status: InteractionStatus.failed,
+          status: INTERACTION_STATUSES.failed,
           error: formatRefLockContentionError(cont.stderr),
           model,
         });
@@ -252,7 +252,7 @@ export async function mergeWithConflictResolutionUnlocked(
     if (stillConflicting.length > 0) {
       await runtime.gitRun(worktreePath, ['rebase', '--abort'], true);
       await deps.interactionStore.finish(interaction.id, {
-        status: InteractionStatus.failed,
+        status: INTERACTION_STATUSES.failed,
         error: `unresolved conflicts: ${stillConflicting.join(', ')}`,
         model,
       });
@@ -271,14 +271,14 @@ export async function mergeWithConflictResolutionUnlocked(
     if (checkoutBase.code !== 0) {
       if (isRefLockErrorResult(checkoutBase)) {
         await deps.interactionStore.finish(interaction.id, {
-          status: InteractionStatus.failed,
+          status: INTERACTION_STATUSES.failed,
           error: formatRefLockContentionError(checkoutBase.stderr),
           model,
         });
         return failed(formatRefLockContentionError(checkoutBase.stderr));
       }
       await deps.interactionStore.finish(interaction.id, {
-        status: InteractionStatus.failed,
+        status: INTERACTION_STATUSES.failed,
         error: 'checkout integration branch failed after conflict resolution',
         model,
       });
@@ -298,14 +298,14 @@ export async function mergeWithConflictResolutionUnlocked(
       await runtime.gitRun(deps.repoDir, ['merge', '--abort'], true);
       if (isRefLockErrorResult(finalMerge)) {
         await deps.interactionStore.finish(interaction.id, {
-          status: InteractionStatus.failed,
+          status: INTERACTION_STATUSES.failed,
           error: formatRefLockContentionError(finalMerge.stderr),
           model,
         });
         return failed(formatRefLockContentionError(finalMerge.stderr));
       }
       await deps.interactionStore.finish(interaction.id, {
-        status: InteractionStatus.failed,
+        status: INTERACTION_STATUSES.failed,
         error: 'merge failed after conflict resolution',
         model,
       });
@@ -319,7 +319,7 @@ export async function mergeWithConflictResolutionUnlocked(
     if (!validation.passed) {
       const rollbackError = await runtime.rollbackMergedCommit(deps.repoDir);
       await deps.interactionStore.finish(interaction.id, {
-        status: InteractionStatus.failed,
+        status: INTERACTION_STATUSES.failed,
         error: `validation failed${validation.command ? ` (${validation.command})` : ''}`,
         model,
       });
@@ -338,13 +338,13 @@ export async function mergeWithConflictResolutionUnlocked(
       taskID,
     );
     await deps.interactionStore.finish(interaction.id, {
-      status: InteractionStatus.completed,
+      status: INTERACTION_STATUSES.completed,
       model,
     });
 
     return {
       taskId: taskID,
-      status: TaskStatus.merged,
+      status: TASK_STATUSES.merged,
       branch,
       worktreePath: worktreePath,
       rebaseAttempted: true,
@@ -357,7 +357,7 @@ export async function mergeWithConflictResolutionUnlocked(
       .catch(() => {});
     const msg = error instanceof Error ? error.message : String(error);
     await deps.interactionStore.finish(interaction.id, {
-      status: InteractionStatus.failed,
+      status: INTERACTION_STATUSES.failed,
       error: msg,
       model,
     });

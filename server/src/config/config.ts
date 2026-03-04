@@ -2,15 +2,15 @@ import deepmerge from 'deepmerge';
 import type { DriverRegistry } from '../driver/registry';
 import { availableTools, toolModels } from '../driver/registry';
 import type { Config } from '../types';
-import { Phase } from '../types';
+import { PHASES } from '../types';
 
 const DEFAULT_PHASES = [
-  Phase.explore,
-  Phase.plan,
-  Phase.run,
-  Phase.review,
-  Phase.merge,
-  Phase.retro,
+  PHASES.explore,
+  PHASES.plan,
+  PHASES.run,
+  PHASES.review,
+  PHASES.merge,
+  PHASES.retro,
 ];
 
 export function defaultConfig(): Config {

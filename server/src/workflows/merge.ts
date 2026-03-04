@@ -13,7 +13,7 @@ import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
-import { TaskStatus } from '../types';
+import { TASK_STATUSES } from '../types';
 
 export interface MergeWorkflowDeps {
   repoDir: string;
@@ -51,12 +51,12 @@ export async function mergeTask(
       })
     : await mergeTaskWithGit(taskID, baseDeps);
 
-  if (result.status !== TaskStatus.merged) {
-    await deps.taskStore.updateStatus(taskID, TaskStatus.failed);
+  if (result.status !== TASK_STATUSES.merged) {
+    await deps.taskStore.updateStatus(taskID, TASK_STATUSES.failed);
     return result;
   }
 
-  await deps.taskStore.updateStatus(taskID, TaskStatus.merged);
+  await deps.taskStore.updateStatus(taskID, TASK_STATUSES.merged);
   triggerPostMergeHooks(taskID, {
     repoDir: deps.repoDir,
     taskStore: deps.taskStore,
@@ -82,7 +82,7 @@ export async function mergeAllApproved(
   });
 
   for (const id of result.merged) {
-    await deps.taskStore.updateStatus(id, TaskStatus.merged);
+    await deps.taskStore.updateStatus(id, TASK_STATUSES.merged);
     triggerPostMergeHooks(id, {
       repoDir: deps.repoDir,
       taskStore: deps.taskStore,
@@ -95,7 +95,7 @@ export async function mergeAllApproved(
   }
 
   for (const id of result.failed) {
-    await deps.taskStore.updateStatus(id, TaskStatus.failed);
+    await deps.taskStore.updateStatus(id, TASK_STATUSES.failed);
   }
 
   return result;

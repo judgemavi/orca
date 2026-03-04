@@ -1,7 +1,7 @@
 import type { JobQueue } from '../queue/queue';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
-import { InteractionStatus, Phase, TaskStatus } from '../types';
+import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../types';
 
 export interface RecoverySummary {
   interactionsFailed: number;
@@ -19,23 +19,23 @@ export async function failInFlightForShutdown(
   let tasksFailed = 0;
 
   const runningInteractions = await interactions.listByStatus(
-    InteractionStatus.running,
+    INTERACTION_STATUSES.running,
   );
   for (const item of runningInteractions) {
     await interactions.finish(item.id, {
-      status: InteractionStatus.failed,
+      status: INTERACTION_STATUSES.failed,
       error: 'shutdown signal received',
     });
     interactionsFailed += 1;
 
-    if (item.taskId?.trim() && item.phase === Phase.run) {
+    if (item.taskId?.trim() && item.phase === PHASES.run) {
       const task = await taskStore.get(item.taskId);
-      if (task && task.status === TaskStatus.running) {
+      if (task && task.status === TASK_STATUSES.running) {
         const next = task.sessionId?.trim()
-          ? TaskStatus.stopped
-          : TaskStatus.failed;
+          ? TASK_STATUSES.stopped
+          : TASK_STATUSES.failed;
         await taskStore.updateStatus(task.id, next);
-        if (next === TaskStatus.stopped) tasksStopped += 1;
+        if (next === TASK_STATUSES.stopped) tasksStopped += 1;
         else tasksFailed += 1;
       }
     }
@@ -47,13 +47,13 @@ export async function failInFlightForShutdown(
     });
   }
 
-  const runningTasks = await taskStore.listByStatus(TaskStatus.running);
+  const runningTasks = await taskStore.listByStatus(TASK_STATUSES.running);
   for (const task of runningTasks) {
     const next = task.sessionId?.trim()
-      ? TaskStatus.stopped
-      : TaskStatus.failed;
+      ? TASK_STATUSES.stopped
+      : TASK_STATUSES.failed;
     await taskStore.updateStatus(task.id, next);
-    if (next === TaskStatus.stopped) tasksStopped += 1;
+    if (next === TASK_STATUSES.stopped) tasksStopped += 1;
     else tasksFailed += 1;
     log('shutdown.recovery.task.reset', {
       taskId: task.id,
@@ -83,11 +83,11 @@ export async function runStartupRecovery(
   let tasksFailed = 0;
 
   const runningInteractions = await interactions.listByStatus(
-    InteractionStatus.running,
+    INTERACTION_STATUSES.running,
   );
   for (const item of runningInteractions) {
     await interactions.finish(item.id, {
-      status: InteractionStatus.failed,
+      status: INTERACTION_STATUSES.failed,
       error: item.error?.trim() || 'unclean shutdown',
     });
     interactionsFailed += 1;
@@ -105,19 +105,19 @@ export async function runStartupRecovery(
     }
   } else {
     // Without queue: fall back to resetting task statuses directly
-    const runningTasks = await taskStore.listByStatus(TaskStatus.running);
+    const runningTasks = await taskStore.listByStatus(TASK_STATUSES.running);
     for (const task of runningTasks) {
       const next = task.sessionId?.trim()
-        ? TaskStatus.stopped
-        : TaskStatus.failed;
+        ? TASK_STATUSES.stopped
+        : TASK_STATUSES.failed;
       await taskStore.updateStatus(task.id, next);
 
-      if (next === TaskStatus.stopped) tasksStopped += 1;
+      if (next === TASK_STATUSES.stopped) tasksStopped += 1;
       else tasksFailed += 1;
 
       log('startup.recovery.task.reset', {
         taskId: task.id,
-        fromStatus: TaskStatus.running,
+        fromStatus: TASK_STATUSES.running,
         toStatus: next,
         resumable: Boolean(task.sessionId?.trim()),
       });

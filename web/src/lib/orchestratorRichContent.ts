@@ -135,7 +135,7 @@ export function parsePlanSections(text: string): PlanSection[] {
     .map((heading, index) => {
       const nextHeadingStart =
         index + 1 < headings.length
-          ? headings[index + 1].headingStart
+          ? headings[index + 1]?.headingStart
           : source.length;
       const content = source
         .slice(heading.contentStart, nextHeadingStart)

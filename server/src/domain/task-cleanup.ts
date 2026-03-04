@@ -87,7 +87,7 @@ export async function cleanupTaskArtifacts(input: {
   return result;
 }
 
-export async function listTaskBranches(
+async function listTaskBranches(
   repoDir: string,
   taskID: string,
 ): Promise<string[]> {

@@ -32,12 +32,6 @@ export function asBoolean(value: string | undefined): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
-export function hashText(value: string): string {
-  const hasher = new Bun.CryptoHasher('sha256');
-  hasher.update(value);
-  return hasher.digest('hex');
-}
-
 export function randomID(prefix = ''): string {
   return prefix ? `${prefix}-${crypto.randomUUID()}` : crypto.randomUUID();
 }

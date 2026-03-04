@@ -2,7 +2,7 @@ import type { DriverRegistry } from '../driver/registry';
 import { createPhaseRunner } from '../shared/phase-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { AIReviewCheck, AIReviewFinding, Config } from '../types';
-import { Phase } from '../types';
+import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONObject } from './llm';
 
@@ -62,7 +62,7 @@ export async function runAIReview(
   } = await runPhase(
     {
       taskId: input.taskID,
-      phase: Phase.review,
+      phase: PHASES.review,
       promptName: 'review',
       promptArgs: [
         input.title.trim() || 'Untitled task',

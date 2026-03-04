@@ -7,7 +7,7 @@ import type {
   JobStatus as JobStatusType,
   JobType as JobTypeType,
 } from '../types';
-import { JOB_PRIORITIES, JobStatus } from '../types';
+import { JOB_PRIORITIES, JOB_STATUSES } from '../types';
 
 type JobRow = typeof jobsTable.$inferSelect;
 
@@ -64,7 +64,7 @@ export class JobQueue {
       id,
       type: opts.type,
       taskId: opts.taskId ?? null,
-      status: JobStatus.queued,
+      status: JOB_STATUSES.queued,
       priority,
       payload: opts.payload ? JSON.stringify(opts.payload) : null,
       createdAt: sql`(CURRENT_TIMESTAMP)`,
@@ -90,7 +90,7 @@ export class JobQueue {
       const runningRows = await tx
         .select({ count: count() })
         .from(jobsTable)
-        .where(eq(jobsTable.status, JobStatus.running));
+        .where(eq(jobsTable.status, JOB_STATUSES.running));
       const runningCount = runningRows[0]?.count ?? 0;
       const available = maxParallel - runningCount;
       if (available <= 0) return [];
@@ -98,7 +98,7 @@ export class JobQueue {
       const candidates = await tx
         .select()
         .from(jobsTable)
-        .where(eq(jobsTable.status, JobStatus.queued))
+        .where(eq(jobsTable.status, JOB_STATUSES.queued))
         .orderBy(asc(jobsTable.priority), asc(jobsTable.createdAt))
         .limit(available);
 
@@ -111,11 +111,11 @@ export class JobQueue {
       for (const jobId of ids) {
         await tx
           .update(jobsTable)
-          .set({ status: JobStatus.running, startedAt: now })
+          .set({ status: JOB_STATUSES.running, startedAt: now })
           .where(
             and(
               eq(jobsTable.id, jobId),
-              eq(jobsTable.status, JobStatus.queued),
+              eq(jobsTable.status, JOB_STATUSES.queued),
             ),
           );
         const rows = await tx
@@ -123,7 +123,7 @@ export class JobQueue {
           .from(jobsTable)
           .where(eq(jobsTable.id, jobId))
           .limit(1);
-        if (rows[0] && rows[0].status === JobStatus.running) {
+        if (rows[0] && rows[0].status === JOB_STATUSES.running) {
           updated.push(mapJob(rows[0]));
         }
       }
@@ -148,7 +148,7 @@ export class JobQueue {
     await this.db
       .update(jobsTable)
       .set({
-        status: JobStatus.completed,
+        status: JOB_STATUSES.completed,
         completedAt: now,
         result: result ? JSON.stringify(result) : null,
       })
@@ -169,7 +169,7 @@ export class JobQueue {
     await this.db
       .update(jobsTable)
       .set({
-        status: JobStatus.failed,
+        status: JOB_STATUSES.failed,
         completedAt: now,
         error,
       })
@@ -189,9 +189,9 @@ export class JobQueue {
   async cancel(jobId: string): Promise<boolean> {
     const result = await this.db
       .update(jobsTable)
-      .set({ status: JobStatus.cancelled })
+      .set({ status: JOB_STATUSES.cancelled })
       .where(
-        and(eq(jobsTable.id, jobId), eq(jobsTable.status, JobStatus.queued)),
+        and(eq(jobsTable.id, jobId), eq(jobsTable.status, JOB_STATUSES.queued)),
       )
       .returning({ id: jobsTable.id });
 
@@ -211,11 +211,11 @@ export class JobQueue {
   async cancelForTask(taskId: string): Promise<number> {
     const result = await this.db
       .update(jobsTable)
-      .set({ status: JobStatus.cancelled })
+      .set({ status: JOB_STATUSES.cancelled })
       .where(
         and(
           eq(jobsTable.taskId, taskId),
-          eq(jobsTable.status, JobStatus.queued),
+          eq(jobsTable.status, JOB_STATUSES.queued),
         ),
       )
       .returning({ id: jobsTable.id, type: jobsTable.type });
@@ -276,8 +276,8 @@ export class JobQueue {
   async drain(): Promise<number> {
     const result = await this.db
       .update(jobsTable)
-      .set({ status: JobStatus.cancelled })
-      .where(eq(jobsTable.status, JobStatus.queued))
+      .set({ status: JOB_STATUSES.cancelled })
+      .where(eq(jobsTable.status, JOB_STATUSES.queued))
       .returning({ id: jobsTable.id });
     return result.length;
   }
@@ -285,8 +285,8 @@ export class JobQueue {
   async requeueRunning(): Promise<number> {
     const result = await this.db
       .update(jobsTable)
-      .set({ status: JobStatus.queued, startedAt: null })
-      .where(eq(jobsTable.status, JobStatus.running))
+      .set({ status: JOB_STATUSES.queued, startedAt: null })
+      .where(eq(jobsTable.status, JOB_STATUSES.running))
       .returning({ id: jobsTable.id });
     return result.length;
   }
@@ -295,9 +295,9 @@ export class JobQueue {
     const cutoff = new Date(Date.now() - maxAge).toISOString();
 
     const terminal = or(
-      eq(jobsTable.status, JobStatus.completed),
-      eq(jobsTable.status, JobStatus.failed),
-      eq(jobsTable.status, JobStatus.cancelled),
+      eq(jobsTable.status, JOB_STATUSES.completed),
+      eq(jobsTable.status, JOB_STATUSES.failed),
+      eq(jobsTable.status, JOB_STATUSES.cancelled),
     );
 
     // Keep most recent maxKeep completed/failed/cancelled; delete older ones past cutoff
