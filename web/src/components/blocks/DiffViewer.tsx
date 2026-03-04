@@ -19,6 +19,15 @@ function parseDiff(raw: string): { oldValue: string; newValue: string } {
   const newLines: string[] = [];
   for (const line of raw.split('\n')) {
     if (
+      line.startsWith('diff --git') ||
+      line.startsWith('index ') ||
+      line.startsWith('new file mode') ||
+      line.startsWith('deleted file mode') ||
+      line.startsWith('old mode') ||
+      line.startsWith('new mode') ||
+      line.startsWith('similarity index') ||
+      line.startsWith('rename from') ||
+      line.startsWith('rename to') ||
       line.startsWith('---') ||
       line.startsWith('+++') ||
       line.startsWith('@@')
@@ -68,12 +77,15 @@ function splitDiffByFile(raw: string): Record<string, string> {
 }
 
 export function DiffViewer({ data, onAction }: Props) {
-  const filesChanged = data?.filesChanged ?? [];
   const actions = data?.actions ?? [];
   const diffByFile = useMemo(
     () => splitDiffByFile(data?.diff ?? ''),
     [data?.diff],
   );
+  const filesChanged = useMemo(() => {
+    const fromDiff = Object.keys(diffByFile);
+    return fromDiff.length > 0 ? fromDiff : (data?.filesChanged ?? []);
+  }, [diffByFile, data?.filesChanged]);
   const [activeFile, setActiveFile] = useState(filesChanged[0] ?? '');
 
   useEffect(() => {
