@@ -1,8 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
-import { useConfigQuery, useModelsQuery } from '../hooks/queries'
-import type { Config } from '../types'
+import { createFileRoute } from '@tanstack/react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../api';
+import { useConfigQuery, useModelsQuery } from '../hooks/queries';
+import type { Config } from '../types';
 
 type SectionId =
   | 'project'
@@ -11,88 +11,88 @@ type SectionId =
   | 'orchestrator'
   | 'monitor'
   | 'quality'
-  | 'logging'
+  | 'logging';
 
 type SectionCardProps = {
-  title: string
-  id: SectionId
-  saving?: boolean
-  error?: string | null
-  onSave: () => void
-  children: React.ReactNode
-}
+  title: string;
+  id: SectionId;
+  saving?: boolean;
+  error?: string | null;
+  onSave: () => void;
+  children: React.ReactNode;
+};
 
 type LabeledInputProps = {
-  label: string
-  value: string
-  onChange: (next: string) => void
-  type?: React.InputHTMLAttributes<HTMLInputElement>['type']
-}
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  type?: React.InputHTMLAttributes<HTMLInputElement>['type'];
+};
 
 type ToggleProps = {
-  label: string
-  checked: boolean
-  onChange: (next: boolean) => void
-}
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+};
 
 const inputClass =
-  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-accent'
+  'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-accent';
 
-const sectionClass = 'rounded-lg border'
+const sectionClass = 'rounded-lg border';
 
 function ConfigPage() {
-  const { data, isLoading } = useConfigQuery()
-  const { data: modelsByTool = {} } = useModelsQuery()
-  const [draft, setDraft] = useState<Config | null>(null)
-  const [saving, setSaving] = useState<Record<string, boolean>>({})
-  const [errors, setErrors] = useState<Record<string, string | null>>({})
+  const { data, isLoading } = useConfigQuery();
+  const { data: modelsByTool = {} } = useModelsQuery();
+  const [draft, setDraft] = useState<Config | null>(null);
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
-    if (data) setDraft(data)
-  }, [data])
+    if (data) setDraft(data);
+  }, [data]);
 
   const toolOptions = useMemo(() => {
-    const configuredTools = draft?.tools ?? []
-    const discoveredTools = Object.keys(modelsByTool)
+    const configuredTools = draft?.tools ?? [];
+    const discoveredTools = Object.keys(modelsByTool);
     return Array.from(new Set([...configuredTools, ...discoveredTools])).sort(
       (a, b) => a.localeCompare(b),
-    )
-  }, [draft, modelsByTool])
+    );
+  }, [draft, modelsByTool]);
 
   const updateSection = <K extends keyof Config>(
     section: K,
     value: Config[K],
   ) => {
-    setDraft((prev) => (prev ? { ...prev, [section]: value } : prev))
-  }
+    setDraft((prev) => (prev ? { ...prev, [section]: value } : prev));
+  };
 
   const savePatch = async (sectionId: SectionId, patch: Partial<Config>) => {
-    setSaving((prev) => ({ ...prev, [sectionId]: true }))
-    setErrors((prev) => ({ ...prev, [sectionId]: null }))
+    setSaving((prev) => ({ ...prev, [sectionId]: true }));
+    setErrors((prev) => ({ ...prev, [sectionId]: null }));
     try {
-      const updated = await api.updateConfig(patch)
-      setDraft(updated)
+      const updated = await api.updateConfig(patch);
+      setDraft(updated);
     } catch (err: any) {
       setErrors((prev) => ({
         ...prev,
         [sectionId]: err?.message ?? 'Save failed',
-      }))
+      }));
     } finally {
-      setSaving((prev) => ({ ...prev, [sectionId]: false }))
+      setSaving((prev) => ({ ...prev, [sectionId]: false }));
     }
-  }
+  };
 
   if (isLoading || !draft) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
       </div>
-    )
+    );
   }
 
   const supervisorModels = draft.orchestrator.supervisorTool
     ? (modelsByTool[draft.orchestrator.supervisorTool] ?? [])
-    : []
+    : [];
 
   return (
     <div className="flex flex-1 overflow-auto">
@@ -144,7 +144,7 @@ function ConfigPage() {
             Enabled tools
             <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
               {toolOptions.map((tool) => {
-                const checked = draft.tools.includes(tool)
+                const checked = draft.tools.includes(tool);
                 return (
                   <label
                     key={tool}
@@ -156,13 +156,13 @@ function ConfigPage() {
                       onChange={(e) => {
                         const nextTools = e.target.checked
                           ? [...draft.tools, tool]
-                          : draft.tools.filter((item) => item !== tool)
-                        updateSection('tools', Array.from(new Set(nextTools)))
+                          : draft.tools.filter((item) => item !== tool);
+                        updateSection('tools', Array.from(new Set(nextTools)));
                       }}
                     />
                     {tool}
                   </label>
-                )
+                );
               })}
             </div>
           </label>
@@ -247,7 +247,7 @@ function ConfigPage() {
               ([phase, override]) => {
                 const phaseModels = override.tool
                   ? (modelsByTool[override.tool] ?? [])
-                  : []
+                  : [];
                 return (
                   <div
                     key={phase}
@@ -295,7 +295,7 @@ function ConfigPage() {
                       ))}
                     </select>
                   </div>
-                )
+                );
               },
             )}
           </div>
@@ -315,7 +315,8 @@ function ConfigPage() {
               onChange={(value) =>
                 updateSection('monitor', {
                   ...draft.monitor,
-                  stuckCheckInterval: value as typeof draft.monitor.stuckCheckInterval,
+                  stuckCheckInterval:
+                    value as typeof draft.monitor.stuckCheckInterval,
                 })
               }
             />
@@ -336,7 +337,8 @@ function ConfigPage() {
               onChange={(value) =>
                 updateSection('monitor', {
                   ...draft.monitor,
-                  conflictCheckInterval: value as typeof draft.monitor.conflictCheckInterval,
+                  conflictCheckInterval:
+                    value as typeof draft.monitor.conflictCheckInterval,
                 })
               }
             />
@@ -424,7 +426,7 @@ function ConfigPage() {
         </SectionCard>
       </div>
     </div>
-  )
+  );
 }
 
 function SectionCard({
@@ -456,7 +458,7 @@ function SectionCard({
         </div>
       </div>
     </details>
-  )
+  );
 }
 
 function LabeledInput({
@@ -475,7 +477,7 @@ function LabeledInput({
         onChange={(e) => onChange(e.target.value)}
       />
     </label>
-  )
+  );
 }
 
 function Toggle({ label, checked, onChange }: ToggleProps) {
@@ -488,9 +490,9 @@ function Toggle({ label, checked, onChange }: ToggleProps) {
       />
       {label}
     </label>
-  )
+  );
 }
 
 export const Route = createFileRoute('/config')({
   component: ConfigPage,
-})
+});

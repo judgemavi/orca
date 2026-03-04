@@ -5,6 +5,7 @@
     "": {
       "name": "orca-monorepo",
       "devDependencies": {
+        "@biomejs/biome": "^2.4.5",
         "knip": "^5.85.0",
       },
     },
@@ -60,7 +61,6 @@
         "sonner": "^2.0.7",
       },
       "devDependencies": {
-        "@biomejs/biome": "^2.4.5",
         "@tailwindcss/typography": "^0.5.19",
         "@tailwindcss/vite": "^4.2.1",
         "@tanstack/router-plugin": "^1.164.0",

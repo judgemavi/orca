@@ -1,21 +1,21 @@
-import { useForm } from '@tanstack/react-form'
+import { useForm } from '@tanstack/react-form';
 
 interface TaskFormValues {
-  title: string
-  description: string
+  title: string;
+  description: string;
 }
 
 const taskFormDefaults: TaskFormValues = {
   title: '',
   description: '',
-}
+};
 
 function validate(values: TaskFormValues) {
-  const errors: Partial<Record<keyof TaskFormValues, string>> = {}
+  const errors: Partial<Record<keyof TaskFormValues, string>> = {};
   if (values.title.trim().length < 1) {
-    errors.title = 'Title is required'
+    errors.title = 'Title is required';
   }
-  return Object.keys(errors).length > 0 ? errors : undefined
+  return Object.keys(errors).length > 0 ? errors : undefined;
 }
 
 export function useTaskForm(
@@ -29,7 +29,7 @@ export function useTaskForm(
       onSubmit: ({ value }) => validate(value),
     },
     onSubmit: async ({ value }) => {
-      await onSubmitValue?.(value)
+      await onSubmitValue?.(value);
     },
-  })
+  });
 }

@@ -1,28 +1,28 @@
 interface ReviewResultCheck {
-  key: string
-  label: string
-  passed: boolean
+  key: string;
+  label: string;
+  passed: boolean;
 }
 
 interface ReviewResultFinding {
-  id: string
-  summary: string
-  detail: string
-  passed: boolean
-  filePath?: string
-  line?: number
+  id: string;
+  summary: string;
+  detail: string;
+  passed: boolean;
+  filePath?: string;
+  line?: number;
 }
 
 interface ReviewResultCardProps {
-  approved: boolean
-  feedback: string
-  taskId?: string
-  tool?: string
-  checks?: ReviewResultCheck[]
-  findings?: ReviewResultFinding[]
-  prompt?: string
-  cost?: string
-  dismissed?: boolean
+  approved: boolean;
+  feedback: string;
+  taskId?: string;
+  tool?: string;
+  checks?: ReviewResultCheck[];
+  findings?: ReviewResultFinding[];
+  prompt?: string;
+  cost?: string;
+  dismissed?: boolean;
 }
 
 export function ReviewResultCard({
@@ -36,7 +36,7 @@ export function ReviewResultCard({
   cost,
   dismissed = false,
 }: ReviewResultCardProps) {
-  const isDismissed = dismissed && !approved
+  const isDismissed = dismissed && !approved;
 
   return (
     <div
@@ -79,7 +79,9 @@ export function ReviewResultCard({
               className="flex items-center justify-between rounded border border-border-subtle bg-surface-alt/40 px-2 py-1 text-xs"
             >
               <span>{check.label}</span>
-              <span className={check.passed ? 'text-emerald-700' : 'text-rose-700'}>
+              <span
+                className={check.passed ? 'text-emerald-700' : 'text-rose-700'}
+              >
                 {check.passed ? 'pass' : 'fail'}
               </span>
             </div>
@@ -121,10 +123,14 @@ export function ReviewResultCard({
       ) : null}
 
       {prompt ? (
-        <div className="mb-2 rounded bg-surface px-2 py-1.5 text-[11px] italic">{prompt}</div>
+        <div className="mb-2 rounded bg-surface px-2 py-1.5 text-[11px] italic">
+          {prompt}
+        </div>
       ) : null}
 
-      <div className="whitespace-pre-wrap text-xs">{feedback || 'No review feedback.'}</div>
+      <div className="whitespace-pre-wrap text-xs">
+        {feedback || 'No review feedback.'}
+      </div>
     </div>
-  )
+  );
 }

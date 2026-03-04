@@ -1,5 +1,5 @@
-import * as Dialog from '@radix-ui/react-dialog'
-import { X } from 'lucide-react'
+import * as Dialog from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
 
 export function DialogChrome({ title }: { title: string }) {
   return (
@@ -14,5 +14,5 @@ export function DialogChrome({ title }: { title: string }) {
         <X size={12} />
       </Dialog.Close>
     </div>
-  )
+  );
 }

@@ -1,29 +1,29 @@
-import type { Command } from 'commander'
-import type { ConfigStore } from '../../store/config'
-import type { InteractionStore } from '../../store/interactions'
-import type { MemoryStore } from '../../store/memory'
-import type { TaskStore } from '../../store/tasks'
-import { mergeAllApproved, mergeTask } from '../../workflows/merge'
-import { printJSON } from '../format'
-import { confirm, pickFromList } from '../helpers'
+import type { Command } from 'commander';
+import type { ConfigStore } from '../../store/config';
+import type { InteractionStore } from '../../store/interactions';
+import type { MemoryStore } from '../../store/memory';
+import type { TaskStore } from '../../store/tasks';
+import { mergeAllApproved, mergeTask } from '../../workflows/merge';
+import { printJSON } from '../format';
+import { confirm, pickFromList } from '../helpers';
 
 export function registerMergeCommands(
   program: Command,
   deps: {
-    repoDir: string
-    taskStore: TaskStore
-    configStore: ConfigStore
-    interactionStore: InteractionStore
-    memoryStore: MemoryStore
+    repoDir: string;
+    taskStore: TaskStore;
+    configStore: ConfigStore;
+    interactionStore: InteractionStore;
+    memoryStore: MemoryStore;
   },
 ) {
-  const merge = program.command('merge').description('Merge task(s)')
+  const merge = program.command('merge').description('Merge task(s)');
 
   merge
     .argument('[taskId]', 'specific task id')
     .option('--all', 'merge all approved tasks')
     .action(async (taskID: string | undefined, opts: { all?: boolean }) => {
-      const explicit = (taskID ?? '').trim()
+      const explicit = (taskID ?? '').trim();
       if (explicit) {
         const result = await mergeTask(explicit, {
           repoDir: deps.repoDir,
@@ -31,9 +31,9 @@ export function registerMergeCommands(
           configStore: deps.configStore,
           interactions: deps.interactionStore,
           memoryStore: deps.memoryStore,
-        })
-        printJSON(result)
-        return
+        });
+        printJSON(result);
+        return;
       }
 
       if (!canPrompt() || opts.all) {
@@ -43,14 +43,14 @@ export function registerMergeCommands(
           configStore: deps.configStore,
           interactions: deps.interactionStore,
           memoryStore: deps.memoryStore,
-        })
-        printJSON(result)
-        return
+        });
+        printJSON(result);
+        return;
       }
 
-      const approved = await deps.taskStore.listByStatus('approved')
+      const approved = await deps.taskStore.listByStatus('approved');
       if (approved.length === 0) {
-        throw new Error('no approved tasks to merge')
+        throw new Error('no approved tasks to merge');
       }
 
       const choice = await pickFromList(
@@ -63,13 +63,16 @@ export function registerMergeCommands(
           })),
         ],
         '__all__',
-      )
+      );
 
       if (choice === '__all__') {
-        const ok = await confirm(`Merge all ${approved.length} approved tasks?`, true)
+        const ok = await confirm(
+          `Merge all ${approved.length} approved tasks?`,
+          true,
+        );
         if (!ok) {
-          printJSON({ merged: [], failed: [], cancelled: true })
-          return
+          printJSON({ merged: [], failed: [], cancelled: true });
+          return;
         }
         const result = await mergeAllApproved({
           repoDir: deps.repoDir,
@@ -77,9 +80,9 @@ export function registerMergeCommands(
           configStore: deps.configStore,
           interactions: deps.interactionStore,
           memoryStore: deps.memoryStore,
-        })
-        printJSON(result)
-        return
+        });
+        printJSON(result);
+        return;
       }
 
       const result = await mergeTask(choice, {
@@ -88,11 +91,11 @@ export function registerMergeCommands(
         configStore: deps.configStore,
         interactions: deps.interactionStore,
         memoryStore: deps.memoryStore,
-      })
-      printJSON(result)
-    })
+      });
+      printJSON(result);
+    });
 }
 
 function canPrompt(): boolean {
-  return Boolean(process.stdin.isTTY) && !Bun.argv.includes('--json')
+  return Boolean(process.stdin.isTTY) && !Bun.argv.includes('--json');
 }

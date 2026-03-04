@@ -1,78 +1,87 @@
-import { useCallback, useEffect, useState } from 'react'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { Outlet, Link, createRootRoute } from '@tanstack/react-router'
-import { Brain, ClipboardList, Moon, Settings, Sun, Terminal } from 'lucide-react'
-import { Toaster } from 'sonner'
-import { handleWSEvent } from '../lib/wsQueryBridge'
-import { useWebSocket } from '../hooks/useWebSocket'
-import { isKnownWSEvent } from '../types'
-import { api } from '../api'
-import { queryClient } from '../lib/queryClient'
-import { OrchestratorSidebar } from '../components/OrchestratorSidebar'
-import { Button } from '../components/Button'
+import { QueryClientProvider } from '@tanstack/react-query';
+import { createRootRoute, Link, Outlet } from '@tanstack/react-router';
+import {
+  Brain,
+  ClipboardList,
+  Moon,
+  Settings,
+  Sun,
+  Terminal,
+} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Toaster } from 'sonner';
+import { api } from '../api';
+import { Button } from '../components/Button';
+import { OrchestratorSidebar } from '../components/OrchestratorSidebar';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { queryClient } from '../lib/queryClient';
+import { handleWSEvent } from '../lib/wsQueryBridge';
+import { isKnownWSEvent } from '../types';
 
 const RootLayout = () => {
-  const [orchestratorId, setOrchestratorId] = useState<string>()
+  const [orchestratorId, setOrchestratorId] = useState<string>();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
-    const saved = localStorage.getItem('orchestrator.sidebar.open')
-    return saved === 'true'
-  })
+    const saved = localStorage.getItem('orchestrator.sidebar.open');
+    return saved === 'true';
+  });
   const [themePreference, setThemePreference] = useState<'light' | 'dark'>(
     () => {
-      const saved = localStorage.getItem('theme')
-      if (saved === 'light' || saved === 'dark') return saved
+      const saved = localStorage.getItem('theme');
+      if (saved === 'light' || saved === 'dark') return saved;
       return window.matchMedia('(prefers-color-scheme: dark)').matches
         ? 'dark'
-        : 'light'
+        : 'light';
     },
-  )
+  );
 
   useEffect(() => {
-    api.listSessions().then((res) => {
-      const orch = (res ?? []).find((s) => s.type === 'orchestrator')
-      if (orch) setOrchestratorId(orch.id)
-    })
-  }, [])
+    api
+      .getOrchestratorStatus()
+      .then((res) => {
+        if (res?.active && res.sessionId) setOrchestratorId(res.sessionId);
+      })
+      .catch(() => {});
+  }, []);
 
-  const ThemeIcon = themePreference === 'light' ? Sun : Moon
-
-  useEffect(() => {
-    const root = document.documentElement
-    localStorage.setItem('theme', themePreference)
-    root.classList.remove(themePreference === 'light' ? 'dark' : 'light')
-    root.classList.add(themePreference)
-  }, [themePreference])
+  const ThemeIcon = themePreference === 'light' ? Sun : Moon;
 
   useEffect(() => {
-    localStorage.setItem('orchestrator.sidebar.open', String(sidebarOpen))
-  }, [sidebarOpen])
+    const root = document.documentElement;
+    localStorage.setItem('theme', themePreference);
+    root.classList.remove(themePreference === 'light' ? 'dark' : 'light');
+    root.classList.add(themePreference);
+  }, [themePreference]);
+
+  useEffect(() => {
+    localStorage.setItem('orchestrator.sidebar.open', String(sidebarOpen));
+  }, [sidebarOpen]);
 
   useWebSocket(
     useCallback((event: Parameters<typeof handleWSEvent>[1]) => {
-      handleWSEvent(queryClient, event)
-      if (!isKnownWSEvent(event)) return
+      handleWSEvent(queryClient, event);
+      if (!isKnownWSEvent(event)) return;
 
       if (
         event.type === 'session.created' &&
         event.data.type === 'orchestrator'
       ) {
-        setOrchestratorId(event.data.id)
+        setOrchestratorId(event.data.id);
       }
       if (
         event.type === 'session.exited' &&
         event.data.type === 'orchestrator'
       ) {
-        setOrchestratorId(undefined)
+        setOrchestratorId(undefined);
       }
     }, []),
-  )
+  );
 
   const cycleTheme = () => {
     setThemePreference((current) => {
-      const next = current === 'light' ? 'dark' : 'light'
-      return next
-    })
-  }
+      const next = current === 'light' ? 'dark' : 'light';
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -106,7 +115,9 @@ const RootLayout = () => {
             <Button
               size="icon"
               aria-label={
-                sidebarOpen ? 'Close Orchestrator Sidebar' : 'Open Orchestrator Sidebar'
+                sidebarOpen
+                  ? 'Close Orchestrator Sidebar'
+                  : 'Open Orchestrator Sidebar'
               }
               onClick={() => setSidebarOpen((current) => !current)}
             >
@@ -130,8 +141,8 @@ const RootLayout = () => {
       </div>
       <Toaster theme={themePreference} position="bottom-center" richColors />
     </div>
-  )
-}
+  );
+};
 
 export const Route = createRootRoute({
   component: () => (
@@ -139,4 +150,4 @@ export const Route = createRootRoute({
       <RootLayout />
     </QueryClientProvider>
   ),
-})
+});

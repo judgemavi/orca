@@ -1,18 +1,18 @@
-import type { Interaction, InteractionStub, TaskReview } from '../../../types'
 import {
   INTERACTION_STATUSES,
+  isRunLike,
   PHASES,
   REVIEW_STATUSES,
-  isRunLike,
-} from '@orca/types'
-import { AIReviewResultCard } from './AIReviewResultCard'
+} from '@orca/types';
+import type { Interaction, InteractionStub, TaskReview } from '../../../types';
+import { AIReviewResultCard } from './AIReviewResultCard';
 
 type Props = {
-  interaction: Interaction
-  runReviewInteractions: InteractionStub[]
-  runReviews: TaskReview[]
-  latestCompletedRunStartedAt?: string
-}
+  interaction: Interaction;
+  runReviewInteractions: InteractionStub[];
+  runReviews: TaskReview[];
+  latestCompletedRunStartedAt?: string;
+};
 
 export function ReviewPhaseSection({
   interaction,
@@ -20,25 +20,25 @@ export function ReviewPhaseSection({
   runReviews,
   latestCompletedRunStartedAt,
 }: Props) {
-  const showRunReviews = isRunLike(interaction.phase)
-  const showReviewInteraction = interaction.phase === PHASES.review
+  const showRunReviews = isRunLike(interaction.phase);
+  const showReviewInteraction = interaction.phase === PHASES.review;
   const latestCompletedRunStartedAtMS = latestCompletedRunStartedAt
     ? Date.parse(latestCompletedRunStartedAt)
-    : NaN
-  const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS)
+    : NaN;
+  const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS);
   const visibleRunReviewInteractions = hasReviewCutoff
     ? runReviewInteractions.filter(
         (item) => Date.parse(item.startedAt) > latestCompletedRunStartedAtMS,
       )
-    : runReviewInteractions
+    : runReviewInteractions;
   const visibleRunReviews = hasReviewCutoff
     ? runReviews.filter(
         (review) =>
           Date.parse(review.createdAt) > latestCompletedRunStartedAtMS,
       )
-    : runReviews
+    : runReviews;
 
-  if (!showRunReviews && !showReviewInteraction) return null
+  if (!showRunReviews && !showReviewInteraction) return null;
 
   return (
     <>
@@ -94,19 +94,21 @@ export function ReviewPhaseSection({
         )}
 
       {showReviewInteraction && (
-        <AIReviewResultCard stub={{
-          id: interaction.id,
-          taskId: interaction.taskId,
-          phase: interaction.phase,
-          attempt: interaction.attempt,
-          tool: interaction.tool,
-          status: interaction.status,
-          durationMs: interaction.durationMs,
-          estimatedCost: interaction.estimatedCost,
-          startedAt: interaction.startedAt,
-          finishedAt: interaction.finishedAt,
-        }} />
+        <AIReviewResultCard
+          stub={{
+            id: interaction.id,
+            taskId: interaction.taskId,
+            phase: interaction.phase,
+            attempt: interaction.attempt,
+            tool: interaction.tool,
+            status: interaction.status,
+            durationMs: interaction.durationMs,
+            estimatedCost: interaction.estimatedCost,
+            startedAt: interaction.startedAt,
+            finishedAt: interaction.finishedAt,
+          }}
+        />
       )}
     </>
-  )
+  );
 }

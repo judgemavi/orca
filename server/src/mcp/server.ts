@@ -1,48 +1,48 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js'
-import type { DriverRegistry } from '../driver/registry'
-import type { Executor } from '../executor/executor'
-import type { EventSink } from '../api/ws'
-import type { ConfigStore } from '../store/config'
-import type { InteractionStore } from '../store/interactions'
-import type { MemoryStore } from '../store/memory'
-import type { TaskStore } from '../store/tasks'
-import type { JobQueue } from '../queue/queue'
-import { errorResult, jsonResult } from './helpers'
-import { adminTools } from './tools/admin'
-import { exploreTools } from './tools/explore'
-import { interactionTools } from './tools/interactions'
-import { memoryTools } from './tools/memory'
-import { mergeTools } from './tools/merge'
-import { planningTools } from './tools/planning'
-import { queueTools } from './tools/queue'
-import { reviewTools } from './tools/review'
-import { statusTools } from './tools/status'
-import { taskTools } from './tools/tasks'
-import { worktreeTools } from './tools/worktree'
-import type { Tool } from './types'
+} from '@modelcontextprotocol/sdk/types.js';
+import type { EventSink } from '../api/ws';
+import type { DriverRegistry } from '../driver/registry';
+import type { Executor } from '../executor/executor';
+import type { JobQueue } from '../queue/queue';
+import type { ConfigStore } from '../store/config';
+import type { InteractionStore } from '../store/interactions';
+import type { MemoryStore } from '../store/memory';
+import type { TaskStore } from '../store/tasks';
+import { errorResult, jsonResult } from './helpers';
+import { adminTools } from './tools/admin';
+import { exploreTools } from './tools/explore';
+import { interactionTools } from './tools/interactions';
+import { memoryTools } from './tools/memory';
+import { mergeTools } from './tools/merge';
+import { planningTools } from './tools/planning';
+import { queueTools } from './tools/queue';
+import { reviewTools } from './tools/review';
+import { statusTools } from './tools/status';
+import { taskTools } from './tools/tasks';
+import { worktreeTools } from './tools/worktree';
+import type { Tool } from './types';
 
 export interface MCPDeps {
-  repoDir: string
-  configStore: ConfigStore
-  registry: DriverRegistry
-  taskStore: TaskStore
-  interactionStore: InteractionStore
-  memoryStore: MemoryStore
-  executor: Executor
-  eventSink?: EventSink
-  queue?: JobQueue
+  repoDir: string;
+  configStore: ConfigStore;
+  registry: DriverRegistry;
+  taskStore: TaskStore;
+  interactionStore: InteractionStore;
+  memoryStore: MemoryStore;
+  executor: Executor;
+  eventSink?: EventSink;
+  queue?: JobQueue;
 }
 
 export async function startMCPServer(deps: MCPDeps): Promise<void> {
   const server = new Server(
     { name: 'orca', version: '0.1.0' },
     { capabilities: { tools: {} } },
-  )
+  );
 
   const tools: Tool[] = [
     ...adminTools({
@@ -77,7 +77,7 @@ export async function startMCPServer(deps: MCPDeps): Promise<void> {
       executor: deps.executor,
       interactions: deps.interactionStore,
     }),
-...mergeTools({
+    ...mergeTools({
       repoDir: deps.repoDir,
       taskStore: deps.taskStore,
       configStore: deps.configStore,
@@ -101,11 +101,11 @@ export async function startMCPServer(deps: MCPDeps): Promise<void> {
       memory: deps.memoryStore,
     }),
     ...(deps.queue ? queueTools({ queue: deps.queue }) : []),
-  ]
+  ];
 
-  const byName = new Map<string, Tool>()
+  const byName = new Map<string, Tool>();
   for (const tool of tools) {
-    byName.set(tool.name, tool)
+    byName.set(tool.name, tool);
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -114,30 +114,30 @@ export async function startMCPServer(deps: MCPDeps): Promise<void> {
       description: tool.description,
       inputSchema: tool.inputSchema,
     })),
-  }))
+  }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const name = String(request?.params?.name ?? '')
-    const input = request?.params?.arguments ?? {}
-    const tool = byName.get(name)
+    const name = String(request?.params?.name ?? '');
+    const input = request?.params?.arguments ?? {};
+    const tool = byName.get(name);
     if (!tool) {
-      return errorResult(`unknown tool: ${name}`)
+      return errorResult(`unknown tool: ${name}`);
     }
 
     try {
-      const result = await tool.handler(input)
-      return jsonResult(result)
+      const result = await tool.handler(input);
+      return jsonResult(result);
     } catch (error) {
-      return errorResult(error)
+      return errorResult(error);
     }
-  })
+  });
 
-  const transport = new StdioServerTransport()
-  await server.connect(transport)
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 
   // Keep alive until the MCP client disconnects — prevents the caller
   // from returning (and closing the database) while requests are in flight.
   await new Promise<void>((resolve) => {
-    server.onclose = () => resolve()
-  })
+    server.onclose = () => resolve();
+  });
 }

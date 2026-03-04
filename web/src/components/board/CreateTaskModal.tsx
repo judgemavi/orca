@@ -1,55 +1,55 @@
-import { type FormEvent, useMemo, useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
-import { useMutation } from '@tanstack/react-query'
-import { api } from '../../api'
-import { useCreateTaskForm } from '../../hooks/forms/useCreateTaskForm'
-import { useTasksQuery } from '../../hooks/queries'
-import type { Task } from '../../types'
-import { Button } from '../Button'
+import * as Dialog from '@radix-ui/react-dialog';
+import { useMutation } from '@tanstack/react-query';
+import { type FormEvent, useMemo, useState } from 'react';
+import { api } from '../../api';
+import { useCreateTaskForm } from '../../hooks/forms/useCreateTaskForm';
+import { useTasksQuery } from '../../hooks/queries';
+import type { Task } from '../../types';
+import { Button } from '../Button';
 
 const controlClass =
-  'w-full rounded-md border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent'
+  'w-full rounded-md border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent';
 
 export function CreateTaskModal() {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(false);
   const createTaskMutation = useMutation({
     mutationFn: (data: Partial<Task>) => api.createTask(data),
-  })
-  const tasksQuery = useTasksQuery()
-  const [error, setError] = useState('')
+  });
+  const tasksQuery = useTasksQuery();
+  const [error, setError] = useState('');
 
   const dependencyTasks = useMemo(
     () => (tasksQuery.data ?? []).filter((task) => task.status === 'pending'),
     [tasksQuery.data],
-  )
+  );
 
   const form = useCreateTaskForm({}, async (values) => {
-    setError('')
+    setError('');
 
     const created = await createTaskMutation.mutateAsync({
       title: values.title.trim(),
       description: values.description.trim(),
-    } as any)
+    } as any);
 
-    const taskId = (created as any).id ?? (created as any).task?.id
+    const taskId = (created as any).id ?? (created as any).task?.id;
     if (taskId) {
       await Promise.all(
         values.dependencies.map((depId) =>
           api.addDependency(taskId, depId).catch(() => {}),
         ),
-      )
+      );
     }
-  })
+  });
 
   const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     try {
-      await form.handleSubmit()
-      setOpen(false)
+      await form.handleSubmit();
+      setOpen(false);
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to create task')
+      setError(err?.message ?? 'Failed to create task');
     }
-  }
+  };
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -126,7 +126,7 @@ export function CreateTaskModal() {
                                         (depId) => depId !== task.id,
                                       )
                                     : [...field.state.value, task.id],
-                                )
+                                );
                               }}
                             />
                             <span className="flex-1 truncate text-xs">
@@ -163,5 +163,5 @@ export function CreateTaskModal() {
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
-  )
+  );
 }

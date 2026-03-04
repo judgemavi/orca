@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react';
 
 interface Props {
-  content: string
-  placeholder?: string
-  className?: string
+  content: string;
+  placeholder?: string;
+  className?: string;
 }
 
 export function LogViewer({
@@ -11,13 +11,13 @@ export function LogViewer({
   placeholder = 'No output yet.',
   className,
 }: Props) {
-  const bodyRef = useRef<HTMLPreElement | null>(null)
+  const bodyRef = useRef<HTMLPreElement | null>(null);
 
   useEffect(() => {
-    const el = bodyRef.current
-    if (!el) return
-    el.scrollTop = el.scrollHeight
-  }, [content])
+    const el = bodyRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [content]);
 
   return (
     <pre
@@ -29,5 +29,5 @@ export function LogViewer({
     >
       {content || placeholder}
     </pre>
-  )
+  );
 }

@@ -1,26 +1,39 @@
-import type { ProposedTask } from '../../types'
+import type { ProposedTask } from '../../types';
 
 interface BreakdownCardProps {
-  proposed: ProposedTask[]
-  accepted?: boolean
-  rejected?: boolean
+  proposed: ProposedTask[];
+  accepted?: boolean;
+  rejected?: boolean;
 }
 
 function toneClasses({ accepted, rejected }: BreakdownCardProps): string {
-  if (accepted) return 'bg-emerald-500/10 shadow-sm shadow-emerald-500/10'
-  if (rejected) return 'bg-surface-alt/70'
-  return 'bg-orange-500/10 shadow-sm shadow-orange-500/10'
+  if (accepted) return 'bg-emerald-500/10 shadow-sm shadow-emerald-500/10';
+  if (rejected) return 'bg-surface-alt/70';
+  return 'bg-orange-500/10 shadow-sm shadow-orange-500/10';
 }
 
-function statusLabel({ accepted, rejected, proposed }: BreakdownCardProps): string {
-  if (accepted) return 'Breakdown accepted'
-  if (rejected) return 'Breakdown rejected'
-  return `Breakdown proposed ${proposed.length} subtasks`
+function statusLabel({
+  accepted,
+  rejected,
+  proposed,
+}: BreakdownCardProps): string {
+  if (accepted) return 'Breakdown accepted';
+  if (rejected) return 'Breakdown rejected';
+  return `Breakdown proposed ${proposed.length} subtasks`;
 }
 
-export function BreakdownCard({ proposed, accepted, rejected }: BreakdownCardProps) {
+export function BreakdownCard({
+  proposed,
+  accepted,
+  rejected,
+}: BreakdownCardProps) {
   return (
-    <div className={['rounded-lg p-3', toneClasses({ proposed, accepted, rejected })].join(' ')}>
+    <div
+      className={[
+        'rounded-lg p-3',
+        toneClasses({ proposed, accepted, rejected }),
+      ].join(' ')}
+    >
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em]">
         {statusLabel({ proposed, accepted, rejected })}
       </div>
@@ -37,7 +50,9 @@ export function BreakdownCard({ proposed, accepted, rejected }: BreakdownCardPro
                 {index + 1}. {task.title || `Subtask ${index + 1}`}
               </div>
               {task.description ? (
-                <div className="mt-1 whitespace-pre-wrap text-muted">{task.description}</div>
+                <div className="mt-1 whitespace-pre-wrap text-muted">
+                  {task.description}
+                </div>
               ) : null}
               <div className="mt-1 text-[11px] text-muted">
                 Depends On:{' '}
@@ -46,12 +61,14 @@ export function BreakdownCard({ proposed, accepted, rejected }: BreakdownCardPro
                   : 'None'}
               </div>
               {task.suggestedTool ? (
-                <div className="text-[11px] text-muted">Suggested Tool: {task.suggestedTool}</div>
+                <div className="text-[11px] text-muted">
+                  Suggested Tool: {task.suggestedTool}
+                </div>
               ) : null}
             </div>
           ))}
         </div>
       )}
     </div>
-  )
+  );
 }

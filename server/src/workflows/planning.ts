@@ -2,101 +2,99 @@ import {
   generateProposedSubtasks,
   normalizeProposedTasks,
   runBreakdown,
-} from '../domain/breakdown'
-import { evaluateTask } from '../domain/evaluate'
+} from '../domain/breakdown';
+import { evaluateTask } from '../domain/evaluate';
 import {
+  type BudgetedRetrievalResult,
   buildMemoryContext,
   retrieveBudgetedMemory,
-  type BudgetedRetrievalResult,
-} from '../domain/memory-retrieval'
-import { refreshMemoryEntries } from '../domain/memory-sync'
-import { generateGlobalPlan, runPlan } from '../domain/plan'
-import type { DriverRegistry } from '../driver/registry'
-import type { ConfigStore } from '../store/config'
-import type { InteractionStore } from '../store/interactions'
-import type { MemoryStore } from '../store/memory'
-import type { TaskStore } from '../store/tasks'
-import {
-  InteractionStatus,
-  JOB_PRIORITIES,
-  TaskStatus,
-} from '../types'
-import type { Config, ProposedTask, Task, TaskEvaluation } from '../types'
-import type { JobQueue } from '../queue/queue'
+} from '../domain/memory-retrieval';
+import { refreshMemoryEntries } from '../domain/memory-sync';
+import { generateGlobalPlan, runPlan } from '../domain/plan';
+import type { DriverRegistry } from '../driver/registry';
+import type { JobQueue } from '../queue/queue';
+import type { ConfigStore } from '../store/config';
+import type { InteractionStore } from '../store/interactions';
+import type { MemoryStore } from '../store/memory';
+import type { TaskStore } from '../store/tasks';
+import type { Config, ProposedTask, Task, TaskEvaluation } from '../types';
+import { InteractionStatus, JOB_PRIORITIES, TaskStatus } from '../types';
 
 interface ToolModelOverrides {
-  toolOverride?: string
-  modelOverride?: string
+  toolOverride?: string;
+  modelOverride?: string;
 }
 
 export interface EvaluateTaskWorkflowDeps extends ToolModelOverrides {
-  repoDir: string
-  taskStore: TaskStore
-  interactions: InteractionStore
-  configStore: ConfigStore
-  registry: DriverRegistry
+  repoDir: string;
+  taskStore: TaskStore;
+  interactions: InteractionStore;
+  configStore: ConfigStore;
+  registry: DriverRegistry;
 }
 
 export interface BreakdownTaskInput extends ToolModelOverrides {
-  taskId?: string
-  goal?: string
+  taskId?: string;
+  goal?: string;
 }
 
 export interface BreakdownTaskWorkflowDeps {
-  repoDir?: string
-  taskStore: TaskStore
-  interactions?: InteractionStore
-  configStore?: ConfigStore
-  registry?: DriverRegistry
-  memory?: MemoryStore
+  repoDir?: string;
+  taskStore: TaskStore;
+  interactions?: InteractionStore;
+  configStore?: ConfigStore;
+  registry?: DriverRegistry;
+  memory?: MemoryStore;
 }
 
 export interface BreakdownTaskResult {
-  taskId?: string
-  proposed: ProposedTask[]
-  interactionId?: string
-  tool?: string
-  model?: string
+  taskId?: string;
+  proposed: ProposedTask[];
+  interactionId?: string;
+  tool?: string;
+  model?: string;
 }
 
 export interface AcceptBreakdownResult {
-  createdIds: string[]
-  parentId?: string
+  createdIds: string[];
+  parentId?: string;
 }
 
 export interface GeneratePlanWorkflowDeps extends ToolModelOverrides {
-  repoDir: string
-  taskStore: TaskStore
-  interactions: InteractionStore
-  configStore: ConfigStore
-  registry: DriverRegistry
-  memory?: MemoryStore
-  feedback?: string
+  repoDir: string;
+  taskStore: TaskStore;
+  interactions: InteractionStore;
+  configStore: ConfigStore;
+  registry: DriverRegistry;
+  memory?: MemoryStore;
+  feedback?: string;
 }
 
 export interface GeneratePlanWorkflowResult {
-  taskId: string
-  plan: string
-  interactionId: string
-  tool: string
-  model: string
-  memory?: BudgetedRetrievalResult
+  taskId: string;
+  plan: string;
+  interactionId: string;
+  tool: string;
+  model: string;
+  memory?: BudgetedRetrievalResult;
 }
 
-export interface RequestPlanChangesWorkflowDeps extends Omit<GeneratePlanWorkflowDeps, 'feedback'> {
-  interactionId?: string
+export interface RequestPlanChangesWorkflowDeps
+  extends Omit<GeneratePlanWorkflowDeps, 'feedback'> {
+  interactionId?: string;
 }
 
-export interface RequestPlanChangesWorkflowResult extends GeneratePlanWorkflowResult {
-  reviewId: string
+export interface RequestPlanChangesWorkflowResult
+  extends GeneratePlanWorkflowResult {
+  reviewId: string;
 }
 
 export async function evaluateTaskWorkflow(
   taskID: string,
   deps: EvaluateTaskWorkflowDeps,
 ): Promise<TaskEvaluation> {
-  const task = await getTask(taskID, deps.taskStore)
-  const config = await deps.configStore.load()
+  const task = await getTask(taskID, deps.taskStore);
+  const config = await deps.configStore.load();
 
   return await evaluateTask(task, {
     repoDir: deps.repoDir,
@@ -105,29 +103,29 @@ export async function evaluateTaskWorkflow(
     interactions: deps.interactions,
     toolOverride: deps.toolOverride ?? '',
     modelOverride: deps.modelOverride ?? '',
-  })
+  });
 }
 
 export async function breakdownTask(
   input: BreakdownTaskInput,
   deps: BreakdownTaskWorkflowDeps,
 ): Promise<BreakdownTaskResult> {
-  const taskID = (input.taskId ?? '').trim()
-  const goal = (input.goal ?? '').trim()
+  const taskID = (input.taskId ?? '').trim();
+  const goal = (input.goal ?? '').trim();
   if (!taskID && !goal) {
-    throw new Error('goal or taskId is required')
+    throw new Error('goal or taskId is required');
   }
 
-  let task: Task | null = null
+  let task: Task | null = null;
   if (taskID) {
-    task = await getTask(taskID, deps.taskStore)
+    task = await getTask(taskID, deps.taskStore);
   }
 
-  const title = task?.title ?? goal
-  const description = task?.description ?? ''
+  const title = task?.title ?? goal;
+  const description = task?.description ?? '';
 
   if (canRunLLMBreakdown(deps)) {
-    const config = await deps.configStore.load()
+    const config = await deps.configStore.load();
     const memoryResult = await retrievePlanningMemory({
       repoDir: deps.repoDir,
       taskStore: deps.taskStore,
@@ -138,7 +136,7 @@ export async function breakdownTask(
       config,
       registry: deps.registry,
       interactions: deps.interactions,
-    })
+    });
 
     const result = await runBreakdown({
       repoDir: deps.repoDir,
@@ -150,7 +148,7 @@ export async function breakdownTask(
       memoryContext: memoryResult.memoryContext,
       toolOverride: input.toolOverride ?? '',
       modelOverride: input.modelOverride ?? '',
-    })
+    });
 
     return {
       taskId: task?.id,
@@ -158,17 +156,17 @@ export async function breakdownTask(
       interactionId: result.interactionId,
       tool: result.tool,
       model: result.model,
-    }
+    };
   }
 
   const proposed = task
     ? generateProposedSubtasks(task.title, task.description ?? '')
-    : generateGlobalPlan(goal)
+    : generateGlobalPlan(goal);
 
   return {
     taskId: task?.id,
     proposed: normalizeProposedTasks(proposed),
-  }
+  };
 }
 
 export async function acceptBreakdown(
@@ -176,49 +174,52 @@ export async function acceptBreakdown(
   proposals: ProposedTask[],
   deps: { taskStore: TaskStore; queue?: JobQueue },
 ): Promise<AcceptBreakdownResult> {
-  const normalizedParentID = (parentID ?? '').trim()
+  const normalizedParentID = (parentID ?? '').trim();
   if (normalizedParentID) {
-    await getTask(normalizedParentID, deps.taskStore)
+    await getTask(normalizedParentID, deps.taskStore);
   }
 
-  const normalizedProposals = normalizeProposedTasks(proposals)
-  const createdIDs: string[] = []
+  const normalizedProposals = normalizeProposedTasks(proposals);
+  const createdIDs: string[] = [];
 
   for (const item of normalizedProposals) {
     const created = await deps.taskStore.create({
       title: item.title,
       description: item.description,
       parentId: normalizedParentID || null,
-    })
-    createdIDs.push(created.id)
-    await deps.taskStore.updateStatus(created.id, TaskStatus.planned)
+    });
+    createdIDs.push(created.id);
+    await deps.taskStore.updateStatus(created.id, TaskStatus.planned);
     if (deps.queue) {
       await deps.queue.enqueue({
         type: 'evaluate',
         taskId: created.id,
         priority: JOB_PRIORITIES.evaluate,
-      })
+      });
     }
   }
 
   for (const [index, item] of normalizedProposals.entries()) {
-    const taskID = createdIDs[index]
+    const taskID = createdIDs[index];
     const dependencyIDs = (item.dependsOnIndices ?? [])
       .map((depIndex) => createdIDs[depIndex] ?? '')
-      .filter(Boolean)
+      .filter(Boolean);
     if (dependencyIDs.length > 0) {
-      await deps.taskStore.updateDependencies(taskID, dependencyIDs)
+      await deps.taskStore.updateDependencies(taskID, dependencyIDs);
     }
   }
 
   if (normalizedParentID) {
-    await deps.taskStore.updateStatus(normalizedParentID, TaskStatus.broken_down)
+    await deps.taskStore.updateStatus(
+      normalizedParentID,
+      TaskStatus.broken_down,
+    );
   }
 
   return {
     createdIds: createdIDs,
     parentId: normalizedParentID || undefined,
-  }
+  };
 }
 
 export async function rejectBreakdown(
@@ -226,24 +227,24 @@ export async function rejectBreakdown(
   interactionID: string,
   deps: { interactions: InteractionStore },
 ): Promise<void> {
-  const normalizedInteractionID = interactionID.trim()
-  if (!normalizedInteractionID) return
+  const normalizedInteractionID = interactionID.trim();
+  if (!normalizedInteractionID) return;
 
-  const interaction = await deps.interactions.get(normalizedInteractionID)
-  if (!interaction) return
+  const interaction = await deps.interactions.get(normalizedInteractionID);
+  if (!interaction) return;
 
   await deps.interactions.finish(normalizedInteractionID, {
     status: InteractionStatus.completed,
     qualityJson: JSON.stringify({ taskId: taskID, rejected: true }),
-  })
+  });
 }
 
 export async function generatePlan(
   taskID: string,
   deps: GeneratePlanWorkflowDeps,
 ): Promise<GeneratePlanWorkflowResult> {
-  const task = await getTask(taskID, deps.taskStore)
-  const config = await deps.configStore.load()
+  const task = await getTask(taskID, deps.taskStore);
+  const config = await deps.configStore.load();
   const memoryResult = await retrievePlanningMemory({
     repoDir: deps.repoDir,
     taskStore: deps.taskStore,
@@ -254,7 +255,7 @@ export async function generatePlan(
     config,
     registry: deps.registry,
     interactions: deps.interactions,
-  })
+  });
 
   const result = await runPlan({
     repoDir: deps.repoDir,
@@ -268,7 +269,7 @@ export async function generatePlan(
     interactions: deps.interactions,
     toolOverride: deps.toolOverride ?? '',
     modelOverride: deps.modelOverride ?? '',
-  })
+  });
 
   return {
     taskId: taskID,
@@ -277,26 +278,26 @@ export async function generatePlan(
     tool: result.tool,
     model: result.model,
     memory: memoryResult.memory ?? undefined,
-  }
+  };
 }
 
 export async function approvePlan(
   taskID: string,
   deps: {
-    taskStore: TaskStore
-    requirePendingStatus?: boolean
+    taskStore: TaskStore;
+    requirePendingStatus?: boolean;
   },
 ): Promise<Task> {
-  const task = await getTask(taskID, deps.taskStore)
+  const task = await getTask(taskID, deps.taskStore);
 
   if (deps.requirePendingStatus && task.status !== TaskStatus.pending) {
-    throw new Error(`task ${taskID} is ${task.status}; expected pending`)
+    throw new Error(`task ${taskID} is ${task.status}; expected pending`);
   }
   if (!(task.plan ?? '').trim()) {
-    throw new Error('task plan is empty')
+    throw new Error('task plan is empty');
   }
 
-  return await deps.taskStore.updateStatus(taskID, TaskStatus.planned)
+  return await deps.taskStore.updateStatus(taskID, TaskStatus.planned);
 }
 
 export async function requestPlanChanges(
@@ -304,102 +305,112 @@ export async function requestPlanChanges(
   feedback: string,
   deps: RequestPlanChangesWorkflowDeps,
 ): Promise<RequestPlanChangesWorkflowResult> {
-  const normalizedFeedback = feedback.trim()
+  const normalizedFeedback = feedback.trim();
   if (!normalizedFeedback) {
-    throw new Error('feedback is required')
+    throw new Error('feedback is required');
   }
 
-  await getTask(taskID, deps.taskStore)
-  const reviewID = await deps.taskStore.addReview(taskID, normalizedFeedback, deps.interactionId ?? '')
+  await getTask(taskID, deps.taskStore);
+  const reviewID = await deps.taskStore.addReview(
+    taskID,
+    normalizedFeedback,
+    deps.interactionId ?? '',
+  );
 
   const result = await generatePlan(taskID, {
     ...deps,
     feedback: normalizedFeedback,
-  })
+  });
 
-  await deps.taskStore.setPlan(taskID, result.plan)
-  await deps.taskStore.addressReview(reviewID)
+  await deps.taskStore.setPlan(taskID, result.plan);
+  await deps.taskStore.addressReview(reviewID);
 
   return {
     ...result,
     reviewId: reviewID,
-  }
+  };
 }
 
 export async function loadProposedTasksFromInteraction(
   interactionID: string,
   deps: { interactions: InteractionStore },
 ): Promise<ProposedTask[]> {
-  const normalizedInteractionID = interactionID.trim()
-  if (!normalizedInteractionID) return []
+  const normalizedInteractionID = interactionID.trim();
+  if (!normalizedInteractionID) return [];
 
-  const interaction = await deps.interactions.get(normalizedInteractionID)
-  if (!interaction?.qualityJson) return []
+  const interaction = await deps.interactions.get(normalizedInteractionID);
+  if (!interaction?.qualityJson) return [];
 
   try {
-    const parsed = JSON.parse(interaction.qualityJson) as { proposed?: ProposedTask[] }
-    if (!Array.isArray(parsed.proposed)) return []
-    return normalizeProposedTasks(parsed.proposed)
+    const parsed = JSON.parse(interaction.qualityJson) as {
+      proposed?: ProposedTask[];
+    };
+    if (!Array.isArray(parsed.proposed)) return [];
+    return normalizeProposedTasks(parsed.proposed);
   } catch {
-    return []
+    return [];
   }
 }
 
 async function retrievePlanningMemory(input: {
-  repoDir: string
-  taskStore: TaskStore
-  memory?: MemoryStore
-  taskId?: string
-  title: string
-  description: string
-  config: Config
-  registry: DriverRegistry
-  interactions: InteractionStore
+  repoDir: string;
+  taskStore: TaskStore;
+  memory?: MemoryStore;
+  taskId?: string;
+  title: string;
+  description: string;
+  config: Config;
+  registry: DriverRegistry;
+  interactions: InteractionStore;
 }): Promise<{ memoryContext: string; memory?: BudgetedRetrievalResult }> {
   if (!input.memory) {
     return {
       memoryContext: '',
-    }
+    };
   }
-  const memoryStore = input.memory
+  const memoryStore = input.memory;
 
   const memory = await retrieveBudgetedMemory(memoryStore, input.taskStore, {
     taskId: input.taskId,
     title: input.title,
     description: input.description,
-    filePaths: input.taskId ? await input.taskStore.getFilePaths(input.taskId) : [],
+    filePaths: input.taskId
+      ? await input.taskStore.getFilePaths(input.taskId)
+      : [],
     syncer: {
       refresh: async (entryID: string) => {
         await refreshMemoryEntries(input.repoDir, memoryStore, entryID, {
           config: input.config,
           registry: input.registry,
           interactions: input.interactions,
-        })
+        });
       },
     },
-  })
+  });
 
   return {
     memory,
     memoryContext: buildMemoryContext(memory),
-  }
+  };
 }
 
 function canRunLLMBreakdown(
   deps: BreakdownTaskWorkflowDeps,
 ): deps is BreakdownTaskWorkflowDeps & {
-  repoDir: string
-  interactions: InteractionStore
-  configStore: ConfigStore
-  registry: DriverRegistry
+  repoDir: string;
+  interactions: InteractionStore;
+  configStore: ConfigStore;
+  registry: DriverRegistry;
 } {
-  return Boolean(deps.repoDir && deps.interactions && deps.configStore && deps.registry)
+  return Boolean(
+    deps.repoDir && deps.interactions && deps.configStore && deps.registry,
+  );
 }
 
 async function getTask(taskID: string, taskStore: TaskStore): Promise<Task> {
-  const task = await taskStore.get(taskID)
+  const task = await taskStore.get(taskID);
   if (!task) {
-    throw new Error(`task not found: ${taskID}`)
+    throw new Error(`task not found: ${taskID}`);
   }
-  return task
+  return task;
 }

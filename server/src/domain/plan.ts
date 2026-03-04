@@ -1,29 +1,29 @@
-import { Phase } from '../types'
-import type { Config, ProposedTask } from '../types'
-import type { DriverRegistry } from '../driver/registry'
-import type { InteractionStore } from '../store/interactions'
-import { runTool } from '../worker/worker'
-import { createPhaseRunner } from '../shared/phase-runner'
+import type { DriverRegistry } from '../driver/registry';
+import { createPhaseRunner } from '../shared/phase-runner';
+import type { InteractionStore } from '../store/interactions';
+import type { Config, ProposedTask } from '../types';
+import { Phase } from '../types';
+import { runTool } from '../worker/worker';
 
 export interface RunPlanInput {
-  repoDir: string
-  taskID: string
-  title: string
-  description: string
-  feedback?: string
-  memoryContext?: string
-  config: Config
-  registry: DriverRegistry
-  interactions: InteractionStore
-  toolOverride?: string
-  modelOverride?: string
+  repoDir: string;
+  taskID: string;
+  title: string;
+  description: string;
+  feedback?: string;
+  memoryContext?: string;
+  config: Config;
+  registry: DriverRegistry;
+  interactions: InteractionStore;
+  toolOverride?: string;
+  modelOverride?: string;
 }
 
 export interface RunPlanResult {
-  plan: string
-  tool: string
-  model: string
-  interactionId: string
+  plan: string;
+  tool: string;
+  model: string;
+  interactionId: string;
 }
 
 export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
@@ -33,14 +33,20 @@ export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
     repoDir: input.repoDir,
     interactions: input.interactions,
     runTool,
-  })
+  });
 
-  const memoryContext = input.memoryContext?.trim() || '(no retrieved context)'
-  const title = input.title.trim() || 'Implement task'
-  const description = input.description.trim() || 'No extra description was provided.'
-  const feedback = input.feedback?.trim()
+  const memoryContext = input.memoryContext?.trim() || '(no retrieved context)';
+  const title = input.title.trim() || 'Implement task';
+  const description =
+    input.description.trim() || 'No extra description was provided.';
+  const feedback = input.feedback?.trim();
 
-  const { result: plan, interactionId, tool, model } = await runPhase(
+  const {
+    result: plan,
+    interactionId,
+    tool,
+    model,
+  } = await runPhase(
     {
       taskId: input.taskID,
       phase: Phase.plan,
@@ -54,22 +60,22 @@ export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
     },
     (output) => {
       if (!output.trim()) {
-        throw new Error('plan phase returned empty output')
+        throw new Error('plan phase returned empty output');
       }
-      return output
+      return output;
     },
-  )
+  );
 
   return {
     plan,
     tool,
     model,
     interactionId,
-  }
+  };
 }
 
 export function generateGlobalPlan(goal: string): ProposedTask[] {
-  const normalized = goal.trim() || 'Goal'
+  const normalized = goal.trim() || 'Goal';
   return [
     {
       title: `Analyze: ${normalized}`,
@@ -89,5 +95,5 @@ export function generateGlobalPlan(goal: string): ProposedTask[] {
       dependsOnIndices: [1],
       suggestedTool: 'claude',
     },
-  ]
+  ];
 }

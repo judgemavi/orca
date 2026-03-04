@@ -1,37 +1,33 @@
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import type { Interaction, TaskReview } from '../../../types'
-import { controlClass } from '../../../lib/constants'
-import {
-  INTERACTION_STATUSES,
-  PHASES,
-  REVIEW_STATUSES,
-} from '@orca/types'
-import type { usePlanEditor } from './usePlanEditor'
-import { Button } from '../../Button'
-import { PlanMarkdownCard } from '../../shared/PlanMarkdownCard'
+import { INTERACTION_STATUSES, PHASES, REVIEW_STATUSES } from '@orca/types';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { controlClass } from '../../../lib/constants';
+import type { Interaction, TaskReview } from '../../../types';
+import { Button } from '../../Button';
+import { PlanMarkdownCard } from '../../shared/PlanMarkdownCard';
+import type { usePlanEditor } from './usePlanEditor';
 
-type PlanEditorState = ReturnType<typeof usePlanEditor>
+type PlanEditorState = ReturnType<typeof usePlanEditor>;
 
 type Props = {
-  interaction: Interaction
-  isEditableLatestPlan: boolean
-  planEditor: PlanEditorState
-  planReviews: TaskReview[]
-}
+  interaction: Interaction;
+  isEditableLatestPlan: boolean;
+  planEditor: PlanEditorState;
+  planReviews: TaskReview[];
+};
 
 function formatRelativeTime(iso: string): string {
-  const timestamp = Date.parse(iso)
-  if (!Number.isFinite(timestamp)) return 'just now'
-  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000)
-  const absDeltaSeconds = Math.abs(deltaSeconds)
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
-  if (absDeltaSeconds < 60) return rtf.format(deltaSeconds, 'second')
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) return 'just now';
+  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000);
+  const absDeltaSeconds = Math.abs(deltaSeconds);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  if (absDeltaSeconds < 60) return rtf.format(deltaSeconds, 'second');
   if (absDeltaSeconds < 3600)
-    return rtf.format(Math.round(deltaSeconds / 60), 'minute')
+    return rtf.format(Math.round(deltaSeconds / 60), 'minute');
   if (absDeltaSeconds < 86400)
-    return rtf.format(Math.round(deltaSeconds / 3600), 'hour')
-  return rtf.format(Math.round(deltaSeconds / 86400), 'day')
+    return rtf.format(Math.round(deltaSeconds / 3600), 'hour');
+  return rtf.format(Math.round(deltaSeconds / 86400), 'day');
 }
 
 export function PlanPhaseSection({
@@ -44,10 +40,10 @@ export function PlanPhaseSection({
     interaction.phase !== PHASES.plan ||
     interaction.status !== INTERACTION_STATUSES.completed
   ) {
-    return null
+    return null;
   }
 
-  const nonEditablePlanMarkdown = planEditor.planDraft || interaction.diff
+  const nonEditablePlanMarkdown = planEditor.planDraft || interaction.diff;
 
   return (
     <>
@@ -146,5 +142,5 @@ export function PlanPhaseSection({
         </div>
       )}
     </>
-  )
+  );
 }

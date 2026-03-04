@@ -1,59 +1,57 @@
-import type { Tool } from '../types'
-import { z } from 'zod'
-import type { DriverRegistry } from '../../driver/registry'
-import { availableTools, toolModels } from '../../driver/registry'
-import type { ConfigStore } from '../../store/config'
-import type { InteractionStore } from '../../store/interactions'
-import type { MemoryStore } from '../../store/memory'
-import type { TaskStore } from '../../store/tasks'
-import {
-  InteractionStatus,
-  Phase,
-  TaskStatus,
-} from '../../types'
-import { getMemorySyncStatus } from '../../domain/memory-sync'
-import { defineTool } from '../define-tool'
+import { z } from 'zod';
+import { getMemorySyncStatus } from '../../domain/memory-sync';
+import type { DriverRegistry } from '../../driver/registry';
+import { availableTools, toolModels } from '../../driver/registry';
+import type { ConfigStore } from '../../store/config';
+import type { InteractionStore } from '../../store/interactions';
+import type { MemoryStore } from '../../store/memory';
+import type { TaskStore } from '../../store/tasks';
+import { InteractionStatus, Phase, TaskStatus } from '../../types';
+import { defineTool } from '../define-tool';
+import type { Tool } from '../types';
 
 const requiredTrimmedString = (field: string) =>
   z.preprocess(
     (value) => value ?? '',
     z.coerce.string().trim().min(1, `${field} is required`),
-  )
+  );
 
 const optionalTrimmedString = () =>
   z.preprocess(
-    (value) => (value === undefined ? undefined : value ?? ''),
+    (value) => (value === undefined ? undefined : (value ?? '')),
     z.coerce.string().trim().optional(),
-  )
+  );
 
-const configGetSchema = z.object({})
+const configGetSchema = z.object({});
 
 const configUpdateSchema = z.object({
-  patch: z.unknown().refine(
-    (value) => Boolean(value) && typeof value === 'object',
-    'patch object is required',
-  ),
-})
+  patch: z
+    .unknown()
+    .refine(
+      (value) => Boolean(value) && typeof value === 'object',
+      'patch object is required',
+    ),
+});
 
 const modelsListSchema = z.object({
   tool: optionalTrimmedString(),
-})
+});
 
-const projectStatusSchema = z.object({})
+const projectStatusSchema = z.object({});
 
-const costStatusSchema = z.object({})
+const costStatusSchema = z.object({});
 
 const qualityResultsSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
-})
+});
 
 export function adminTools(deps: {
-  repoDir: string
-  configStore: ConfigStore
-  registry: DriverRegistry
-  taskStore: TaskStore
-  interactions: InteractionStore
-  memory: MemoryStore
+  repoDir: string;
+  configStore: ConfigStore;
+  registry: DriverRegistry;
+  taskStore: TaskStore;
+  interactions: InteractionStore;
+  memory: MemoryStore;
 }): Tool[] {
   return [
     defineTool({
@@ -73,19 +71,22 @@ export function adminTools(deps: {
       description: 'List available tools and models from tool registry',
       schema: modelsListSchema,
       handler: async (input) => {
-        const tool = input.tool ?? ''
+        const tool = input.tool ?? '';
         if (tool) {
           return {
             tools: {
               [tool]: toolModels(deps.registry, tool),
             },
-          }
+          };
         }
 
         const entries = Object.fromEntries(
-          availableTools(deps.registry).map((name) => [name, toolModels(deps.registry, name)]),
-        )
-        return { tools: entries }
+          availableTools(deps.registry).map((name) => [
+            name,
+            toolModels(deps.registry, name),
+          ]),
+        );
+        return { tools: entries };
       },
     }),
     defineTool({
@@ -93,31 +94,37 @@ export function adminTools(deps: {
       description: 'Get project status summary',
       schema: projectStatusSchema,
       handler: async () => {
-        const tasks = await deps.taskStore.list()
-        const memoryHealth = await deps.memory.buildHealthSummary()
-        const sync = await getMemorySyncStatus(deps.repoDir, deps.memory)
+        const tasks = await deps.taskStore.list();
+        const memoryHealth = await deps.memory.buildHealthSummary();
+        const sync = await getMemorySyncStatus(deps.repoDir, deps.memory);
 
         return {
           project: 'orca',
           totalTasks: tasks.length,
-          pending: tasks.filter((task) => task.status === TaskStatus.pending).length,
-          inProgress: tasks.filter((task) => task.status === TaskStatus.running).length,
-          completed: tasks.filter((task) =>
-            task.status === TaskStatus.merged ||
-            task.status === TaskStatus.approved ||
-            task.status === TaskStatus.review ||
-            task.status === TaskStatus.broken_down,
+          pending: tasks.filter((task) => task.status === TaskStatus.pending)
+            .length,
+          inProgress: tasks.filter((task) => task.status === TaskStatus.running)
+            .length,
+          completed: tasks.filter(
+            (task) =>
+              task.status === TaskStatus.merged ||
+              task.status === TaskStatus.approved ||
+              task.status === TaskStatus.review ||
+              task.status === TaskStatus.broken_down,
           ).length,
-          failed: tasks.filter((task) => task.status === TaskStatus.failed).length,
+          failed: tasks.filter((task) => task.status === TaskStatus.failed)
+            .length,
           totalCost: await deps.interactions.projectTotal(),
-          runningOperations: (await deps.interactions.listByStatus(InteractionStatus.running)).length,
+          runningOperations: (
+            await deps.interactions.listByStatus(InteractionStatus.running)
+          ).length,
           lastSyncedCommit: sync.lastSyncedCommit,
           currentCommit: sync.currentCommit,
           syncNeeded: sync.syncNeeded,
           commitsBehind: sync.commitsBehind,
           memoryTotal: memoryHealth.totalEntries,
           memoryStaleCount: memoryHealth.staleCount,
-        }
+        };
       },
     }),
     defineTool({
@@ -134,18 +141,18 @@ export function adminTools(deps: {
       description: 'Get latest run-phase quality results for a task',
       schema: qualityResultsSchema,
       handler: async (input) => {
-        const taskID = input.taskId
-        const items = await deps.interactions.listByPhase(taskID, Phase.run)
-        const latest = items.find((item) => item.qualityJson?.trim())
+        const taskID = input.taskId;
+        const items = await deps.interactions.listByPhase(taskID, Phase.run);
+        const latest = items.find((item) => item.qualityJson?.trim());
         if (!latest?.qualityJson) {
-          return { taskId: taskID, quality: null }
+          return { taskId: taskID, quality: null };
         }
         try {
-          return { taskId: taskID, quality: JSON.parse(latest.qualityJson) }
+          return { taskId: taskID, quality: JSON.parse(latest.qualityJson) };
         } catch {
-          return { taskId: taskID, quality: null, malformed: true }
+          return { taskId: taskID, quality: null, malformed: true };
         }
       },
     }),
-  ]
+  ];
 }

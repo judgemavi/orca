@@ -1,26 +1,26 @@
-import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { Button } from '../../Button'
-import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout'
-import { useTaskActions } from './useTaskActions'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext';
+import { Button } from '../../Button';
+import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout';
+import { useTaskActions } from './useTaskActions';
 
 export function ReviewTaskActions() {
-  const { task } = useTaskDetailContext()
-  const actions = useTaskActions(task)
+  const { task } = useTaskDetailContext();
+  const actions = useTaskActions(task);
 
-  const showRequestChanges = actions.requestChangesExpanded
-  const showAIReview = actions.aiReviewExpanded
-  const showSelector = showRequestChanges || showAIReview
+  const showRequestChanges = actions.requestChangesExpanded;
+  const showAIReview = actions.aiReviewExpanded;
+  const showSelector = showRequestChanges || showAIReview;
 
-  let actionButtons = null
+  let actionButtons = null;
   if (showRequestChanges) {
     actionButtons = (
       <>
         <Button
           variant="default"
           onClick={() => {
-            actions.setRequestChangesExpanded(false)
-            actions.setAIFeedbackAppliedNotice(false)
-            actions.setActionError(null)
+            actions.setRequestChangesExpanded(false);
+            actions.setAIFeedbackAppliedNotice(false);
+            actions.setActionError(null);
           }}
           disabled={actions.phaseInProgress || actions.requestChangesPending}
         >
@@ -36,16 +36,16 @@ export function ReviewTaskActions() {
             : 'Submit Request Changes'}
         </Button>
       </>
-    )
+    );
   } else if (showAIReview) {
     actionButtons = (
       <>
         <Button
           variant="default"
           onClick={() => {
-            actions.setAIReviewExpanded(false)
-            actions.setAIReviewPrompt('')
-            actions.setActionError(null)
+            actions.setAIReviewExpanded(false);
+            actions.setAIReviewPrompt('');
+            actions.setActionError(null);
           }}
           disabled={actions.phaseInProgress}
         >
@@ -59,7 +59,7 @@ export function ReviewTaskActions() {
           {actions.aiReviewPending ? 'Reviewing…' : 'Start Review'}
         </Button>
       </>
-    )
+    );
   } else {
     actionButtons = (
       <>
@@ -77,10 +77,10 @@ export function ReviewTaskActions() {
         <Button
           variant="default"
           onClick={() => {
-            actions.setAIReviewExpanded(false)
-            actions.setRequestChangesExpanded(true)
-            actions.setAIFeedbackAppliedNotice(false)
-            actions.setActionError(null)
+            actions.setAIReviewExpanded(false);
+            actions.setRequestChangesExpanded(true);
+            actions.setAIFeedbackAppliedNotice(false);
+            actions.setActionError(null);
           }}
           disabled={
             actions.phaseInProgress ||
@@ -93,17 +93,17 @@ export function ReviewTaskActions() {
         <Button
           variant="default"
           onClick={() => {
-            actions.setRequestChangesExpanded(false)
-            actions.setAIFeedbackAppliedNotice(false)
-            actions.setAIReviewExpanded(true)
-            actions.setActionError(null)
+            actions.setRequestChangesExpanded(false);
+            actions.setAIFeedbackAppliedNotice(false);
+            actions.setAIReviewExpanded(true);
+            actions.setActionError(null);
           }}
           disabled={actions.phaseInProgress || actions.approvePending}
         >
           {actions.aiReviewPending ? 'Reviewing…' : 'AI Review'}
         </Button>
       </>
-    )
+    );
   }
 
   return (
@@ -122,8 +122,8 @@ export function ReviewTaskActions() {
           <TaskFeedbackBox
             value={actions.requestFeedback}
             onChange={(value) => {
-              actions.setRequestFeedback(value)
-              actions.setAIFeedbackAppliedNotice(false)
+              actions.setRequestFeedback(value);
+              actions.setAIFeedbackAppliedNotice(false);
             }}
             showNotice={actions.aiFeedbackAppliedNotice}
           />
@@ -137,5 +137,5 @@ export function ReviewTaskActions() {
       }
       actions={actionButtons}
     />
-  )
+  );
 }

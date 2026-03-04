@@ -1,38 +1,39 @@
-import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
-import { api } from '../../api'
-import { queryKeys } from '../../lib/queryKeys'
-import { StatusBadge } from '../common/StatusBadge'
+import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { api } from '../../api';
+import { queryKeys } from '../../lib/queryKeys';
+import { StatusBadge } from '../common/StatusBadge';
 
 interface Props {
-  taskId: string
+  taskId: string;
   task?: {
-    id?: string
-    title?: string
-    status?: string
-  } | null
-  className?: string
+    id?: string;
+    title?: string;
+    status?: string;
+  } | null;
+  className?: string;
 }
 
-const TASK_ID_RE = /^[a-f0-9]{8,64}$/i
+const TASK_ID_RE = /^[a-f0-9]{8,64}$/i;
 
 export function InlineTaskCard({ taskId, task, className }: Props) {
-  const trimmedID = taskId.trim()
-  const hasTaskID = TASK_ID_RE.test(trimmedID)
-  const shouldFetch = !task?.title && hasTaskID
+  const trimmedID = taskId.trim();
+  const hasTaskID = TASK_ID_RE.test(trimmedID);
+  const shouldFetch = !task?.title && hasTaskID;
 
   const taskQuery = useQuery({
     queryKey: queryKeys.task(trimmedID),
     queryFn: () => api.getTask(trimmedID),
     enabled: shouldFetch,
     retry: false,
-  })
+  });
 
-  const title = task?.title?.trim() || taskQuery.data?.title?.trim()
-  const status = task?.status?.trim() || taskQuery.data?.status?.trim()
-  const resolvedID = task?.id?.trim() || taskQuery.data?.id?.trim() || trimmedID
-  const shortID = resolvedID.slice(0, 8)
-  const isGone = shouldFetch && taskQuery.isError
+  const title = task?.title?.trim() || taskQuery.data?.title?.trim();
+  const status = task?.status?.trim() || taskQuery.data?.status?.trim();
+  const resolvedID =
+    task?.id?.trim() || taskQuery.data?.id?.trim() || trimmedID;
+  const shortID = resolvedID.slice(0, 8);
+  const isGone = shouldFetch && taskQuery.isError;
 
   if (!hasTaskID) {
     return (
@@ -41,7 +42,7 @@ export function InlineTaskCard({ taskId, task, className }: Props) {
       >
         {taskId}
       </span>
-    )
+    );
   }
 
   if (taskQuery.isLoading && !title) {
@@ -51,7 +52,7 @@ export function InlineTaskCard({ taskId, task, className }: Props) {
       >
         Loading task {shortID}...
       </span>
-    )
+    );
   }
 
   if (isGone) {
@@ -64,7 +65,7 @@ export function InlineTaskCard({ taskId, task, className }: Props) {
         </span>
         <span className="font-mono text-muted">{shortID}</span>
       </span>
-    )
+    );
   }
 
   if (!title || !status) {
@@ -74,7 +75,7 @@ export function InlineTaskCard({ taskId, task, className }: Props) {
       >
         {shortID}
       </span>
-    )
+    );
   }
 
   return (
@@ -89,5 +90,5 @@ export function InlineTaskCard({ taskId, task, className }: Props) {
       </span>
       <span className="font-mono text-muted">{shortID}</span>
     </Link>
-  )
+  );
 }

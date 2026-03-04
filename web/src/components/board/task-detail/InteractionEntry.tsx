@@ -1,52 +1,52 @@
-import * as Collapsible from '@radix-ui/react-collapsible'
-import type { ReactNode } from 'react'
-import type { InteractionStub } from '../../../types'
-import { INTERACTION_STATUSES, PHASES } from '@orca/types'
-import { useInteractionDetailContext } from './InteractionDetailContext'
+import { INTERACTION_STATUSES, PHASES } from '@orca/types';
+import * as Collapsible from '@radix-ui/react-collapsible';
+import type { ReactNode } from 'react';
+import type { InteractionStub } from '../../../types';
+import { useInteractionDetailContext } from './InteractionDetailContext';
 
 interface Props {
-  stub: InteractionStub
-  phase?: string
-  collapsible?: boolean
-  expanded?: boolean
-  onExpandedChange?: (expanded: boolean) => void
-  alwaysExpanded?: boolean
-  showDiffSummary?: boolean
-  children?: ReactNode
+  stub: InteractionStub;
+  phase?: string;
+  collapsible?: boolean;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+  alwaysExpanded?: boolean;
+  showDiffSummary?: boolean;
+  children?: ReactNode;
 }
 
 function formatDuration(durationMs: number | undefined): string {
-  if (!Number.isFinite(durationMs) || !durationMs || durationMs < 0) return '-'
-  if (durationMs < 1000) return `${durationMs} ms`
-  return `${(durationMs / 1000).toFixed(1)}s`
+  if (!Number.isFinite(durationMs) || !durationMs || durationMs < 0) return '-';
+  if (durationMs < 1000) return `${durationMs} ms`;
+  return `${(durationMs / 1000).toFixed(1)}s`;
 }
 
 function formatCost(value: number | undefined): string {
-  if (!Number.isFinite(value)) return '$0.00'
-  return `$${(value ?? 0).toFixed(2)}`
+  if (!Number.isFinite(value)) return '$0.00';
+  return `$${(value ?? 0).toFixed(2)}`;
 }
 
 function statusIcon(status: InteractionStub['status']) {
-  if (status === INTERACTION_STATUSES.completed) return '✓'
-  if (status === INTERACTION_STATUSES.failed) return '✗'
-  return '●'
+  if (status === INTERACTION_STATUSES.completed) return '✓';
+  if (status === INTERACTION_STATUSES.failed) return '✗';
+  return '●';
 }
 
 function phaseBadgeTone(phase: string | undefined): string {
-  const normalized = phase?.trim().toLowerCase()
+  const normalized = phase?.trim().toLowerCase();
   if (normalized === PHASES.plan)
-    return 'border-indigo-500/35 bg-indigo-500/15 text-indigo-300'
+    return 'border-indigo-500/35 bg-indigo-500/15 text-indigo-300';
   if (normalized === PHASES.run)
-    return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+    return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300';
   if (normalized === PHASES.review)
-    return 'border-amber-500/35 bg-amber-500/15 text-amber-300'
+    return 'border-amber-500/35 bg-amber-500/15 text-amber-300';
   if (normalized === PHASES.evaluate)
-    return 'border-cyan-500/35 bg-cyan-500/15 text-cyan-300'
+    return 'border-cyan-500/35 bg-cyan-500/15 text-cyan-300';
   if (normalized === PHASES.breakdown)
-    return 'border-orange-500/35 bg-orange-500/15 text-orange-300'
+    return 'border-orange-500/35 bg-orange-500/15 text-orange-300';
   if (normalized === PHASES.merge)
-    return 'border-purple-500/35 bg-purple-500/15 text-purple-300'
-  return 'border-slate-500/35 bg-slate-500/15 text-slate-300'
+    return 'border-purple-500/35 bg-purple-500/15 text-purple-300';
+  return 'border-slate-500/35 bg-slate-500/15 text-slate-300';
 }
 
 export function InteractionEntry({
@@ -59,19 +59,19 @@ export function InteractionEntry({
   showDiffSummary = false,
   children,
 }: Props) {
-  const detailContext = useInteractionDetailContext()
-  const activeLogId = detailContext?.activeLogId ?? null
-  const onToggleLog = detailContext?.onToggleLog
-  const isRunning = stub.status === INTERACTION_STATUSES.running
-  const phaseLabel = phase?.trim()
-  const open = collapsible ? alwaysExpanded || expanded : true
-  const diffSummary = showDiffSummary ? stub.diffSummary : null
+  const detailContext = useInteractionDetailContext();
+  const activeLogId = detailContext?.activeLogId ?? null;
+  const onToggleLog = detailContext?.onToggleLog;
+  const isRunning = stub.status === INTERACTION_STATUSES.running;
+  const phaseLabel = phase?.trim();
+  const open = collapsible ? alwaysExpanded || expanded : true;
+  const diffSummary = showDiffSummary ? stub.diffSummary : null;
   const rowClass = [
     'flex w-full items-center justify-between gap-2 rounded-md px-1 py-0.5 text-left transition-colors',
     alwaysExpanded ? '' : 'cursor-pointer hover:bg-surface/50',
   ]
     .filter(Boolean)
-    .join(' ')
+    .join(' ');
 
   return (
     <Collapsible.Root
@@ -141,8 +141,8 @@ export function InteractionEntry({
                 : 'border-border-subtle',
             ].join(' ')}
             onClick={(event) => {
-              event.stopPropagation()
-              onToggleLog(stub.id)
+              event.stopPropagation();
+              onToggleLog(stub.id);
             }}
             aria-label={
               activeLogId === stub.id
@@ -173,5 +173,5 @@ export function InteractionEntry({
         </Collapsible.Content>
       )}
     </Collapsible.Root>
-  )
+  );
 }

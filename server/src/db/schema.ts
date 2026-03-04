@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm';
 import {
   check,
   index,
@@ -7,7 +7,7 @@ import {
   real,
   sqliteTable,
   text,
-} from 'drizzle-orm/sqlite-core'
+} from 'drizzle-orm/sqlite-core';
 
 export const tasks = sqliteTable(
   'tasks',
@@ -27,7 +27,7 @@ export const tasks = sqliteTable(
     index('idx_tasks_created_at').on(table.createdAt),
     index('idx_tasks_updated_at').on(table.updatedAt),
   ],
-)
+);
 
 export const taskDeps = sqliteTable(
   'task_deps',
@@ -43,7 +43,7 @@ export const taskDeps = sqliteTable(
     primaryKey({ columns: [table.taskId, table.dependsOn] }),
     index('idx_task_deps_depends_on').on(table.dependsOn),
   ],
-)
+);
 
 export const taskInteractions = sqliteTable(
   'task_interactions',
@@ -73,7 +73,7 @@ export const taskInteractions = sqliteTable(
     index('idx_interactions_status').on(table.status),
     index('idx_interactions_run_id').on(table.runId),
   ],
-)
+);
 
 export const taskReviews = sqliteTable(
   'task_reviews',
@@ -82,16 +82,21 @@ export const taskReviews = sqliteTable(
     taskId: text('task_id')
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
-    interactionId: text('interaction_id').references(() => taskInteractions.id, {
-      onDelete: 'set null',
-    }),
+    interactionId: text('interaction_id').references(
+      () => taskInteractions.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
     feedback: text('feedback').notNull(),
     status: text('status').notNull().default('pending'),
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
     addressedAt: text('addressed_at'),
   },
-  (table) => [index('idx_task_reviews_task_created').on(table.taskId, table.createdAt)],
-)
+  (table) => [
+    index('idx_task_reviews_task_created').on(table.taskId, table.createdAt),
+  ],
+);
 
 export const taskFileAssociations = sqliteTable(
   'task_file_associations',
@@ -105,7 +110,7 @@ export const taskFileAssociations = sqliteTable(
     primaryKey({ columns: [table.taskId, table.filePath] }),
     index('idx_tfa_file_path').on(table.filePath),
   ],
-)
+);
 
 export const sessions = sqliteTable(
   'sessions',
@@ -123,8 +128,10 @@ export const sessions = sqliteTable(
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
     exitedAt: text('exited_at'),
   },
-  (table) => [index('idx_sessions_status_created').on(table.status, table.createdAt)],
-)
+  (table) => [
+    index('idx_sessions_status_created').on(table.status, table.createdAt),
+  ],
+);
 
 export const interactions = sqliteTable(
   'interactions',
@@ -138,18 +145,20 @@ export const interactions = sqliteTable(
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
     updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },
-  (table) => [index('idx_interactions_target').on(table.targetId, table.updatedAt)],
-)
+  (table) => [
+    index('idx_interactions_target').on(table.targetId, table.updatedAt),
+  ],
+);
 
 export const config = sqliteTable('config', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
-})
+});
 
 export const meta = sqliteTable('meta', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
-})
+});
 
 export const memoryEntries = sqliteTable(
   'memory_entries',
@@ -158,10 +167,15 @@ export const memoryEntries = sqliteTable(
     content: text('content').notNull(),
     category: text('category').notNull(),
     tags: text('tags').notNull().default('[]'),
-    sourceTaskId: text('source_task_id').references(() => tasks.id, { onDelete: 'set null' }),
-    sourceInteractionId: text('source_interaction_id').references(() => taskInteractions.id, {
+    sourceTaskId: text('source_task_id').references(() => tasks.id, {
       onDelete: 'set null',
     }),
+    sourceInteractionId: text('source_interaction_id').references(
+      () => taskInteractions.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
     confidence: real('confidence').notNull().default(1),
     provenanceHash: text('provenance_hash').notNull(),
     supersededBy: text('superseded_by'),
@@ -180,9 +194,12 @@ export const memoryEntries = sqliteTable(
       'memory_category_check',
       sql`${table.category} IN ('pattern', 'pitfall', 'preference', 'convention', 'architecture', 'dependency')`,
     ),
-    check('memory_source_type_check', sql`${table.sourceType} IN ('retro', 'explore')`),
+    check(
+      'memory_source_type_check',
+      sql`${table.sourceType} IN ('retro', 'explore')`,
+    ),
   ],
-)
+);
 
 export const memoryFileAssociations = sqliteTable(
   'memory_file_associations',
@@ -196,7 +213,7 @@ export const memoryFileAssociations = sqliteTable(
     primaryKey({ columns: [table.memoryId, table.filePath] }),
     index('idx_mfa_file_path').on(table.filePath),
   ],
-)
+);
 
 export const exploreContext = sqliteTable(
   'explore_context',
@@ -207,7 +224,7 @@ export const exploreContext = sqliteTable(
     updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },
   (table) => [check('explore_context_singleton', sql`${table.id} = 1`)],
-)
+);
 
 export const orchestratorSessions = sqliteTable(
   'orchestrator_sessions',
@@ -219,8 +236,13 @@ export const orchestratorSessions = sqliteTable(
     status: text('status').notNull().default('active'),
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },
-  (table) => [check('orchestrator_session_status', sql`${table.status} IN ('active', 'closed')`)],
-)
+  (table) => [
+    check(
+      'orchestrator_session_status',
+      sql`${table.status} IN ('active', 'closed')`,
+    ),
+  ],
+);
 
 export const orchestratorMessages = sqliteTable(
   'orchestrator_messages',
@@ -241,7 +263,7 @@ export const orchestratorMessages = sqliteTable(
       sql`${table.role} IN ('user', 'assistant', 'tool_use', 'tool_result')`,
     ),
   ],
-)
+);
 
 export const jobs = sqliteTable(
   'jobs',
@@ -263,4 +285,4 @@ export const jobs = sqliteTable(
     index('idx_jobs_task_id').on(table.taskId),
     index('idx_jobs_priority_created').on(table.priority, table.createdAt),
   ],
-)
+);

@@ -1,44 +1,44 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { api } from '../api'
-import { CreateTaskModal } from '../components/board/CreateTaskModal'
-import { TasksToolbar } from '../components/board/TasksToolbar'
-import { toast } from 'sonner'
-import {
-  useConfigQuery,
-  useModelsQuery,
-  useRunningOperations,
-  useTasksQuery,
-} from '../hooks/queries'
+import { useMutation } from '@tanstack/react-query';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
   getExpandedRowModel,
   useReactTable,
-} from '@tanstack/react-table'
-import type { Task } from '../types'
+} from '@tanstack/react-table';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { api } from '../api';
+import { CreateTaskModal } from '../components/board/CreateTaskModal';
+import { TasksToolbar } from '../components/board/TasksToolbar';
+import {
+  useConfigQuery,
+  useModelsQuery,
+  useRunningOperations,
+  useTasksQuery,
+} from '../hooks/queries';
+import type { Task } from '../types';
 
-type TaskNode = Task & { subRows?: TaskNode[] }
+type TaskNode = Task & { subRows?: TaskNode[] };
 
 function buildTaskTree(tasks: Task[]): TaskNode[] {
-  const map = new Map<string, TaskNode>()
-  for (const t of tasks) map.set(t.id, { ...t })
+  const map = new Map<string, TaskNode>();
+  for (const t of tasks) map.set(t.id, { ...t });
 
-  const roots: TaskNode[] = []
+  const roots: TaskNode[] = [];
   for (const node of map.values()) {
     if (node.parentId && map.has(node.parentId)) {
-      const parent = map.get(node.parentId)!
-        ; (parent.subRows ??= []).push(node)
+      const parent = map.get(node.parentId)!;
+      (parent.subRows ??= []).push(node);
     } else {
-      roots.push(node)
+      roots.push(node);
     }
   }
-  return roots
+  return roots;
 }
 
-const columnHelper = createColumnHelper<TaskNode>()
+const columnHelper = createColumnHelper<TaskNode>();
 
 const columns = [
   columnHelper.accessor('title', {
@@ -78,41 +78,41 @@ const columns = [
     header: 'Updated',
     cell: (info) => info.getValue(),
   }),
-]
+];
 
 function TasksPage() {
-  const tasksQuery = useTasksQuery()
-  const configQuery = useConfigQuery()
-  const allModelsQuery = useModelsQuery()
-  const { isRunning } = useRunningOperations()
+  const tasksQuery = useTasksQuery();
+  const configQuery = useConfigQuery();
+  const allModelsQuery = useModelsQuery();
+  const { isRunning } = useRunningOperations();
   const startTasksMutation = useMutation({
     mutationFn: (taskIds?: string[]) => api.startTasks(taskIds),
-  })
+  });
 
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState('');
 
-  const tasks = tasksQuery.data ?? []
-  const loading = tasksQuery.isLoading || configQuery.isLoading
-  void allModelsQuery.data
+  const tasks = tasksQuery.data ?? [];
+  const loading = tasksQuery.isLoading || configQuery.isLoading;
+  void allModelsQuery.data;
 
   const startTasks = async (taskIds?: string[]) => {
     try {
-      await startTasksMutation.mutateAsync(taskIds)
+      await startTasksMutation.mutateAsync(taskIds);
     } catch (err: any) {
-      toast.error(err?.message ?? 'Start failed')
+      toast.error(err?.message ?? 'Start failed');
     }
-  }
+  };
 
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
       </div>
-    )
+    );
   }
 
-  const startPending = isRunning('run')
-  const merging = isRunning('merge')
+  const startPending = isRunning('run');
+  const merging = isRunning('merge');
 
   return (
     <TasksToolbar
@@ -125,23 +125,23 @@ function TasksPage() {
       }}
       actions={{
         onStart: () => {
-          void startTasks()
+          void startTasks();
         },
         onMerge: () => {
           void api.merge().catch((err: any) => {
-            toast.error(err?.message ?? 'Merge failed')
-          })
+            toast.error(err?.message ?? 'Merge failed');
+          });
         },
       }}
       onSearchChange={setSearch}
     />
-  )
+  );
 }
 
 function Page() {
-  const { data: tasks } = useTasksQuery()
+  const { data: tasks } = useTasksQuery();
 
-  const data = buildTaskTree(tasks ?? [])
+  const data = buildTaskTree(tasks ?? []);
 
   const table = useReactTable({
     data,
@@ -152,7 +152,7 @@ function Page() {
     initialState: {
       expanded: true, // expand all by default
     },
-  })
+  });
 
   if (!tasks || tasks.length === 0)
     return (
@@ -160,7 +160,7 @@ function Page() {
         <p className="text-sm">No tasks yet.</p>
         <CreateTaskModal />
       </div>
-    )
+    );
 
   return (
     <>
@@ -181,9 +181,9 @@ function Page() {
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </th>
                 ))}
               </tr>
@@ -225,9 +225,9 @@ function Page() {
         </table>
       </div>
     </>
-  )
+  );
 }
 
 export const Route = createFileRoute('/')({
   component: Page,
-})
+});

@@ -8,22 +8,22 @@ export const PHASES = {
   review: 'review',
   merge: 'merge',
   retro: 'retro',
-} as const
+} as const;
 
-export const Phase = PHASES
+export const Phase = PHASES;
 
-export type InteractionPhase = (typeof PHASES)[keyof typeof PHASES]
+export type InteractionPhase = (typeof PHASES)[keyof typeof PHASES];
 
 export const INTERACTION_STATUSES = {
   running: 'running',
   completed: 'completed',
   failed: 'failed',
-} as const
+} as const;
 
-export const InteractionStatus = INTERACTION_STATUSES
+export const InteractionStatus = INTERACTION_STATUSES;
 
 export type InteractionStatus =
-  (typeof INTERACTION_STATUSES)[keyof typeof INTERACTION_STATUSES]
+  (typeof INTERACTION_STATUSES)[keyof typeof INTERACTION_STATUSES];
 
 export const TASK_STATUSES = {
   pending: 'pending',
@@ -35,21 +35,21 @@ export const TASK_STATUSES = {
   broken_down: 'broken_down',
   merged: 'merged',
   failed: 'failed',
-} as const
+} as const;
 
-export const TaskStatus = TASK_STATUSES
+export const TaskStatus = TASK_STATUSES;
 
-export type TaskStatus = (typeof TASK_STATUSES)[keyof typeof TASK_STATUSES]
+export type TaskStatus = (typeof TASK_STATUSES)[keyof typeof TASK_STATUSES];
 
 export const REVIEW_STATUSES = {
   pending: 'pending',
   addressed: 'addressed',
-} as const
+} as const;
 
-export const ReviewStatus = REVIEW_STATUSES
+export const ReviewStatus = REVIEW_STATUSES;
 
 export type ReviewStatus =
-  (typeof REVIEW_STATUSES)[keyof typeof REVIEW_STATUSES]
+  (typeof REVIEW_STATUSES)[keyof typeof REVIEW_STATUSES];
 
 export const PHASE_LABELS: Record<string, string> = {
   [PHASES.plan]: 'Planning',
@@ -61,204 +61,214 @@ export const PHASE_LABELS: Record<string, string> = {
   [PHASES.merge]: 'Merge',
   [PHASES.retro]: 'Retro',
   [PHASES.explore]: 'Explore',
-}
+};
 
 export const isRunLike = (phase: string): boolean =>
-  phase === PHASES.run || phase === PHASES.revise
+  phase === PHASES.run || phase === PHASES.revise;
 
 export interface Task {
-  id: string
-  title: string
-  description: string
-  parentId: string | null
-  sessionId?: string
-  status: TaskStatus
-  dependsOn: string[]
-  plan: string | null
-  createdAt: string
-  updatedAt: string
+  id: string;
+  title: string;
+  description: string;
+  parentId: string | null;
+  sessionId?: string;
+  status: TaskStatus;
+  dependsOn: string[];
+  plan: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TaskReview {
-  id: string
-  taskId: string
-  interactionId?: string
-  feedback: string
-  status: ReviewStatus
-  createdAt: string
-  addressedAt?: string
+  id: string;
+  taskId: string;
+  interactionId?: string;
+  feedback: string;
+  status: ReviewStatus;
+  createdAt: string;
+  addressedAt?: string;
 }
 
 export interface Config {
   project: {
-    name: string
-    integrationBranch: string
-    worktreeDir: string
-  }
-  tools: string[]
-  defaultTool: string
-  defaultModel: string
-  validation: { commands: string[] }
-  workers: { maxParallel: number }
+    name: string;
+    integrationBranch: string;
+    worktreeDir: string;
+  };
+  tools: string[];
+  defaultTool: string;
+  defaultModel: string;
+  validation: { commands: string[] };
+  workers: { maxParallel: number };
   orchestrator: {
-    supervisorTool: string
-    supervisorModel: string
-    phases: Record<string, { tool: string; model: string }>
-  }
+    supervisorTool: string;
+    supervisorModel: string;
+    phases: Record<string, { tool: string; model: string }>;
+  };
   monitor: {
-    stuckCheckInterval: import('ms').StringValue
-    maxStuckCycles: number
-    conflictCheckInterval: import('ms').StringValue
-  }
+    stuckCheckInterval: import('ms').StringValue;
+    maxStuckCycles: number;
+    conflictCheckInterval: import('ms').StringValue;
+  };
   quality: {
-    enabled: boolean
-    scopeCheck: boolean
-    testDelta: boolean
-    llmAlignment?: boolean
-  }
+    enabled: boolean;
+    scopeCheck: boolean;
+    testDelta: boolean;
+    llmAlignment?: boolean;
+  };
   postMerge?: {
-    enabled?: boolean
-    retro?: boolean
-    memorySync?: boolean
-  }
+    enabled?: boolean;
+    retro?: boolean;
+    memorySync?: boolean;
+  };
   cost?: {
-    budgetUsd?: number
-  }
-  logging: { level: string; file: string; maxSize: string }
+    budgetUsd?: number;
+  };
+  logging: { level: string; file: string; maxSize: string };
 }
 
 export interface ModelInfo {
-  id: string
-  name: string
-  provider: string
+  id: string;
+  name: string;
+  provider: string;
 }
 
 export interface Interaction {
-  id: string
-  taskId: string | null
-  phase: InteractionPhase | string
-  attempt: number
-  tool: string
-  status: InteractionStatus
-  error?: string
-  diff?: string
-  exitCode?: number
-  durationMs?: number
-  inputTokens: number
-  outputTokens: number
-  estimatedCost: number
-  qualityJson?: string
-  startedAt: string
-  finishedAt: string | null
+  id: string;
+  taskId: string | null;
+  phase: InteractionPhase | string;
+  attempt: number;
+  tool: string;
+  status: InteractionStatus;
+  error?: string;
+  diff?: string;
+  exitCode?: number;
+  durationMs?: number;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCost: number;
+  qualityJson?: string;
+  startedAt: string;
+  finishedAt: string | null;
 }
 
 export interface InteractionStub {
-  id: string
-  taskId: string | null
-  phase: string
-  attempt: number
-  tool: string
-  status: InteractionStatus
-  durationMs?: number
-  estimatedCost: number
-  diffSummary?: string | null
-  startedAt: string
-  finishedAt: string | null
+  id: string;
+  taskId: string | null;
+  phase: string;
+  attempt: number;
+  tool: string;
+  status: InteractionStatus;
+  durationMs?: number;
+  estimatedCost: number;
+  diffSummary?: string | null;
+  startedAt: string;
+  finishedAt: string | null;
 }
 
 export interface InteractionWithContent extends Interaction {
-  content: string
-  rawContent?: string
+  content: string;
+  rawContent?: string;
 }
 
 export interface OrchestratorMessage {
-  id: string
-  sessionId: string
-  role: 'user' | 'assistant' | 'tool_use' | 'tool_result'
-  content: string
-  metadata: Record<string, unknown>
-  createdAt: string
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant' | 'tool_use' | 'tool_result';
+  content: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface OrchestratorSessionSummary {
+  id: string;
+  tool: string;
+  model: string;
+  status: string;
+  createdAt: string;
+  messageCount: number;
+  preview: string | null;
 }
 
 export interface Operation {
-  id: string
-  type: string
-  targetId: string
-  status: InteractionStatus
-  result?: string
-  error?: string
-  createdAt: string
-  updatedAt: string
+  id: string;
+  type: string;
+  targetId: string;
+  status: InteractionStatus;
+  result?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AIReviewCheck {
-  key: string
-  label: string
-  passed: boolean
+  key: string;
+  label: string;
+  passed: boolean;
 }
 
 export interface AIReviewFinding {
-  id: string
-  summary: string
-  detail: string
-  passed: boolean
-  filePath?: string
-  line?: number
+  id: string;
+  summary: string;
+  detail: string;
+  passed: boolean;
+  filePath?: string;
+  line?: number;
 }
 
 export interface AIReviewResult {
-  taskId: string
-  approved: boolean
-  feedback: string
-  tool: string
-  prompt?: string
-  checks?: AIReviewCheck[]
-  findings?: AIReviewFinding[]
+  taskId: string;
+  approved: boolean;
+  feedback: string;
+  tool: string;
+  prompt?: string;
+  checks?: AIReviewCheck[];
+  findings?: AIReviewFinding[];
 }
 
 export interface TaskEvaluation {
-  complexity?: string
-  needsBreakdown: boolean
-  confidence: number
-  reasoning: string
-  suggestedSubtaskCount: number
-  descriptionHash?: string
+  complexity?: string;
+  needsBreakdown: boolean;
+  confidence: number;
+  reasoning: string;
+  suggestedSubtaskCount: number;
+  descriptionHash?: string;
 }
 
 interface WSEventBase<TType extends string, TData> {
-  type: TType
-  timestamp: string
-  data: TData
+  type: TType;
+  timestamp: string;
+  data: TData;
 }
 
 export interface SessionEventData {
-  id: string
-  type: string
-  tool: string
-  taskId: string
-  exitCode: number
-  status?: string
+  id: string;
+  type: string;
+  tool: string;
+  taskId: string;
+  exitCode: number;
+  status?: string;
 }
 
 export interface MergeFailedEventData {
-  taskId?: string
-  error: string
-  conflict?: boolean
-  worktreePath?: string
+  taskId?: string;
+  error: string;
+  conflict?: boolean;
+  worktreePath?: string;
 }
 
 export interface MergeProgressEventData {
-  taskId: string
-  message?: string
-  status?: string
-  error?: string
+  taskId: string;
+  message?: string;
+  status?: string;
+  error?: string;
 }
 
 export interface ProposedTask {
-  title: string
-  description: string
-  dependsOnIndices: number[]
-  suggestedTool: string
+  title: string;
+  description: string;
+  dependsOnIndices: number[];
+  suggestedTool: string;
 }
 
 export type MemoryCategory =
@@ -267,100 +277,100 @@ export type MemoryCategory =
   | 'preference'
   | 'convention'
   | 'architecture'
-  | 'dependency'
+  | 'dependency';
 
-export type MemorySourceType = 'retro' | 'explore'
+export type MemorySourceType = 'retro' | 'explore';
 
 export interface MemoryEntry {
-  id: string
-  content: string
-  category: MemoryCategory
-  tags: string[]
-  confidence: number
-  sourceType: MemorySourceType
-  filePaths?: string[]
-  coveredAtCommit?: string
-  stale?: boolean
-  sourceTaskId?: string
-  sourceInteractionId?: string
-  provenanceHash: string
-  supersededBy?: string
-  createdAt: string
-  updatedAt: string
+  id: string;
+  content: string;
+  category: MemoryCategory;
+  tags: string[];
+  confidence: number;
+  sourceType: MemorySourceType;
+  filePaths?: string[];
+  coveredAtCommit?: string;
+  stale?: boolean;
+  sourceTaskId?: string;
+  sourceInteractionId?: string;
+  provenanceHash: string;
+  supersededBy?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MemoryUsedByTask {
-  taskId: string
-  title: string
-  status: string
+  taskId: string;
+  title: string;
+  status: string;
 }
 
 export interface MemoryEntryDetail {
-  entry: MemoryEntry
-  usedByTasks: MemoryUsedByTask[]
-  supersedes?: string[]
+  entry: MemoryEntry;
+  usedByTasks: MemoryUsedByTask[];
+  supersedes?: string[];
 }
 
 export interface MemoryQueryResult {
-  entry: MemoryEntry
-  usedByTasks: MemoryUsedByTask[]
+  entry: MemoryEntry;
+  usedByTasks: MemoryUsedByTask[];
 }
 
 export interface ListMemoryParams {
-  category?: MemoryCategory
-  tag?: string
-  sourceType?: MemorySourceType
-  filePath?: string
-  stale?: boolean
-  coveredBefore?: string
-  q?: string
-  limit?: number
+  category?: MemoryCategory;
+  tag?: string;
+  sourceType?: MemorySourceType;
+  filePath?: string;
+  stale?: boolean;
+  coveredBefore?: string;
+  q?: string;
+  limit?: number;
 }
 
 export interface UpdateMemoryInput {
-  content?: string
-  confidence?: number
-  category?: MemoryCategory
+  content?: string;
+  confidence?: number;
+  category?: MemoryCategory;
 }
 
 export interface MemorySyncResult {
-  lastCommit: string
-  newCommit: string
-  commitCount: number
-  affectedFiles: string[]
-  flaggedEntries: number
-  staleEntries: number
-  supersededCount: number
-  classifications: Record<string, string>
-  contextUpdated: boolean
-  contextStale: boolean
+  lastCommit: string;
+  newCommit: string;
+  commitCount: number;
+  affectedFiles: string[];
+  flaggedEntries: number;
+  staleEntries: number;
+  supersededCount: number;
+  classifications: Record<string, string>;
+  contextUpdated: boolean;
+  contextStale: boolean;
 }
 
 export interface MemoryRefreshResult {
-  entryId?: string
-  updated: number
-  skipped: number
-  commit: string
+  entryId?: string;
+  updated: number;
+  skipped: number;
+  commit: string;
 }
 
 export interface ProjectStatus {
-  project: string
-  totalTasks: number
-  pending: number
-  inProgress: number
-  completed: number
-  failed: number
-  contextExists: boolean
-  contextStale: boolean
-  contextAgeMinutes: number
-  totalCost: number
-  runningOperations: number
-  lastSyncedCommit: string
-  currentCommit: string
-  syncNeeded: boolean
-  commitsBehind: number
-  memoryTotal: number
-  memoryStaleCount: number
+  project: string;
+  totalTasks: number;
+  pending: number;
+  inProgress: number;
+  completed: number;
+  failed: number;
+  contextExists: boolean;
+  contextStale: boolean;
+  contextAgeMinutes: number;
+  totalCost: number;
+  runningOperations: number;
+  lastSyncedCommit: string;
+  currentCommit: string;
+  syncNeeded: boolean;
+  commitsBehind: number;
+  memoryTotal: number;
+  memoryStaleCount: number;
 }
 
 export const JOB_STATUSES = {
@@ -369,10 +379,10 @@ export const JOB_STATUSES = {
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',
-} as const
+} as const;
 
-export const JobStatus = JOB_STATUSES
-export type JobStatus = (typeof JOB_STATUSES)[keyof typeof JOB_STATUSES]
+export const JobStatus = JOB_STATUSES;
+export type JobStatus = (typeof JOB_STATUSES)[keyof typeof JOB_STATUSES];
 
 export const JOB_TYPES = {
   run: 'run',
@@ -382,10 +392,10 @@ export const JOB_TYPES = {
   review: 'review',
   explore: 'explore',
   merge: 'merge',
-} as const
+} as const;
 
-export const JobType = JOB_TYPES
-export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES]
+export const JobType = JOB_TYPES;
+export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
 
 export const JOB_PRIORITIES: Record<JobType, number> = {
   run: 0,
@@ -395,20 +405,20 @@ export const JOB_PRIORITIES: Record<JobType, number> = {
   plan: 4,
   breakdown: 4,
   explore: 5,
-}
+};
 
 export interface Job {
-  id: string
-  type: JobType
-  taskId: string | null
-  status: JobStatus
-  priority: number
-  payload: Record<string, unknown> | null
-  error: string | null
-  result: Record<string, unknown> | null
-  createdAt: string
-  startedAt: string | null
-  completedAt: string | null
+  id: string;
+  type: JobType;
+  taskId: string | null;
+  status: JobStatus;
+  priority: number;
+  payload: Record<string, unknown> | null;
+  error: string | null;
+  result: Record<string, unknown> | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
 export type KnownWSEvent =
@@ -460,20 +470,20 @@ export type KnownWSEvent =
   | WSEventBase<
       'breakdown.failed',
       {
-        taskId: string
-        error: string
-        sessionId?: string
-        operationId?: string
+        taskId: string;
+        error: string;
+        sessionId?: string;
+        operationId?: string;
       }
     >
   | WSEventBase<
       'breakdown.completed',
       {
-        taskId: string
-        proposed: ProposedTask[]
-        interactionId?: string
-        sessionId?: string
-        operationId?: string
+        taskId: string;
+        proposed: ProposedTask[];
+        interactionId?: string;
+        sessionId?: string;
+        operationId?: string;
       }
     >
   | WSEventBase<
@@ -487,17 +497,32 @@ export type KnownWSEvent =
   | WSEventBase<'monitor.conflict', { taskIds: string[]; files: string[] }>
   | WSEventBase<'monitor.stuck', { taskId: string; message: string }>
   | WSEventBase<'quality.alert', { taskId: string; issues: string[] }>
-  | WSEventBase<'queue.job.queued', { jobId: string; type: string; taskId?: string; priority: number }>
-  | WSEventBase<'queue.job.started', { jobId: string; type: string; taskId?: string }>
-  | WSEventBase<'queue.job.completed', { jobId: string; type: string; taskId?: string }>
-  | WSEventBase<'queue.job.failed', { jobId: string; type: string; taskId?: string; error: string }>
-  | WSEventBase<'queue.job.cancelled', { jobId: string; type: string; taskId?: string }>
+  | WSEventBase<
+      'queue.job.queued',
+      { jobId: string; type: string; taskId?: string; priority: number }
+    >
+  | WSEventBase<
+      'queue.job.started',
+      { jobId: string; type: string; taskId?: string }
+    >
+  | WSEventBase<
+      'queue.job.completed',
+      { jobId: string; type: string; taskId?: string }
+    >
+  | WSEventBase<
+      'queue.job.failed',
+      { jobId: string; type: string; taskId?: string; error: string }
+    >
+  | WSEventBase<
+      'queue.job.cancelled',
+      { jobId: string; type: string; taskId?: string }
+    >;
 
-type KnownWSEventType = KnownWSEvent['type']
+type KnownWSEventType = KnownWSEvent['type'];
 
-export type UnknownWSEvent = WSEventBase<string, Record<string, unknown>>
+export type UnknownWSEvent = WSEventBase<string, Record<string, unknown>>;
 
-export type WSEvent = KnownWSEvent | UnknownWSEvent
+export type WSEvent = KnownWSEvent | UnknownWSEvent;
 
 const KNOWN_WS_EVENT_TYPES = new Set<KnownWSEventType>([
   'task.created',
@@ -542,12 +567,12 @@ const KNOWN_WS_EVENT_TYPES = new Set<KnownWSEventType>([
   'queue.job.completed',
   'queue.job.failed',
   'queue.job.cancelled',
-])
+]);
 
 function isKnownWSEventType(type: string): type is KnownWSEventType {
-  return KNOWN_WS_EVENT_TYPES.has(type as KnownWSEventType)
+  return KNOWN_WS_EVENT_TYPES.has(type as KnownWSEventType);
 }
 
 export function isKnownWSEvent(event: WSEvent): event is KnownWSEvent {
-  return isKnownWSEventType(event.type)
+  return isKnownWSEventType(event.type);
 }

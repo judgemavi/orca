@@ -1,11 +1,11 @@
-import type { Interaction, Task } from '../../../types'
-import { INTERACTION_STATUSES, isRunLike } from '@orca/types'
-import { DiffViewer } from '../../blocks/DiffViewer'
+import { INTERACTION_STATUSES, isRunLike } from '@orca/types';
+import type { Interaction, Task } from '../../../types';
+import { DiffViewer } from '../../blocks/DiffViewer';
 
 type Props = {
-  interaction: Interaction
-  task: Task
-}
+  interaction: Interaction;
+  task: Task;
+};
 
 export function RunPhaseSection({ interaction, task }: Props) {
   if (
@@ -13,7 +13,7 @@ export function RunPhaseSection({ interaction, task }: Props) {
     interaction.status !== INTERACTION_STATUSES.completed ||
     !interaction.diff
   ) {
-    return null
+    return null;
   }
 
   return (
@@ -26,5 +26,5 @@ export function RunPhaseSection({ interaction, task }: Props) {
         actions: [],
       }}
     />
-  )
+  );
 }

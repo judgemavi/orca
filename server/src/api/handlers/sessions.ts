@@ -1,7 +1,7 @@
-import { Hono } from 'hono'
-import { desc, eq } from 'drizzle-orm'
-import type { OrcaDrizzleDB } from '../../db/connection'
-import { sessions } from '../../db/schema'
+import { desc, eq } from 'drizzle-orm';
+import type { Hono } from 'hono';
+import type { OrcaDrizzleDB } from '../../db/connection';
+import { sessions } from '../../db/schema';
 
 export function registerSessionHandlers(app: Hono, db: OrcaDrizzleDB) {
   app.get('/sessions', async (c) => {
@@ -17,8 +17,10 @@ export function registerSessionHandlers(app: Hono, db: OrcaDrizzleDB) {
       })
       .from(sessions)
       .where(eq(sessions.status, 'running'))
-      .orderBy(desc(sessions.createdAt))
+      .orderBy(desc(sessions.createdAt));
 
-    return c.json({ data: rows.map((row) => ({ ...row, taskId: row.taskId ?? '' })) })
-  })
+    return c.json({
+      data: rows.map((row) => ({ ...row, taskId: row.taskId ?? '' })),
+    });
+  });
 }

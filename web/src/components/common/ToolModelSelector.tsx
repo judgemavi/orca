@@ -1,21 +1,21 @@
 interface ToolModelOption {
-  id: string
-  name: string
+  id: string;
+  name: string;
 }
 
 interface Props {
-  tools: string[]
-  selectedTool: string
-  selectedModel: string
-  models: ToolModelOption[]
-  modelsFetching: boolean
-  disabled?: boolean
-  onToolChange: (tool: string) => void
-  onModelChange: (model: string) => void
-  controlClass: string
-  toolPlaceholder?: string
-  modelPlaceholder?: string
-  className?: string
+  tools: string[];
+  selectedTool: string;
+  selectedModel: string;
+  models: ToolModelOption[];
+  modelsFetching: boolean;
+  disabled?: boolean;
+  onToolChange: (tool: string) => void;
+  onModelChange: (model: string) => void;
+  controlClass: string;
+  toolPlaceholder?: string;
+  modelPlaceholder?: string;
+  className?: string;
 }
 
 export function ToolModelSelector({
@@ -32,7 +32,7 @@ export function ToolModelSelector({
   modelPlaceholder = '- default model',
   className = 'grid grid-cols-1 items-center gap-2 sm:grid-cols-2',
 }: Props) {
-  const modelDisabled = disabled || !selectedTool || modelsFetching
+  const modelDisabled = disabled || !selectedTool || modelsFetching;
 
   return (
     <div className={className}>
@@ -64,5 +64,5 @@ export function ToolModelSelector({
         ))}
       </select>
     </div>
-  )
+  );
 }

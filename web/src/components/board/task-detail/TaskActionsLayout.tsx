@@ -1,25 +1,25 @@
-import { type ReactNode } from 'react'
-import { controlClass } from '../../../lib/constants'
-import { ToolModelSelector } from '../../common/ToolModelSelector'
+import type { ReactNode } from 'react';
+import { controlClass } from '../../../lib/constants';
+import { ToolModelSelector } from '../../common/ToolModelSelector';
 
 type ToolModelOption = {
-  id: string
-  name: string
-}
+  id: string;
+  name: string;
+};
 
 type Props = {
-  tools: string[]
-  actionTool: string
-  actionModel: string
-  actionModels: ToolModelOption[]
-  actionModelsFetching: boolean
-  onToolChange: (tool: string) => void
-  onModelChange: (model: string) => void
-  showToolModelSelector?: boolean
-  actionError?: string | null
-  feedback?: ReactNode
-  actions: ReactNode
-}
+  tools: string[];
+  actionTool: string;
+  actionModel: string;
+  actionModels: ToolModelOption[];
+  actionModelsFetching: boolean;
+  onToolChange: (tool: string) => void;
+  onModelChange: (model: string) => void;
+  showToolModelSelector?: boolean;
+  actionError?: string | null;
+  feedback?: ReactNode;
+  actions: ReactNode;
+};
 
 export function TaskActionsLayout({
   tools,
@@ -61,15 +61,15 @@ export function TaskActionsLayout({
         {actions}
       </div>
     </div>
-  )
+  );
 }
 
 type FeedbackProps = {
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-  showNotice?: boolean
-}
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  showNotice?: boolean;
+};
 
 export function TaskFeedbackBox({
   value,
@@ -91,5 +91,5 @@ export function TaskFeedbackBox({
         placeholder={placeholder}
       />
     </div>
-  )
+  );
 }

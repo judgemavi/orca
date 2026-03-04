@@ -1,21 +1,21 @@
-import * as Collapsible from '@radix-ui/react-collapsible'
-import type { Interaction } from '../../../types'
-import { controlClass } from '../../../lib/constants'
-import { INTERACTION_STATUSES, PHASES } from '@orca/types'
-import { ToolModelSelector } from '../../common/ToolModelSelector'
-import type { useMergeHandler } from './useMergeHandler'
-import { Button } from '../../Button'
+import { INTERACTION_STATUSES, PHASES } from '@orca/types';
+import * as Collapsible from '@radix-ui/react-collapsible';
+import { controlClass } from '../../../lib/constants';
+import type { Interaction } from '../../../types';
+import { Button } from '../../Button';
+import { ToolModelSelector } from '../../common/ToolModelSelector';
+import type { useMergeHandler } from './useMergeHandler';
 
-type MergeState = ReturnType<typeof useMergeHandler>
+type MergeState = ReturnType<typeof useMergeHandler>;
 
 type Props = {
-  interaction: Interaction
-  readOnly: boolean
-  tools: string[]
-  isLatestRunning: boolean
-  isLatestFailed: boolean
-  merge: MergeState
-}
+  interaction: Interaction;
+  readOnly: boolean;
+  tools: string[];
+  isLatestRunning: boolean;
+  isLatestFailed: boolean;
+  merge: MergeState;
+};
 
 export function MergePhaseSection({
   interaction,
@@ -25,7 +25,7 @@ export function MergePhaseSection({
   isLatestFailed,
   merge,
 }: Props) {
-  if (interaction.phase !== PHASES.merge) return null
+  if (interaction.phase !== PHASES.merge) return null;
 
   return (
     <>
@@ -94,5 +94,5 @@ export function MergePhaseSection({
           </div>
         )}
     </>
-  )
+  );
 }

@@ -1,14 +1,14 @@
-import { bootstrap } from '../bootstrap'
-import { startMCPServer } from '../mcp/server'
+import { bootstrap } from '../bootstrap';
+import { startMCPServer } from '../mcp/server';
 
 export async function runMCPEntrypoint(repoDir: string) {
   // MCP mode: stdout is reserved for protocol — redirect all logging to stderr
-  const stderrLog = (...args: unknown[]) => console.error(...args)
-  console.log = stderrLog
-  console.info = stderrLog
-  console.warn = stderrLog
+  const stderrLog = (...args: unknown[]) => console.error(...args);
+  console.log = stderrLog;
+  console.info = stderrLog;
+  console.warn = stderrLog;
 
-  const ctx = await bootstrap({ repoDir })
+  const ctx = await bootstrap({ repoDir });
 
   try {
     await startMCPServer({
@@ -20,8 +20,8 @@ export async function runMCPEntrypoint(repoDir: string) {
       memoryStore: ctx.memoryStore,
       executor: ctx.executor,
       queue: ctx.queue,
-    })
+    });
   } finally {
-    ctx.database.close()
+    ctx.database.close();
   }
 }

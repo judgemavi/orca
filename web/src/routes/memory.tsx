@@ -1,17 +1,17 @@
-import { useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import * as Dialog from '@radix-ui/react-dialog';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
   useReactTable,
-} from '@tanstack/react-table'
-import * as Dialog from '@radix-ui/react-dialog'
-import { toast } from 'sonner'
-import { api } from '../api'
-import { Button } from '../components/Button'
-import { DialogChrome } from '../components/DialogChrome'
+} from '@tanstack/react-table';
+import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { api } from '../api';
+import { Button } from '../components/Button';
+import { DialogChrome } from '../components/DialogChrome';
 import {
   useDeleteMemoryMutation,
   useMemoryEntryQuery,
@@ -21,10 +21,10 @@ import {
   useRefreshMemoryMutation,
   useStatusQuery,
   useSyncMemoryMutation,
-} from '../hooks/queries'
-import { controlClass } from '../lib/constants'
-import { queryKeys } from '../lib/queryKeys'
-import type { MemoryCategory, MemoryEntry, MemorySourceType } from '../types'
+} from '../hooks/queries';
+import { controlClass } from '../lib/constants';
+import { queryKeys } from '../lib/queryKeys';
+import type { MemoryCategory, MemoryEntry, MemorySourceType } from '../types';
 
 const CATEGORIES: MemoryCategory[] = [
   'pattern',
@@ -33,12 +33,9 @@ const CATEGORIES: MemoryCategory[] = [
   'convention',
   'architecture',
   'dependency',
-]
+];
 
-const SOURCE_TYPES: MemorySourceType[] = [
-  'retro',
-  'explore',
-]
+const SOURCE_TYPES: MemorySourceType[] = ['retro', 'explore'];
 
 const CATEGORY_TONE: Record<MemoryCategory, string> = {
   pattern: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
@@ -47,133 +44,133 @@ const CATEGORY_TONE: Record<MemoryCategory, string> = {
   convention: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
   architecture: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300',
   dependency: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300',
-}
+};
 
 const SOURCE_TONE: Record<MemorySourceType, string> = {
   retro: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
   explore: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-}
+};
 
-const columnHelper = createColumnHelper<MemoryEntry>()
+const columnHelper = createColumnHelper<MemoryEntry>();
 
 type EditDraft = {
-  content: string
-  confidence: string
-  category: MemoryCategory
-}
+  content: string;
+  confidence: string;
+  category: MemoryCategory;
+};
 
 function formatDate(iso: string) {
-  const date = new Date(iso)
-  if (!Number.isFinite(date.getTime())) return '—'
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return '—';
   return date.toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
     day: '2-digit',
-  })
+  });
 }
 
 function MemoryPage() {
-  const [queryText, setQueryText] = useState('')
-  const [category, setCategory] = useState<MemoryCategory | 'all'>('all')
-  const [sourceType, setSourceType] = useState<MemorySourceType | 'all'>('all')
-  const [filePath, setFilePath] = useState('')
-  const [staleOnly, setStaleOnly] = useState(false)
+  const [queryText, setQueryText] = useState('');
+  const [category, setCategory] = useState<MemoryCategory | 'all'>('all');
+  const [sourceType, setSourceType] = useState<MemorySourceType | 'all'>('all');
+  const [filePath, setFilePath] = useState('');
+  const [staleOnly, setStaleOnly] = useState(false);
   const [expandedContent, setExpandedContent] = useState<
     Record<string, boolean>
-  >({})
-  const [overflowing, setOverflowing] = useState<Record<string, boolean>>({})
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [draft, setDraft] = useState<EditDraft | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<MemoryEntry | null>(null)
-  const queryClient = useQueryClient()
+  >({});
+  const [overflowing, setOverflowing] = useState<Record<string, boolean>>({});
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MemoryEntry | null>(null);
+  const queryClient = useQueryClient();
 
   const listParams = useMemo(() => {
-    const filePathTrimmed = filePath.trim()
+    const filePathTrimmed = filePath.trim();
     return {
       ...(category !== 'all' ? { category } : {}),
       ...(sourceType !== 'all' ? { sourceType: sourceType } : {}),
       ...(filePathTrimmed ? { filePath: filePathTrimmed } : {}),
       ...(staleOnly ? { stale: true } : {}),
-    }
-  }, [category, sourceType, filePath, staleOnly])
+    };
+  }, [category, sourceType, filePath, staleOnly]);
 
-  const memoryQuery = useMemoryQuery(listParams)
-  const semanticQuery = useMemorySemanticQuery(queryText.trim(), 20)
-  const statusQuery = useStatusQuery()
-  const updateMutation = useMemoryMutation()
-  const deleteMutation = useDeleteMemoryMutation()
-  const syncMutation = useSyncMemoryMutation()
-  const refreshMutation = useRefreshMemoryMutation()
-  const detailQuery = useMemoryEntryQuery(selectedEntryId ?? undefined)
+  const memoryQuery = useMemoryQuery(listParams);
+  const semanticQuery = useMemorySemanticQuery(queryText.trim(), 20);
+  const statusQuery = useStatusQuery();
+  const updateMutation = useMemoryMutation();
+  const deleteMutation = useDeleteMemoryMutation();
+  const syncMutation = useSyncMemoryMutation();
+  const refreshMutation = useRefreshMemoryMutation();
+  const detailQuery = useMemoryEntryQuery(selectedEntryId ?? undefined);
   const exploreMutation = useMutation({
     mutationFn: () => api.runExplore(),
     onSuccess: async () => {
-      toast.success('Explore started')
+      toast.success('Explore started');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.operations() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.status }),
-      ])
+      ]);
     },
     onError: (error: unknown) => {
       toast.error(
         error instanceof Error ? error.message : 'Failed to start explore',
-      )
+      );
     },
-  })
+  });
 
   const entries = useMemo(() => {
     if (queryText.trim()) {
-      return (semanticQuery.data ?? []).map((item) => item.entry)
+      return (semanticQuery.data ?? []).map((item) => item.entry);
     }
-    return memoryQuery.data ?? []
-  }, [memoryQuery.data, queryText, semanticQuery.data])
+    return memoryQuery.data ?? [];
+  }, [memoryQuery.data, queryText, semanticQuery.data]);
 
   const allFilePaths = useMemo(() => {
-    const set = new Set<string>()
+    const set = new Set<string>();
     for (const entry of memoryQuery.data ?? []) {
       for (const path of entry.filePaths ?? []) {
-        if (path) set.add(path)
+        if (path) set.add(path);
       }
     }
     for (const item of semanticQuery.data ?? []) {
       for (const path of item.entry.filePaths ?? []) {
-        if (path) set.add(path)
+        if (path) set.add(path);
       }
     }
-    return Array.from(set).sort()
-  }, [memoryQuery.data, semanticQuery.data])
+    return Array.from(set).sort();
+  }, [memoryQuery.data, semanticQuery.data]);
 
   const toggleExpanded = (id: string) => {
-    setExpandedContent((prev) => ({ ...prev, [id]: !prev[id] }))
-  }
+    setExpandedContent((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const beginEdit = (entry: MemoryEntry) => {
-    setEditingId(entry.id)
+    setEditingId(entry.id);
     setDraft({
       content: entry.content,
       confidence: String(entry.confidence),
       category: entry.category,
-    })
-  }
+    });
+  };
 
   const cancelEdit = () => {
-    setEditingId(null)
-    setDraft(null)
-  }
+    setEditingId(null);
+    setDraft(null);
+  };
 
   const saveEdit = async () => {
-    if (!editingId || !draft) return
+    if (!editingId || !draft) return;
 
-    const content = draft.content.trim()
-    const confidence = Number(draft.confidence)
+    const content = draft.content.trim();
+    const confidence = Number(draft.confidence);
     if (!content) {
-      toast.error('Content cannot be empty')
-      return
+      toast.error('Content cannot be empty');
+      return;
     }
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-      toast.error('Confidence must be between 0 and 1')
-      return
+      toast.error('Confidence must be between 0 and 1');
+      return;
     }
 
     try {
@@ -184,39 +181,40 @@ function MemoryPage() {
           confidence,
           category: draft.category,
         },
-      })
-      toast.success('Memory updated')
-      cancelEdit()
+      });
+      toast.success('Memory updated');
+      cancelEdit();
     } catch (error: unknown) {
       toast.error(
         error instanceof Error ? error.message : 'Failed to update entry',
-      )
+      );
     }
-  }
+  };
 
   const confirmDelete = async () => {
-    if (!deleteTarget) return
+    if (!deleteTarget) return;
     try {
-      await deleteMutation.mutateAsync(deleteTarget.id)
-      if (editingId === deleteTarget.id) cancelEdit()
-      toast.success('Memory deleted')
-      setDeleteTarget(null)
+      await deleteMutation.mutateAsync(deleteTarget.id);
+      if (editingId === deleteTarget.id) cancelEdit();
+      toast.success('Memory deleted');
+      setDeleteTarget(null);
     } catch (error: unknown) {
       toast.error(
         error instanceof Error ? error.message : 'Failed to delete entry',
-      )
+      );
     }
-  }
+  };
 
   const columns = useMemo(
     () => [
       columnHelper.accessor('content', {
         header: 'Content',
         cell: ({ row, getValue }) => {
-          const isEditing = editingId === row.original.id
-          const content = getValue()
-          const isExpanded = expandedContent[row.original.id] ?? false
-          const showToggle = overflowing[row.original.id] || content.length > 140
+          const isEditing = editingId === row.original.id;
+          const content = getValue();
+          const isExpanded = expandedContent[row.original.id] ?? false;
+          const showToggle =
+            overflowing[row.original.id] || content.length > 140;
 
           if (isEditing) {
             return (
@@ -230,7 +228,7 @@ function MemoryPage() {
                   )
                 }
               />
-            )
+            );
           }
 
           return (
@@ -242,8 +240,16 @@ function MemoryPage() {
               >
                 <p
                   ref={(el) => {
-                    if (el && !isExpanded && el.scrollHeight > el.clientHeight) {
-                      setOverflowing((prev) => prev[row.original.id] ? prev : { ...prev, [row.original.id]: true })
+                    if (
+                      el &&
+                      !isExpanded &&
+                      el.scrollHeight > el.clientHeight
+                    ) {
+                      setOverflowing((prev) =>
+                        prev[row.original.id]
+                          ? prev
+                          : { ...prev, [row.original.id]: true },
+                      );
                     }
                   }}
                   className={
@@ -265,7 +271,7 @@ function MemoryPage() {
                 </button>
               )}
             </div>
-          )
+          );
         },
       }),
       columnHelper.accessor('stale', {
@@ -282,22 +288,22 @@ function MemoryPage() {
       columnHelper.accessor('coveredAtCommit', {
         header: 'Covered At',
         cell: ({ getValue }) => {
-          const value = getValue()
+          const value = getValue();
           if (!value) {
-            return <span className="text-xs text-muted">—</span>
+            return <span className="text-xs text-muted">—</span>;
           }
-          const trimmed = value.trim()
+          const trimmed = value.trim();
           return (
             <span className="text-xs text-muted" title={trimmed}>
               {trimmed.slice(0, 8)}
             </span>
-          )
+          );
         },
       }),
       columnHelper.accessor('category', {
         header: 'Category',
         cell: ({ row, getValue }) => {
-          const isEditing = editingId === row.original.id
+          const isEditing = editingId === row.original.id;
           if (isEditing) {
             return (
               <select
@@ -320,38 +326,38 @@ function MemoryPage() {
                   </option>
                 ))}
               </select>
-            )
+            );
           }
 
-          const categoryValue = getValue()
+          const categoryValue = getValue();
           return (
             <span
               className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${CATEGORY_TONE[categoryValue]}`}
             >
               {categoryValue}
             </span>
-          )
+          );
         },
       }),
       columnHelper.accessor('sourceType', {
         header: 'Source Type',
         cell: ({ getValue }) => {
-          const value = getValue()
+          const value = getValue();
           return (
             <span
               className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${SOURCE_TONE[value]}`}
             >
               {value}
             </span>
-          )
+          );
         },
       }),
       columnHelper.accessor('tags', {
         header: 'Tags',
         cell: ({ getValue }) => {
-          const tags = getValue()
+          const tags = getValue();
           if (tags.length === 0) {
-            return <span className="text-xs text-muted">—</span>
+            return <span className="text-xs text-muted">—</span>;
           }
           return (
             <div className="flex max-w-[220px] flex-wrap gap-1">
@@ -364,15 +370,15 @@ function MemoryPage() {
                 </span>
               ))}
             </div>
-          )
+          );
         },
       }),
       columnHelper.accessor('filePaths', {
         header: 'Files',
         cell: ({ getValue }) => {
-          const paths = getValue() ?? []
+          const paths = getValue() ?? [];
           if (paths.length === 0) {
-            return <span className="text-xs text-muted">—</span>
+            return <span className="text-xs text-muted">—</span>;
           }
           return (
             <div className="flex max-w-[260px] flex-wrap gap-1">
@@ -388,13 +394,13 @@ function MemoryPage() {
                 </button>
               ))}
             </div>
-          )
+          );
         },
       }),
       columnHelper.accessor('confidence', {
         header: 'Confidence',
         cell: ({ row, getValue }) => {
-          const isEditing = editingId === row.original.id
+          const isEditing = editingId === row.original.id;
           if (isEditing) {
             return (
               <input
@@ -410,10 +416,10 @@ function MemoryPage() {
                   )
                 }
               />
-            )
+            );
           }
 
-          const confidence = Math.max(0, Math.min(1, getValue()))
+          const confidence = Math.max(0, Math.min(1, getValue()));
           return (
             <div className="flex min-w-[110px] items-center gap-2">
               <div className="h-1.5 w-16 rounded bg-surface-alt">
@@ -426,15 +432,15 @@ function MemoryPage() {
                 {Math.round(confidence * 100)}%
               </span>
             </div>
-          )
+          );
         },
       }),
       columnHelper.accessor('sourceTaskId', {
         header: 'Task',
         cell: ({ getValue }) => {
-          const sourceTaskId = getValue()
+          const sourceTaskId = getValue();
           if (!sourceTaskId) {
-            return <span className="text-xs text-muted">—</span>
+            return <span className="text-xs text-muted">—</span>;
           }
           return (
             <Link
@@ -444,7 +450,7 @@ function MemoryPage() {
             >
               {sourceTaskId.slice(0, 8)}
             </Link>
-          )
+          );
         },
       }),
       columnHelper.accessor('createdAt', {
@@ -457,7 +463,7 @@ function MemoryPage() {
         id: 'actions',
         header: 'Actions',
         cell: ({ row }) => {
-          const isEditing = editingId === row.original.id
+          const isEditing = editingId === row.original.id;
           if (isEditing) {
             return (
               <div className="flex gap-1">
@@ -473,7 +479,7 @@ function MemoryPage() {
                   Cancel
                 </Button>
               </div>
-            )
+            );
           }
 
           return (
@@ -511,7 +517,7 @@ function MemoryPage() {
                 Delete
               </Button>
             </div>
-          )
+          );
         },
       }),
     ],
@@ -523,22 +529,22 @@ function MemoryPage() {
       refreshMutation,
       updateMutation.isPending,
     ],
-  )
+  );
 
   const table = useReactTable({
     data: entries,
     columns,
     getCoreRowModel: getCoreRowModel(),
-  })
-  const hasSemanticQuery = queryText.trim().length > 0
+  });
+  const hasSemanticQuery = queryText.trim().length > 0;
   const listLoading = hasSemanticQuery
     ? semanticQuery.isLoading
-    : memoryQuery.isLoading
-  const listError = hasSemanticQuery ? semanticQuery.error : memoryQuery.error
+    : memoryQuery.isLoading;
+  const listError = hasSemanticQuery ? semanticQuery.error : memoryQuery.error;
   const listIsError = hasSemanticQuery
     ? semanticQuery.isError
-    : memoryQuery.isError
-  const status = statusQuery.data
+    : memoryQuery.isError;
+  const status = statusQuery.data;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col py-4">
@@ -565,17 +571,17 @@ function MemoryPage() {
                       ? `${result.lastCommit.slice(0, 8)}→${result.newCommit.slice(0, 8)}`
                       : result.newCommit
                         ? `synced to ${result.newCommit.slice(0, 8)}`
-                        : 'synced'
+                        : 'synced';
                   toast.success(
                     `Memory sync complete: ${result.flaggedEntries} flagged, ${result.staleEntries} stale, ${result.supersededCount} superseded, ${result.affectedFiles.length} files, ${range}`,
-                  )
+                  );
                 },
                 onError: (error) => {
                   toast.error(
                     error instanceof Error
                       ? error.message
                       : 'Memory sync failed',
-                  )
+                  );
                 },
               })
             }
@@ -640,7 +646,9 @@ function MemoryPage() {
                 </Button>
               </div>
             ) : (
-              <span>Memory sync: up to date ({status.memoryTotal} entries).</span>
+              <span>
+                Memory sync: up to date ({status.memoryTotal} entries).
+              </span>
             )}
           </div>
 
@@ -724,11 +732,11 @@ function MemoryPage() {
         </label>
         <Button
           onClick={() => {
-            setQueryText('')
-            setCategory('all')
-            setSourceType('all')
-            setFilePath('')
-            setStaleOnly(false)
+            setQueryText('');
+            setCategory('all');
+            setSourceType('all');
+            setFilePath('');
+            setStaleOnly(false);
           }}
           disabled={
             queryText.length === 0 &&
@@ -758,7 +766,10 @@ function MemoryPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-medium">Entry Detail</h2>
-                <Button className="px-2 py-1 text-xs" onClick={() => setSelectedEntryId(null)}>
+                <Button
+                  className="px-2 py-1 text-xs"
+                  onClick={() => setSelectedEntryId(null)}
+                >
                   Close
                 </Button>
               </div>
@@ -791,11 +802,11 @@ function MemoryPage() {
               </p>
               <p className="text-xs text-muted">
                 Supersedes:{' '}
-                {detailQuery.data.supersedes && detailQuery.data.supersedes.length > 0
+                {detailQuery.data.supersedes &&
+                detailQuery.data.supersedes.length > 0
                   ? detailQuery.data.supersedes.join(', ')
                   : '—'}{' '}
-                • Superseded by:{' '}
-                {detailQuery.data.entry.supersededBy || '—'}
+                • Superseded by: {detailQuery.data.entry.supersededBy || '—'}
               </p>
               <div className="flex flex-wrap gap-1">
                 {(detailQuery.data.entry.filePaths ?? []).map((path) => (
@@ -897,7 +908,7 @@ function MemoryPage() {
       <Dialog.Root
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null)
+          if (!open) setDeleteTarget(null);
         }}
       >
         <Dialog.Portal>
@@ -906,9 +917,7 @@ function MemoryPage() {
             <div className="dialog-content-inner w-[min(92vw,420px)]">
               <DialogChrome title="Delete Memory" />
               <div className="flex flex-col gap-4 p-4 text-sm">
-                <p>
-                  Delete this memory entry? This action cannot be undone.
-                </p>
+                <p>Delete this memory entry? This action cannot be undone.</p>
                 {deleteTarget && (
                   <p className="line-clamp-3 rounded-md bg-surface-alt p-2 text-xs">
                     {deleteTarget.content}
@@ -935,9 +944,9 @@ function MemoryPage() {
         </Dialog.Portal>
       </Dialog.Root>
     </div>
-  )
+  );
 }
 
 export const Route = createFileRoute('/memory')({
   component: MemoryPage,
-})
+});

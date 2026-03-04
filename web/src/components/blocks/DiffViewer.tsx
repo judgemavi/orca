@@ -1,92 +1,92 @@
-import * as Tabs from '@radix-ui/react-tabs'
-import { useEffect, useMemo, useState } from 'react'
-import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
-import { Button } from '../Button'
+import * as Tabs from '@radix-ui/react-tabs';
+import { useEffect, useMemo, useState } from 'react';
+import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
+import { Button } from '../Button';
 
 interface Props {
   data: {
-    taskId: string
-    title: string
-    diff: string
-    filesChanged: string[]
-    actions: string[]
-  }
-  onAction?: (action: string) => void
+    taskId: string;
+    title: string;
+    diff: string;
+    filesChanged: string[];
+    actions: string[];
+  };
+  onAction?: (action: string) => void;
 }
 
 function parseDiff(raw: string): { oldValue: string; newValue: string } {
-  const oldLines: string[] = []
-  const newLines: string[] = []
+  const oldLines: string[] = [];
+  const newLines: string[] = [];
   for (const line of raw.split('\n')) {
     if (
       line.startsWith('---') ||
       line.startsWith('+++') ||
       line.startsWith('@@')
     )
-      continue
+      continue;
     if (line.startsWith('-')) {
-      oldLines.push(line.slice(1))
+      oldLines.push(line.slice(1));
     } else if (line.startsWith('+')) {
-      newLines.push(line.slice(1))
+      newLines.push(line.slice(1));
     } else {
-      const content = line.startsWith(' ') ? line.slice(1) : line
-      oldLines.push(content)
-      newLines.push(content)
+      const content = line.startsWith(' ') ? line.slice(1) : line;
+      oldLines.push(content);
+      newLines.push(content);
     }
   }
-  return { oldValue: oldLines.join('\n'), newValue: newLines.join('\n') }
+  return { oldValue: oldLines.join('\n'), newValue: newLines.join('\n') };
 }
 
 function splitDiffByFile(raw: string): Record<string, string> {
-  const sections: Array<{ file: string; lines: string[] }> = []
-  let currentFile = ''
-  let currentLines: string[] = []
+  const sections: Array<{ file: string; lines: string[] }> = [];
+  let currentFile = '';
+  let currentLines: string[] = [];
 
   const pushSection = () => {
-    if (currentLines.length === 0) return
-    sections.push({ file: currentFile, lines: currentLines })
-  }
+    if (currentLines.length === 0) return;
+    sections.push({ file: currentFile, lines: currentLines });
+  };
 
   for (const line of raw.replace(/\r\n/g, '\n').split('\n')) {
     if (line.startsWith('diff --git ')) {
-      pushSection()
-      const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/)
-      currentFile = match?.[2] ?? ''
-      currentLines = [line]
-      continue
+      pushSection();
+      const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+      currentFile = match?.[2] ?? '';
+      currentLines = [line];
+      continue;
     }
     if (currentLines.length > 0) {
-      currentLines.push(line)
+      currentLines.push(line);
     }
   }
 
-  pushSection()
+  pushSection();
   return sections.reduce<Record<string, string>>((acc, section) => {
-    if (section.file) acc[section.file] = section.lines.join('\n')
-    return acc
-  }, {})
+    if (section.file) acc[section.file] = section.lines.join('\n');
+    return acc;
+  }, {});
 }
 
 export function DiffViewer({ data, onAction }: Props) {
-  const filesChanged = data?.filesChanged ?? []
-  const actions = data?.actions ?? []
+  const filesChanged = data?.filesChanged ?? [];
+  const actions = data?.actions ?? [];
   const diffByFile = useMemo(
     () => splitDiffByFile(data?.diff ?? ''),
     [data?.diff],
-  )
-  const [activeFile, setActiveFile] = useState(filesChanged[0] ?? '')
+  );
+  const [activeFile, setActiveFile] = useState(filesChanged[0] ?? '');
 
   useEffect(() => {
-    setActiveFile(filesChanged[0] ?? '')
-  }, [data?.taskId, data?.diff])
+    setActiveFile(filesChanged[0] ?? '');
+  }, [data?.taskId, data?.diff]);
 
   const selectedDiff = activeFile
     ? (diffByFile[activeFile] ?? data?.diff ?? '')
-    : (data?.diff ?? '')
+    : (data?.diff ?? '');
   const { oldValue, newValue } = useMemo(
     () => parseDiff(selectedDiff),
     [selectedDiff],
-  )
+  );
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
@@ -158,5 +158,5 @@ export function DiffViewer({ data, onAction }: Props) {
         </div>
       )}
     </div>
-  )
+  );
 }

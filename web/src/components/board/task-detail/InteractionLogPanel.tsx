@@ -1,43 +1,42 @@
-import { useMemo } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
-
-import { LogViewer } from '../../LogViewer'
+import { INTERACTION_STATUSES, PHASE_LABELS } from '@orca/types';
+import * as Dialog from '@radix-ui/react-dialog';
+import { useMemo } from 'react';
+import { LogViewer } from '../../LogViewer';
 import {
   useInteractionContent,
-  useInteractionsQuery,
   useInteractionStream,
-} from './useInteractions'
-import { INTERACTION_STATUSES, PHASE_LABELS } from '@orca/types'
+  useInteractionsQuery,
+} from './useInteractions';
 
 interface Props {
-  taskId: string
-  interactionId: string
-  onClose: () => void
+  taskId: string;
+  interactionId: string;
+  onClose: () => void;
 }
 
 function formatTokenCount(value: number | undefined): string {
-  if (!Number.isFinite(value)) return '0'
-  if (value && value >= 1000) return `${(value / 1000).toFixed(1)}k`
-  return `${value ?? 0}`
+  if (!Number.isFinite(value)) return '0';
+  if (value && value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return `${value ?? 0}`;
 }
 
 function formatCost(value: number | undefined): string {
-  if (!Number.isFinite(value)) return '$0.00'
-  return `$${(value ?? 0).toFixed(2)}`
+  if (!Number.isFinite(value)) return '$0.00';
+  return `$${(value ?? 0).toFixed(2)}`;
 }
 
 function formatDuration(durationMs: number | undefined): string {
-  if (!Number.isFinite(durationMs) || !durationMs || durationMs < 0) return '-'
-  if (durationMs < 1000) return `${durationMs} ms`
-  const totalSeconds = Math.floor(durationMs / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  if (minutes < 1) return `${seconds}s`
-  return `${minutes}m ${seconds}s`
+  if (!Number.isFinite(durationMs) || !durationMs || durationMs < 0) return '-';
+  if (durationMs < 1000) return `${durationMs} ms`;
+  const totalSeconds = Math.floor(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 1) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
 }
 
 export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
-  const interactionsQuery = useInteractionsQuery(taskId)
+  const interactionsQuery = useInteractionsQuery(taskId);
 
   const selectedInteraction = useMemo(
     () =>
@@ -45,9 +44,9 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
         (item) => item.id === interactionId,
       ) ?? null,
     [interactionId, interactionsQuery.data],
-  )
+  );
 
-  const contentQuery = useInteractionContent(taskId, interactionId)
+  const contentQuery = useInteractionContent(taskId, interactionId);
 
   const stream = useInteractionStream(
     taskId,
@@ -56,24 +55,24 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
       selectedInteraction &&
         selectedInteraction.status === INTERACTION_STATUSES.running,
     ),
-  )
+  );
 
   const content =
     selectedInteraction?.status === INTERACTION_STATUSES.running
       ? stream.content || contentQuery.data?.rawContent || ''
-      : contentQuery.data?.rawContent || ''
+      : contentQuery.data?.rawContent || '';
 
   const titlePrefix =
-    PHASE_LABELS[selectedInteraction?.phase ?? ''] ?? 'Interaction'
+    PHASE_LABELS[selectedInteraction?.phase ?? ''] ?? 'Interaction';
   const title = selectedInteraction
     ? `${titlePrefix} #${selectedInteraction.attempt} Log`
-    : 'Interaction Log'
+    : 'Interaction Log';
 
   return (
     <Dialog.Root
       open
       onOpenChange={(open) => {
-        if (!open) onClose()
+        if (!open) onClose();
       }}
     >
       <Dialog.Portal>
@@ -98,7 +97,8 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
                 placeholder={
                   !selectedInteraction
                     ? 'Interaction not found.'
-                    : selectedInteraction.status === INTERACTION_STATUSES.running
+                    : selectedInteraction.status ===
+                        INTERACTION_STATUSES.running
                       ? 'Waiting for streaming output...'
                       : 'No content.'
                 }
@@ -136,5 +136,5 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
-  )
+  );
 }

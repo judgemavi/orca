@@ -1,4 +1,4 @@
-export { JobQueue } from './queue'
-export { JobProcessor } from './processor'
-export type { JobHandler } from './processor'
-export { registerJobHandlers } from './handlers'
+export { registerJobHandlers } from './handlers';
+export type { JobHandler } from './processor';
+export { JobProcessor } from './processor';
+export { JobQueue } from './queue';

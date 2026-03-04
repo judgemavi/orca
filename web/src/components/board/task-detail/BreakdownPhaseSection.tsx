@@ -1,20 +1,20 @@
-import { Button } from '../../Button'
-import type { Interaction, ProposedTask } from '../../../types'
-import { INTERACTION_STATUSES, PHASES } from '@orca/types'
+import { INTERACTION_STATUSES, PHASES } from '@orca/types';
 import {
   parseBreakdownPayload,
   parseJSONText,
-} from '../../../lib/orchestratorRichContent'
-import { BreakdownCard } from '../../shared/BreakdownCard'
+} from '../../../lib/orchestratorRichContent';
+import type { Interaction, ProposedTask } from '../../../types';
+import { Button } from '../../Button';
+import { BreakdownCard } from '../../shared/BreakdownCard';
 
 type Props = {
-  interaction: Interaction
-  proposals?: { interactionId: string; proposed: ProposedTask[] } | null
-  onAccept?: (interactionId: string) => void
-  onReject?: (interactionId: string) => void
-  accepting?: boolean
-  rejecting?: boolean
-}
+  interaction: Interaction;
+  proposals?: { interactionId: string; proposed: ProposedTask[] } | null;
+  onAccept?: (interactionId: string) => void;
+  onReject?: (interactionId: string) => void;
+  accepting?: boolean;
+  rejecting?: boolean;
+};
 
 export function BreakdownPhaseSection({
   interaction,
@@ -24,22 +24,22 @@ export function BreakdownPhaseSection({
   accepting = false,
   rejecting = false,
 }: Props) {
-  if (interaction.phase !== PHASES.breakdown) return null
+  if (interaction.phase !== PHASES.breakdown) return null;
   if (interaction.status === INTERACTION_STATUSES.running) {
-    return <div className="text-xs text-muted">Generating task breakdown…</div>
+    return <div className="text-xs text-muted">Generating task breakdown…</div>;
   }
   if (interaction.status === INTERACTION_STATUSES.failed) {
     return (
       <div className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger">
         {interaction.error || 'Breakdown failed'}
       </div>
-    )
+    );
   }
 
   const showProposals =
     proposals &&
     proposals.proposed.length > 0 &&
-    proposals.interactionId === interaction.id
+    proposals.interactionId === interaction.id;
 
   if (showProposals) {
     return (
@@ -62,11 +62,13 @@ export function BreakdownPhaseSection({
           </Button>
         </div>
       </div>
-    )
+    );
   }
 
-  const result = parseBreakdownPayload(parseJSONText(interaction.qualityJson ?? ''))
-  if (!result) return null
+  const result = parseBreakdownPayload(
+    parseJSONText(interaction.qualityJson ?? ''),
+  );
+  if (!result) return null;
 
   return (
     <BreakdownCard
@@ -74,5 +76,5 @@ export function BreakdownPhaseSection({
       accepted={result.accepted}
       rejected={result.rejected}
     />
-  )
+  );
 }

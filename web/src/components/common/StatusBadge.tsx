@@ -1,4 +1,4 @@
-import type { Task } from '../../types'
+import type { Task } from '../../types';
 
 const TONES: Record<string, { badge: string; dot: string }> = {
   pending: {
@@ -37,7 +37,7 @@ const TONES: Record<string, { badge: string; dot: string }> = {
     badge: 'bg-rose-500/20 text-rose-700',
     dot: 'bg-rose-600',
   },
-}
+};
 
 const SIZES = {
   sm: {
@@ -48,17 +48,17 @@ const SIZES = {
     badge: 'gap-2 rounded-md px-2.5 py-1 text-sm',
     dot: 'h-2.5 w-2.5',
   },
-} as const
+} as const;
 
 export function StatusBadge({
   status,
   size = 'sm',
 }: {
-  status: Task['status'] | string
-  size?: keyof typeof SIZES
+  status: Task['status'] | string;
+  size?: keyof typeof SIZES;
 }) {
-  const tone = TONES[status] ?? TONES.pending
-  const scale = SIZES[size]
+  const tone = TONES[status] ?? TONES.pending;
+  const scale = SIZES[size];
   return (
     <span
       className={`inline-flex items-center font-medium tracking-wide ${tone.badge} ${scale.badge}`}
@@ -66,5 +66,5 @@ export function StatusBadge({
       <span className={`rounded-full ${tone.dot} ${scale.dot}`} />
       {status}
     </span>
-  )
+  );
 }

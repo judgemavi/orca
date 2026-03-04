@@ -26,7 +26,7 @@ For every mutation:
 Every task MUST follow this phase sequence. Never skip phases.
 
 1. **Create** → `tasks_create` — define title, description with enough detail for a worker
-2. **Evaluate** → `tasks_plan_evaluate` — check if task is too large and needs breakdown
+2. **Evaluate** → `tasks_plan_evaluate` — check if task is too large and needs breakdown, typically this step run automatically after `tasks_create`.
 3. If `needs_breakdown` is true → `breakdown` to split into subtasks. Each subtask follows this same lifecycle.
 4. **Plan** → `tasks_plan_generate` — generate implementation plan
 5. **Approve plan** → `tasks_approve_plan` (or `tasks_request_plan_changes` if plan needs work)

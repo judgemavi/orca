@@ -1,29 +1,29 @@
-import { BreakdownPhaseSection } from './BreakdownPhaseSection'
-import { useCallback, useMemo } from 'react'
-import { INTERACTION_STATUSES, PHASES, isRunLike } from '@orca/types'
-import type { InteractionStub, Task, TaskReview } from '../../../types'
-import { EvaluatePhaseSection } from './EvaluatePhaseSection'
-import { InteractionEntry } from './InteractionEntry'
-import { MergePhaseSection } from './MergePhaseSection'
-import { PlanPhaseSection } from './PlanPhaseSection'
-import { ReviewPhaseSection } from './ReviewPhaseSection'
-import { RunPhaseSection } from './RunPhaseSection'
-import type { useMergeHandler } from './useMergeHandler'
-import { useTaskActions } from './useTaskActions'
-import type { usePlanEditor } from './usePlanEditor'
-import { useInteractionMetaQuery } from './useInteractions'
+import { INTERACTION_STATUSES, isRunLike, PHASES } from '@orca/types';
+import { useCallback, useMemo } from 'react';
+import type { InteractionStub, Task, TaskReview } from '../../../types';
+import { BreakdownPhaseSection } from './BreakdownPhaseSection';
+import { EvaluatePhaseSection } from './EvaluatePhaseSection';
+import { InteractionEntry } from './InteractionEntry';
+import { MergePhaseSection } from './MergePhaseSection';
+import { PlanPhaseSection } from './PlanPhaseSection';
+import { ReviewPhaseSection } from './ReviewPhaseSection';
+import { RunPhaseSection } from './RunPhaseSection';
+import { useInteractionMetaQuery } from './useInteractions';
+import type { useMergeHandler } from './useMergeHandler';
+import type { usePlanEditor } from './usePlanEditor';
+import { useTaskActions } from './useTaskActions';
 
 type Props = {
-  stubs: InteractionStub[]
-  reviews: TaskReview[]
-  task: Task
-  tools: string[]
-  readOnly: boolean
-  expandedInteractions: Set<string>
-  onToggleInteraction: (id: string) => void
-  planEditor: ReturnType<typeof usePlanEditor>
-  merge: ReturnType<typeof useMergeHandler>
-}
+  stubs: InteractionStub[];
+  reviews: TaskReview[];
+  task: Task;
+  tools: string[];
+  readOnly: boolean;
+  expandedInteractions: Set<string>;
+  onToggleInteraction: (id: string) => void;
+  planEditor: ReturnType<typeof usePlanEditor>;
+  merge: ReturnType<typeof useMergeHandler>;
+};
 
 function PhaseContent({
   taskId,
@@ -42,36 +42,36 @@ function PhaseContent({
   isLatestFailedMerge,
   actions,
 }: {
-  taskId: string
-  stub: InteractionStub
-  expanded: boolean
-  task: Task
-  tools: string[]
-  readOnly: boolean
-  planEditor: ReturnType<typeof usePlanEditor>
-  merge: ReturnType<typeof useMergeHandler>
-  planReviews: TaskReview[]
-  runReviews: TaskReview[]
-  runReviewStubs: InteractionStub[]
-  latestCompletedRunStartedAt?: string
-  isLatestRunningMerge: boolean
-  isLatestFailedMerge: boolean
-  actions: ReturnType<typeof useTaskActions>
+  taskId: string;
+  stub: InteractionStub;
+  expanded: boolean;
+  task: Task;
+  tools: string[];
+  readOnly: boolean;
+  planEditor: ReturnType<typeof usePlanEditor>;
+  merge: ReturnType<typeof useMergeHandler>;
+  planReviews: TaskReview[];
+  runReviews: TaskReview[];
+  runReviewStubs: InteractionStub[];
+  latestCompletedRunStartedAt?: string;
+  isLatestRunningMerge: boolean;
+  isLatestFailedMerge: boolean;
+  actions: ReturnType<typeof useTaskActions>;
 }) {
-  const metaQuery = useInteractionMetaQuery(taskId, stub.id, expanded)
+  const metaQuery = useInteractionMetaQuery(taskId, stub.id, expanded);
 
-  if (!expanded) return null
+  if (!expanded) return null;
   if (metaQuery.isLoading) {
     return (
       <div className="flex items-center gap-2 py-2 text-xs text-muted">
         <span className="inline-block h-3 w-16 animate-pulse rounded bg-surface" />
         Loading details...
       </div>
-    )
+    );
   }
 
-  const interaction = metaQuery.data
-  if (!interaction) return null
+  const interaction = metaQuery.data;
+  if (!interaction) return null;
 
   return (
     <>
@@ -98,9 +98,7 @@ function PhaseContent({
       <RunPhaseSection interaction={interaction} task={task} />
       <ReviewPhaseSection
         interaction={interaction}
-        runReviewInteractions={
-          isRunLike(stub.phase) ? runReviewStubs : []
-        }
+        runReviewInteractions={isRunLike(stub.phase) ? runReviewStubs : []}
         runReviews={runReviews}
         latestCompletedRunStartedAt={latestCompletedRunStartedAt}
       />
@@ -113,7 +111,7 @@ function PhaseContent({
         merge={merge}
       />
     </>
-  )
+  );
 }
 
 export function TaskInteractionItems({
@@ -127,19 +125,19 @@ export function TaskInteractionItems({
   planEditor,
   merge,
 }: Props) {
-  const actions = useTaskActions(task)
+  const actions = useTaskActions(task);
   const runStubs = useMemo(
     () => stubs.filter((item) => isRunLike(item.phase)),
     [stubs],
-  )
+  );
   const reviewStubs = useMemo(
     () => stubs.filter((item) => item.phase === PHASES.review),
     [stubs],
-  )
+  );
   const mergeStubs = useMemo(
     () => stubs.filter((item) => item.phase === PHASES.merge),
     [stubs],
-  )
+  );
 
   const planStubIds = useMemo(
     () =>
@@ -149,11 +147,11 @@ export function TaskInteractionItems({
           .map((item) => item.id),
       ),
     [stubs],
-  )
+  );
   const runStubIDs = useMemo(
     () => new Set(runStubs.map((item) => item.id)),
     [runStubs],
-  )
+  );
 
   const planReviews = useMemo(
     () =>
@@ -163,7 +161,7 @@ export function TaskInteractionItems({
           planStubIds.has(String(review.interactionId)),
       ),
     [planStubIds, reviews],
-  )
+  );
   const runReviews = useMemo(
     () =>
       reviews.filter(
@@ -172,48 +170,47 @@ export function TaskInteractionItems({
           runStubIDs.has(String(review.interactionId)),
       ),
     [reviews, runStubIDs],
-  )
+  );
 
   const latestFailedMergeId =
     [...mergeStubs]
       .reverse()
-      .find((item) => item.status === INTERACTION_STATUSES.failed)?.id ?? null
+      .find((item) => item.status === INTERACTION_STATUSES.failed)?.id ?? null;
   const latestRunningMergeId =
     [...mergeStubs]
       .reverse()
-      .find((item) => item.status === INTERACTION_STATUSES.running)?.id ?? null
+      .find((item) => item.status === INTERACTION_STATUSES.running)?.id ?? null;
   const latestCompletedRunStartedAt =
-    runStubs.find(
-      (item) => item.status === INTERACTION_STATUSES.completed,
-    )?.startedAt ?? null
+    runStubs.find((item) => item.status === INTERACTION_STATUSES.completed)
+      ?.startedAt ?? null;
   const latestCompletedRunStartedAtMS = latestCompletedRunStartedAt
     ? Date.parse(latestCompletedRunStartedAt)
-    : NaN
-  const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS)
+    : NaN;
+  const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS);
 
   const getReviewStubsForRun = useCallback(
     (runId: string, runStartedAt: string): InteractionStub[] => {
-      const runIndex = runStubs.findIndex((run) => run.id === runId)
+      const runIndex = runStubs.findIndex((run) => run.id === runId);
       const nextRunStartedAt =
         runIndex < runStubs.length - 1
           ? runStubs[runIndex + 1].startedAt
-          : null
+          : null;
 
       return reviewStubs.filter((reviewStub) => {
-        const reviewStart = Date.parse(reviewStub.startedAt)
-        const runStart = Date.parse(runStartedAt)
+        const reviewStart = Date.parse(reviewStub.startedAt);
+        const runStart = Date.parse(runStartedAt);
         if (!Number.isFinite(reviewStart) || !Number.isFinite(runStart))
-          return false
-        if (reviewStart < runStart) return false
+          return false;
+        if (reviewStart < runStart) return false;
         if (nextRunStartedAt && reviewStart >= Date.parse(nextRunStartedAt))
-          return false
-        return true
-      })
+          return false;
+        return true;
+      });
     },
     [reviewStubs, runStubs],
-  )
+  );
 
-  const taskId = task.id
+  const taskId = task.id;
 
   return (
     <div className="flex flex-col gap-2">
@@ -223,11 +220,11 @@ export function TaskInteractionItems({
           hasReviewCutoff &&
           Date.parse(item.startedAt) <= latestCompletedRunStartedAtMS
         ) {
-          return null
+          return null;
         }
         const isExpanded =
           item.status === INTERACTION_STATUSES.running ||
-          expandedInteractions.has(item.id)
+          expandedInteractions.has(item.id);
         return (
           <InteractionEntry
             key={item.id}
@@ -267,8 +264,8 @@ export function TaskInteractionItems({
               actions={actions}
             />
           </InteractionEntry>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

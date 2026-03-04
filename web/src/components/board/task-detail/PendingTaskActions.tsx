@@ -1,22 +1,22 @@
-import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { TASK_STATUSES } from '@orca/types'
-import { Button } from '../../Button'
-import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout'
-import { useTaskActions } from './useTaskActions'
+import { TASK_STATUSES } from '@orca/types';
+import { useTaskDetailContext } from '../../../context/TaskDetailContext';
+import { Button } from '../../Button';
+import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout';
+import { useTaskActions } from './useTaskActions';
 
 export function PendingTaskActions() {
-  const { task } = useTaskDetailContext()
-  const actions = useTaskActions(task)
+  const { task } = useTaskDetailContext();
+  const actions = useTaskActions(task);
 
-  const showStart = task.status === TASK_STATUSES.planned
+  const showStart = task.status === TASK_STATUSES.planned;
   const showFeedback =
-    task.status === TASK_STATUSES.pending && actions.requestPlanChangesExpanded
+    task.status === TASK_STATUSES.pending && actions.requestPlanChangesExpanded;
   const showSelector =
     showStart ||
     (task.status === TASK_STATUSES.pending &&
-      (!actions.hasPlan || showFeedback))
+      (!actions.hasPlan || showFeedback));
 
-  let actionButtons = null
+  let actionButtons = null;
   if (showStart) {
     actionButtons = (
       <Button
@@ -26,7 +26,7 @@ export function PendingTaskActions() {
       >
         {actions.runningBusy ? 'Starting…' : 'Start'}
       </Button>
-    )
+    );
   } else if (!actions.hasPlan) {
     actionButtons = (
       <>
@@ -74,16 +74,16 @@ export function PendingTaskActions() {
             </Button>
           )}
       </>
-    )
+    );
   } else if (actions.requestPlanChangesExpanded) {
     actionButtons = (
       <>
         <Button
           variant="default"
           onClick={() => {
-            actions.setRequestPlanChangesExpanded(false)
-            actions.setRequestPlanFeedback('')
-            actions.setActionError(null)
+            actions.setRequestPlanChangesExpanded(false);
+            actions.setRequestPlanFeedback('');
+            actions.setActionError(null);
           }}
           disabled={
             actions.phaseInProgress || actions.requestPlanChangesPending
@@ -105,7 +105,7 @@ export function PendingTaskActions() {
             : 'Submit Plan Changes'}
         </Button>
       </>
-    )
+    );
   } else {
     actionButtons = (
       <>
@@ -123,10 +123,10 @@ export function PendingTaskActions() {
         <Button
           variant="default"
           onClick={() => {
-            actions.setRequestPlanChangesExpanded(true)
-            actions.setAIReviewExpanded(false)
-            actions.setAIFeedbackAppliedNotice(false)
-            actions.setActionError(null)
+            actions.setRequestPlanChangesExpanded(true);
+            actions.setAIReviewExpanded(false);
+            actions.setAIFeedbackAppliedNotice(false);
+            actions.setActionError(null);
           }}
           disabled={
             actions.phaseInProgress ||
@@ -137,7 +137,7 @@ export function PendingTaskActions() {
           Request Plan Changes
         </Button>
       </>
-    )
+    );
   }
 
   return (
@@ -161,5 +161,5 @@ export function PendingTaskActions() {
       }
       actions={actionButtons}
     />
-  )
+  );
 }

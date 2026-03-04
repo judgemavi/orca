@@ -1,17 +1,18 @@
-import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { TASK_STATUSES } from '@orca/types'
-import { Button } from '../../Button'
-import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout'
-import { useTaskActions } from './useTaskActions'
+import { TASK_STATUSES } from '@orca/types';
+import { useTaskDetailContext } from '../../../context/TaskDetailContext';
+import { Button } from '../../Button';
+import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout';
+import { useTaskActions } from './useTaskActions';
 
 export function FailedTaskActions() {
-  const { task } = useTaskDetailContext()
-  const actions = useTaskActions(task)
+  const { task } = useTaskDetailContext();
+  const actions = useTaskActions(task);
 
-  const isStopped = task.status === TASK_STATUSES.stopped
-  const hasSession = Boolean(task.sessionId?.trim())
-  const showResume = isStopped && hasSession
-  const busy = actions.runningBusy || (showResume ? actions.resumePending : false)
+  const isStopped = task.status === TASK_STATUSES.stopped;
+  const hasSession = Boolean(task.sessionId?.trim());
+  const showResume = isStopped && hasSession;
+  const busy =
+    actions.runningBusy || (showResume ? actions.resumePending : false);
 
   return (
     <TaskActionsLayout
@@ -51,5 +52,5 @@ export function FailedTaskActions() {
         </Button>
       }
     />
-  )
+  );
 }

@@ -1,49 +1,49 @@
-import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { TASK_STATUSES } from '@orca/types'
-import { Button } from '../../Button'
-import { ApprovedTaskActions } from './ApprovedTaskActions'
-import { FailedTaskActions } from './FailedTaskActions'
-import { MergedTaskActions } from './MergedTaskActions'
-import { PendingTaskActions } from './PendingTaskActions'
-import { ReviewTaskActions } from './ReviewTaskActions'
-import { RunningTaskActions } from './RunningTaskActions'
-import { TaskActionsLayout } from './TaskActionsLayout'
+import { TASK_STATUSES } from '@orca/types';
+import { useTaskDetailContext } from '../../../context/TaskDetailContext';
+import { Button } from '../../Button';
+import { ApprovedTaskActions } from './ApprovedTaskActions';
+import { FailedTaskActions } from './FailedTaskActions';
+import { MergedTaskActions } from './MergedTaskActions';
+import { PendingTaskActions } from './PendingTaskActions';
+import { ReviewTaskActions } from './ReviewTaskActions';
+import { RunningTaskActions } from './RunningTaskActions';
+import { TaskActionsLayout } from './TaskActionsLayout';
 
 interface Props {
-  onClose: () => void
+  onClose: () => void;
 }
 
 export function TaskActionsBar({ onClose }: Props) {
-  const { task } = useTaskDetailContext()
+  const { task } = useTaskDetailContext();
 
   if (
     task.status === TASK_STATUSES.pending ||
     task.status === TASK_STATUSES.planned
   ) {
-    return <PendingTaskActions />
+    return <PendingTaskActions />;
   }
 
   if (task.status === TASK_STATUSES.running) {
-    return <RunningTaskActions />
+    return <RunningTaskActions />;
   }
 
   if (task.status === TASK_STATUSES.review) {
-    return <ReviewTaskActions />
+    return <ReviewTaskActions />;
   }
 
   if (task.status === TASK_STATUSES.approved) {
-    return <ApprovedTaskActions />
+    return <ApprovedTaskActions />;
   }
 
   if (
     task.status === TASK_STATUSES.failed ||
     task.status === TASK_STATUSES.stopped
   ) {
-    return <FailedTaskActions />
+    return <FailedTaskActions />;
   }
 
   if (task.status === TASK_STATUSES.merged) {
-    return <MergedTaskActions onClose={onClose} />
+    return <MergedTaskActions onClose={onClose} />;
   }
 
   if (task.status === TASK_STATUSES.broken_down) {
@@ -62,8 +62,8 @@ export function TaskActionsBar({ onClose }: Props) {
           </Button>
         }
       />
-    )
+    );
   }
 
-  return null
+  return null;
 }

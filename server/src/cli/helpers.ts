@@ -5,44 +5,44 @@ import {
   multiselect,
   select,
   text,
-} from '@clack/prompts'
-import type { Task, TaskStatus } from '../types'
-import type { TaskStore } from '../store/tasks'
+} from '@clack/prompts';
+import type { TaskStore } from '../store/tasks';
+import type { Task, TaskStatus } from '../types';
 
-export type TaskFilter = (task: Task) => boolean
+export type TaskFilter = (task: Task) => boolean;
 
-export const allTasks: TaskFilter = () => true
+export const allTasks: TaskFilter = () => true;
 export const pendingTasks: TaskFilter = (task) =>
-  task.status === 'pending' || task.status === 'planned'
-export const failedTasks: TaskFilter = (task) => task.status === 'failed'
+  task.status === 'pending' || task.status === 'planned';
+export const failedTasks: TaskFilter = (task) => task.status === 'failed';
 export const completedTasks: TaskFilter = (task) =>
-  task.status === 'approved' || task.status === 'merged'
-export const reviewTasks: TaskFilter = (task) => task.status === 'review'
-export const runningTasks: TaskFilter = (task) => task.status === 'running'
-export const stoppedTasks: TaskFilter = (task) => task.status === 'stopped'
+  task.status === 'approved' || task.status === 'merged';
+export const reviewTasks: TaskFilter = (task) => task.status === 'review';
+export const runningTasks: TaskFilter = (task) => task.status === 'running';
+export const stoppedTasks: TaskFilter = (task) => task.status === 'stopped';
 
 export function statusIcon(status: TaskStatus | string): string {
   switch (status) {
     case 'merged':
     case 'approved':
-      return '✓'
+      return '✓';
     case 'running':
-      return '●'
+      return '●';
     case 'failed':
-      return '✗'
+      return '✗';
     case 'review':
-      return '◐'
+      return '◐';
     default:
-      return '○'
+      return '○';
   }
 }
 
 export function short(id: string): string {
-  return id.slice(0, 8)
+  return id.slice(0, 8);
 }
 
 export function formatTaskOption(task: Task): string {
-  return `${statusIcon(task.status)} ${short(task.id)}  ${task.title} (${task.status})`
+  return `${statusIcon(task.status)} ${short(task.id)}  ${task.title} (${task.status})`;
 }
 
 export async function pickTask(
@@ -50,9 +50,9 @@ export async function pickTask(
   title: string,
   filter: TaskFilter = allTasks,
 ): Promise<Task> {
-  const tasks = (await store.list()).filter(filter)
+  const tasks = (await store.list()).filter(filter);
   if (tasks.length === 0) {
-    throw new Error('no matching tasks found')
+    throw new Error('no matching tasks found');
   }
 
   const selected = await select<string>({
@@ -61,14 +61,14 @@ export async function pickTask(
       value: task.id,
       label: formatTaskOption(task),
     })),
-  })
+  });
 
-  const selectedID = ensureNotCancelled<string>(selected)
-  const task = await store.get(selectedID)
+  const selectedID = ensureNotCancelled<string>(selected);
+  const task = await store.get(selectedID);
   if (!task) {
-    throw new Error(`task not found: ${selectedID}`)
+    throw new Error(`task not found: ${selectedID}`);
   }
-  return task
+  return task;
 }
 
 export async function pickTasks(
@@ -76,9 +76,9 @@ export async function pickTasks(
   title: string,
   filter: TaskFilter = allTasks,
 ): Promise<Task[]> {
-  const tasks = (await store.list()).filter(filter)
+  const tasks = (await store.list()).filter(filter);
   if (tasks.length === 0) {
-    return []
+    return [];
   }
 
   const selected = await multiselect<string>({
@@ -87,28 +87,29 @@ export async function pickTasks(
       value: task.id,
       label: formatTaskOption(task),
     })),
-  })
+  });
 
-  const selectedIDs = ensureNotCancelled<string[]>(selected)
-  return (await Promise.all(selectedIDs.map((id) => store.get(id))))
-    .filter((task): task is Task => Boolean(task))
+  const selectedIDs = ensureNotCancelled<string[]>(selected);
+  return (await Promise.all(selectedIDs.map((id) => store.get(id)))).filter(
+    (task): task is Task => Boolean(task),
+  );
 }
 
 export async function confirm(
   message: string,
   initialValue = false,
 ): Promise<boolean> {
-  const value = await clackConfirm({ message, initialValue })
-  return ensureNotCancelled<boolean>(value)
+  const value = await clackConfirm({ message, initialValue });
+  return ensureNotCancelled<boolean>(value);
 }
 
 export async function textInput(
   message: string,
   opts?: {
-    placeholder?: string
-    defaultValue?: string
-    required?: boolean
-    validate?: (value: string) => string | Error | void
+    placeholder?: string;
+    defaultValue?: string;
+    required?: boolean;
+    validate?: (value: string) => string | Error | void;
   },
 ): Promise<string> {
   const value = await text({
@@ -116,18 +117,18 @@ export async function textInput(
     placeholder: opts?.placeholder ?? opts?.defaultValue,
     defaultValue: opts?.defaultValue,
     validate: (raw) => {
-      const normalized = (raw ?? '').trim()
+      const normalized = (raw ?? '').trim();
       if (opts?.required && !normalized && !opts?.defaultValue) {
-        return 'required'
+        return 'required';
       }
       if (normalized) {
-        const validated = opts?.validate?.(normalized)
-        return validated ?? undefined
+        const validated = opts?.validate?.(normalized);
+        return validated ?? undefined;
       }
     },
-  })
+  });
 
-  return ensureNotCancelled<string>(value).trim()
+  return ensureNotCancelled<string>(value).trim();
 }
 
 export async function pickFromList(
@@ -136,20 +137,20 @@ export async function pickFromList(
   initialValue?: string,
 ): Promise<string> {
   if (options.length === 0) {
-    throw new Error('no options available')
+    throw new Error('no options available');
   }
   const selected = await select<string>({
     message,
     options,
     initialValue,
-  })
-  return ensureNotCancelled<string>(selected)
+  });
+  return ensureNotCancelled<string>(selected);
 }
 
 export function ensureNotCancelled<T>(value: T | symbol): T {
   if (isCancel(value)) {
-    clackCancel('Operation cancelled.')
-    throw new Error('operation cancelled')
+    clackCancel('Operation cancelled.');
+    throw new Error('operation cancelled');
   }
-  return value as T
+  return value as T;
 }

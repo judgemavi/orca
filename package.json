@@ -12,9 +12,15 @@
     "build:web": "bun run --cwd web build",
     "dev:server": "bun run --cwd server dev",
     "build:server": "bun run --cwd server build",
-    "typecheck": "bun run --cwd server typecheck && bun run --cwd web build"
+    "check": "bun --filter='*' --elide-lines=0 check",
+    "check:fix": "bun --filter='*' --elide-lines=0 check:fix",
+    "format": "bun --filter='*' --elide-lines=0 format",
+    "format:fix": "bun --filter='*' --elide-lines=0 format:fix",
+    "lint": "bun --filter='*' --elide-lines=0 lint",
+    "lint:fix": "bun --filter='*' --elide-lines=0 lint:fix"
   },
   "devDependencies": {
-    "knip": "^5.85.0"
+    "knip": "^5.85.0",
+    "@biomejs/biome": "^2.4.5"
   }
 }

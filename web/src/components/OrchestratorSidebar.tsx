@@ -1,9 +1,9 @@
-import { api } from '../api'
-import { ChatPane } from './orchestrator/ChatPane'
-import { Button } from './Button'
+import { api } from '../api';
+import { Button } from './Button';
+import { ChatPane } from './orchestrator/ChatPane';
 
 interface Props {
-  orchestratorId?: string
+  orchestratorId?: string;
 }
 
 export function OrchestratorSidebar({ orchestratorId }: Props) {
@@ -16,12 +16,12 @@ export function OrchestratorSidebar({ orchestratorId }: Props) {
           <span>No orchestrator session</span>
           <Button
             variant="primary"
-            onClick={() => api.startOrchestrator().catch(() => { })}
+            onClick={() => api.startOrchestrator().catch(() => {})}
           >
             Start Session
           </Button>
         </div>
       )}
     </div>
-  )
+  );
 }

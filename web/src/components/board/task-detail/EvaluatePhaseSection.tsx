@@ -1,14 +1,14 @@
-import type { Interaction } from '../../../types'
-import { INTERACTION_STATUSES, PHASES } from '@orca/types'
+import { INTERACTION_STATUSES, PHASES } from '@orca/types';
 import {
   parseEvaluationPayload,
   parseJSONText,
-} from '../../../lib/orchestratorRichContent'
-import { EvaluationCard } from '../../shared/EvaluationCard'
+} from '../../../lib/orchestratorRichContent';
+import type { Interaction } from '../../../types';
+import { EvaluationCard } from '../../shared/EvaluationCard';
 
 type Props = {
-  interaction: Interaction
-}
+  interaction: Interaction;
+};
 
 export function EvaluatePhaseSection({ interaction }: Props) {
   if (
@@ -16,11 +16,13 @@ export function EvaluatePhaseSection({ interaction }: Props) {
     interaction.status !== INTERACTION_STATUSES.completed ||
     !interaction.qualityJson
   ) {
-    return null
+    return null;
   }
 
-  const evaluation = parseEvaluationPayload(parseJSONText(interaction.qualityJson))
-  if (!evaluation) return null
+  const evaluation = parseEvaluationPayload(
+    parseJSONText(interaction.qualityJson),
+  );
+  if (!evaluation) return null;
 
   return (
     <EvaluationCard
@@ -29,5 +31,5 @@ export function EvaluatePhaseSection({ interaction }: Props) {
       confidence={evaluation.confidence}
       reasoning={evaluation.reasoning}
     />
-  )
+  );
 }

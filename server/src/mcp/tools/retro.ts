@@ -1,12 +1,12 @@
-import type { Tool } from '../types'
-import { z } from 'zod'
-import type { DriverRegistry } from '../../driver/registry'
-import { runRetro } from '../../domain/retro'
-import type { ConfigStore } from '../../store/config'
-import type { InteractionStore } from '../../store/interactions'
-import type { MemoryStore } from '../../store/memory'
-import type { TaskStore } from '../../store/tasks'
-import { defineTool } from '../define-tool'
+import { z } from 'zod';
+import { runRetro } from '../../domain/retro';
+import type { DriverRegistry } from '../../driver/registry';
+import type { ConfigStore } from '../../store/config';
+import type { InteractionStore } from '../../store/interactions';
+import type { MemoryStore } from '../../store/memory';
+import type { TaskStore } from '../../store/tasks';
+import { defineTool } from '../define-tool';
+import type { Tool } from '../types';
 
 const tasksRetroSchema = z.object({
   taskId: z.preprocess(
@@ -14,22 +14,22 @@ const tasksRetroSchema = z.object({
     z.coerce.string().trim().min(1, 'taskId is required'),
   ),
   tool: z.preprocess(
-    (value) => (value === undefined ? undefined : value ?? ''),
+    (value) => (value === undefined ? undefined : (value ?? '')),
     z.coerce.string().optional(),
   ),
   model: z.preprocess(
-    (value) => (value === undefined ? undefined : value ?? ''),
+    (value) => (value === undefined ? undefined : (value ?? '')),
     z.coerce.string().optional(),
   ),
-})
+});
 
 export function retroTools(deps: {
-  repoDir: string
-  taskStore: TaskStore
-  interactions: InteractionStore
-  memoryStore: MemoryStore
-  configStore: ConfigStore
-  registry?: DriverRegistry
+  repoDir: string;
+  taskStore: TaskStore;
+  interactions: InteractionStore;
+  memoryStore: MemoryStore;
+  configStore: ConfigStore;
+  registry?: DriverRegistry;
 }): Tool[] {
   return [
     defineTool({
@@ -37,14 +37,14 @@ export function retroTools(deps: {
       description: 'Generate retrospective summary for task',
       schema: tasksRetroSchema,
       handler: async (input) => {
-        const taskID = input.taskId
-        const task = await deps.taskStore.get(taskID)
-        if (!task) throw new Error(`task not found: ${taskID}`)
+        const taskID = input.taskId;
+        const task = await deps.taskStore.get(taskID);
+        if (!task) throw new Error(`task not found: ${taskID}`);
         if (task.status !== 'approved' && task.status !== 'merged') {
-          throw new Error('task must be approved or merged')
+          throw new Error('task must be approved or merged');
         }
 
-        const config = await deps.configStore.load()
+        const config = await deps.configStore.load();
         const result = await runRetro(taskID, {
           repoDir: deps.repoDir,
           taskStore: deps.taskStore,
@@ -54,15 +54,15 @@ export function retroTools(deps: {
           registry: deps.registry,
           toolOverride: input.tool ?? '',
           modelOverride: input.model ?? '',
-        })
+        });
 
         return {
           taskId: taskID,
           retro: result.summary,
           entriesCreated: result.memoryEntries.length,
           interactionId: result.interactionId,
-        }
+        };
       },
     }),
-  ]
+  ];
 }

@@ -1,14 +1,14 @@
-import { z } from 'zod'
-import type { Tool } from '../types'
-import type { JobQueue } from '../../queue/queue'
-import { defineTool } from '../define-tool'
+import { z } from 'zod';
+import type { JobQueue } from '../../queue/queue';
+import { defineTool } from '../define-tool';
+import type { Tool } from '../types';
 
 const jobStatusEnum = z
   .enum(['queued', 'running', 'completed', 'failed', 'cancelled'])
-  .optional()
+  .optional();
 
 export function queueTools(deps: { queue: JobQueue }): Tool[] {
-  const { queue } = deps
+  const { queue } = deps;
 
   return [
     defineTool({
@@ -24,7 +24,7 @@ export function queueTools(deps: { queue: JobQueue }): Tool[] {
           status: input.status,
           taskId: input.taskId,
           limit: input.limit,
-        })
+        });
       },
     }),
 
@@ -35,9 +35,9 @@ export function queueTools(deps: { queue: JobQueue }): Tool[] {
         jobId: z.string().trim().min(1, 'jobId is required'),
       }),
       handler: async (input) => {
-        const job = await queue.get(input.jobId)
-        if (!job) throw new Error(`job not found: ${input.jobId}`)
-        return job
+        const job = await queue.get(input.jobId);
+        if (!job) throw new Error(`job not found: ${input.jobId}`);
+        return job;
       },
     }),
 
@@ -48,13 +48,13 @@ export function queueTools(deps: { queue: JobQueue }): Tool[] {
         jobId: z.string().trim().min(1, 'jobId is required'),
       }),
       handler: async (input) => {
-        const job = await queue.get(input.jobId)
-        if (!job) throw new Error(`job not found: ${input.jobId}`)
+        const job = await queue.get(input.jobId);
+        if (!job) throw new Error(`job not found: ${input.jobId}`);
         if (job.status !== 'queued') {
-          throw new Error(`cannot cancel job in status: ${job.status}`)
+          throw new Error(`cannot cancel job in status: ${job.status}`);
         }
-        const cancelled = await queue.cancel(input.jobId)
-        return { jobId: input.jobId, cancelled }
+        const cancelled = await queue.cancel(input.jobId);
+        return { jobId: input.jobId, cancelled };
       },
     }),
 
@@ -63,8 +63,8 @@ export function queueTools(deps: { queue: JobQueue }): Tool[] {
       description: 'Cancel all queued jobs',
       schema: z.object({}),
       handler: async () => {
-        const cancelled = await queue.drain()
-        return { cancelled }
+        const cancelled = await queue.drain();
+        return { cancelled };
       },
     }),
 
@@ -73,8 +73,8 @@ export function queueTools(deps: { queue: JobQueue }): Tool[] {
       description: 'Get job counts by status',
       schema: z.object({}),
       handler: async () => {
-        return await queue.counts()
+        return await queue.counts();
       },
     }),
-  ]
+  ];
 }

@@ -1,15 +1,15 @@
-import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { Button } from '../../Button'
-import { TaskActionsLayout } from './TaskActionsLayout'
-import { useTaskActions } from './useTaskActions'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext';
+import { Button } from '../../Button';
+import { TaskActionsLayout } from './TaskActionsLayout';
+import { useTaskActions } from './useTaskActions';
 
 interface Props {
-  onClose: () => void
+  onClose: () => void;
 }
 
 export function MergedTaskActions({ onClose }: Props) {
-  const { task } = useTaskDetailContext()
-  const actions = useTaskActions(task)
+  const { task } = useTaskDetailContext();
+  const actions = useTaskActions(task);
 
   return (
     <TaskActionsLayout
@@ -27,5 +27,5 @@ export function MergedTaskActions({ onClose }: Props) {
         </Button>
       }
     />
-  )
+  );
 }

@@ -1,27 +1,31 @@
-import type { Tool } from '../types'
-import { z } from 'zod'
-import type { MemoryStore } from '../../store/memory'
-import { getMemorySyncStatus, refreshMemoryEntries, syncMemoryWithGit } from '../../domain/memory-sync'
-import { getMemoryDetail, queryMemory } from '../../domain/memory'
-import { defineTool } from '../define-tool'
+import { z } from 'zod';
+import { getMemoryDetail, queryMemory } from '../../domain/memory';
+import {
+  getMemorySyncStatus,
+  refreshMemoryEntries,
+  syncMemoryWithGit,
+} from '../../domain/memory-sync';
+import type { MemoryStore } from '../../store/memory';
+import { defineTool } from '../define-tool';
+import type { Tool } from '../types';
 
 const requiredTrimmedString = (field: string) =>
   z.preprocess(
     (value) => value ?? '',
     z.coerce.string().trim().min(1, `${field} is required`),
-  )
+  );
 
 const optionalString = () =>
   z.preprocess(
-    (value) => (value === undefined ? undefined : value ?? ''),
+    (value) => (value === undefined ? undefined : (value ?? '')),
     z.coerce.string().optional(),
-  )
+  );
 
 const optionalTrimmedString = () =>
   z.preprocess(
-    (value) => (value === undefined ? undefined : value ?? ''),
+    (value) => (value === undefined ? undefined : (value ?? '')),
     z.coerce.string().trim().optional(),
-  )
+  );
 
 const memoryListSchema = z.object({
   category: optionalString(),
@@ -32,40 +36,40 @@ const memoryListSchema = z.object({
   coveredBefore: optionalString(),
   q: optionalTrimmedString(),
   limit: z.number().optional().catch(undefined),
-})
+});
 
 const memoryGetSchema = z.object({
   id: requiredTrimmedString('id'),
-})
+});
 
 const memorySearchSchema = z.object({
   query: requiredTrimmedString('query'),
   limit: z.number().optional().catch(undefined),
-})
+});
 
 const memoryQuerySchema = z.object({
   query: requiredTrimmedString('query'),
   limit: z.number().optional().catch(undefined),
-})
+});
 
 const memoryUpdateSchema = z.object({
   id: requiredTrimmedString('id'),
   content: optionalString(),
   confidence: z.number().optional().catch(undefined),
   category: optionalString(),
-})
+});
 
 const memoryDeleteSchema = z.object({
   id: requiredTrimmedString('id'),
-})
+});
 
-const memorySyncSchema = z.object({})
+const memorySyncSchema = z.object({});
 
 const memoryRefreshSchema = z.object({
   entryId: optionalTrimmedString(),
-})
+});
 
-const memoryStatusSchema = z.object({})
+const memoryStatusSchema = z.object({});
 
 export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
   return [
@@ -76,10 +80,10 @@ export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
       handler: async (input) => {
         const limit = Number.isFinite(input.limit)
           ? Math.max(1, Math.min(Number(input.limit), 500))
-          : 50
-        const q = input.q ?? ''
+          : 50;
+        const q = input.q ?? '';
         if (q) {
-          return queryMemory(memory, q, limit)
+          return queryMemory(memory, q, limit);
         }
 
         const rows = await memory.list({
@@ -89,8 +93,8 @@ export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
           filePath: input.filePath,
           staleOnly: Boolean(input.stale),
           coveredBefore: input.coveredBefore,
-        })
-        return rows.slice(0, limit)
+        });
+        return rows.slice(0, limit);
       },
     }),
     defineTool({
@@ -106,8 +110,8 @@ export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
       handler: async (input) => {
         const limit = Number.isFinite(input.limit)
           ? Math.max(1, Math.min(Number(input.limit), 500))
-          : 10
-        return { entries: await memory.search(input.query, limit) }
+          : 10;
+        return { entries: await memory.search(input.query, limit) };
       },
     }),
     defineTool({
@@ -117,8 +121,8 @@ export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
       handler: async (input) => {
         const limit = Number.isFinite(input.limit)
           ? Math.max(1, Math.min(Number(input.limit), 500))
-          : 10
-        return { entries: queryMemory(memory, input.query, limit) }
+          : 10;
+        return { entries: queryMemory(memory, input.query, limit) };
       },
     }),
     defineTool({
@@ -126,15 +130,15 @@ export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
       description: 'Update a memory entry',
       schema: memoryUpdateSchema,
       handler: async (input) => {
-        const id = input.id
+        const id = input.id;
         await memory.update(id, {
           content: input.content,
           confidence: input.confidence,
           category: input.category as any,
-        })
-        const updated = await memory.get(id)
-        if (!updated) throw new Error(`memory entry not found: ${id}`)
-        return { entry: updated }
+        });
+        const updated = await memory.get(id);
+        if (!updated) throw new Error(`memory entry not found: ${id}`);
+        return { entry: updated };
       },
     }),
     defineTool({
@@ -142,9 +146,9 @@ export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
       description: 'Delete a memory entry',
       schema: memoryDeleteSchema,
       handler: async (input) => {
-        const id = input.id
-        await memory.delete(id)
-        return { id, deleted: true }
+        const id = input.id;
+        await memory.delete(id);
+        return { id, deleted: true };
       },
     }),
     defineTool({
@@ -157,23 +161,24 @@ export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
       name: 'memory_refresh',
       description: 'Refresh stale memory entries',
       schema: memoryRefreshSchema,
-      handler: async (input) => refreshMemoryEntries(repoDir, memory, input.entryId ?? ''),
+      handler: async (input) =>
+        refreshMemoryEntries(repoDir, memory, input.entryId ?? ''),
     }),
     defineTool({
       name: 'memory_status',
       description: 'Get memory sync + health status',
       schema: memoryStatusSchema,
       handler: async () => {
-        const status = await getMemorySyncStatus(repoDir, memory)
-        const health = await memory.buildHealthSummary()
+        const status = await getMemorySyncStatus(repoDir, memory);
+        const health = await memory.buildHealthSummary();
         return {
           ...status,
           totalEntries: health.totalEntries,
           bySource: health.bySource,
           staleCount: health.staleCount,
           avgConfidence: health.avgConfidence,
-        }
+        };
       },
     }),
-  ]
+  ];
 }

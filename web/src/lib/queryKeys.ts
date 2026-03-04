@@ -1,4 +1,4 @@
-import type { ListMemoryParams } from '../types'
+import type { ListMemoryParams } from '../types';
 
 function normalizeMemoryParams(params?: ListMemoryParams) {
   return {
@@ -10,7 +10,7 @@ function normalizeMemoryParams(params?: ListMemoryParams) {
     coveredBefore: params?.coveredBefore ?? null,
     q: params?.q ?? null,
     limit: params?.limit ?? null,
-  }
+  };
 }
 
 export const queryKeys = {
@@ -39,4 +39,4 @@ export const queryKeys = {
   queue: ['queue'] as const,
   queueCounts: ['queue', 'counts'] as const,
   queueJob: (id: string) => ['queue', id] as const,
-}
+};

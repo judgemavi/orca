@@ -1,60 +1,65 @@
-import { Phase } from '../types'
-import type { Config, Task } from '../types'
-import type { DriverRegistry } from '../driver/registry'
-import { runTool } from '../worker/worker'
-import type { InteractionStore } from '../store/interactions'
-import { extractJSONObject } from './llm'
-import { createPhaseRunner } from '../shared/phase-runner'
-
-import type { AIReviewCheck, AIReviewFinding } from '../types'
+import type { DriverRegistry } from '../driver/registry';
+import { createPhaseRunner } from '../shared/phase-runner';
+import type { InteractionStore } from '../store/interactions';
+import type { AIReviewCheck, AIReviewFinding, Config } from '../types';
+import { Phase } from '../types';
+import { runTool } from '../worker/worker';
+import { extractJSONObject } from './llm';
 
 interface ParsedReviewPayload {
-  approved?: boolean
-  feedback?: string
-  decision?: string
-  verdict?: string
-  status?: string
-  checks?: unknown[]
-  findings?: unknown[]
+  approved?: boolean;
+  feedback?: string;
+  decision?: string;
+  verdict?: string;
+  status?: string;
+  checks?: unknown[];
+  findings?: unknown[];
 }
 
 export interface RunAIReviewInput {
-  repoDir: string
-  taskID: string
-  title: string
-  description: string
-  diff: string
-  prompt?: string
-  config: Config
-  registry: DriverRegistry
-  interactions: InteractionStore
-  toolOverride?: string
-  modelOverride?: string
+  repoDir: string;
+  taskID: string;
+  title: string;
+  description: string;
+  diff: string;
+  prompt?: string;
+  config: Config;
+  registry: DriverRegistry;
+  interactions: InteractionStore;
+  toolOverride?: string;
+  modelOverride?: string;
 }
 
 export interface RunAIReviewResult {
-  taskId: string
-  approved: boolean
-  feedback: string
-  tool: string
-  model: string
-  interactionId: string
-  prompt: string
-  checks: AIReviewCheck[]
-  findings: AIReviewFinding[]
+  taskId: string;
+  approved: boolean;
+  feedback: string;
+  tool: string;
+  model: string;
+  interactionId: string;
+  prompt: string;
+  checks: AIReviewCheck[];
+  findings: AIReviewFinding[];
 }
 
-export async function runAIReview(input: RunAIReviewInput): Promise<RunAIReviewResult> {
+export async function runAIReview(
+  input: RunAIReviewInput,
+): Promise<RunAIReviewResult> {
   const runPhase = await createPhaseRunner({
     config: input.config,
     registry: input.registry,
     repoDir: input.repoDir,
     interactions: input.interactions,
     runTool,
-  })
+  });
 
-  const userPrompt = input.prompt ?? ''
-  const { result: parsed, interactionId, tool, model } = await runPhase(
+  const userPrompt = input.prompt ?? '';
+  const {
+    result: parsed,
+    interactionId,
+    tool,
+    model,
+  } = await runPhase(
     {
       taskId: input.taskID,
       phase: Phase.review,
@@ -80,7 +85,7 @@ export async function runAIReview(input: RunAIReviewInput): Promise<RunAIReviewR
         tool: context.tool,
       }),
     }),
-  )
+  );
 
   return {
     taskId: input.taskID,
@@ -92,28 +97,30 @@ export async function runAIReview(input: RunAIReviewInput): Promise<RunAIReviewR
     prompt: userPrompt,
     checks: parsed.checks,
     findings: parsed.findings,
-  }
+  };
 }
 
 function parseReviewPayload(output: string): {
-  approved: boolean
-  feedback: string
-  checks: AIReviewCheck[]
-  findings: AIReviewFinding[]
+  approved: boolean;
+  feedback: string;
+  checks: AIReviewCheck[];
+  findings: AIReviewFinding[];
 } {
-  const payload = extractJSONObject<ParsedReviewPayload>(output)
+  const payload = extractJSONObject<ParsedReviewPayload>(output);
   if (!payload) {
-    throw new Error(`failed to parse review JSON from output`)
+    throw new Error(`failed to parse review JSON from output`);
   }
 
-  let approved: boolean | null = null
+  let approved: boolean | null = null;
   if (typeof payload.approved === 'boolean') {
-    approved = payload.approved
+    approved = payload.approved;
   } else {
     const decision = String(
       payload.decision ?? payload.verdict ?? payload.status ?? '',
-    ).trim().toLowerCase()
-    if (decision === 'approve' || decision === 'approved') approved = true
+    )
+      .trim()
+      .toLowerCase();
+    if (decision === 'approve' || decision === 'approved') approved = true;
     if (
       decision === 'request-changes' ||
       decision === 'request_changes' ||
@@ -121,53 +128,60 @@ function parseReviewPayload(output: string): {
       decision === 'reject' ||
       decision === 'rejected'
     ) {
-      approved = false
+      approved = false;
     }
   }
 
   if (approved === null) {
-    throw new Error('review payload missing approved/decision field')
+    throw new Error('review payload missing approved/decision field');
   }
-  const feedback = String(payload.feedback ?? '').trim()
+  const feedback = String(payload.feedback ?? '').trim();
   if (!feedback) {
-    throw new Error('review payload missing feedback')
+    throw new Error('review payload missing feedback');
   }
 
-  const checks = Array.isArray(payload.checks) ? parseChecks(payload.checks) : []
-  const findings = Array.isArray(payload.findings) ? parseFindings(payload.findings) : []
+  const checks = Array.isArray(payload.checks)
+    ? parseChecks(payload.checks)
+    : [];
+  const findings = Array.isArray(payload.findings)
+    ? parseFindings(payload.findings)
+    : [];
 
-  return { approved, feedback, checks, findings }
+  return { approved, feedback, checks, findings };
 }
 
 function parseChecks(raw: unknown[]): AIReviewCheck[] {
-  const out: AIReviewCheck[] = []
+  const out: AIReviewCheck[] = [];
   for (const item of raw) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
-    const rec = item as Record<string, unknown>
-    const key = String(rec.key ?? '').trim()
-    const label = String(rec.label ?? key).trim()
-    if (!key) continue
-    out.push({ key, label, passed: Boolean(rec.passed) })
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const key = String(rec.key ?? '').trim();
+    const label = String(rec.label ?? key).trim();
+    if (!key) continue;
+    out.push({ key, label, passed: Boolean(rec.passed) });
   }
-  return out
+  return out;
 }
 
 function parseFindings(raw: unknown[]): AIReviewFinding[] {
-  const out: AIReviewFinding[] = []
+  const out: AIReviewFinding[] = [];
   for (let i = 0; i < raw.length; i++) {
-    const item = raw[i]
-    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
-    const rec = item as Record<string, unknown>
-    const summary = String(rec.summary ?? '').trim()
-    if (!summary) continue
+    const item = raw[i];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const summary = String(rec.summary ?? '').trim();
+    if (!summary) continue;
     out.push({
       id: String(rec.id ?? `finding-${i}`),
       summary,
       detail: String(rec.detail ?? summary).trim(),
       passed: typeof rec.passed === 'boolean' ? rec.passed : true,
       filePath: typeof rec.filePath === 'string' ? rec.filePath : undefined,
-      line: typeof rec.line === 'number' && Number.isFinite(rec.line) ? rec.line : undefined,
-    })
+      line:
+        typeof rec.line === 'number' && Number.isFinite(rec.line)
+          ? rec.line
+          : undefined,
+    });
   }
-  return out
+  return out;
 }

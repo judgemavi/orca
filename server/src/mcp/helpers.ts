@@ -6,11 +6,11 @@ export function jsonResult(data: unknown) {
         text: JSON.stringify(data),
       },
     ],
-  }
+  };
 }
 
 export function errorResult(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = error instanceof Error ? error.message : String(error);
   return {
     content: [
       {
@@ -19,5 +19,5 @@ export function errorResult(error: unknown) {
       },
     ],
     isError: true,
-  }
+  };
 }

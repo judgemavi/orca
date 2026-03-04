@@ -1,5 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { QueuePanel } from '../components/queue/QueuePanel'
+import { createFileRoute } from '@tanstack/react-router';
+import { QueuePanel } from '../components/queue/QueuePanel';
 
 function QueuePage() {
   return (
@@ -8,9 +8,9 @@ function QueuePage() {
         <QueuePanel />
       </div>
     </div>
-  )
+  );
 }
 
 export const Route = createFileRoute('/queue')({
   component: QueuePage,
-})
+});

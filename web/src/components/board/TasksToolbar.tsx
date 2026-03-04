@@ -1,29 +1,29 @@
-import type { Task } from '../../types'
-import { useTaskListStats } from './useTaskListStats'
-import { Button } from '../Button'
-import { CreateTaskModal } from './CreateTaskModal'
+import type { Task } from '../../types';
+import { Button } from '../Button';
+import { CreateTaskModal } from './CreateTaskModal';
+import { useTaskListStats } from './useTaskListStats';
 
 interface Props {
-  tasks: Task[]
-  search: string
+  tasks: Task[];
+  search: string;
   loading: {
-    action: boolean
-    start: boolean
-    merge: boolean
-  }
+    action: boolean;
+    start: boolean;
+    merge: boolean;
+  };
   actions: {
-    onStart: () => void
-    onMerge: () => void
-  }
-  onSearchChange: (value: string) => void
+    onStart: () => void;
+    onMerge: () => void;
+  };
+  onSearchChange: (value: string) => void;
 }
 
 function ToolbarSearch({
   search,
   onSearchChange,
 }: {
-  search: string
-  onSearchChange: (value: string) => void
+  search: string;
+  onSearchChange: (value: string) => void;
 }) {
   return (
     <input
@@ -33,7 +33,7 @@ function ToolbarSearch({
       placeholder="Search tasks"
       className="w-full max-w-60 rounded-md border border-border-subtle px-2.5 py-1 text-xs outline-none focus:border-accent"
     />
-  )
+  );
 }
 
 function ToolbarActions({
@@ -41,9 +41,9 @@ function ToolbarActions({
   hasApprovedTasks,
   actions,
 }: {
-  loading: Props['loading']
-  hasApprovedTasks: boolean
-  actions: Props['actions']
+  loading: Props['loading'];
+  hasApprovedTasks: boolean;
+  actions: Props['actions'];
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -63,7 +63,7 @@ function ToolbarActions({
         {loading.merge ? 'Merging...' : 'Merge'}
       </Button>
     </div>
-  )
+  );
 }
 
 export function TasksToolbar({
@@ -73,7 +73,7 @@ export function TasksToolbar({
   actions,
   onSearchChange,
 }: Props) {
-  const stats = useTaskListStats(tasks)
+  const stats = useTaskListStats(tasks);
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-b border-border px-4 py-2.5">
@@ -86,5 +86,5 @@ export function TasksToolbar({
         />
       </div>
     </div>
-  )
+  );
 }

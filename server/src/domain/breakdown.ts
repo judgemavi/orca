@@ -1,41 +1,45 @@
-import { Phase } from '../types'
-import type { Config, ProposedTask } from '../types'
-import type { DriverRegistry } from '../driver/registry'
-import { runTool } from '../worker/worker'
-import type { InteractionStore } from '../store/interactions'
-import { extractJSONArray } from './llm'
-import { createPhaseRunner } from '../shared/phase-runner'
+import type { DriverRegistry } from '../driver/registry';
+import { createPhaseRunner } from '../shared/phase-runner';
+import type { InteractionStore } from '../store/interactions';
+import type { Config, ProposedTask } from '../types';
+import { Phase } from '../types';
+import { runTool } from '../worker/worker';
+import { extractJSONArray } from './llm';
 
-const TASK_HEADER_RE = /^###\s*task\s+\d+(?::\s*(.*))?$/i
-const FIELD_RE = /^-+\s*([A-Za-z ]+)\s*:\s*(.*)$/
+const TASK_HEADER_RE = /^###\s*task\s+\d+(?::\s*(.*))?$/i;
+const FIELD_RE = /^-+\s*([A-Za-z ]+)\s*:\s*(.*)$/;
 
 export interface RunBreakdownInput {
-  repoDir: string
-  config: Config
-  registry: DriverRegistry
-  interactions: InteractionStore
-  goal: string
-  taskID?: string
-  memoryContext?: string
-  toolOverride?: string
-  modelOverride?: string
+  repoDir: string;
+  config: Config;
+  registry: DriverRegistry;
+  interactions: InteractionStore;
+  goal: string;
+  taskID?: string;
+  memoryContext?: string;
+  toolOverride?: string;
+  modelOverride?: string;
 }
 
 export interface RunBreakdownResult {
-  proposed: ProposedTask[]
-  interactionId: string
-  tool: string
-  model: string
+  proposed: ProposedTask[];
+  interactionId: string;
+  tool: string;
+  model: string;
 }
 
-export function generateProposedSubtasks(title: string, description: string): ProposedTask[] {
-  const base = title.trim() || 'Task'
-  const context = description.trim()
+export function generateProposedSubtasks(
+  title: string,
+  description: string,
+): ProposedTask[] {
+  const base = title.trim() || 'Task';
+  const context = description.trim();
 
   return [
     {
       title: `${base}: analysis`,
-      description: `Analyze existing code paths and constraints.\n\n${context}`.trim(),
+      description:
+        `Analyze existing code paths and constraints.\n\n${context}`.trim(),
       dependsOnIndices: [],
       suggestedTool: 'claude',
     },
@@ -51,23 +55,30 @@ export function generateProposedSubtasks(title: string, description: string): Pr
       dependsOnIndices: [1],
       suggestedTool: 'claude',
     },
-  ]
+  ];
 }
 
-export async function runBreakdown(input: RunBreakdownInput): Promise<RunBreakdownResult> {
+export async function runBreakdown(
+  input: RunBreakdownInput,
+): Promise<RunBreakdownResult> {
   const runPhase = await createPhaseRunner({
     config: input.config,
     registry: input.registry,
     repoDir: input.repoDir,
     interactions: input.interactions,
     runTool,
-  })
+  });
 
   const contextSection = input.memoryContext?.trim()
     ? `## Retrieved Context\n\n${input.memoryContext.trim()}\n`
-    : ''
+    : '';
 
-  const { result: proposed, interactionId, tool, model } = await runPhase(
+  const {
+    result: proposed,
+    interactionId,
+    tool,
+    model,
+  } = await runPhase(
     {
       taskId: input.taskID?.trim() || null,
       taskRunId: input.taskID?.trim() || 'breakdown',
@@ -81,23 +92,23 @@ export async function runBreakdown(input: RunBreakdownInput): Promise<RunBreakdo
       exitErrorLabel: 'breakdown',
     },
     (output) => {
-      const parsed = parseProposedTasks(output)
+      const parsed = parseProposedTasks(output);
       if (parsed.length === 0) {
-        throw new Error('no subtasks found in breakdown output')
+        throw new Error('no subtasks found in breakdown output');
       }
-      return parsed
+      return parsed;
     },
     (parsed) => ({
       qualityJson: JSON.stringify({ goal: input.goal, proposed: parsed }),
     }),
-  )
+  );
 
   return {
     proposed,
     interactionId,
     tool,
     model,
-  }
+  };
 }
 
 export function normalizeProposedTasks(tasks: ProposedTask[]): ProposedTask[] {
@@ -105,91 +116,100 @@ export function normalizeProposedTasks(tasks: ProposedTask[]): ProposedTask[] {
     title: task.title?.trim() || 'Untitled task',
     description: task.description?.trim() || '',
     dependsOnIndices: Array.isArray(task.dependsOnIndices)
-      ? task.dependsOnIndices.filter((index) => Number.isInteger(index) && index >= 0)
+      ? task.dependsOnIndices.filter(
+          (index) => Number.isInteger(index) && index >= 0,
+        )
       : [],
     suggestedTool: task.suggestedTool?.trim() || 'claude',
-  }))
+  }));
 }
 
 function parseProposedTasks(output: string): ProposedTask[] {
-  const parsedJSON = extractJSONArray<ProposedTask>(output)
+  const parsedJSON = extractJSONArray<ProposedTask>(output);
   if (parsedJSON && parsedJSON.length > 0) {
-    return normalizeProposedTasks(parsedJSON)
+    return normalizeProposedTasks(parsedJSON);
   }
 
-  const lines = output.trim().split('\n')
-  if (lines.length === 0) return []
+  const lines = output.trim().split('\n');
+  if (lines.length === 0) return [];
 
-  const tasks: ProposedTask[] = []
-  let current: ProposedTask | null = null
+  const tasks: ProposedTask[] = [];
+  let current: ProposedTask | null = null;
 
   const pushCurrent = () => {
-    if (!current) return
+    if (!current) return;
     if (!current.title.trim() && !current.description.trim()) {
-      current = null
-      return
+      current = null;
+      return;
     }
-    tasks.push(current)
-    current = null
-  }
+    tasks.push(current);
+    current = null;
+  };
 
   for (const rawLine of lines) {
-    const line = rawLine.trim()
-    if (!line) continue
+    const line = rawLine.trim();
+    if (!line) continue;
 
-    const headerMatch = line.match(TASK_HEADER_RE)
+    const headerMatch = line.match(TASK_HEADER_RE);
     if (headerMatch) {
-      pushCurrent()
+      pushCurrent();
       current = {
         title: String(headerMatch[1] ?? '').trim(),
         description: '',
         dependsOnIndices: [],
         suggestedTool: 'claude',
-      }
-      continue
+      };
+      continue;
     }
-    if (!current) continue
+    if (!current) continue;
 
-    const fieldMatch = line.match(FIELD_RE)
-    if (!fieldMatch) continue
+    const fieldMatch = line.match(FIELD_RE);
+    if (!fieldMatch) continue;
 
-    const key = String(fieldMatch[1] ?? '').trim().toLowerCase()
-    const value = String(fieldMatch[2] ?? '').trim()
+    const key = String(fieldMatch[1] ?? '')
+      .trim()
+      .toLowerCase();
+    const value = String(fieldMatch[2] ?? '').trim();
     if (key === 'title') {
-      current.title = value
-      continue
+      current.title = value;
+      continue;
     }
     if (key === 'description') {
-      current.description = value
-      continue
+      current.description = value;
+      continue;
     }
     if (key === 'depends on') {
-      current.dependsOnIndices = parseDependsOnNumbers(value)
-      continue
+      current.dependsOnIndices = parseDependsOnNumbers(value);
+      continue;
     }
     if (key === 'suggested tool') {
-      current.suggestedTool = normalizeSuggestedTool(value) || current.suggestedTool
+      current.suggestedTool =
+        normalizeSuggestedTool(value) || current.suggestedTool;
     }
   }
-  pushCurrent()
+  pushCurrent();
 
-  return normalizeProposedTasks(tasks)
+  return normalizeProposedTasks(tasks);
 }
 
 function parseDependsOnNumbers(raw: string): number[] {
-  const cleaned = raw.trim().toLowerCase()
-  if (!cleaned || cleaned === 'none' || cleaned === 'n/a') return []
+  const cleaned = raw.trim().toLowerCase();
+  if (!cleaned || cleaned === 'none' || cleaned === 'n/a') return [];
 
-  return [...new Set(cleaned
-    .split(/[,\s;]+/g)
-    .map((part) => Number.parseInt(part.trim(), 10))
-    .filter((value) => Number.isFinite(value) && value > 0)
-    .map((value) => value - 1))]
+  return [
+    ...new Set(
+      cleaned
+        .split(/[,\s;]+/g)
+        .map((part) => Number.parseInt(part.trim(), 10))
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .map((value) => value - 1),
+    ),
+  ];
 }
 
 function normalizeSuggestedTool(raw: string): string {
-  const value = raw.trim().toLowerCase()
-  if (value === 'claude' || value === 'codex') return value
-  if (value === 'none') return ''
-  return ''
+  const value = raw.trim().toLowerCase();
+  if (value === 'claude' || value === 'codex') return value;
+  if (value === 'none') return '';
+  return '';
 }

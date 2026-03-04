@@ -138,10 +138,7 @@
       "indexes": {
         "idx_interactions_target": {
           "name": "idx_interactions_target",
-          "columns": [
-            "target_id",
-            "updated_at"
-          ],
+          "columns": ["target_id", "updated_at"],
           "isUnique": false
         }
       },
@@ -262,30 +259,22 @@
       "indexes": {
         "idx_memory_category": {
           "name": "idx_memory_category",
-          "columns": [
-            "category"
-          ],
+          "columns": ["category"],
           "isUnique": false
         },
         "idx_memory_source_task": {
           "name": "idx_memory_source_task",
-          "columns": [
-            "source_task_id"
-          ],
+          "columns": ["source_task_id"],
           "isUnique": false
         },
         "idx_memory_superseded": {
           "name": "idx_memory_superseded",
-          "columns": [
-            "superseded_by"
-          ],
+          "columns": ["superseded_by"],
           "isUnique": false
         },
         "idx_memory_provenance_hash": {
           "name": "idx_memory_provenance_hash",
-          "columns": [
-            "provenance_hash"
-          ],
+          "columns": ["provenance_hash"],
           "isUnique": false
         }
       },
@@ -294,12 +283,8 @@
           "name": "memory_entries_source_task_id_tasks_id_fk",
           "tableFrom": "memory_entries",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "source_task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["source_task_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -307,12 +292,8 @@
           "name": "memory_entries_source_interaction_id_task_interactions_id_fk",
           "tableFrom": "memory_entries",
           "tableTo": "task_interactions",
-          "columnsFrom": [
-            "source_interaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["source_interaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -351,9 +332,7 @@
       "indexes": {
         "idx_mfa_file_path": {
           "name": "idx_mfa_file_path",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": false
         }
       },
@@ -362,22 +341,15 @@
           "name": "memory_file_associations_memory_id_memory_entries_id_fk",
           "tableFrom": "memory_file_associations",
           "tableTo": "memory_entries",
-          "columnsFrom": [
-            "memory_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["memory_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "memory_file_associations_memory_id_file_path_pk": {
-          "columns": [
-            "memory_id",
-            "file_path"
-          ],
+          "columns": ["memory_id", "file_path"],
           "name": "memory_file_associations_memory_id_file_path_pk"
         }
       },
@@ -459,10 +431,7 @@
       "indexes": {
         "idx_orch_msg_session": {
           "name": "idx_orch_msg_session",
-          "columns": [
-            "session_id",
-            "created_at"
-          ],
+          "columns": ["session_id", "created_at"],
           "isUnique": false
         }
       },
@@ -471,12 +440,8 @@
           "name": "orchestrator_messages_session_id_orchestrator_sessions_id_fk",
           "tableFrom": "orchestrator_messages",
           "tableTo": "orchestrator_sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -647,10 +612,7 @@
       "indexes": {
         "idx_sessions_status_created": {
           "name": "idx_sessions_status_created",
-          "columns": [
-            "status",
-            "created_at"
-          ],
+          "columns": ["status", "created_at"],
           "isUnique": false
         }
       },
@@ -680,9 +642,7 @@
       "indexes": {
         "idx_task_deps_depends_on": {
           "name": "idx_task_deps_depends_on",
-          "columns": [
-            "depends_on"
-          ],
+          "columns": ["depends_on"],
           "isUnique": false
         }
       },
@@ -691,12 +651,8 @@
           "name": "task_deps_task_id_tasks_id_fk",
           "tableFrom": "task_deps",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -704,22 +660,15 @@
           "name": "task_deps_depends_on_tasks_id_fk",
           "tableFrom": "task_deps",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "depends_on"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["depends_on"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "task_deps_task_id_depends_on_pk": {
-          "columns": [
-            "task_id",
-            "depends_on"
-          ],
+          "columns": ["task_id", "depends_on"],
           "name": "task_deps_task_id_depends_on_pk"
         }
       },
@@ -747,9 +696,7 @@
       "indexes": {
         "idx_tfa_file_path": {
           "name": "idx_tfa_file_path",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": false
         }
       },
@@ -758,22 +705,15 @@
           "name": "task_file_associations_task_id_tasks_id_fk",
           "tableFrom": "task_file_associations",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "task_file_associations_task_id_file_path_pk": {
-          "columns": [
-            "task_id",
-            "file_path"
-          ],
+          "columns": ["task_id", "file_path"],
           "name": "task_file_associations_task_id_file_path_pk"
         }
       },
@@ -926,24 +866,17 @@
       "indexes": {
         "idx_interactions_task_phase": {
           "name": "idx_interactions_task_phase",
-          "columns": [
-            "task_id",
-            "phase"
-          ],
+          "columns": ["task_id", "phase"],
           "isUnique": false
         },
         "idx_interactions_status": {
           "name": "idx_interactions_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "idx_interactions_run_id": {
           "name": "idx_interactions_run_id",
-          "columns": [
-            "run_id"
-          ],
+          "columns": ["run_id"],
           "isUnique": false
         }
       },
@@ -952,12 +885,8 @@
           "name": "task_interactions_task_id_tasks_id_fk",
           "tableFrom": "task_interactions",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1024,10 +953,7 @@
       "indexes": {
         "idx_task_reviews_task_created": {
           "name": "idx_task_reviews_task_created",
-          "columns": [
-            "task_id",
-            "created_at"
-          ],
+          "columns": ["task_id", "created_at"],
           "isUnique": false
         }
       },
@@ -1036,12 +962,8 @@
           "name": "task_reviews_task_id_tasks_id_fk",
           "tableFrom": "task_reviews",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1049,12 +971,8 @@
           "name": "task_reviews_interaction_id_task_interactions_id_fk",
           "tableFrom": "task_reviews",
           "tableTo": "task_interactions",
-          "columnsFrom": [
-            "interaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["interaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1137,23 +1055,17 @@
       "indexes": {
         "idx_tasks_status": {
           "name": "idx_tasks_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "idx_tasks_created_at": {
           "name": "idx_tasks_created_at",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         },
         "idx_tasks_updated_at": {
           "name": "idx_tasks_updated_at",
-          "columns": [
-            "updated_at"
-          ],
+          "columns": ["updated_at"],
           "isUnique": false
         }
       },

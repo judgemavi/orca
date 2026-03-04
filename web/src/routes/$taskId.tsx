@@ -1,77 +1,81 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
-import * as Collapsible from '@radix-ui/react-collapsible'
-import { api } from '../api'
-import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel'
-import { TaskInteractionList } from '../components/board/task-detail/TaskInteractionList'
-import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar'
-import { StatusBadge } from '../components/common/StatusBadge'
+import * as Collapsible from '@radix-ui/react-collapsible';
+import { useMutation } from '@tanstack/react-query';
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useParams,
+} from '@tanstack/react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../api';
+import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel';
+import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar';
+import { TaskInteractionList } from '../components/board/task-detail/TaskInteractionList';
+import { StatusBadge } from '../components/common/StatusBadge';
 import {
   TaskDetailProvider,
   useTaskDetailContext,
-} from '../context/TaskDetailContext'
-import { useDependencyManager } from '../hooks/useDependencyManager'
-import { useTaskForm } from '../hooks/forms/useTaskForm'
-import { useMutation } from '@tanstack/react-query'
+} from '../context/TaskDetailContext';
+import { useTaskForm } from '../hooks/forms/useTaskForm';
 import {
   useConfigQuery,
   useModelsQuery,
   useRunningOperations,
   useTaskQuery,
   useTasksQuery,
-} from '../hooks/queries'
-import { controlClass } from '../lib/constants'
-import type { Config, Task } from '../types'
+} from '../hooks/queries';
+import { useDependencyManager } from '../hooks/useDependencyManager';
+import { controlClass } from '../lib/constants';
+import type { Config, Task } from '../types';
 
 type TaskDetailContentProps = {
-  task: Task
-  configData: Config
-  isRunning: (type: string, targetId?: string) => boolean
-}
+  task: Task;
+  configData: Config;
+  isRunning: (type: string, targetId?: string) => boolean;
+};
 
 type TaskDetailFormProps = {
-  form: ReturnType<typeof useTaskForm>
-  isEditable: boolean
-  task: Task
-  saving: boolean
-}
+  form: ReturnType<typeof useTaskForm>;
+  isEditable: boolean;
+  task: Task;
+  saving: boolean;
+};
 
 function formatRelativeTime(iso: string) {
-  const timestamp = Date.parse(iso)
-  if (!Number.isFinite(timestamp)) return 'just now'
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) return 'just now';
 
-  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000)
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
   const ranges: Array<{
-    limit: number
-    unit: Intl.RelativeTimeFormatUnit
-    inSeconds: number
+    limit: number;
+    unit: Intl.RelativeTimeFormatUnit;
+    inSeconds: number;
   }> = [
-      { limit: 60, unit: 'second', inSeconds: 1 },
-      { limit: 3600, unit: 'minute', inSeconds: 60 },
-      { limit: 86400, unit: 'hour', inSeconds: 3600 },
-      { limit: 604800, unit: 'day', inSeconds: 86400 },
-      { limit: 2629800, unit: 'week', inSeconds: 604800 },
-      { limit: 31557600, unit: 'month', inSeconds: 2629800 },
-      { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
-    ]
+    { limit: 60, unit: 'second', inSeconds: 1 },
+    { limit: 3600, unit: 'minute', inSeconds: 60 },
+    { limit: 86400, unit: 'hour', inSeconds: 3600 },
+    { limit: 604800, unit: 'day', inSeconds: 86400 },
+    { limit: 2629800, unit: 'week', inSeconds: 604800 },
+    { limit: 31557600, unit: 'month', inSeconds: 2629800 },
+    { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
+  ];
 
   for (const range of ranges) {
     if (Math.abs(deltaSeconds) < range.limit) {
-      return rtf.format(Math.round(deltaSeconds / range.inSeconds), range.unit)
+      return rtf.format(Math.round(deltaSeconds / range.inSeconds), range.unit);
     }
   }
 
-  return 'just now'
+  return 'just now';
 }
 
 function TaskDetailPage() {
-  const { taskId } = useParams({ from: '/$taskId' })
-  const { data: task } = useTaskQuery(taskId)
-  const { data: configData } = useConfigQuery()
+  const { taskId } = useParams({ from: '/$taskId' });
+  const { data: task } = useTaskQuery(taskId);
+  const { data: configData } = useConfigQuery();
 
-  const { isRunning } = useRunningOperations()
+  const { isRunning } = useRunningOperations();
 
   if (!task || !configData) {
     return (
@@ -84,7 +88,7 @@ function TaskDetailPage() {
           Back to tasks
         </Link>
       </div>
-    )
+    );
   }
 
   return (
@@ -93,7 +97,7 @@ function TaskDetailPage() {
       configData={configData}
       isRunning={isRunning}
     />
-  )
+  );
 }
 
 function TaskDetailContent({
@@ -101,20 +105,20 @@ function TaskDetailContent({
   configData,
   isRunning,
 }: TaskDetailContentProps) {
-  const { data: modelsByTool } = useModelsQuery()
+  const { data: modelsByTool } = useModelsQuery();
   const tools = useMemo(() => {
-    const fromConfig = Object.keys(modelsByTool ?? {})
-    return Array.from(new Set(fromConfig)).sort((a, b) => a.localeCompare(b))
-  }, [modelsByTool])
-  const navigate = useNavigate()
+    const fromConfig = Object.keys(modelsByTool ?? {});
+    return Array.from(new Set(fromConfig)).sort((a, b) => a.localeCompare(b));
+  }, [modelsByTool]);
+  const navigate = useNavigate();
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) =>
       api.updateTask(id, data),
-  })
+  });
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteTask(id),
-  })
-  const [saving, setSaving] = useState(false)
+  });
+  const [saving, setSaving] = useState(false);
 
   const form = useTaskForm(
     {
@@ -122,7 +126,7 @@ function TaskDetailContent({
       description: task.description ?? '',
     },
     async (values) => {
-      setSaving(true)
+      setSaving(true);
       try {
         await updateTaskMutation.mutateAsync({
           id: task.id,
@@ -130,32 +134,32 @@ function TaskDetailContent({
             title: values.title.trim(),
             description: values.description.trim(),
           },
-        })
+        });
       } catch (err: any) {
-        alert(err?.message ?? 'Save failed')
+        alert(err?.message ?? 'Save failed');
       } finally {
-        setSaving(false)
+        setSaving(false);
       }
     },
-  )
+  );
 
   useEffect(() => {
     form.reset({
       title: task.title,
       description: task.description ?? '',
-    })
-  }, [task.id, task.title, task.description, form])
+    });
+  }, [task.id, task.title, task.description, form]);
 
-  const isEditable = task.status === 'pending'
+  const isEditable = task.status === 'pending';
 
   const handleDelete = async () => {
     try {
-      await deleteMutation.mutateAsync(task.id)
-      void navigate({ to: '/', search: {} })
+      await deleteMutation.mutateAsync(task.id);
+      void navigate({ to: '/', search: {} });
     } catch (err: any) {
-      alert(err?.message ?? 'Delete failed')
+      alert(err?.message ?? 'Delete failed');
     }
-  }
+  };
 
   return (
     <TaskDetailProvider
@@ -201,14 +205,14 @@ function TaskDetailContent({
 
             <TaskActionsBar
               onClose={() => {
-                void navigate({ to: '/', search: {} })
+                void navigate({ to: '/', search: {} });
               }}
             />
           </div>
         </div>
       </div>
     </TaskDetailProvider>
-  )
+  );
 }
 
 function TaskDetailForm({
@@ -217,13 +221,13 @@ function TaskDetailForm({
   saving,
   task,
 }: TaskDetailFormProps) {
-  const [isExpanded, setIsExpanded] = useState(isEditable)
+  const [isExpanded, setIsExpanded] = useState(isEditable);
 
   useEffect(() => {
-    setIsExpanded(isEditable)
-  }, [task.id, isEditable])
+    setIsExpanded(isEditable);
+  }, [task.id, isEditable]);
 
-  const dependencies = task.dependsOn ?? []
+  const dependencies = task.dependsOn ?? [];
   const {
     dependencyChoices,
     selectedDependencyId,
@@ -232,19 +236,19 @@ function TaskDetailForm({
     dependencyError,
     clearDependencyError,
     handleAddDependency,
-  } = useDependencyManager(task.id, dependencies)
-  const description = form.state.values.description.trim()
-  const dependencyCount = dependencies.length
+  } = useDependencyManager(task.id, dependencies);
+  const description = form.state.values.description.trim();
+  const dependencyCount = dependencies.length;
 
-  const { data: tasksResult } = useTasksQuery()
+  const { data: tasksResult } = useTasksQuery();
 
   return (
     <form
       id="task-edit-form"
       className="rounded-lg border border-border-subtle bg-surface"
       onSubmit={(e) => {
-        e.preventDefault()
-        void form.handleSubmit()
+        e.preventDefault();
+        void form.handleSubmit();
       }}
     >
       <Collapsible.Root open={isExpanded} onOpenChange={setIsExpanded}>
@@ -285,7 +289,7 @@ function TaskDetailForm({
                 <div className="mt-1 flex flex-wrap gap-1">
                   {tasksResult &&
                     dependencies.map((depId) => {
-                      const depTask = tasksResult.find((t) => t.id === depId)
+                      const depTask = tasksResult.find((t) => t.id === depId);
                       return (
                         <span
                           key={depId}
@@ -296,7 +300,7 @@ function TaskDetailForm({
                           </span>
                           <span className="font-mono">{depId.slice(0, 6)}</span>
                         </span>
-                      )
+                      );
                     })}
                 </div>
               )}
@@ -362,7 +366,7 @@ function TaskDetailForm({
                 <div className="flex flex-wrap gap-2">
                   {tasksResult &&
                     dependencies.map((depId) => {
-                      const depTask = tasksResult.find((t) => t.id === depId)
+                      const depTask = tasksResult.find((t) => t.id === depId);
                       return (
                         <span
                           key={depId}
@@ -373,7 +377,7 @@ function TaskDetailForm({
                           </span>
                           <span className="font-mono">{depId.slice(0, 8)}</span>
                         </span>
-                      )
+                      );
                     })}
                 </div>
               ) : (
@@ -387,8 +391,8 @@ function TaskDetailForm({
                         className={controlClass}
                         value={selectedDependencyId}
                         onChange={(e) => {
-                          setSelectedDependencyId(e.target.value)
-                          if (dependencyError) clearDependencyError()
+                          setSelectedDependencyId(e.target.value);
+                          if (dependencyError) clearDependencyError();
                         }}
                         disabled={addingDependency}
                       >
@@ -403,7 +407,7 @@ function TaskDetailForm({
                         type="button"
                         className="rounded-md border border-border-subtle px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60"
                         onClick={() => {
-                          void handleAddDependency()
+                          void handleAddDependency();
                         }}
                         disabled={addingDependency || !selectedDependencyId}
                       >
@@ -440,11 +444,11 @@ function TaskDetailForm({
         </Collapsible.Content>
       </Collapsible.Root>
     </form>
-  )
+  );
 }
 
 function TaskTimelineLayout() {
-  const { activeLogId, task, setActiveLogId } = useTaskDetailContext()
+  const { activeLogId, task, setActiveLogId } = useTaskDetailContext();
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
@@ -454,14 +458,14 @@ function TaskTimelineLayout() {
           taskId={task.id}
           interactionId={activeLogId}
           onClose={() => {
-            setActiveLogId(null)
+            setActiveLogId(null);
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
 export const Route = createFileRoute('/$taskId')({
   component: TaskDetailPage,
-})
+});

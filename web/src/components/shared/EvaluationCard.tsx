@@ -1,22 +1,22 @@
 interface EvaluationCardProps {
-  complexity?: string
-  needsBreakdown: boolean
-  confidence?: number
-  reasoning: string
+  complexity?: string;
+  needsBreakdown: boolean;
+  confidence?: number;
+  reasoning: string;
 }
 
 function confidencePercent(confidence: number | undefined): string {
-  if (!Number.isFinite(confidence)) return '-'
-  if ((confidence ?? 0) <= 1) return `${Math.round((confidence ?? 0) * 100)}%`
-  return `${Math.round(confidence ?? 0)}%`
+  if (!Number.isFinite(confidence)) return '-';
+  if ((confidence ?? 0) <= 1) return `${Math.round((confidence ?? 0) * 100)}%`;
+  return `${Math.round(confidence ?? 0)}%`;
 }
 
 function complexityLabel({
   complexity,
   needsBreakdown,
 }: Pick<EvaluationCardProps, 'complexity' | 'needsBreakdown'>): string {
-  if (complexity?.trim()) return complexity.trim()
-  return needsBreakdown ? 'high' : 'moderate'
+  if (complexity?.trim()) return complexity.trim();
+  return needsBreakdown ? 'high' : 'moderate';
 }
 
 export function EvaluationCard({
@@ -36,7 +36,9 @@ export function EvaluationCard({
     >
       <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.05em]">
         <span>Evaluation</span>
-        <span className={needsBreakdown ? 'text-amber-400' : 'text-emerald-400'}>
+        <span
+          className={needsBreakdown ? 'text-amber-400' : 'text-emerald-400'}
+        >
           {needsBreakdown ? 'Breakdown Recommended' : 'Ready To Plan'}
         </span>
       </div>
@@ -48,7 +50,8 @@ export function EvaluationCard({
           </span>
         </span>
         <span>
-          Confidence: <span className="font-medium">{confidencePercent(confidence)}</span>
+          Confidence:{' '}
+          <span className="font-medium">{confidencePercent(confidence)}</span>
         </span>
         <span>
           Needs Breakdown:{' '}
@@ -57,5 +60,5 @@ export function EvaluationCard({
       </div>
       <div className="whitespace-pre-wrap text-xs">{reasoning}</div>
     </div>
-  )
+  );
 }

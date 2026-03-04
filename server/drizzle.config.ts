@@ -4,4 +4,4 @@ export default {
   dialect: 'sqlite',
   strict: true,
   verbose: true,
-}
+};

@@ -1,8 +1,8 @@
-import deepmerge from 'deepmerge'
-import { Phase } from '../types'
-import type { Config } from '../types'
-import type { DriverRegistry } from '../driver/registry'
-import { availableTools, toolModels } from '../driver/registry'
+import deepmerge from 'deepmerge';
+import type { DriverRegistry } from '../driver/registry';
+import { availableTools, toolModels } from '../driver/registry';
+import type { Config } from '../types';
+import { Phase } from '../types';
 
 const DEFAULT_PHASES = [
   Phase.explore,
@@ -11,7 +11,7 @@ const DEFAULT_PHASES = [
   Phase.review,
   Phase.merge,
   Phase.retro,
-]
+];
 
 export function defaultConfig(): Config {
   return {
@@ -54,59 +54,74 @@ export function defaultConfig(): Config {
       file: '.orca/orca.log',
       maxSize: '50mb',
     },
-  }
+  };
 }
 
 export function mergePatchConfig(current: Config, patch: unknown): Config {
-  if (!patch || typeof patch !== 'object') return current
+  if (!patch || typeof patch !== 'object') return current;
   return deepmerge(current, patch as Partial<Config>, {
     arrayMerge: (_target, source) => source,
-  })
+  });
 }
 
 export function validateConfig(config: Config): Config {
   if (config.workers.maxParallel < 1) {
-    throw new Error(`workers.maxParallel must be >= 1, got ${config.workers.maxParallel}`)
+    throw new Error(
+      `workers.maxParallel must be >= 1, got ${config.workers.maxParallel}`,
+    );
   }
   if (config.monitor.maxStuckCycles < 0) {
-    throw new Error(`monitor.maxStuckCycles must be >= 0, got ${config.monitor.maxStuckCycles}`)
+    throw new Error(
+      `monitor.maxStuckCycles must be >= 0, got ${config.monitor.maxStuckCycles}`,
+    );
   }
-  validateDuration(config.monitor.stuckCheckInterval, 'monitor.stuckCheckInterval')
-  validateDuration(config.monitor.conflictCheckInterval, 'monitor.conflictCheckInterval')
-  return config
+  validateDuration(
+    config.monitor.stuckCheckInterval,
+    'monitor.stuckCheckInterval',
+  );
+  validateDuration(
+    config.monitor.conflictCheckInterval,
+    'monitor.conflictCheckInterval',
+  );
+  return config;
 }
 
-export function sanitizeConfig(config: Config, registry: DriverRegistry): string[] {
-  const changes: string[] = []
-  const tools = availableTools(registry)
+export function sanitizeConfig(
+  config: Config,
+  registry: DriverRegistry,
+): string[] {
+  const changes: string[] = [];
+  const tools = availableTools(registry);
   if (tools.length === 0) {
-    throw new Error('no available tools configured (binary check filtered all tools)')
+    throw new Error(
+      'no available tools configured (binary check filtered all tools)',
+    );
   }
 
   if (!tools.includes(config.defaultTool)) {
-    const prior = config.defaultTool
-    config.defaultTool = tools[0] as string
-    changes.push(`defaultTool ${prior} -> ${config.defaultTool}`)
+    const prior = config.defaultTool;
+    config.defaultTool = tools[0] as string;
+    changes.push(`defaultTool ${prior} -> ${config.defaultTool}`);
   }
 
-  const defaultModels = toolModels(registry, config.defaultTool)
+  const defaultModels = toolModels(registry, config.defaultTool);
   if (!defaultModels.includes(config.defaultModel)) {
-    const prior = config.defaultModel
-    config.defaultModel = defaultModels[0] ?? ''
-    changes.push(`defaultModel ${prior} -> ${config.defaultModel}`)
+    const prior = config.defaultModel;
+    config.defaultModel = defaultModels[0] ?? '';
+    changes.push(`defaultModel ${prior} -> ${config.defaultModel}`);
   }
 
-  config.tools = config.tools.filter((name) => tools.includes(name))
+  config.tools = config.tools.filter((name) => tools.includes(name));
   if (config.tools.length === 0) {
-    config.tools = [config.defaultTool]
-    changes.push('tools reset to defaultTool')
+    config.tools = [config.defaultTool];
+    changes.push('tools reset to defaultTool');
   }
 
   if (!tools.includes(config.orchestrator.supervisorTool)) {
     changes.push(
       `orchestrator.supervisorTool ${config.orchestrator.supervisorTool} -> ${config.defaultTool}`,
-    )
-    config.orchestrator.supervisorTool = config.defaultTool
+    );
+    config.orchestrator.supervisorTool = config.defaultTool;
   }
   if (
     !toolModels(registry, config.orchestrator.supervisorTool).includes(
@@ -115,36 +130,44 @@ export function sanitizeConfig(config: Config, registry: DriverRegistry): string
   ) {
     changes.push(
       `orchestrator.supervisorModel ${config.orchestrator.supervisorModel} -> ${config.defaultModel}`,
-    )
-    config.orchestrator.supervisorModel = config.defaultModel
+    );
+    config.orchestrator.supervisorModel = config.defaultModel;
   }
 
   for (const phase of DEFAULT_PHASES) {
-    const phaseCfg = config.orchestrator.phases[phase] ?? { tool: '', model: '' }
+    const phaseCfg = config.orchestrator.phases[phase] ?? {
+      tool: '',
+      model: '',
+    };
     if (!tools.includes(phaseCfg.tool)) {
-      phaseCfg.tool = config.defaultTool
-      changes.push(`orchestrator.phases.${phase}.tool -> ${phaseCfg.tool}`)
+      phaseCfg.tool = config.defaultTool;
+      changes.push(`orchestrator.phases.${phase}.tool -> ${phaseCfg.tool}`);
     }
     if (!toolModels(registry, phaseCfg.tool).includes(phaseCfg.model)) {
-      phaseCfg.model = config.defaultModel
-      changes.push(`orchestrator.phases.${phase}.model -> ${phaseCfg.model}`)
+      phaseCfg.model = config.defaultModel;
+      changes.push(`orchestrator.phases.${phase}.model -> ${phaseCfg.model}`);
     }
-    config.orchestrator.phases[phase] = phaseCfg
+    config.orchestrator.phases[phase] = phaseCfg;
   }
 
-  return changes
+  return changes;
 }
 
-export function validateDefaults(config: Config, registry: DriverRegistry): void {
-  const tools = availableTools(registry)
+export function validateDefaults(
+  config: Config,
+  registry: DriverRegistry,
+): void {
+  const tools = availableTools(registry);
   if (!tools.includes(config.defaultTool)) {
-    throw new Error(`defaultTool ${JSON.stringify(config.defaultTool)} not found in available tools`)
+    throw new Error(
+      `defaultTool ${JSON.stringify(config.defaultTool)} not found in available tools`,
+    );
   }
-  const models = toolModels(registry, config.defaultTool)
+  const models = toolModels(registry, config.defaultTool);
   if (!models.includes(config.defaultModel)) {
     throw new Error(
       `defaultModel ${JSON.stringify(config.defaultModel)} is invalid for defaultTool ${JSON.stringify(config.defaultTool)}`,
-    )
+    );
   }
 }
 
@@ -153,12 +176,12 @@ export function resolveToolForPhase(
   phase: string,
   override: string,
 ): string {
-  const explicit = override.trim()
-  if (explicit) return explicit
-  const phaseTool = config.orchestrator.phases[phase]?.tool?.trim()
-  if (phaseTool) return phaseTool
-  if (config.defaultTool.trim()) return config.defaultTool
-  return config.tools[0] ?? ''
+  const explicit = override.trim();
+  if (explicit) return explicit;
+  const phaseTool = config.orchestrator.phases[phase]?.tool?.trim();
+  if (phaseTool) return phaseTool;
+  if (config.defaultTool.trim()) return config.defaultTool;
+  return config.tools[0] ?? '';
 }
 
 export function resolveModelForPhase(
@@ -168,20 +191,20 @@ export function resolveModelForPhase(
   toolName: string,
   override: string,
 ): string {
-  if (override.trim()) return override
+  if (override.trim()) return override;
 
-  const phaseModel = config.orchestrator.phases[phase]?.model?.trim()
-  if (phaseModel) return phaseModel
+  const phaseModel = config.orchestrator.phases[phase]?.model?.trim();
+  if (phaseModel) return phaseModel;
 
-  if (config.defaultModel.trim()) return config.defaultModel
+  if (config.defaultModel.trim()) return config.defaultModel;
 
-  return toolModels(registry, toolName)[0] ?? ''
+  return toolModels(registry, toolName)[0] ?? '';
 }
 
 function validateDuration(raw: string, field: string): void {
-  const normalized = raw.trim()
-  if (!normalized) return
+  const normalized = raw.trim();
+  if (!normalized) return;
   if (!/^(\d+(ns|us|ms|s|m|h))+$/.test(normalized)) {
-    throw new Error(`${field} must be a valid duration`)
+    throw new Error(`${field} must be a valid duration`);
   }
 }

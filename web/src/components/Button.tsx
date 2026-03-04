@@ -1,10 +1,10 @@
-import { Slot } from '@radix-ui/react-slot'
-import clsx from 'clsx'
+import { Slot } from '@radix-ui/react-slot';
+import clsx from 'clsx';
 
 interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'default' | 'primary' | 'destructive'
-  size?: 'default' | 'icon'
-  asChild?: boolean
+  variant?: 'default' | 'primary' | 'destructive';
+  size?: 'default' | 'icon';
+  asChild?: boolean;
 }
 
 export function Button({
@@ -15,7 +15,7 @@ export function Button({
   className,
   ...props
 }: Props) {
-  const Comp = asChild ? Slot : 'button'
+  const Comp = asChild ? Slot : 'button';
   return (
     <Comp
       className={clsx(
@@ -34,5 +34,5 @@ export function Button({
       type={type}
       {...props}
     />
-  )
+  );
 }

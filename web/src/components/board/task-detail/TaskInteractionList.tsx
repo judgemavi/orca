@@ -1,63 +1,63 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useTaskReviewsQuery } from '../../../hooks/queries'
-import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { InteractionDetailProvider } from './InteractionDetailContext'
-import { TaskInteractionItems } from './TaskInteractionItems'
-import { useInteractionStubsQuery } from './useInteractions'
-import { useMergeHandler } from './useMergeHandler'
-import { usePlanEditor } from './usePlanEditor'
-import { INTERACTION_STATUSES } from '@orca/types'
+import { INTERACTION_STATUSES } from '@orca/types';
+import { useCallback, useEffect, useState } from 'react';
+import { useTaskDetailContext } from '../../../context/TaskDetailContext';
+import { useTaskReviewsQuery } from '../../../hooks/queries';
+import { InteractionDetailProvider } from './InteractionDetailContext';
+import { TaskInteractionItems } from './TaskInteractionItems';
+import { useInteractionStubsQuery } from './useInteractions';
+import { useMergeHandler } from './useMergeHandler';
+import { usePlanEditor } from './usePlanEditor';
 
 interface Props {
-  taskId: string
-  readOnly?: boolean
+  taskId: string;
+  readOnly?: boolean;
 }
 
 export function TaskInteractionList({ taskId, readOnly = false }: Props) {
   const { task, tools, activeLogId, setActiveLogId, isOperationRunning } =
-    useTaskDetailContext()
+    useTaskDetailContext();
 
-  const stubsQuery = useInteractionStubsQuery(taskId)
-  const reviewsQuery = useTaskReviewsQuery(taskId)
-  const stubs = stubsQuery.data ?? []
-  const reviews = reviewsQuery.data ?? []
+  const stubsQuery = useInteractionStubsQuery(taskId);
+  const reviewsQuery = useTaskReviewsQuery(taskId);
+  const stubs = stubsQuery.data ?? [];
+  const reviews = reviewsQuery.data ?? [];
 
   const [expandedInteractions, setExpandedInteractions] = useState<Set<string>>(
     new Set(),
-  )
+  );
 
-  const planEditor = usePlanEditor({ taskId, task, stubs, readOnly })
+  const planEditor = usePlanEditor({ taskId, task, stubs, readOnly });
   const merge = useMergeHandler({
     taskId,
     taskStatus: task.status,
     isOperationRunning,
-  })
+  });
 
   const latestCompletedId =
     [...stubs]
       .reverse()
       .find((item) => item.status === INTERACTION_STATUSES.completed)?.id ??
-    null
+    null;
 
   useEffect(() => {
     setExpandedInteractions(
       latestCompletedId ? new Set([latestCompletedId]) : new Set(),
-    )
-  }, [latestCompletedId])
+    );
+  }, [latestCompletedId]);
 
   const onToggleLog = useCallback(
     (id: string) => setActiveLogId(activeLogId === id ? null : id),
     [activeLogId, setActiveLogId],
-  )
+  );
 
   const toggleInteraction = (id: string) => {
     setExpandedInteractions((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <InteractionDetailProvider value={{ activeLogId, onToggleLog }}>
@@ -83,5 +83,5 @@ export function TaskInteractionList({ taskId, readOnly = false }: Props) {
         )}
       </div>
     </InteractionDetailProvider>
-  )
+  );
 }

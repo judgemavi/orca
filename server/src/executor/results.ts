@@ -1,92 +1,93 @@
-import type { EventSink } from '../api/ws'
-import type { QualityResult } from '../domain/quality'
-import type { DriverEvent } from '../driver/types'
-import type { InteractionStore } from '../store/interactions'
-import type { MemoryStore } from '../store/memory'
-import type { TaskStore } from '../store/tasks'
-import type { TaskStatus } from '../types'
+import type { EventSink } from '../api/ws';
+import type { QualityResult } from '../domain/quality';
+import type { DriverEvent } from '../driver/types';
+import type { InteractionStore } from '../store/interactions';
+import type { MemoryStore } from '../store/memory';
+import type { TaskStore } from '../store/tasks';
+import type { TaskStatus } from '../types';
 
 export interface OutcomeInput {
-  exitCode: number
-  timedOut: boolean
-  aborted: boolean
-  diff: string
-  outputTail: string
-  workerError?: string
-  quality?: QualityResult | null
+  exitCode: number;
+  timedOut: boolean;
+  aborted: boolean;
+  diff: string;
+  outputTail: string;
+  workerError?: string;
+  quality?: QualityResult | null;
 }
 
 export interface OutcomeResult {
-  taskStatus: TaskStatus
-  interactionStatus: 'completed' | 'failed'
-  error?: string
+  taskStatus: TaskStatus;
+  interactionStatus: 'completed' | 'failed';
+  error?: string;
 }
 
 export interface TaskRunResultRecord {
-  taskID: string
-  phase: string
-  toolName: string
-  model: string
-  status: TaskStatus
-  interactionStatus: 'completed' | 'failed'
-  exitCode: number
-  signalCode: string | number | null
-  sessionID: string
-  inputTokens: number
-  outputTokens: number
-  estimatedCost: number
-  events: DriverEvent[]
-  logPath: string
-  durationMS: number
-  timedOut: boolean
-  aborted: boolean
-  diff: string
-  filesChanged: string[]
-  quality?: QualityResult
-  error?: string
+  taskID: string;
+  phase: string;
+  toolName: string;
+  model: string;
+  status: TaskStatus;
+  interactionStatus: 'completed' | 'failed';
+  exitCode: number;
+  signalCode: string | number | null;
+  sessionID: string;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCost: number;
+  events: DriverEvent[];
+  logPath: string;
+  durationMS: number;
+  timedOut: boolean;
+  aborted: boolean;
+  diff: string;
+  filesChanged: string[];
+  quality?: QualityResult;
+  error?: string;
 }
 
 export interface FailedTaskRunInput {
-  taskID: string
-  phase: string
-  toolName: string
-  model: string
-  status: TaskStatus
-  aborted: boolean
-  error: string
-  logPath: string
+  taskID: string;
+  phase: string;
+  toolName: string;
+  model: string;
+  status: TaskStatus;
+  aborted: boolean;
+  error: string;
+  logPath: string;
 }
 
 export interface InteractionMemoryMeta {
-  usedMemoryIds: string[]
-  usedProvenanceHashes: string[]
+  usedMemoryIds: string[];
+  usedProvenanceHashes: string[];
 }
 
 export interface PersistTaskResultInput {
-  taskID: string
-  interactionID: string
-  runID: string
-  model: string
-  result: TaskRunResultRecord
+  taskID: string;
+  interactionID: string;
+  runID: string;
+  model: string;
+  result: TaskRunResultRecord;
 }
 
-export interface PersistSuccessfulTaskResultInput extends PersistTaskResultInput {
-  reviewID?: string
-  memoryMeta?: InteractionMemoryMeta
+export interface PersistSuccessfulTaskResultInput
+  extends PersistTaskResultInput {
+  reviewID?: string;
+  memoryMeta?: InteractionMemoryMeta;
 }
 
 export interface ResultCoordinatorDeps {
-  taskStore: TaskStore
-  interactionStore?: InteractionStore
-  memoryStore?: MemoryStore
-  eventSink?: EventSink
+  taskStore: TaskStore;
+  interactionStore?: InteractionStore;
+  memoryStore?: MemoryStore;
+  eventSink?: EventSink;
 }
 
 const BLOCKER_PATTERN =
-  /(?:BLOCKED:|cannot complete|permission denied|operation not permitted|unable to write|read-only file system|no such file or directory|sandbox.{0,20}(?:block|prevent|restrict))/i
+  /(?:BLOCKED:|cannot complete|permission denied|operation not permitted|unable to write|read-only file system|no such file or directory|sandbox.{0,20}(?:block|prevent|restrict))/i;
 
 export function statusFromExitCode(exitCode: number): TaskStatus {
-  return exitCode === 0 ? 'review' : 'failed'
+  return exitCode === 0 ? 'review' : 'failed';
 }
 
 export function evaluateTaskOutcome(input: OutcomeInput): OutcomeResult {
@@ -95,7 +96,7 @@ export function evaluateTaskOutcome(input: OutcomeInput): OutcomeResult {
       taskStatus: 'stopped',
       interactionStatus: 'failed',
       error: input.workerError || 'task stopped',
-    }
+    };
   }
 
   if (input.timedOut) {
@@ -103,7 +104,7 @@ export function evaluateTaskOutcome(input: OutcomeInput): OutcomeResult {
       taskStatus: 'failed',
       interactionStatus: 'failed',
       error: input.workerError || 'task timed out',
-    }
+    };
   }
 
   if (input.exitCode !== 0) {
@@ -111,43 +112,43 @@ export function evaluateTaskOutcome(input: OutcomeInput): OutcomeResult {
       taskStatus: 'failed',
       interactionStatus: 'failed',
       error: input.workerError || `process exited with code ${input.exitCode}`,
-    }
+    };
   }
 
-  const qualityIssues = input.quality?.blockingIssues ?? []
+  const qualityIssues = input.quality?.blockingIssues ?? [];
   if (qualityIssues.length > 0) {
     return {
       taskStatus: 'failed',
       interactionStatus: 'failed',
       error: `quality gate failure: ${qualityIssues.join('; ')}`,
-    }
+    };
   }
 
-  const diff = input.diff.trim()
+  const diff = input.diff.trim();
   if (diff) {
-    return { taskStatus: 'review', interactionStatus: 'completed' }
+    return { taskStatus: 'review', interactionStatus: 'completed' };
   }
 
-  const blocker = detectBlocker(input.outputTail)
+  const blocker = detectBlocker(input.outputTail);
   if (blocker) {
     return {
       taskStatus: 'failed',
       interactionStatus: 'failed',
       error: `no changes produced; blocker detected: ${blocker}`,
-    }
+    };
   }
 
   return {
     taskStatus: 'failed',
     interactionStatus: 'failed',
     error: 'no changes produced',
-  }
+  };
 }
 
 export function detectBlocker(output: string): string {
-  const tail = output.length > 2_000 ? output.slice(-2_000) : output
-  const match = tail.match(BLOCKER_PATTERN)
-  return match?.[0]?.trim() ?? ''
+  const tail = output.length > 2_000 ? output.slice(-2_000) : output;
+  const match = tail.match(BLOCKER_PATTERN);
+  return match?.[0]?.trim() ?? '';
 }
 
 export class ResultCoordinator {
@@ -159,7 +160,7 @@ export class ResultCoordinator {
     consumeStop: (taskID: string) => boolean,
   ): TaskRunResultRecord {
     if (!consumeStop(taskID)) {
-      return result
+      return result;
     }
 
     return {
@@ -168,7 +169,7 @@ export class ResultCoordinator {
       interactionStatus: 'failed',
       aborted: true,
       error: result.error || 'task stopped',
-    }
+    };
   }
 
   buildFailedResult(input: FailedTaskRunInput): TaskRunResultRecord {
@@ -194,26 +195,29 @@ export class ResultCoordinator {
       filesChanged: [],
       quality: undefined,
       error: input.error,
-    }
+    };
   }
 
   async persistSuccess(input: PersistSuccessfulTaskResultInput): Promise<void> {
     if (input.result.sessionID.trim()) {
-      await this.deps.taskStore.setSessionID(input.taskID, input.result.sessionID.trim())
+      await this.deps.taskStore.setSessionID(
+        input.taskID,
+        input.result.sessionID.trim(),
+      );
     }
 
-    await this.deps.taskStore.updateStatus(input.taskID, input.result.status)
-    this.reinforceMemoryConfidence(input.taskID, input.result.exitCode)
+    await this.deps.taskStore.updateStatus(input.taskID, input.result.status);
+    this.reinforceMemoryConfidence(input.taskID, input.result.exitCode);
 
     if ((input.result.quality?.blockingIssues?.length ?? 0) > 0) {
       this.deps.eventSink?.broadcast('quality.alert', {
         taskId: input.taskID,
         issues: input.result.quality?.blockingIssues ?? [],
-      })
+      });
     }
 
     if (input.reviewID && input.result.status === 'review') {
-      await this.deps.taskStore.addressReview(input.reviewID)
+      await this.deps.taskStore.addressReview(input.reviewID);
     }
 
     this.finishInteraction(
@@ -222,12 +226,17 @@ export class ResultCoordinator {
       input.runID,
       input.model,
       input.memoryMeta,
-    )
+    );
   }
 
   async persistFailure(input: PersistTaskResultInput): Promise<void> {
-    await this.deps.taskStore.updateStatus(input.taskID, input.result.status)
-    this.finishInteraction(input.interactionID, input.result, input.runID, input.model)
+    await this.deps.taskStore.updateStatus(input.taskID, input.result.status);
+    this.finishInteraction(
+      input.interactionID,
+      input.result,
+      input.runID,
+      input.model,
+    );
   }
 
   private finishInteraction(
@@ -237,21 +246,21 @@ export class ResultCoordinator {
     model: string,
     memoryMeta?: InteractionMemoryMeta,
   ): void {
-    if (!interactionID || !this.deps.interactionStore) return
+    if (!interactionID || !this.deps.interactionStore) return;
 
-    let qualityJson: string | null = null
+    let qualityJson: string | null = null;
     if (result.quality || memoryMeta) {
       const payload: Record<string, unknown> = result.quality
         ? { ...result.quality }
-        : {}
+        : {};
 
       if (memoryMeta?.usedMemoryIds?.length) {
-        payload.usedMemoryIds = memoryMeta.usedMemoryIds
+        payload.usedMemoryIds = memoryMeta.usedMemoryIds;
       }
       if (memoryMeta?.usedProvenanceHashes?.length) {
-        payload.usedProvenanceHashes = memoryMeta.usedProvenanceHashes
+        payload.usedProvenanceHashes = memoryMeta.usedProvenanceHashes;
       }
-      qualityJson = JSON.stringify(payload)
+      qualityJson = JSON.stringify(payload);
     }
 
     void this.deps.interactionStore.finish(interactionID, {
@@ -266,44 +275,45 @@ export class ResultCoordinator {
       durationMs: result.durationMS,
       runId: runID,
       model,
-    })
+    });
   }
 
   private reinforceMemoryConfidence(taskID: string, exitCode: number): void {
-    if (!this.deps.memoryStore || !this.deps.interactionStore) return
+    if (!this.deps.memoryStore || !this.deps.interactionStore) return;
 
     void this.loadUsedMemoryIDs(taskID).then(async (ids) => {
-      if (ids.length === 0) return
+      if (ids.length === 0) return;
       for (const id of ids) {
         try {
           if (exitCode === 0) {
-            await this.deps.memoryStore!.boostConfidence(id, 1.1)
+            await this.deps.memoryStore!.boostConfidence(id, 1.1);
           } else {
-            await this.deps.memoryStore!.decayEntry(id, 0.9)
+            await this.deps.memoryStore!.decayEntry(id, 0.9);
           }
         } catch {
           // Ignore stale references.
         }
       }
-    })
+    });
   }
 
   private async loadUsedMemoryIDs(taskID: string): Promise<string[]> {
-    const seen = new Set<string>()
-    const planInteractions = (await this.deps.interactionStore?.listByPhase(taskID, 'plan')) ?? []
+    const seen = new Set<string>();
+    const planInteractions =
+      (await this.deps.interactionStore?.listByPhase(taskID, 'plan')) ?? [];
     for (const interaction of planInteractions) {
-      const payload = interaction.qualityJson?.trim()
-      if (!payload) continue
+      const payload = interaction.qualityJson?.trim();
+      if (!payload) continue;
       try {
-        const parsed = JSON.parse(payload) as { usedMemoryIds?: string[] }
+        const parsed = JSON.parse(payload) as { usedMemoryIds?: string[] };
         for (const id of parsed.usedMemoryIds ?? []) {
-          const normalized = String(id).trim()
-          if (normalized) seen.add(normalized)
+          const normalized = String(id).trim();
+          if (normalized) seen.add(normalized);
         }
       } catch {
         // Ignore malformed quality payloads.
       }
     }
-    return [...seen]
+    return [...seen];
   }
 }

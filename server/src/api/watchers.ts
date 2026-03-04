@@ -5,5 +5,5 @@
 // This stub is kept so existing imports don't break during the transition.
 
 export async function startDatabaseWatchers(): Promise<() => Promise<void>> {
-  return async () => {}
+  return async () => {};
 }

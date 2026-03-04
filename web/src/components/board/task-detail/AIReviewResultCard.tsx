@@ -1,14 +1,14 @@
-import type { AIReviewResult, InteractionStub } from '../../../types'
-import { INTERACTION_STATUSES } from '@orca/types'
-import { useInteractionDetailContext } from './InteractionDetailContext'
-import { useInteractionMetaQuery } from './useInteractions'
-import { parseJSONText } from '../../../lib/orchestratorRichContent'
-import { ReviewResultCard } from '../../shared/ReviewResultCard'
+import { INTERACTION_STATUSES } from '@orca/types';
+import { parseJSONText } from '../../../lib/orchestratorRichContent';
+import type { AIReviewResult, InteractionStub } from '../../../types';
+import { ReviewResultCard } from '../../shared/ReviewResultCard';
+import { useInteractionDetailContext } from './InteractionDetailContext';
+import { useInteractionMetaQuery } from './useInteractions';
 
 interface Props {
-  stub: InteractionStub
-  dismissed?: boolean
-  showLogButton?: boolean
+  stub: InteractionStub;
+  dismissed?: boolean;
+  showLogButton?: boolean;
 }
 
 export function AIReviewResultCard({
@@ -16,17 +16,17 @@ export function AIReviewResultCard({
   dismissed,
   showLogButton = false,
 }: Props) {
-  const detailContext = useInteractionDetailContext()
-  const activeLogId = detailContext?.activeLogId ?? null
-  const onToggleLog = detailContext?.onToggleLog
+  const detailContext = useInteractionDetailContext();
+  const activeLogId = detailContext?.activeLogId ?? null;
+  const onToggleLog = detailContext?.onToggleLog;
   const needsFull =
     stub.status === INTERACTION_STATUSES.completed ||
-    stub.status === INTERACTION_STATUSES.failed
+    stub.status === INTERACTION_STATUSES.failed;
   const metaQuery = useInteractionMetaQuery(
     stub.taskId ?? '',
     stub.id,
     needsFull,
-  )
+  );
 
   const logButton =
     showLogButton && onToggleLog ? (
@@ -40,7 +40,7 @@ export function AIReviewResultCard({
       >
         log
       </button>
-    ) : null
+    ) : null;
 
   if (stub.status === INTERACTION_STATUSES.running) {
     return (
@@ -54,10 +54,10 @@ export function AIReviewResultCard({
           {logButton}
         </div>
       </div>
-    )
+    );
   }
 
-  const ri = metaQuery.data
+  const ri = metaQuery.data;
   if (!ri && metaQuery.isLoading) {
     return (
       <div className="rounded-lg bg-surface-alt p-2.5">
@@ -65,9 +65,9 @@ export function AIReviewResultCard({
           Loading review...
         </div>
       </div>
-    )
+    );
   }
-  if (!ri) return null
+  if (!ri) return null;
 
   if (ri.status === INTERACTION_STATUSES.failed) {
     return (
@@ -83,19 +83,20 @@ export function AIReviewResultCard({
           <div className="mt-1 whitespace-pre-wrap text-xs">{ri.error}</div>
         )}
       </div>
-    )
+    );
   }
 
-  if (!ri.qualityJson) return null
+  if (!ri.qualityJson) return null;
 
-  const parsed = parseJSONText(ri.qualityJson)
+  const parsed = parseJSONText(ri.qualityJson);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return null
+    return null;
   }
 
-  const result = parsed as Partial<AIReviewResult>
-  if (typeof result.feedback !== 'string') return null
-  const cost = ri.estimatedCost > 0 ? `$${ri.estimatedCost.toFixed(2)}` : undefined
+  const result = parsed as Partial<AIReviewResult>;
+  if (typeof result.feedback !== 'string') return null;
+  const cost =
+    ri.estimatedCost > 0 ? `$${ri.estimatedCost.toFixed(2)}` : undefined;
 
   return (
     <div className="space-y-1">
@@ -113,5 +114,5 @@ export function AIReviewResultCard({
         dismissed={dismissed}
       />
     </div>
-  )
+  );
 }

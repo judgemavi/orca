@@ -1,1 +1,1 @@
-export * from '@orca/types'
+export * from '@orca/types';

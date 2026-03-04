@@ -1,32 +1,32 @@
-import type { Tool } from '../types'
-import { z } from 'zod'
-import type { DriverRegistry } from '../../driver/registry'
-import type { Executor } from '../../executor/executor'
-import type { ConfigStore } from '../../store/config'
-import type { InteractionStore } from '../../store/interactions'
-import type { TaskStore } from '../../store/tasks'
+import { z } from 'zod';
+import type { DriverRegistry } from '../../driver/registry';
+import type { Executor } from '../../executor/executor';
+import type { ConfigStore } from '../../store/config';
+import type { InteractionStore } from '../../store/interactions';
+import type { TaskStore } from '../../store/tasks';
 import {
   approveTask,
   requestChanges,
   runAIReviewWorkflow,
-} from '../../workflows/review'
-import { defineTool } from '../define-tool'
+} from '../../workflows/review';
+import { defineTool } from '../define-tool';
+import type { Tool } from '../types';
 
 const requiredTrimmedString = (field: string) =>
   z.preprocess(
     (value) => value ?? '',
     z.coerce.string().trim().min(1, `${field} is required`),
-  )
+  );
 
 const optionalString = () =>
   z.preprocess(
-    (value) => (value === undefined ? undefined : value ?? ''),
+    (value) => (value === undefined ? undefined : (value ?? '')),
     z.coerce.string().optional(),
-  )
+  );
 
 const tasksApproveSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
-})
+});
 
 const tasksRequestChangesSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
@@ -34,26 +34,26 @@ const tasksRequestChangesSchema = z.object({
   interactionId: optionalString(),
   tool: optionalString(),
   model: optionalString(),
-})
+});
 
 const aiReviewSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
   prompt: optionalString(),
   tool: optionalString(),
   model: optionalString(),
-})
+});
 
 const tasksReviewsSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
-})
+});
 
 export function reviewTools(deps: {
-  repoDir: string
-  configStore: ConfigStore
-  registry: DriverRegistry
-  taskStore: TaskStore
-  executor: Executor
-  interactions: InteractionStore
+  repoDir: string;
+  configStore: ConfigStore;
+  registry: DriverRegistry;
+  taskStore: TaskStore;
+  executor: Executor;
+  interactions: InteractionStore;
 }): Tool[] {
   const tools: Tool[] = [
     defineTool({
@@ -63,8 +63,8 @@ export function reviewTools(deps: {
       handler: async (input) => {
         const updated = await approveTask(input.taskId, {
           taskStore: deps.taskStore,
-        })
-        return { task: updated }
+        });
+        return { task: updated };
       },
     }),
     defineTool({
@@ -81,8 +81,8 @@ export function reviewTools(deps: {
             toolOverride: input.tool ?? '',
             modelOverride: input.model ?? '',
           },
-        })
-        return result
+        });
+        return result;
       },
     }),
     defineTool({
@@ -99,7 +99,7 @@ export function reviewTools(deps: {
           prompt: input.prompt ?? '',
           toolOverride: input.tool ?? '',
           modelOverride: input.model ?? '',
-        })
+        });
       },
     }),
     defineTool({
@@ -107,20 +107,20 @@ export function reviewTools(deps: {
       description: 'List reviews for task',
       schema: tasksReviewsSchema,
       handler: async (input) => {
-        return { reviews: await deps.taskStore.listReviews(input.taskId) }
+        return { reviews: await deps.taskStore.listReviews(input.taskId) };
       },
     }),
-  ]
+  ];
 
   return [
     ...tools,
     alias('approve', 'tasks_approve', tools),
     alias('request_changes', 'tasks_request_changes', tools),
-  ]
+  ];
 }
 
 function alias(name: string, target: string, tools: Tool[]): Tool {
-  const source = tools.find((tool) => tool.name === target)
-  if (!source) throw new Error(`missing source tool for alias: ${target}`)
-  return { ...source, name }
+  const source = tools.find((tool) => tool.name === target);
+  if (!source) throw new Error(`missing source tool for alias: ${target}`);
+  return { ...source, name };
 }

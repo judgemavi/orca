@@ -1,11 +1,11 @@
-import { useTaskDetailContext } from '../../../context/TaskDetailContext'
-import { Button } from '../../Button'
-import { TaskActionsLayout } from './TaskActionsLayout'
-import { useTaskActions } from './useTaskActions'
+import { useTaskDetailContext } from '../../../context/TaskDetailContext';
+import { Button } from '../../Button';
+import { TaskActionsLayout } from './TaskActionsLayout';
+import { useTaskActions } from './useTaskActions';
 
 export function ApprovedTaskActions() {
-  const { task } = useTaskDetailContext()
-  const actions = useTaskActions(task)
+  const { task } = useTaskDetailContext();
+  const actions = useTaskActions(task);
 
   return (
     <TaskActionsLayout
@@ -27,5 +27,5 @@ export function ApprovedTaskActions() {
         </Button>
       }
     />
-  )
+  );
 }

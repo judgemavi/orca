@@ -1,8 +1,8 @@
-import { bootstrap } from '../bootstrap'
-import { runCLI } from '../cli'
+import { bootstrap } from '../bootstrap';
+import { runCLI } from '../cli';
 
 export async function runCLIEntrypoint(repoDir: string) {
-  const ctx = await bootstrap({ repoDir })
+  const ctx = await bootstrap({ repoDir });
 
   try {
     await runCLI({
@@ -14,8 +14,8 @@ export async function runCLIEntrypoint(repoDir: string) {
       registry: ctx.registry,
       executor: ctx.executor,
       queue: ctx.queue,
-    })
+    });
   } finally {
-    ctx.database.close()
+    ctx.database.close();
   }
 }
