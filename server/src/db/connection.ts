@@ -38,10 +38,38 @@ export function openDatabase(options: OpenDatabaseOptions): DatabaseConnection {
     USING fts5(id UNINDEXED, content, tags)
   `);
 
+  // Change-tracking triggers (drizzle can't generate these)
+  createChangelogTriggers(db);
+
   return {
     db,
     close: () => {
       sqlite.close();
     },
   };
+}
+
+const TRACKED_TABLES = [
+  { table: 'tasks', idCol: 'id' },
+  { table: 'task_interactions', idCol: 'id' },
+  { table: 'task_reviews', idCol: 'id' },
+  { table: 'jobs', idCol: 'id' },
+  { table: 'memory_entries', idCol: 'id' },
+  { table: 'config', idCol: 'key' },
+] as const;
+
+function createChangelogTriggers(db: OrcaDrizzleDB) {
+  for (const { table, idCol } of TRACKED_TABLES) {
+    for (const action of ['insert', 'update', 'delete'] as const) {
+      const ref = action === 'delete' ? 'OLD' : 'NEW';
+      const name = `${table}_after_${action}`;
+      const timing = action === 'delete' ? 'AFTER DELETE' : action === 'insert' ? 'AFTER INSERT' : 'AFTER UPDATE';
+      db.run(sql.raw(`
+        CREATE TRIGGER IF NOT EXISTS ${name} ${timing} ON ${table}
+        BEGIN
+          INSERT INTO _changelog(table_name, row_id, action) VALUES ('${table}', ${ref}.${idCol}, '${action}');
+        END
+      `));
+    }
+  }
 }

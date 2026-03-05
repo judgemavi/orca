@@ -1,10 +1,13 @@
-// SSE client. Auto-reconnects via EventSource. Broadcasts WSEvent to listeners.
+// SSE client. Auto-reconnects with exponential backoff. Broadcasts WSEvent to listeners.
 
 import type { WSEvent } from './types';
 
 type Listener = (event: WSEvent) => void;
 
 let es: EventSource | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectDelay = 1000;
+const MAX_RECONNECT_DELAY = 30000;
 const listeners = new Set<Listener>();
 
 function getURL() {
@@ -26,10 +29,24 @@ function dispatch(parsed: Record<string, unknown>) {
   for (const fn of listeners) fn(event);
 }
 
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+}
+
 function connect() {
   if (es) return;
+  if (listeners.size === 0) return;
 
   es = new EventSource(getURL());
+
+  es.onopen = () => {
+    reconnectDelay = 1000;
+  };
 
   es.onmessage = (e) => {
     let parsed: unknown;
@@ -43,21 +60,27 @@ function connect() {
   };
 
   es.onerror = () => {
-    // EventSource auto-reconnects; clean up ref so we can track state
     es?.close();
     es = null;
-    setTimeout(connect, 3000);
+    scheduleReconnect();
   };
 }
 
 export function subscribeWS(listener: Listener): () => void {
   listeners.add(listener);
-  if (!es) connect();
+  if (!es && !reconnectTimer) connect();
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0 && es) {
-      es.close();
-      es = null;
+    if (listeners.size === 0) {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (es) {
+        es.close();
+        es = null;
+      }
+      reconnectDelay = 1000;
     }
   };
 }

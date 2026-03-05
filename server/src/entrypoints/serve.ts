@@ -42,11 +42,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
 
   processor.start();
 
-  const poller = new DbChangePoller(
-    ctx.database.db,
-    eventSink,
-    ctx.configStore,
-  );
+  const poller = new DbChangePoller(ctx.database.db, eventSink);
   poller.start();
 
   let shuttingDown = false;

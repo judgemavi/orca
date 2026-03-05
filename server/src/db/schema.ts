@@ -226,6 +226,20 @@ export const exploreContext = sqliteTable(
   (table) => [check('explore_context_singleton', sql`${table.id} = 1`)],
 );
 
+export const changelog = sqliteTable(
+  '_changelog',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    tableName: text('table_name').notNull(),
+    rowId: text('row_id').notNull(),
+    action: text('action').notNull(),
+    createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    index('idx_changelog_id').on(table.id),
+  ],
+);
+
 export const jobs = sqliteTable(
   'jobs',
   {

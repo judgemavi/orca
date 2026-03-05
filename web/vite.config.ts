@@ -20,6 +20,16 @@ export default defineConfig({
         ws: true,
         rewriteWsOrigin: true,
       },
+      '/api/v1/events': {
+        target: 'http://localhost:8080',
+        // SSE: disable response buffering so events stream through
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            proxyRes.headers['cache-control'] = 'no-cache';
+            proxyRes.headers['x-accel-buffering'] = 'no';
+          });
+        },
+      },
       '/api': {
         target: 'http://localhost:8080',
       },

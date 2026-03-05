@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1772601465464,
-      "tag": "0000_flashy_ken_ellis",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1772635760029,
-      "tag": "0001_memory_entries_fts_triggers",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1772643984508,
-      "tag": "0002_spicy_maelstrom",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1772870400000,
-      "tag": "0003_drop_orchestrator_tables",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1772956800000,
-      "tag": "0004_rename_phase_to_type",
+      "when": 1772744847288,
+      "tag": "0000_rare_mongoose",
       "breakpoints": true
     }
   ]

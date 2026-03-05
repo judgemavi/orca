@@ -6,6 +6,115 @@ import { queryKeys } from './queryKeys';
 
 type TasksCache = Task[];
 
+// ── db changelog handling ────────────────────────────────────────────
+// The db-poller reads the _changelog table and broadcasts db.insert,
+// db.update, db.delete with { table, ids }. We debounce and batch.
+
+const DB_DEBOUNCE_MS = 400;
+let dbTimer: ReturnType<typeof setTimeout> | null = null;
+
+interface PendingChanges {
+  inserts: Map<string, Set<string>>;
+  updates: Map<string, Set<string>>;
+  deletes: Map<string, Set<string>>;
+}
+
+const pending: PendingChanges = {
+  inserts: new Map(),
+  updates: new Map(),
+  deletes: new Map(),
+};
+
+function addPending(map: Map<string, Set<string>>, table: string, ids: string[]) {
+  let set = map.get(table);
+  if (!set) { set = new Set(); map.set(table, set); }
+  for (const id of ids) set.add(id);
+}
+
+const LIST_KEYS: Record<string, readonly (readonly unknown[])[]> = {
+  tasks: [queryKeys.tasks],
+  task_interactions: [],
+  task_reviews: [],
+  jobs: [queryKeys.queue, queryKeys.queueCounts],
+  memory_entries: [queryKeys.memory],
+  config: [queryKeys.config],
+};
+
+function flushDbChanges(qc: QueryClient) {
+  dbTimer = null;
+  const { inserts, updates, deletes } = pending;
+
+  // Collect all tables that had any change
+  const allTables = new Set([
+    ...inserts.keys(),
+    ...updates.keys(),
+    ...deletes.keys(),
+  ]);
+
+  for (const table of allTables) {
+    const insertIds = inserts.get(table);
+    const updateIds = updates.get(table);
+    const deleteIds = deletes.get(table);
+    const hasInsert = insertIds && insertIds.size > 0;
+    const hasDelete = deleteIds && deleteIds.size > 0;
+    const hasUpdate = updateIds && updateIds.size > 0;
+
+    // List-level: always invalidate on insert or delete
+    if (hasInsert || hasDelete) {
+      const keys = LIST_KEYS[table];
+      if (keys) {
+        for (const key of keys) {
+          void qc.invalidateQueries({ queryKey: key });
+        }
+      }
+    }
+
+    // Item-level: invalidate on update (and insert for good measure)
+    if (hasUpdate || hasInsert) {
+      const ids = new Set<string>();
+      if (updateIds) for (const id of updateIds) ids.add(id);
+      if (insertIds) for (const id of insertIds) ids.add(id);
+
+      if (table === 'tasks') {
+        // Also invalidate list so status badges etc update
+        void qc.invalidateQueries({ queryKey: queryKeys.tasks });
+        for (const id of ids) {
+          void qc.invalidateQueries({ queryKey: queryKeys.task(id) });
+          void qc.invalidateQueries({ queryKey: queryKeys.interactionStubs(id) });
+        }
+      } else if (table === 'task_interactions') {
+        // Interactions don't have a direct id→taskId mapping in the event,
+        // so invalidate all interaction-related queries
+        void qc.invalidateQueries({ queryKey: queryKeys.operations() });
+        void qc.invalidateQueries({ queryKey: ['task-interactions'] });
+        void qc.invalidateQueries({ queryKey: ['interaction-stubs'] });
+        void qc.invalidateQueries({ queryKey: ['interaction-meta'] });
+      } else if (table === 'task_reviews') {
+        void qc.invalidateQueries({ queryKey: ['task-reviews'] });
+      } else if (table === 'jobs') {
+        void qc.invalidateQueries({ queryKey: queryKeys.queue });
+        void qc.invalidateQueries({ queryKey: queryKeys.queueCounts });
+      } else if (table === 'memory_entries') {
+        void qc.invalidateQueries({ queryKey: queryKeys.memory });
+      } else if (table === 'config') {
+        void qc.invalidateQueries({ queryKey: queryKeys.config });
+      }
+    }
+  }
+
+  // Clear pending
+  inserts.clear();
+  updates.clear();
+  deletes.clear();
+}
+
+function scheduleDbFlush(qc: QueryClient) {
+  if (dbTimer) return;
+  dbTimer = setTimeout(() => flushDbChanges(qc), DB_DEBOUNCE_MS);
+}
+
+// ── helpers ──────────────────────────────────────────────────────────
+
 function getTaskID(data: Record<string, unknown>): string | undefined {
   const taskId = data.taskId;
   if (typeof taskId === 'string' && taskId.length > 0) return taskId;
@@ -92,19 +201,17 @@ export function handleWSEvent(qc: QueryClient, event: WSEvent) {
     ? [type.slice(0, type.indexOf('.')), type.slice(type.indexOf('.') + 1)]
     : [type, ''];
 
-  // Wildcard: invalidate everything
-  if (tid === '*') {
-    void Promise.all([
-      qc.invalidateQueries({ queryKey: queryKeys.tasks }),
-      qc.invalidateQueries({ queryKey: ['task'] }),
-      qc.invalidateQueries({ queryKey: ['taskPlan'] }),
-      qc.invalidateQueries({ queryKey: ['task-reviews'] }),
-      qc.invalidateQueries({ queryKey: ['task-interactions'] }),
-      qc.invalidateQueries({ queryKey: ['interaction-stubs'] }),
-      qc.invalidateQueries({ queryKey: ['interaction-meta'] }),
-      qc.invalidateQueries({ queryKey: queryKeys.operations() }),
-      qc.invalidateQueries({ queryKey: queryKeys.status }),
-    ]);
+  // db changelog events — batch and debounce
+  if (entity === 'db' && (action === 'insert' || action === 'update' || action === 'delete')) {
+    const table = typeof d.table === 'string' ? d.table : '';
+    const ids = Array.isArray(d.ids) ? (d.ids as string[]) : [];
+    if (table && ids.length > 0) {
+      const map = action === 'insert' ? pending.inserts
+        : action === 'delete' ? pending.deletes
+        : pending.updates;
+      addPending(map, table, ids);
+      scheduleDbFlush(qc);
+    }
     return;
   }
 

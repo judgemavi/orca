@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '../Button';
 import 'xterm/css/xterm.css';
 
 const WS_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
@@ -22,15 +23,45 @@ interface Props {
   theme: 'light' | 'dark';
 }
 
+type SessionState = 'checking' | 'idle' | 'connecting' | 'connected' | 'ended';
+
+async function checkSession(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/v1/orchestrator/status');
+    const data = await res.json();
+    return data.active === true;
+  } catch {
+    return false;
+  }
+}
+
 export function TerminalPane({ className, theme }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<any>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const [state, setState] = useState<SessionState>('checking');
 
+  // Check for existing session on mount
   useEffect(() => {
+    let cancelled = false;
+    checkSession().then((active) => {
+      if (cancelled) return;
+      if (active) {
+        connectTerminal();
+      } else {
+        setState('idle');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const connectTerminal = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
 
+    setState('connecting');
     let cancelled = false;
     let ws: WebSocket | null = null;
     let fitAddon: any = null;
@@ -63,7 +94,7 @@ export function TerminalPane({ className, theme }: Props) {
       terminal.loadAddon(fitAddon);
       terminal.loadAddon(new WebLinksAddon());
 
-      terminal.open(el);
+      terminal.open(el!);
 
       try {
         terminal.loadAddon(new WebglAddon());
@@ -79,7 +110,6 @@ export function TerminalPane({ className, theme }: Props) {
       );
       ws.binaryType = 'arraybuffer';
 
-      // Write batching — coalesce WS messages, flush once per frame
       let writeBuf: Uint8Array[] = [];
       let rafId: number | null = null;
 
@@ -105,6 +135,7 @@ export function TerminalPane({ className, theme }: Props) {
       }
 
       ws.onopen = () => {
+        setState('connected');
         terminal.focus();
       };
 
@@ -118,6 +149,7 @@ export function TerminalPane({ className, theme }: Props) {
 
       ws.onclose = () => {
         terminal.write('\r\n\x1b[90m[session ended]\x1b[0m\r\n');
+        setState('ended');
       };
 
       ws.onerror = () => {
@@ -171,7 +203,10 @@ export function TerminalPane({ className, theme }: Props) {
     }
 
     init();
+  }, [theme]);
 
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
       cleanupRef.current?.();
       cleanupRef.current = null;
@@ -185,10 +220,34 @@ export function TerminalPane({ className, theme }: Props) {
     t.options.theme = theme === 'dark' ? DARK_THEME : LIGHT_THEME;
   }, [theme]);
 
+  const handleStart = () => {
+    // Clean up previous terminal if any
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+    connectTerminal();
+  };
+
   return (
-    <div
-      ref={containerRef}
-      className={`h-full w-full overflow-hidden ${className ?? ''}`}
-    />
+    <div className={`relative h-full w-full overflow-hidden ${className ?? ''}`}>
+      <div
+        ref={containerRef}
+        className={`h-full w-full ${state === 'idle' || state === 'checking' || state === 'ended' ? 'hidden' : ''}`}
+      />
+      {(state === 'idle' || state === 'ended') && (
+        <div className="flex h-full flex-col items-center justify-center gap-3">
+          <span className="text-xs text-muted">
+            {state === 'ended' ? 'Session ended' : 'No active session'}
+          </span>
+          <Button variant="primary" onClick={handleStart}>
+            {state === 'ended' ? 'New Session' : 'Start Session'}
+          </Button>
+        </div>
+      )}
+      {state === 'checking' && (
+        <div className="flex h-full items-center justify-center">
+          <span className="text-xs text-muted">Checking session...</span>
+        </div>
+      )}
+    </div>
   );
 }

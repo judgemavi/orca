@@ -1,3 +1,12 @@
+CREATE TABLE `_changelog` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`table_name` text NOT NULL,
+	`row_id` text NOT NULL,
+	`action` text NOT NULL,
+	`created_at` text DEFAULT (datetime('now')) NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `idx_changelog_id` ON `_changelog` (`id`);--> statement-breakpoint
 CREATE TABLE `config` (
 	`key` text PRIMARY KEY NOT NULL,
 	`value` text NOT NULL
@@ -23,6 +32,23 @@ CREATE TABLE `interactions` (
 );
 --> statement-breakpoint
 CREATE INDEX `idx_interactions_target` ON `interactions` (`target_id`,`updated_at`);--> statement-breakpoint
+CREATE TABLE `jobs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`type` text NOT NULL,
+	`task_id` text,
+	`status` text DEFAULT 'queued' NOT NULL,
+	`priority` integer DEFAULT 5 NOT NULL,
+	`payload` text,
+	`error` text,
+	`result` text,
+	`created_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	`started_at` text,
+	`completed_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `idx_jobs_status` ON `jobs` (`status`);--> statement-breakpoint
+CREATE INDEX `idx_jobs_task_id` ON `jobs` (`task_id`);--> statement-breakpoint
+CREATE INDEX `idx_jobs_priority_created` ON `jobs` (`priority`,`created_at`);--> statement-breakpoint
 CREATE TABLE `memory_entries` (
 	`id` text PRIMARY KEY NOT NULL,
 	`content` text NOT NULL,
@@ -61,28 +87,6 @@ CREATE TABLE `meta` (
 	`value` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `orchestrator_messages` (
-	`id` text PRIMARY KEY NOT NULL,
-	`session_id` text NOT NULL,
-	`role` text NOT NULL,
-	`content` text NOT NULL,
-	`metadata` text DEFAULT '{}' NOT NULL,
-	`created_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
-	FOREIGN KEY (`session_id`) REFERENCES `orchestrator_sessions`(`id`) ON UPDATE no action ON DELETE cascade,
-	CONSTRAINT "orchestrator_message_role" CHECK("orchestrator_messages"."role" IN ('user', 'assistant', 'tool_use', 'tool_result'))
-);
---> statement-breakpoint
-CREATE INDEX `idx_orch_msg_session` ON `orchestrator_messages` (`session_id`,`created_at`);--> statement-breakpoint
-CREATE TABLE `orchestrator_sessions` (
-	`id` text PRIMARY KEY NOT NULL,
-	`tool` text NOT NULL,
-	`model` text DEFAULT '' NOT NULL,
-	`claude_session_id` text DEFAULT '' NOT NULL,
-	`status` text DEFAULT 'active' NOT NULL,
-	`created_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
-	CONSTRAINT "orchestrator_session_status" CHECK("orchestrator_sessions"."status" IN ('active', 'closed'))
-);
---> statement-breakpoint
 CREATE TABLE `sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`type` text NOT NULL,
@@ -119,7 +123,7 @@ CREATE INDEX `idx_tfa_file_path` ON `task_file_associations` (`file_path`);--> s
 CREATE TABLE `task_interactions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`task_id` text,
-	`phase` text NOT NULL,
+	`type` text NOT NULL,
 	`attempt` integer DEFAULT 1 NOT NULL,
 	`run_id` text,
 	`tool` text NOT NULL,
@@ -139,7 +143,7 @@ CREATE TABLE `task_interactions` (
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX `idx_interactions_task_phase` ON `task_interactions` (`task_id`,`phase`);--> statement-breakpoint
+CREATE INDEX `idx_interactions_task_type` ON `task_interactions` (`task_id`,`type`);--> statement-breakpoint
 CREATE INDEX `idx_interactions_status` ON `task_interactions` (`status`);--> statement-breakpoint
 CREATE INDEX `idx_interactions_run_id` ON `task_interactions` (`run_id`);--> statement-breakpoint
 CREATE TABLE `task_reviews` (
