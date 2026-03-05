@@ -23,7 +23,6 @@ import { queueTools } from './tools/queue';
 import { reviewTools } from './tools/review';
 import { statusTools } from './tools/status';
 import { taskTools } from './tools/tasks';
-import { worktreeTools } from './tools/worktree';
 import type { Tool } from './types';
 
 export interface MCPDeps {
@@ -93,7 +92,6 @@ export async function startMCPServer(deps: MCPDeps): Promise<void> {
       configStore: deps.configStore,
       registry: deps.registry,
     }),
-    ...worktreeTools(deps.repoDir),
     ...memoryTools(deps.repoDir, deps.memoryStore),
     ...statusTools({
       taskStore: deps.taskStore,

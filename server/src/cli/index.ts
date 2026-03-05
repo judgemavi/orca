@@ -12,7 +12,6 @@ import { registerExploreCommands } from './commands/explore';
 import { registerMemoryCommands } from './commands/memory';
 import { registerMergeCommands } from './commands/merge';
 import { registerModelsCommand } from './commands/models';
-import { registerOpsCommand } from './commands/ops';
 import { registerOrcCommand } from './commands/orc';
 import { registerPlanCommands } from './commands/plan';
 import { registerQueueCommands } from './commands/queue';
@@ -120,7 +119,6 @@ export async function runCLI(deps: {
   registerConfigCommands(program, deps.configStore, deps.registry);
   registerModelsCommand(program, deps.registry);
   registerCostsCommand(program, deps.interactionStore);
-  registerOpsCommand(program, deps.interactionStore);
   registerOrcCommand(program, {
     repoDir: deps.repoDir,
     configStore: deps.configStore,
