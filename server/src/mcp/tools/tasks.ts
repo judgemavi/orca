@@ -78,6 +78,12 @@ const tasksStartSchema = z.object({
   context: optionalString(),
 });
 
+const tasksReadySchema = z.object({});
+
+const tasksReviewsSchema = z.object({
+  taskId: requiredTrimmedString('taskId'),
+});
+
 const tasksStopSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
 });
@@ -98,6 +104,22 @@ export function taskTools(deps: {
   queue?: JobQueue;
 }): Tool[] {
   const tools: Tool[] = [
+    defineTool({
+      name: 'tasks_ready',
+      description: 'List tasks ready to start (pending with all dependencies merged)',
+      schema: tasksReadySchema,
+      handler: async () => {
+        return { tasks: await deps.taskStore.getReady() };
+      },
+    }),
+    defineTool({
+      name: 'tasks_reviews',
+      description: 'List reviews for a task',
+      schema: tasksReviewsSchema,
+      handler: async (input) => {
+        return { reviews: await deps.taskStore.listReviews(input.taskId) };
+      },
+    }),
     defineTool({
       name: 'tasks_list',
       description: 'List tasks (optionally by status)',

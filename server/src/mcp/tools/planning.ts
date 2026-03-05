@@ -10,6 +10,7 @@ import {
   breakdownTask,
   evaluateTaskWorkflow,
   generatePlan,
+  rejectBreakdown,
   requestPlanChanges,
 } from '../../workflows/planning';
 import { defineTool } from '../define-tool';
@@ -68,6 +69,23 @@ const tasksRequestPlanChangesSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
   feedback: requiredTrimmedString('feedback'),
   interactionId: optionalString(),
+});
+
+const tasksPlanGetSchema = z.object({
+  taskId: requiredTrimmedString('taskId'),
+});
+
+const tasksPlanSetSchema = z.object({
+  taskId: requiredTrimmedString('taskId'),
+  plan: z.preprocess(
+    (value) => value ?? '',
+    z.coerce.string(),
+  ),
+});
+
+const breakdownRejectSchema = z.object({
+  taskId: optionalTrimmedString(),
+  interactionId: requiredTrimmedString('interactionId'),
 });
 
 export function planningTools(deps: {
@@ -206,6 +224,35 @@ export function planningTools(deps: {
           reviewId: result.reviewId,
           interactionId: result.interactionId,
         };
+      },
+    }),
+    defineTool({
+      name: 'tasks_plan_get',
+      description: 'Get task plan text',
+      schema: tasksPlanGetSchema,
+      handler: async (input) => {
+        const plan = await deps.taskStore.getPlan(input.taskId);
+        return { taskId: input.taskId, plan };
+      },
+    }),
+    defineTool({
+      name: 'tasks_plan_set',
+      description: 'Set task plan text directly',
+      schema: tasksPlanSetSchema,
+      handler: async (input) => {
+        await deps.taskStore.setPlan(input.taskId, input.plan);
+        return { taskId: input.taskId, plan: input.plan };
+      },
+    }),
+    defineTool({
+      name: 'breakdown_reject',
+      description: 'Reject a breakdown (discard proposed subtasks)',
+      schema: breakdownRejectSchema,
+      handler: async (input) => {
+        await rejectBreakdown(input.taskId ?? '', input.interactionId, {
+          interactions: deps.interactions,
+        });
+        return { rejected: true, interactionId: input.interactionId };
       },
     }),
   ];

@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { readExploreContext, runExplore } from '../../domain/explore';
+import {
+  readExploreContext,
+  runExplore,
+  writeExploreContext,
+} from '../../domain/explore';
 import { getMemorySyncStatus } from '../../domain/memory-sync';
 import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
@@ -24,6 +28,15 @@ const exploreSchema = z.object({
 });
 
 const exploreStatusSchema = z.object({});
+
+const exploreContextGetSchema = z.object({});
+
+const exploreContextSetSchema = z.object({
+  text: z.preprocess(
+    (value) => value ?? '',
+    z.coerce.string(),
+  ),
+});
 
 export function exploreTools(deps: {
   repoDir: string;
@@ -67,6 +80,24 @@ export function exploreTools(deps: {
           stale: staleCount > 0 || sync.syncNeeded,
           ageMinutes: 0,
         };
+      },
+    }),
+    defineTool({
+      name: 'explore_context_get',
+      description: 'Get the explore context file content',
+      schema: exploreContextGetSchema,
+      handler: async () => {
+        const content = await readExploreContext(deps.repoDir);
+        return { content };
+      },
+    }),
+    defineTool({
+      name: 'explore_context_set',
+      description: 'Set the explore context file content',
+      schema: exploreContextSetSchema,
+      handler: async (input) => {
+        const path = await writeExploreContext(deps.repoDir, input.text);
+        return { path };
       },
     }),
   ];
