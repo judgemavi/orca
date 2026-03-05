@@ -29,6 +29,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     memoryStore: ctx.memoryStore,
     executor: ctx.executor,
     sink: eventSink,
+    queue: ctx.queue,
   });
 
   await runStartupRecovery(

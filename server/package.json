@@ -1,8 +1,11 @@
 {
-  "name": "server",
+  "name": "@orca/server",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "exports": {
+    ".": "./src/api/routes.ts"
+  },
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
@@ -18,6 +21,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
+    "@hono/zod-validator": "^0.7.6",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@orca/types": "../packages/types",
     "commander": "^14.0.3",

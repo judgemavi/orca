@@ -1,4 +1,6 @@
+import { JOB_PRIORITIES } from '@orca/types';
 import type { ToolPluginRegistry } from '../plugin/registry';
+import type { JobQueue } from '../queue/queue';
 import { toErrorMessage } from '../shared/errors';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
@@ -19,6 +21,7 @@ export interface PostMergeDeps {
   configStore: ConfigStore;
   registry?: ToolPluginRegistry;
   sink?: PostMergeEventSink;
+  queue?: JobQueue;
 }
 
 export function triggerPostMergeHooks(
@@ -33,32 +36,39 @@ export function triggerPostMergeHooks(
     }
 
     if (hooks.retro !== false) {
-      try {
-        const result = await runRetro(taskID, {
-          repoDir: deps.repoDir,
-          taskStore: deps.taskStore,
-          interactionStore: deps.interactions,
-          memoryStore: deps.memoryStore,
-          config,
-          registry: deps.registry,
-        });
-        deps.sink?.broadcast('retro.completed', {
+      if (deps.queue) {
+        await deps.queue.enqueue({
+          type: 'retro',
           taskId: taskID,
-          interactionId: result.interactionId,
-          entriesCreated: result.memoryEntries.length,
-          automated: true,
+          priority: JOB_PRIORITIES.retro,
         });
-      } catch (error) {
-        deps.sink?.broadcast('retro.failed', {
-          taskId: taskID,
-          error: toErrorMessage(error),
-        });
+      } else {
+        try {
+          const result = await runRetro(taskID, {
+            repoDir: deps.repoDir,
+            taskStore: deps.taskStore,
+            interactionStore: deps.interactions,
+            memoryStore: deps.memoryStore,
+            config,
+            registry: deps.registry,
+          });
+          deps.sink?.broadcast('retro.completed', {
+            taskId: taskID,
+            interactionId: result.interactionId,
+            entriesCreated: result.memoryEntries.length,
+            automated: true,
+          });
+        } catch (error) {
+          deps.sink?.broadcast('retro.failed', {
+            taskId: taskID,
+            error: toErrorMessage(error),
+          });
+        }
       }
     }
 
     if (hooks.memorySync !== false) {
       try {
-        // Pass enriched deps so sync can patch explore context internally
         const contextDeps = deps.registry
           ? { config, registry: deps.registry, interactions: deps.interactions }
           : undefined;

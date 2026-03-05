@@ -1,3 +1,4 @@
+import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { ToolPluginRegistry } from '../../plugin/registry';
@@ -11,22 +12,13 @@ import {
   requestPlanChanges,
 } from '../../workflows/planning';
 import type { EventSink } from '../ws';
+import {
+  generatePlanSchema,
+  planBodySchema,
+  requestPlanChangesSchema,
+} from '../schemas';
 import { asyncOp } from './async-op';
-import { broadcast, parseBody, safeErrorMessage } from './utils';
-
-interface PlanBody {
-  plan?: string;
-}
-
-interface GeneratePlanBody {
-  tool?: string;
-  model?: string;
-}
-
-interface RequestPlanChangesBody extends GeneratePlanBody {
-  feedback?: string;
-  interactionId?: string;
-}
+import { broadcast, safeErrorMessage } from './utils';
 
 export interface TaskPlanDeps {
   repoDir: string;
@@ -55,7 +47,7 @@ export function taskPlanRoutes(deps: TaskPlanDeps) {
       return c.json({ plan: await taskStore.getPlan(taskID) });
     })
 
-    .put('/tasks/:id/plan', async (c) => {
+    .put('/tasks/:id/plan', zValidator('json', planBodySchema), async (c) => {
       const taskID = c.req.param('id');
       const task = await taskStore.get(taskID);
       if (!task) {
@@ -70,7 +62,7 @@ export function taskPlanRoutes(deps: TaskPlanDeps) {
         );
       }
 
-      const body = await parseBody<PlanBody>(c.req);
+      const body = c.req.valid('json');
       await taskStore.setPlan(taskID, body.plan ?? '');
       const updated = await taskStore.get(taskID);
       if (updated) {
@@ -82,14 +74,14 @@ export function taskPlanRoutes(deps: TaskPlanDeps) {
       return c.json({ plan: body.plan ?? '' });
     })
 
-    .post('/tasks/:id/plan/generate', async (c) => {
+    .post('/tasks/:id/plan/generate', zValidator('json', generatePlanSchema), async (c) => {
       const taskID = c.req.param('id');
       const task = await taskStore.get(taskID);
       if (!task) {
         return c.json({ error: 'task not found' }, 404);
       }
 
-      const body = await parseBody<GeneratePlanBody>(c.req);
+      const body = c.req.valid('json');
       asyncOp(sink, {
         started: {
           name: 'plan.generating',
@@ -132,14 +124,14 @@ export function taskPlanRoutes(deps: TaskPlanDeps) {
       return c.json({ status: 'generating' }, 202);
     })
 
-    .post('/tasks/:id/request-plan-changes', async (c) => {
+    .post('/tasks/:id/request-plan-changes', zValidator('json', requestPlanChangesSchema), async (c) => {
       const taskID = c.req.param('id');
       const task = await taskStore.get(taskID);
       if (!task) {
         return c.json({ error: 'task not found' }, 404);
       }
 
-      const body = await parseBody<RequestPlanChangesBody>(c.req);
+      const body = c.req.valid('json');
       const feedback = body.feedback?.trim() ?? '';
       if (!feedback) {
         return c.json({ error: 'feedback is required' }, 400);

@@ -4,11 +4,9 @@ import { gitRun } from '../../shared/git';
 import type { TaskStore } from '../../store/tasks';
 import type { EventSink } from '../ws';
 import { asyncOp } from './async-op';
-import { broadcast, parseBody } from './utils';
-
-interface CleanupBody {
-  dryRun?: boolean;
-}
+import { zValidator } from '@hono/zod-validator';
+import { cleanupSchema } from '../schemas';
+import { broadcast } from './utils';
 
 interface WorktreeEntry {
   path: string;
@@ -21,8 +19,8 @@ export function cleanupRoutes(deps: {
   taskStore: TaskStore;
   sink: EventSink;
 }) {
-  return new Hono().post('/cleanup', async (c) => {
-    const body = await parseBody<CleanupBody>(c.req);
+  return new Hono().post('/cleanup', zValidator('json', cleanupSchema), async (c) => {
+    const body = c.req.valid('json');
     const dryRun = Boolean(body.dryRun);
     const stale = await listStaleTaskWorktrees(deps.repoDir, deps.taskStore);
 

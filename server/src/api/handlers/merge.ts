@@ -9,11 +9,9 @@ import { JOB_PRIORITIES } from '../../types';
 import { mergeAllApproved } from '../../workflows/merge';
 import type { EventSink } from '../ws';
 import { asyncOp } from './async-op';
-import { broadcast, parseBody } from './utils';
-
-interface MergeBody {
-  mode?: string;
-}
+import { zValidator } from '@hono/zod-validator';
+import { mergeBodySchema } from '../schemas';
+import { broadcast } from './utils';
 
 export function mergeRoutes(deps: {
   repoDir: string;
@@ -26,12 +24,10 @@ export function mergeRoutes(deps: {
   queue: JobQueue;
 }) {
   return new Hono()
-    .post('/tasks/:id/merge', async (c) => {
+    .post('/tasks/:id/merge', zValidator('json', mergeBodySchema), async (c) => {
       const taskID = c.req.param('id');
       const task = await deps.taskStore.get(taskID);
       if (!task) return c.json({ error: 'task not found' }, 404);
-
-      await parseBody<MergeBody>(c.req);
 
       const { id: jobId } = await deps.queue.enqueue({
         type: 'merge',
@@ -42,7 +38,6 @@ export function mergeRoutes(deps: {
       return c.json({ jobId, taskId: taskID, status: 'queued' }, 202);
     })
     .post('/merge', async (c) => {
-      await parseBody<Record<string, unknown>>(c.req);
       const { operationId } = asyncOp(deps.sink, {
         idPrefix: 'merge',
         run: async (operationId) => {

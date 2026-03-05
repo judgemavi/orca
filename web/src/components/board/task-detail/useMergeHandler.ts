@@ -23,7 +23,7 @@ export function useMergeHandler({
       mode?: string;
       tool?: string;
       model?: string;
-    }) => api.mergeTask(args.taskId, args.mode, args.tool, args.model),
+    }) => api.mergeTask(args.taskId, args.mode),
   });
 
   const [mergeProgress, setMergeProgress] = useState<string | null>(null);

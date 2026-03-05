@@ -138,8 +138,8 @@ export function useTaskActions(task: Task) {
     }) => api.aiReview(args.taskId, args.tool, args.model, args.prompt),
   });
   const mergeTaskMutation = useMutation({
-    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
-      api.mergeTask(args.taskId, undefined, args.tool, args.model),
+    mutationFn: (args: { taskId: string }) =>
+      api.mergeTask(args.taskId),
   });
   const resumeTaskMutation = useMutation({
     mutationFn: (args: {
@@ -752,8 +752,6 @@ export function useTaskActions(task: Task) {
     try {
       await mergeTaskMutation.mutateAsync({
         taskId: task.id,
-        tool: actionTool || undefined,
-        model: actionModel || undefined,
       });
     } catch (err: unknown) {
       setActionError(getErrorMessage(err, 'Merge failed'));

@@ -6,18 +6,9 @@ import {
 } from '../../domain/explore';
 import type { JobQueue } from '../../queue/queue';
 import { JOB_PRIORITIES } from '../../types';
+import { zValidator } from '@hono/zod-validator';
+import { exploreContextSchema, exploreSchema } from '../schemas';
 import type { EventSink } from '../ws';
-import { parseBody } from './utils';
-
-interface ContextBody {
-  content?: string;
-}
-
-interface ExploreBody {
-  query?: string;
-  tool?: string;
-  model?: string;
-}
 
 export function exploreRoutes(
   repoDir: string,
@@ -25,7 +16,7 @@ export function exploreRoutes(
   queue: JobQueue,
 ) {
   return new Hono()
-    .post('/explore', async (c) => {
+    .post('/explore', zValidator('json', exploreSchema), async (c) => {
       const tracked = await listTrackedFiles(repoDir);
       if (tracked.length === 0) {
         return c.json({
@@ -34,7 +25,7 @@ export function exploreRoutes(
         });
       }
 
-      const body = await parseBody<ExploreBody>(c.req);
+      const body = c.req.valid('json');
 
       const { id: jobId } = await queue.enqueue({
         type: 'explore',
@@ -52,8 +43,8 @@ export function exploreRoutes(
       const content = await readExploreContext(repoDir);
       return c.json(content);
     })
-    .put('/explore/context', async (c) => {
-      const body = await parseBody<ContextBody>(c.req);
+    .put('/explore/context', zValidator('json', exploreContextSchema), async (c) => {
+      const body = c.req.valid('json');
       const path = await writeExploreContext(
         repoDir,
         (body.content ?? '').trim(),

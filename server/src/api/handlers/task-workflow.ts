@@ -1,3 +1,4 @@
+import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { ToolPluginRegistry } from '../../plugin/registry';
@@ -16,26 +17,14 @@ import {
 } from '../../workflows/planning';
 import { approveTask } from '../../workflows/review';
 import type { EventSink } from '../ws';
-import { broadcast, parseBody, safeErrorMessage } from './utils';
-
-interface ToolModelBody {
-  tool?: string;
-  model?: string;
-}
-
-interface RequestChangesBody extends ToolModelBody {
-  feedback?: string;
-  interactionId?: string;
-}
-
-interface BreakdownAcceptBody {
-  interactionId?: string;
-  tasks?: ProposedTask[];
-}
-
-interface BreakdownRejectBody {
-  interactionId?: string;
-}
+import {
+  aiReviewSchema,
+  breakdownAcceptSchema,
+  breakdownRejectSchema,
+  requestChangesSchema,
+  toolModelSchema,
+} from '../schemas';
+import { broadcast, safeErrorMessage } from './utils';
 
 export function taskWorkflowRoutes(deps: {
   repoDir: string;
@@ -64,7 +53,7 @@ export function taskWorkflowRoutes(deps: {
       return c.json(updated);
     })
 
-    .post('/tasks/:id/request-changes', async (c) => {
+    .post('/tasks/:id/request-changes', zValidator('json', requestChangesSchema), async (c) => {
       const taskID = c.req.param('id');
       const task = await deps.taskStore.get(taskID);
       if (!task) return c.json({ error: 'task not found' }, 404);
@@ -75,7 +64,7 @@ export function taskWorkflowRoutes(deps: {
         );
       }
 
-      const body = await parseBody<RequestChangesBody>(c.req);
+      const body = c.req.valid('json');
       const feedback = body.feedback?.trim() ?? '';
       if (!feedback) {
         return c.json({ error: 'feedback is required' }, 400);
@@ -98,7 +87,7 @@ export function taskWorkflowRoutes(deps: {
       return c.json({ status: 'queued', taskId: taskID, jobId }, 202);
     })
 
-    .post('/tasks/:id/ai-review', async (c) => {
+    .post('/tasks/:id/ai-review', zValidator('json', aiReviewSchema), async (c) => {
       const taskID = c.req.param('id');
       const task = await deps.taskStore.get(taskID);
       if (!task) return c.json({ error: 'task not found' }, 404);
@@ -111,7 +100,7 @@ export function taskWorkflowRoutes(deps: {
         );
       }
 
-      const body = await parseBody<ToolModelBody & { prompt?: string }>(c.req);
+      const body = c.req.valid('json');
       const runInteractions = await deps.interactionStore.listByType(
         taskID,
         'run',
@@ -141,9 +130,9 @@ export function taskWorkflowRoutes(deps: {
       return c.json({ status: 'queued', taskId: taskID, jobId }, 202);
     })
 
-    .post('/tasks/:id/evaluate', async (c) => {
+    .post('/tasks/:id/evaluate', zValidator('json', toolModelSchema), async (c) => {
       const taskID = c.req.param('id');
-      const body = await parseBody<ToolModelBody>(c.req);
+      const body = c.req.valid('json');
 
       const { id: jobId } = await deps.queue.enqueue({
         type: 'evaluate',
@@ -156,12 +145,12 @@ export function taskWorkflowRoutes(deps: {
       return c.json({ taskId: taskID, jobId, status: 'queued' }, 202);
     })
 
-    .post('/tasks/:id/breakdown', async (c) => {
+    .post('/tasks/:id/breakdown', zValidator('json', toolModelSchema), async (c) => {
       const taskID = c.req.param('id');
       const task = await deps.taskStore.get(taskID);
       if (!task) return c.json({ error: 'task not found' }, 404);
 
-      const body = await parseBody<ToolModelBody>(c.req);
+      const body = c.req.valid('json');
 
       const { id: jobId } = await deps.queue.enqueue({
         type: 'breakdown',
@@ -173,12 +162,12 @@ export function taskWorkflowRoutes(deps: {
       return c.json({ taskId: taskID, jobId, status: 'queued' }, 202);
     })
 
-    .post('/tasks/:id/breakdown/accept', async (c) => {
+    .post('/tasks/:id/breakdown/accept', zValidator('json', breakdownAcceptSchema), async (c) => {
       const parentID = c.req.param('id');
 
-      const body = await parseBody<BreakdownAcceptBody>(c.req);
+      const body = c.req.valid('json');
       const interactionID = body.interactionId?.trim() ?? '';
-      let proposed = Array.isArray(body.tasks) ? body.tasks : [];
+      let proposed: ProposedTask[] = Array.isArray(body.tasks) ? (body.tasks as ProposedTask[]) : [];
 
       if (proposed.length === 0 && interactionID) {
         proposed = await loadProposedTasksFromInteraction(interactionID, {
@@ -228,9 +217,9 @@ export function taskWorkflowRoutes(deps: {
       });
     })
 
-    .post('/tasks/:id/breakdown/reject', async (c) => {
+    .post('/tasks/:id/breakdown/reject', zValidator('json', breakdownRejectSchema), async (c) => {
       const taskID = c.req.param('id');
-      const body = await parseBody<BreakdownRejectBody>(c.req);
+      const body = c.req.valid('json');
       const interactionID = body.interactionId?.trim() ?? '';
 
       await rejectBreakdown(taskID, interactionID, {

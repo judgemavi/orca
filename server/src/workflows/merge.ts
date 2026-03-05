@@ -9,6 +9,7 @@ import {
   triggerPostMergeHooks,
 } from '../domain/post-merge';
 import type { ToolPluginRegistry } from '../plugin/registry';
+import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
@@ -23,6 +24,7 @@ export interface MergeWorkflowDeps {
   memoryStore: MemoryStore;
   registry?: ToolPluginRegistry;
   sink?: PostMergeEventSink;
+  queue?: JobQueue;
 }
 
 export type BatchMergeResult = Awaited<
@@ -65,6 +67,7 @@ export async function mergeTask(
     configStore: deps.configStore,
     registry: deps.registry,
     sink: deps.sink,
+    queue: deps.queue,
   });
 
   return result;
@@ -91,6 +94,7 @@ export async function mergeAllApproved(
       configStore: deps.configStore,
       registry: deps.registry,
       sink: deps.sink,
+      queue: deps.queue,
     });
   }
 

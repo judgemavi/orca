@@ -1,3 +1,4 @@
+import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import type { JobQueue } from '../../queue/queue';
 import { toErrorMessage } from '../../shared/errors';
@@ -7,23 +8,8 @@ import type { TaskStatus } from '../../types';
 import { JOB_PRIORITIES } from '../../types';
 import { DeleteWorkflowError, deleteTask } from '../../workflows/delete';
 import type { EventSink } from '../ws';
-import { broadcast, parseBody } from './utils';
-
-interface CreateTaskBody {
-  id?: string;
-  title: string;
-  description?: string;
-  parentId?: string | null;
-}
-
-interface PatchTaskBody {
-  title?: string;
-  description?: string;
-  plan?: string | null;
-  status?: TaskStatus;
-  sessionId?: string | null;
-  dependsOn?: string[];
-}
+import { addDepsSchema, createTaskSchema, patchTaskSchema } from '../schemas';
+import { broadcast } from './utils';
 
 const BLOCKED_MANUAL_STATUSES = new Set<TaskStatus>([
   'planned',
@@ -53,8 +39,8 @@ export function taskRoutes(deps: {
       return c.json(task);
     })
 
-    .post('/tasks', async (c) => {
-      const body = await parseBody<CreateTaskBody>(c.req);
+    .post('/tasks', zValidator('json', createTaskSchema), async (c) => {
+      const body = c.req.valid('json');
       const task = await taskStore.create({
         id: body.id,
         title: body.title,
@@ -71,9 +57,9 @@ export function taskRoutes(deps: {
       return c.json(task, 201);
     })
 
-    .patch('/tasks/:id', async (c) => {
+    .patch('/tasks/:id', zValidator('json', patchTaskSchema), async (c) => {
       const taskID = c.req.param('id');
-      const body = await parseBody<PatchTaskBody>(c.req);
+      const body = c.req.valid('json');
       const existing = await taskStore.get(taskID);
       if (!existing) {
         return c.json({ error: 'task not found' }, 404);
@@ -81,7 +67,7 @@ export function taskRoutes(deps: {
       if (body.status !== undefined) {
         const err = validateManualStatusTransition(
           existing.status,
-          body.status,
+          body.status as TaskStatus,
         );
         if (err) {
           return c.json({ error: err }, 400);
@@ -96,7 +82,7 @@ export function taskRoutes(deps: {
         title: body.title,
         description: body.description,
         plan: body.plan,
-        status: body.status,
+        status: body.status as TaskStatus | undefined,
         sessionId: body.sessionId,
       });
 
@@ -108,12 +94,9 @@ export function taskRoutes(deps: {
       return c.json(updated);
     })
 
-    .post('/tasks/:id/deps', async (c) => {
+    .post('/tasks/:id/deps', zValidator('json', addDepsSchema), async (c) => {
       const taskID = c.req.param('id');
-      const body = await parseBody<{
-        dependsOn?: string;
-        dependsOnIds?: string[];
-      }>(c.req);
+      const body = c.req.valid('json');
 
       const existing = await taskStore.get(taskID);
       if (!existing) {

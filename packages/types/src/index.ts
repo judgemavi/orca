@@ -354,6 +354,7 @@ export const JOB_TYPES = {
   review: 'review',
   explore: 'explore',
   merge: 'merge',
+  retro: 'retro',
 } as const;
 
 export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
@@ -366,6 +367,7 @@ export const JOB_PRIORITIES: Record<JobType, number> = {
   plan: 4,
   breakdown: 4,
   explore: 5,
+  retro: 6,
 };
 
 export interface Job {

@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import type { InteractionStore } from '../../store/interactions';
 import type { TaskStore } from '../../store/tasks';
-import type { ProposedTask } from '../../types';
 import {
   acceptBreakdown,
   breakdownTask,
@@ -9,24 +8,9 @@ import {
   rejectBreakdown,
 } from '../../workflows/planning';
 import type { EventSink } from '../ws';
-import { broadcast, parseBody } from './utils';
-
-interface PlanRequestBody {
-  goal?: string;
-  tool?: string;
-  sessionId?: string;
-}
-
-interface PlanAcceptBody {
-  operationId?: string;
-  sessionId?: string;
-  tasks?: ProposedTask[];
-}
-
-interface PlanRejectBody {
-  operationId?: string;
-  sessionId?: string;
-}
+import { zValidator } from '@hono/zod-validator';
+import { planAcceptSchema, planRejectSchema, planRequestSchema } from '../schemas';
+import { broadcast } from './utils';
 
 export function planRoutes(deps: {
   taskStore: TaskStore;
@@ -34,8 +18,8 @@ export function planRoutes(deps: {
   sink: EventSink;
 }) {
   return new Hono()
-    .post('/plan', async (c) => {
-      const body = await parseBody<PlanRequestBody>(c.req);
+    .post('/plan', zValidator('json', planRequestSchema), async (c) => {
+      const body = c.req.valid('json');
       const goal = body.goal?.trim() ?? '';
       if (!goal) {
         return c.json({ error: 'goal is required' }, 400);
@@ -69,8 +53,8 @@ export function planRoutes(deps: {
       );
     })
 
-    .post('/plan/accept', async (c) => {
-      const body = await parseBody<PlanAcceptBody>(c.req);
+    .post('/plan/accept', zValidator('json', planAcceptSchema), async (c) => {
+      const body = c.req.valid('json');
 
       let proposed = body.tasks ?? [];
       if (proposed.length === 0 && body.operationId?.trim()) {
@@ -90,8 +74,8 @@ export function planRoutes(deps: {
       });
     })
 
-    .post('/plan/reject', async (c) => {
-      const body = await parseBody<PlanRejectBody>(c.req);
+    .post('/plan/reject', zValidator('json', planRejectSchema), async (c) => {
+      const body = c.req.valid('json');
       await rejectBreakdown('', body.operationId ?? '', {
         interactions: deps.interactions,
       });

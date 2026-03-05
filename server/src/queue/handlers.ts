@@ -1,5 +1,6 @@
 import type { EventSink } from '../api/ws';
 import { runExplore } from '../domain/explore';
+import { runRetro } from '../domain/retro';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
 import type { ConfigStore } from '../store/config';
@@ -8,6 +9,7 @@ import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import type { Job } from '../types';
 import { mergeTask } from '../workflows/merge';
+import type { JobQueue } from './queue';
 import {
   breakdownTask,
   evaluateTaskWorkflow,
@@ -25,6 +27,7 @@ interface HandlerDeps {
   memoryStore: MemoryStore;
   executor: Executor;
   sink: EventSink;
+  queue: JobQueue;
 }
 
 function str(value: unknown): string {
@@ -223,6 +226,7 @@ export function registerJobHandlers(
         memoryStore: deps.memoryStore,
         registry: deps.registry,
         sink: deps.sink,
+        queue: deps.queue,
       });
 
       if (result.status !== 'merged') {
@@ -242,6 +246,35 @@ export function registerJobHandlers(
         const error = err instanceof Error ? err.message : String(err);
         deps.sink.broadcast('merge.failed', { taskId, error });
       }
+      throw err;
+    }
+  });
+
+  // retro
+  processor.register('retro', async (job: Job) => {
+    const taskId = job.taskId!;
+    deps.sink.broadcast('retro.started', { taskId });
+
+    try {
+      const config = await deps.configStore.load();
+      const result = await runRetro(taskId, {
+        repoDir: deps.repoDir,
+        taskStore: deps.taskStore,
+        interactionStore: deps.interactionStore,
+        memoryStore: deps.memoryStore,
+        config,
+        registry: deps.registry,
+      });
+
+      deps.sink.broadcast('retro.completed', {
+        taskId,
+        interactionId: result.interactionId,
+        entriesCreated: result.memoryEntries.length,
+      });
+      return { taskId, interactionId: result.interactionId };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      deps.sink.broadcast('retro.failed', { taskId, error });
       throw err;
     }
   });

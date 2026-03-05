@@ -1,3 +1,4 @@
+import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import type { Executor } from '../../executor/executor';
 import type { JobQueue } from '../../queue/queue';
@@ -10,22 +11,8 @@ import {
   stopTask,
 } from '../../workflows/run';
 import type { EventSink } from '../ws';
-import { broadcast, parseBody, safeErrorMessage } from './utils';
-
-interface RunRequestBody {
-  taskIds?: string[];
-  tool?: string;
-  model?: string;
-  context?: string;
-}
-
-interface ResumeBody {
-  sessionId?: string;
-  feedback?: string;
-  tool?: string;
-  model?: string;
-  context?: string;
-}
+import { resumeSchema, runRequestSchema } from '../schemas';
+import { broadcast, safeErrorMessage } from './utils';
 
 export function runRoutes(deps: {
   executor: Executor;
@@ -36,8 +23,8 @@ export function runRoutes(deps: {
   const { executor, taskStore, sink, queue } = deps;
 
   return new Hono()
-    .post('/run/pending', async (c) => {
-      const body = await parseBody<RunRequestBody>(c.req);
+    .post('/run/pending', zValidator('json', runRequestSchema), async (c) => {
+      const body = c.req.valid('json');
       const taskIDs = normalizeTaskIDs(body.taskIds);
       const tool = body.tool ?? '';
       const model = body.model ?? '';
@@ -77,8 +64,8 @@ export function runRoutes(deps: {
       );
     })
 
-    .post('/tasks/start', async (c) => {
-      const body = await parseBody<RunRequestBody>(c.req);
+    .post('/tasks/start', zValidator('json', runRequestSchema), async (c) => {
+      const body = c.req.valid('json');
       const taskIDs = normalizeTaskIDs(body.taskIds);
       const tool = body.tool ?? '';
       const model = body.model ?? '';
@@ -98,9 +85,9 @@ export function runRoutes(deps: {
       return c.json({ status: 'queued', taskIds: taskIDs, jobIds }, 202);
     })
 
-    .post('/tasks/:id/start', async (c) => {
+    .post('/tasks/:id/start', zValidator('json', runRequestSchema), async (c) => {
       const taskID = c.req.param('id');
-      const body = await parseBody<RunRequestBody>(c.req);
+      const body = c.req.valid('json');
       const { id: jobId } = await queue.enqueue({
         type: 'run',
         taskId: taskID,
@@ -114,9 +101,9 @@ export function runRoutes(deps: {
       return c.json({ status: 'queued', taskId: taskID, jobId }, 202);
     })
 
-    .post('/tasks/:id/resume', async (c) => {
+    .post('/tasks/:id/resume', zValidator('json', resumeSchema), async (c) => {
       const taskID = c.req.param('id');
-      const body = await parseBody<ResumeBody>(c.req);
+      const body = c.req.valid('json');
 
       try {
         const result = await resumeTask(

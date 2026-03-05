@@ -7,7 +7,9 @@ import {
 } from '../../domain/memory-sync';
 import type { MemoryStore } from '../../store/memory';
 import type { MemoryCategory, MemorySourceType } from '../../types';
-import { asBoolean, parseBody } from './utils';
+import { zValidator } from '@hono/zod-validator';
+import { memoryRefreshSchema, memoryUpdateSchema } from '../schemas';
+import { asBoolean } from './utils';
 
 interface MemoryListQuery {
   category?: MemoryCategory;
@@ -18,12 +20,6 @@ interface MemoryListQuery {
   coveredBefore?: string;
   q?: string;
   limit?: string;
-}
-
-interface MemoryUpdateBody {
-  content?: string;
-  confidence?: number;
-  category?: MemoryCategory;
 }
 
 export function memoryRoutes(repoDir: string, memory: MemoryStore) {
@@ -65,16 +61,16 @@ export function memoryRoutes(repoDir: string, memory: MemoryStore) {
         );
       }
     })
-    .patch('/memory/:id', async (c) => {
+    .patch('/memory/:id', zValidator('json', memoryUpdateSchema), async (c) => {
       const id = c.req.param('id');
       const entry = await memory.get(id);
       if (!entry) return c.json({ error: 'memory entry not found' }, 404);
 
-      const body = await parseBody<MemoryUpdateBody>(c.req);
+      const body = c.req.valid('json');
       await memory.update(id, {
         content: body.content,
         confidence: body.confidence,
-        category: body.category,
+        category: body.category as MemoryCategory | undefined,
       });
 
       const updated = await memory.get(id);
@@ -94,9 +90,9 @@ export function memoryRoutes(repoDir: string, memory: MemoryStore) {
         return c.json({ error: (error as Error).message }, 500);
       }
     })
-    .post('/memory/refresh', async (c) => {
+    .post('/memory/refresh', zValidator('json', memoryRefreshSchema), async (c) => {
       try {
-        const body = await parseBody<{ entryId?: string }>(c.req);
+        const body = c.req.valid('json');
         const result = await refreshMemoryEntries(
           repoDir,
           memory,
