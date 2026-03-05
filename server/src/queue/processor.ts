@@ -1,4 +1,5 @@
 import type { EventSink } from '../api/ws';
+import { log } from '../shared/logger';
 import type { Job, JobType } from '../types';
 import type { JobQueue } from './queue';
 
@@ -67,7 +68,7 @@ export class JobProcessor {
     try {
       jobs = await this.deps.queue.claim(this.deps.maxParallel);
     } catch (err) {
-      console.error('[queue] claim error:', err);
+      log.error('queue claim error', { error: String(err) });
       return;
     }
 

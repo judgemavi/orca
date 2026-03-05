@@ -1,3 +1,5 @@
+import { log } from '../shared/logger';
+
 export interface BroadcastEvent {
   id: number;
   type: string;
@@ -41,7 +43,7 @@ export function createEventSink(): EventSink {
           // Ignore listener errors.
         }
       }
-      console.log('[ws-event]', type, data);
+      log.debug('ws-event', { type, data });
     },
     list(limit = 100) {
       const size = Math.max(1, Math.min(limit, 500));

@@ -1,4 +1,3 @@
-import { watch } from 'node:fs';
 import type { Command } from 'commander';
 import { mergeTaskWithGit } from '../../domain/integrator';
 import { triggerPostMergeHooks } from '../../domain/post-merge';
@@ -423,78 +422,6 @@ export function registerTaskCommands(
       });
     });
 
-  task
-    .command('logs [id]')
-    .description('View task interaction logs')
-    .option('--type <type>', 'filter by interaction type')
-    .option('--attempt <n>', 'filter by attempt number')
-    .option('--json', 'raw JSON output')
-    .option('--follow', 'tail the log file')
-    .action(
-      async (
-        id: string | undefined,
-        opts: {
-          type?: string;
-          attempt?: string;
-          json?: boolean;
-          follow?: boolean;
-        },
-      ) => {
-        const taskID = await resolveTaskID({
-          id,
-          taskStore: deps.taskStore,
-          title: 'Select task for logs',
-          filter: allTasks,
-        });
-
-        const type = (opts.type ?? '').trim();
-        const attempt = opts.attempt ? Number(opts.attempt) : undefined;
-
-        let interactions = type
-          ? await deps.interactionStore.listByType(taskID, type)
-          : await deps.interactionStore.list(taskID);
-
-        if (attempt !== undefined) {
-          interactions = interactions.filter((i) => i.attempt === attempt);
-        }
-
-        if (interactions.length === 0) {
-          throw new Error(
-            `no interactions found for task ${taskID}${type ? ` type=${type}` : ''}${attempt !== undefined ? ` attempt=${attempt}` : ''}`,
-          );
-        }
-
-        if (opts.json) {
-          console.log(JSON.stringify(interactions, null, 2));
-          return;
-        }
-
-        const latest = interactions[0]!;
-        const content = await deps.interactionStore.readLog(latest.id);
-        console.log(content);
-
-        if (opts.follow) {
-          const row = await deps.interactionStore.get(latest.id);
-          if (!row?.logPath) return;
-          const logPath = row.logPath;
-          let offset = content.length;
-          const watcher = watch(logPath, async () => {
-            const full = await Bun.file(logPath)
-              .text()
-              .catch(() => '');
-            if (full.length > offset) {
-              process.stdout.write(full.slice(offset));
-              offset = full.length;
-            }
-          });
-          process.on('SIGINT', () => {
-            watcher.close();
-            process.exit(0);
-          });
-          await new Promise(() => {});
-        }
-      },
-    );
 }
 
 async function resolveTaskID(input: {

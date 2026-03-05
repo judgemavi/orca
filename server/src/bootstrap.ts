@@ -1,4 +1,5 @@
 import type { EventSink } from './api/ws';
+import { log } from './shared/logger';
 import {
   sanitizeConfig,
   validateConfig,
@@ -48,10 +49,7 @@ export async function bootstrap(
   try {
     registry = await loadToolPluginRegistry(repoDir);
   } catch (error) {
-    console.warn(
-      'failed to load plugin registry from .orca/plugins, using built-ins',
-      error,
-    );
+    log.warn('failed to load plugin registry from .orca/plugins, using built-ins');
   }
 
   const configStore = new ConfigStore(db, eventSink);
@@ -66,7 +64,7 @@ export async function bootstrap(
   validateDefaults(config, registry);
   if (changes.length > 0) {
     for (const change of changes) {
-      console.warn('[config sanitized]', change);
+      log.warn('config sanitized', { change });
     }
     await configStore.save(config);
   }

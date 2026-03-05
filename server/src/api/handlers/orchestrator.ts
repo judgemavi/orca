@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { log } from '../../shared/logger';
 import {
   buildMCPServerDef,
   loadOrchestratorPrompt,
@@ -24,7 +25,7 @@ let activePTY: OrchestratorPTY | null = null;
 
 export function killActivePTY(): boolean {
   if (!activePTY || activePTY.dead) return false;
-  console.log('[orchestrator] killing active PTY pid:', activePTY.proc.pid);
+  log.info('killing active PTY', { pid: activePTY.proc.pid });
   try {
     activePTY.proc.kill();
   } catch {}
@@ -80,7 +81,7 @@ export async function onOrchestratorWSOpen(ws: any) {
 
   // Reattach to existing PTY if alive
   if (activePTY && !activePTY.dead) {
-    console.log('[orchestrator] reattaching to pid:', activePTY.proc.pid);
+    log.info('reattaching to PTY', { pid: activePTY.proc.pid });
     activePTY.ws = ws;
     ws.data.reattached = true;
 
@@ -114,9 +115,7 @@ export async function onOrchestratorWSOpen(ws: any) {
     });
 
     const cmd = [resolved.plugin.binary(), ...args];
-    console.log('[orchestrator] spawning:', cmd.join(' '));
-    console.log('[orchestrator] cwd:', repoDir);
-    console.log('[orchestrator] terminal:', cols, 'x', rows);
+    log.info('spawning orchestrator', { cmd: cmd.join(' '), cwd: repoDir, cols, rows });
 
     const filteredEnv: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
@@ -162,12 +161,7 @@ export async function onOrchestratorWSOpen(ws: any) {
           }
         },
         exit(_terminal: any, exitCode: number, signal: string | null) {
-          console.log(
-            '[orchestrator] PTY exited, code:',
-            exitCode,
-            'signal:',
-            signal,
-          );
+          log.info('PTY exited', { exitCode, signal });
         },
       },
     });
@@ -175,10 +169,10 @@ export async function onOrchestratorWSOpen(ws: any) {
     pty.proc = proc;
     activePTY = pty;
     trackProcess(proc, 'pty:orchestrator');
-    console.log('[orchestrator] spawned pid:', proc.pid);
+    log.info('spawned orchestrator', { pid: proc.pid });
 
     proc.exited.then((code) => {
-      console.log('[orchestrator] process exited, code:', code);
+      log.info('orchestrator process exited', { code });
       untrackProcess(proc);
       pty.dead = true;
       if (activePTY === pty) activePTY = null;
@@ -187,7 +181,7 @@ export async function onOrchestratorWSOpen(ws: any) {
       } catch {}
     });
   } catch (err) {
-    console.error('[orchestrator] spawn error:', err);
+    log.error('orchestrator spawn error', { error: String(err) });
     const msg =
       err instanceof Error ? err.message : 'Failed to spawn orchestrator';
     try {
@@ -219,9 +213,6 @@ export function onOrchestratorWSClose(_ws: any) {
   // Detach client but keep PTY alive
   if (activePTY) {
     activePTY.ws = null;
-    console.log(
-      '[orchestrator] client detached, PTY still alive pid:',
-      activePTY.proc.pid,
-    );
+    log.info('client detached, PTY still alive', { pid: activePTY.proc.pid });
   }
 }

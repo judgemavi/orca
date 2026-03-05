@@ -1,12 +1,10 @@
+import { join } from 'node:path';
 import { bootstrap } from '../bootstrap';
+import { initLogger } from '../shared/logger';
 import { startMCPServer } from '../mcp/server';
 
 export async function runMCPEntrypoint(repoDir: string) {
-  // MCP mode: stdout is reserved for protocol — redirect all logging to stderr
-  const stderrLog = (...args: unknown[]) => console.error(...args);
-  console.log = stderrLog;
-  console.info = stderrLog;
-  console.warn = stderrLog;
+  initLogger({ dir: join(repoDir, '.orca', 'logs'), name: 'mcp' });
 
   const ctx = await bootstrap({ repoDir });
 

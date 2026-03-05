@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { OrcaDrizzleDB } from '../db/connection';
+import { log } from '../shared/logger';
 import type { EventSink } from './ws';
 
 interface ChangelogRow {
@@ -25,14 +26,14 @@ export class DbChangePoller {
     // Clear stale entries — on server start we're already in sync
     this.db.run(sql`DELETE FROM _changelog`);
     this.timer = setInterval(() => this.tick(), this.intervalMs);
-    console.log(`[db-poller] started (${this.intervalMs}ms interval)`);
+    log.info('db-poller started', { intervalMs: this.intervalMs });
   }
 
   stop() {
     if (!this.timer) return;
     clearInterval(this.timer);
     this.timer = null;
-    console.log('[db-poller] stopped');
+    log.info('db-poller stopped');
   }
 
   private tick() {
@@ -76,7 +77,7 @@ export class DbChangePoller {
         this.sink.broadcast('db.delete', { table, ids: dedupe(ids) });
       }
     } catch (err) {
-      console.error('[db-poller] tick error:', err);
+      log.error('db-poller tick error', { error: String(err) });
     }
   }
 }

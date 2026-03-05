@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { DbChangePoller } from '../api/db-poller';
 import { buildRoutes } from '../api/routes';
 import { startHTTPServer } from '../api/server';
@@ -9,9 +10,12 @@ import {
 } from '../domain/recovery';
 import { registerJobHandlers } from '../queue/handlers';
 import { JobProcessor } from '../queue/processor';
+import { initLogger, log } from '../shared/logger';
 import { killAllTracked, trackedCount } from '../shared/process-registry';
 
 export async function runServeEntrypoint(repoDir: string, port: number) {
+  initLogger({ dir: join(repoDir, '.orca', 'logs'), name: 'server' });
+
   const eventSink = createEventSink();
   const ctx = await bootstrap({ repoDir, eventSink });
 
@@ -37,7 +41,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     ctx.taskStore,
     ctx.interactionStore,
     (event, data) => {
-      console.error(`[${event}]`, data ?? {});
+      log.info(event, data as Record<string, unknown> ?? {});
     },
     ctx.queue,
   );
@@ -50,11 +54,11 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) {
-      console.error('[shutdown] forced exit');
+      log.warn('forced exit');
       process.exit(1);
     }
     shuttingDown = true;
-    console.error('[shutdown] signal received, stopping…');
+    log.info('shutdown signal received');
 
     ctx.executor.stopAllTasks();
     poller.stop();
@@ -62,7 +66,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
 
     const numProcs = trackedCount();
     if (numProcs > 0) {
-      console.error(`[shutdown] killing ${numProcs} child process(es)…`);
+      log.info(`killing ${numProcs} child process(es)`);
       await killAllTracked('SIGTERM');
     }
 
@@ -70,7 +74,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
       ctx.taskStore,
       ctx.interactionStore,
       (event, data) => {
-        console.error(`[${event}]`, data ?? {});
+        log.info(event, data as Record<string, unknown> ?? {});
       },
     );
     ctx.database.close();
@@ -97,5 +101,5 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     repoDir,
     registry: ctx.registry,
   });
-  console.log(`orca server listening on :${port}`);
+  log.info(`server listening on :${port}`);
 }

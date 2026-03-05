@@ -1,5 +1,6 @@
 import type { Subprocess } from 'bun';
 import kill from 'tree-kill';
+import { log } from './logger';
 
 interface TrackedProcess {
   label: string;
@@ -28,12 +29,10 @@ export function killAllTracked(signal: string = 'SIGTERM'): Promise<number> {
     treeKill(pid, signal)
       .then(() => {
         killed++;
-        console.error(`[shutdown] killed ${label} (pid ${pid})`);
+        log.info('killed process', { label, pid });
       })
       .catch(() => {
-        console.error(
-          `[shutdown] failed to kill ${label} (pid ${pid}), may have already exited`,
-        );
+        log.warn('failed to kill process, may have already exited', { label, pid });
       }),
   );
 
