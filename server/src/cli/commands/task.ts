@@ -421,7 +421,6 @@ export function registerTaskCommands(
         plan: result.plan,
       });
     });
-
 }
 
 async function resolveTaskID(input: {

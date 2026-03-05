@@ -41,7 +41,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     ctx.taskStore,
     ctx.interactionStore,
     (event, data) => {
-      log.info(event, data as Record<string, unknown> ?? {});
+      log.info(event, (data as Record<string, unknown>) ?? {});
     },
     ctx.queue,
   );
@@ -55,10 +55,12 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
   const shutdown = async () => {
     if (shuttingDown) {
       log.warn('forced exit');
+      console.log('forced exit');
       process.exit(1);
     }
     shuttingDown = true;
     log.info('shutdown signal received');
+    console.log('shutting down...');
 
     ctx.executor.stopAllTasks();
     poller.stop();
@@ -74,10 +76,11 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
       ctx.taskStore,
       ctx.interactionStore,
       (event, data) => {
-        log.info(event, data as Record<string, unknown> ?? {});
+        log.info(event, (data as Record<string, unknown>) ?? {});
       },
     );
     ctx.database.close();
+    console.log('shutdown complete');
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
@@ -102,4 +105,5 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     registry: ctx.registry,
   });
   log.info(`server listening on :${port}`);
+  console.log(`orca server listening on :${port}`);
 }

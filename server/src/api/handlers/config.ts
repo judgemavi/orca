@@ -13,8 +13,7 @@ export function configRoutes(configStore: ConfigStore) {
       const updated = await configStore.patch(patch);
       if (patch.orchestrator) {
         const killed = killActivePTY();
-        if (killed)
-          log.info('orchestrator config changed, killed active PTY');
+        if (killed) log.info('orchestrator config changed, killed active PTY');
       }
       return c.json(updated);
     });

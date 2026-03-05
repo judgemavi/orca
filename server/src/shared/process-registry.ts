@@ -32,7 +32,10 @@ export function killAllTracked(signal: string = 'SIGTERM'): Promise<number> {
         log.info('killed process', { label, pid });
       })
       .catch(() => {
-        log.warn('failed to kill process, may have already exited', { label, pid });
+        log.warn('failed to kill process, may have already exited', {
+          label,
+          pid,
+        });
       }),
   );
 

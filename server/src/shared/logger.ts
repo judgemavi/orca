@@ -17,7 +17,11 @@ export function initLogger(opts: {
   const level = opts.level ?? 'info';
 
   const targets: pino.TransportTargetOptions[] = [
-    { target: 'pino/file', options: { destination: filePath, mkdir: true }, level },
+    {
+      target: 'pino/file',
+      options: { destination: filePath, mkdir: true },
+      level,
+    },
   ];
 
   if (opts.pretty) {
@@ -28,10 +32,7 @@ export function initLogger(opts: {
     });
   }
 
-  logger = pino(
-    { level },
-    pino.transport({ targets }),
-  );
+  logger = pino({ level }, pino.transport({ targets }));
 
   return logger;
 }
@@ -41,8 +42,12 @@ export function getLogger(): pino.Logger {
 }
 
 export const log = {
-  debug: (msg: string, data?: Record<string, unknown>) => data ? logger.debug(data, msg) : logger.debug(msg),
-  info: (msg: string, data?: Record<string, unknown>) => data ? logger.info(data, msg) : logger.info(msg),
-  warn: (msg: string, data?: Record<string, unknown>) => data ? logger.warn(data, msg) : logger.warn(msg),
-  error: (msg: string, data?: Record<string, unknown>) => data ? logger.error(data, msg) : logger.error(msg),
+  debug: (msg: string, data?: Record<string, unknown>) =>
+    data ? logger.debug(data, msg) : logger.debug(msg),
+  info: (msg: string, data?: Record<string, unknown>) =>
+    data ? logger.info(data, msg) : logger.info(msg),
+  warn: (msg: string, data?: Record<string, unknown>) =>
+    data ? logger.warn(data, msg) : logger.warn(msg),
+  error: (msg: string, data?: Record<string, unknown>) =>
+    data ? logger.error(data, msg) : logger.error(msg),
 };

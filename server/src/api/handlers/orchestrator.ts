@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { log } from '../../shared/logger';
 import {
   buildMCPServerDef,
   loadOrchestratorPrompt,
@@ -7,6 +6,7 @@ import {
   resolveSupervisor,
 } from '../../orchestrator/bootstrap';
 import type { ToolPluginRegistry } from '../../plugin/registry';
+import { log } from '../../shared/logger';
 import { trackProcess, untrackProcess } from '../../shared/process-registry';
 import type { ConfigStore } from '../../store/config';
 import type { EventSink } from '../ws';
@@ -115,7 +115,12 @@ export async function onOrchestratorWSOpen(ws: any) {
     });
 
     const cmd = [resolved.plugin.binary(), ...args];
-    log.info('spawning orchestrator', { cmd: cmd.join(' '), cwd: repoDir, cols, rows });
+    log.info('spawning orchestrator', {
+      cmd: cmd.join(' '),
+      cwd: repoDir,
+      cols,
+      rows,
+    });
 
     const filteredEnv: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {

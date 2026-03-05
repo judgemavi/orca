@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { bootstrap } from '../bootstrap';
-import { initLogger } from '../shared/logger';
 import { startMCPServer } from '../mcp/server';
+import { initLogger } from '../shared/logger';
 
 export async function runMCPEntrypoint(repoDir: string) {
   initLogger({ dir: join(repoDir, '.orca', 'logs'), name: 'mcp' });
