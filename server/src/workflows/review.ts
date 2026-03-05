@@ -1,12 +1,12 @@
 import { runAIReview } from '../domain/review';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
 import type { TaskRunResult } from '../executor/task-runner';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
 import type { Task } from '../types';
-import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../types';
+import { INTERACTION_STATUSES, TASK_STATUSES } from '../types';
 
 export interface RequestChangesWorkflowDeps {
   taskStore: TaskStore;
@@ -28,7 +28,7 @@ export interface RequestChangesWorkflowResult {
 export interface RunAIReviewWorkflowDeps {
   repoDir: string;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   taskStore: TaskStore;
   interactions: InteractionStore;
   prompt?: string;
@@ -74,7 +74,7 @@ export async function requestChanges(
     normalizedFeedback,
     deps.interactionId ?? '',
   );
-  await deps.interactions.supersedeReviewPhase(taskID);
+  await deps.interactions.supersedeReviewInteractions(taskID);
 
   const result = await deps.executor.runTaskByID(taskID, {
     toolOverride: deps.opts?.toolOverride ?? '',
@@ -99,10 +99,7 @@ export async function runAIReviewWorkflow(
       `task must be in review status, got ${JSON.stringify(current.status)}`,
   );
 
-  const runInteractions = await deps.interactions.listByPhase(
-    taskID,
-    PHASES.run,
-  );
+  const runInteractions = await deps.interactions.listByType(taskID, 'run');
   const latest = runInteractions.find(
     (item) =>
       item.status === INTERACTION_STATUSES.completed &&

@@ -34,7 +34,7 @@ export function PendingTaskActions() {
           variant="primary"
           onClick={actions.handleGeneratePlan}
           disabled={
-            actions.planLoading || actions.phaseInProgress || actions.evaluating
+            actions.planLoading || actions.operationInProgress || actions.evaluating
           }
         >
           {actions.planGenerating || actions.generatePlanPending
@@ -48,7 +48,7 @@ export function PendingTaskActions() {
               onClick={actions.handleEvaluateTask}
               disabled={
                 actions.planLoading ||
-                actions.phaseInProgress ||
+                actions.operationInProgress ||
                 actions.evaluating ||
                 actions.descriptionUnchangedSinceLastEvaluation
               }
@@ -66,7 +66,7 @@ export function PendingTaskActions() {
               onClick={actions.handleBreakdownTask}
               disabled={
                 actions.planLoading ||
-                actions.phaseInProgress ||
+                actions.operationInProgress ||
                 actions.breakingDown
               }
             >
@@ -86,7 +86,7 @@ export function PendingTaskActions() {
             actions.setActionError(null);
           }}
           disabled={
-            actions.phaseInProgress || actions.requestPlanChangesPending
+            actions.operationInProgress || actions.requestPlanChangesPending
           }
         >
           Cancel
@@ -95,7 +95,7 @@ export function PendingTaskActions() {
           variant="primary"
           onClick={actions.handleRequestPlanChanges}
           disabled={
-            actions.phaseInProgress ||
+            actions.operationInProgress ||
             actions.requestPlanChangesPending ||
             actions.approvePlanPending
           }
@@ -113,7 +113,7 @@ export function PendingTaskActions() {
           variant="primary"
           onClick={actions.handleApprovePlan}
           disabled={
-            actions.phaseInProgress ||
+            actions.operationInProgress ||
             actions.approvePlanPending ||
             actions.requestPlanChangesPending
           }
@@ -129,7 +129,7 @@ export function PendingTaskActions() {
             actions.setActionError(null);
           }}
           disabled={
-            actions.phaseInProgress ||
+            actions.operationInProgress ||
             actions.approvePlanPending ||
             actions.requestPlanChangesPending
           }

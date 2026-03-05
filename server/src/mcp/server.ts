@@ -5,7 +5,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { EventSink } from '../api/ws';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
@@ -29,7 +29,7 @@ import type { Tool } from './types';
 export interface MCPDeps {
   repoDir: string;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   taskStore: TaskStore;
   interactionStore: InteractionStore;
   memoryStore: MemoryStore;

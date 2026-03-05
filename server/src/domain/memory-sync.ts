@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import { gitOutput } from '../shared/git';
-import { createPhaseRunner } from '../shared/phase-runner';
+import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type {
@@ -10,7 +10,6 @@ import type {
   MemoryRefreshResult,
   MemorySyncResult,
 } from '../types';
-import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import {
   classifyDiffFromGit,
@@ -18,7 +17,7 @@ import {
   rankFor,
 } from './diff-classify';
 import { readExploreContext, writeExploreContext } from './explore';
-import { extractJSONObject, resolvePhaseExecution } from './llm';
+import { extractJSONObject, resolveExecution } from './llm';
 
 export interface MemorySyncStatus {
   lastSyncedCommit: string;
@@ -29,7 +28,7 @@ export interface MemorySyncStatus {
 
 export interface MemoryRefreshOptions {
   config?: Config;
-  registry?: DriverRegistry;
+  registry?: ToolPluginRegistry;
   interactions?: InteractionStore;
   toolOverride?: string;
   modelOverride?: string;
@@ -50,7 +49,7 @@ interface RefreshLLMResult {
 
 export interface SyncContextDeps {
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   interactions: InteractionStore;
 }
 
@@ -305,7 +304,7 @@ async function tryPatchExploreContext(
   ]).catch(() => '');
   if (!diff.trim() || diff.length > 200_000) return false;
 
-  const runPhase = await createPhaseRunner({
+  const runInteraction = await createInteractionRunner({
     config: deps.config,
     registry: deps.registry,
     repoDir,
@@ -314,11 +313,11 @@ async function tryPatchExploreContext(
   });
 
   try {
-    const { result: updatedContext } = await runPhase(
+    const { result: updatedContext } = await runInteraction(
       {
         taskId: null,
         taskRunId: 'sync-context',
-        phase: PHASES.explore,
+        type: 'explore',
         promptName: 'syncContext',
         promptArgs: [
           currentContext.trim(),
@@ -395,12 +394,12 @@ async function refreshOne(
     return true;
   }
 
-  const execution = resolvePhaseExecution({
+  const execution = resolveExecution({
     config: options.config,
     registry: options.registry,
-    phase: PHASES.explore,
     toolOverride: options.toolOverride ?? '',
     modelOverride: options.modelOverride ?? '',
+    interactionType: 'explore',
   });
   if (!execution) {
     return false;
@@ -471,7 +470,7 @@ async function refreshEntryWithLLM(
     maxDiffBytes,
   );
   const prompt = buildRefreshPrompt(entry, diff, currentFileContent);
-  const runPhase = await createPhaseRunner({
+  const runInteraction = await createInteractionRunner({
     config: options.config,
     registry: options.registry,
     repoDir,
@@ -479,11 +478,11 @@ async function refreshEntryWithLLM(
     runTool,
   });
 
-  const { result: llmResult } = await runPhase(
+  const { result: llmResult } = await runInteraction(
     {
       taskId: entry.sourceTaskId ?? null,
       taskRunId: `memory-refresh-${entry.id.slice(0, 8)}`,
-      phase: PHASES.explore,
+      type: 'explore',
       prompt,
       toolOverride: options.toolOverride ?? '',
       modelOverride: options.modelOverride ?? '',

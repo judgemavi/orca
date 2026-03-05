@@ -1,4 +1,4 @@
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import {
   formatRefLockContentionError,
   gitRunWithRefLockRetry,
@@ -126,7 +126,7 @@ export async function mergeApprovedTasksWithGit(
 
 export interface ConflictResolutionDeps extends IntegratorDeps {
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   interactionStore: InteractionStore;
   logsDir: string;
 }

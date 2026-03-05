@@ -1,12 +1,12 @@
-import { resolveModelForPhase, resolveToolForPhase } from '../config/config';
+import { resolveModel, resolveTool } from '../config/config';
 import {
   evaluateQualityGates,
   type QualityResult,
   takeValidationSnapshot,
 } from '../domain/quality';
-import type { DriverRegistry } from '../driver/registry';
-import { toolDefinition } from '../driver/registry';
-import type { Driver, DriverEvent, HeadlessOpts } from '../driver/types';
+import type { ToolPluginRegistry } from '../plugin/registry';
+import { toolDefinition } from '../plugin/registry';
+import type { ToolPlugin, ToolPluginEvent, HeadlessOpts } from '../plugin/types';
 import { loadPrompt } from '../prompts/loader';
 import { gitRun } from '../shared/git';
 import type { Config, TaskStatus } from '../types';
@@ -15,13 +15,13 @@ import { evaluateTaskOutcome } from './results';
 
 export interface ResolvedTaskExecution {
   toolName: string;
-  driver: Driver;
+  plugin: ToolPlugin;
   model: string;
 }
 
 export interface TaskRunInput {
   taskID: string;
-  phase: string;
+  interactionType: string;
   title: string;
   description: string;
   plan?: string | null;
@@ -32,7 +32,7 @@ export interface TaskRunInput {
   repoDir?: string;
   baseBranch: string;
   toolName: string;
-  driver: Driver;
+  plugin: ToolPlugin;
   model: string;
   interactionLogPath?: string;
   resumeSessionID?: string;
@@ -50,7 +50,7 @@ export interface TaskRunInput {
 
 export interface TaskRunResult {
   taskID: string;
-  phase: string;
+  interactionType: string;
   toolName: string;
   model: string;
   status: TaskStatus;
@@ -61,7 +61,7 @@ export interface TaskRunResult {
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number;
-  events: DriverEvent[];
+  events: ToolPluginEvent[];
   logPath: string;
   durationMS: number;
   timedOut: boolean;
@@ -74,31 +74,25 @@ export interface TaskRunResult {
 
 export function resolveTaskExecution(
   config: Config,
-  registry: DriverRegistry,
-  phase: string,
+  registry: ToolPluginRegistry,
   toolOverride: string,
   modelOverride: string,
+  interactionType?: string,
 ): ResolvedTaskExecution {
-  const toolName = resolveToolForPhase(config, phase, toolOverride);
-  const driver = toolDefinition(registry, toolName);
-  if (!driver) {
+  const toolName = resolveTool(config, toolOverride, interactionType);
+  const plugin = toolDefinition(registry, toolName);
+  if (!plugin) {
     throw new Error(`tool not available: ${toolName}`);
   }
 
-  const model = resolveModelForPhase(
-    config,
-    registry,
-    phase,
-    toolName,
-    modelOverride,
-  );
+  const model = resolveModel(config, registry, toolName, modelOverride, interactionType);
   if (!model.trim()) {
     throw new Error(
       `model could not be resolved for tool ${JSON.stringify(toolName)}`,
     );
   }
 
-  return { toolName, driver, model };
+  return { toolName, plugin, model };
 }
 
 export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
@@ -117,7 +111,7 @@ export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
   const result = await runTool({
     taskID: input.taskID,
     driverName: input.toolName,
-    driver: input.driver,
+    plugin: input.plugin,
     prompt,
     model: input.model,
     dir: input.worktreePath,
@@ -189,7 +183,7 @@ export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
 
   return {
     taskID: input.taskID,
-    phase: input.phase,
+    interactionType: input.interactionType,
     toolName: input.toolName,
     model: input.model,
     status: outcome.taskStatus,

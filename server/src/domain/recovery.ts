@@ -1,7 +1,7 @@
 import type { JobQueue } from '../queue/queue';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
-import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../types';
+import { INTERACTION_STATUSES, TASK_STATUSES } from '../types';
 
 export interface RecoverySummary {
   interactionsFailed: number;
@@ -28,7 +28,7 @@ export async function failInFlightForShutdown(
     });
     interactionsFailed += 1;
 
-    if (item.taskId?.trim() && item.phase === PHASES.run) {
+    if (item.taskId?.trim() && item.type === 'run') {
       const task = await taskStore.get(item.taskId);
       if (task && task.status === TASK_STATUSES.running) {
         const next = task.sessionId?.trim()
@@ -43,7 +43,7 @@ export async function failInFlightForShutdown(
     log('shutdown.recovery.interaction.failed', {
       interactionId: item.id,
       taskId: item.taskId ?? '',
-      phase: item.phase,
+      type: item.type,
     });
   }
 
@@ -94,7 +94,7 @@ export async function runStartupRecovery(
     log('startup.recovery.interaction.failed', {
       interactionId: item.id,
       taskId: item.taskId ?? '',
-      phase: item.phase,
+      type: item.type,
     });
   }
 

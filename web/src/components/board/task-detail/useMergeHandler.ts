@@ -1,4 +1,4 @@
-import { PHASES, TASK_STATUSES } from '@orca/types';
+import { TASK_STATUSES } from '@orca/types';
 import { useMutation } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../../api';
@@ -140,7 +140,6 @@ export function useMergeHandler({
     conflictWorktreePath,
     showManualResolve,
     setShowManualResolve,
-    merging:
-      isOperationRunning(PHASES.merge, taskId) || mergeTaskMutation.isPending,
+    merging: isOperationRunning('merge', taskId) || mergeTaskMutation.isPending,
   };
 }

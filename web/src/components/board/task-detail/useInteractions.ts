@@ -1,4 +1,3 @@
-import { isRunLike } from '@orca/types';
 import { type UseQueryOptions, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../../../api';
@@ -11,16 +10,16 @@ type InteractionsSelect<TSelected> = Pick<
   'select'
 >;
 
-export function selectByPhase(phase: string) {
+export function selectByType(type: string) {
   return (interactions: Interaction[]) =>
     [...interactions]
-      .filter((i) => i.phase === phase)
+      .filter((i) => i.type === type)
       .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
 }
 
 export function selectByRunLike(interactions: Interaction[]) {
   return [...interactions]
-    .filter((i) => isRunLike(i.phase))
+    .filter((i) => i.type === 'run' || i.type === 'revise')
     .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
 }
 

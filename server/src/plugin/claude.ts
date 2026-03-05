@@ -1,11 +1,11 @@
 import type {
-  Driver,
-  DriverEvent,
+  ToolPlugin,
+  ToolPluginEvent,
   HeadlessOpts,
   InteractiveOpts,
 } from './types';
 
-export class ClaudeDriver implements Driver {
+export class ClaudePlugin implements ToolPlugin {
   private readonly partialToolInput = new Map<string, string>();
   private readonly partialToolName = new Map<string, string>();
 
@@ -89,17 +89,14 @@ export class ClaudeDriver implements Driver {
   }
 
   async interactiveArgs(opts: InteractiveOpts): Promise<string[]> {
-    const args = [
-      '--permission-mode',
-      'acceptEdits',
-      '--model',
-      opts.model,
-    ];
+    const args = ['--permission-mode', 'acceptEdits', '--model', opts.model];
 
     if (Object.keys(opts.mcpServers).length > 0) {
       const configPath = `${opts.repoDir.replace(/\/+$/, '')}/.orca/mcp.json`;
       await Bun.$`mkdir -p ${configPath.slice(0, configPath.lastIndexOf('/'))}`;
-      const existing = await Bun.file(configPath).text().catch(() => '');
+      const existing = await Bun.file(configPath)
+        .text()
+        .catch(() => '');
       const root = existing.trim() ? JSON.parse(existing) : {};
       if (!root.mcpServers || typeof root.mcpServers !== 'object') {
         root.mcpServers = {};
@@ -124,7 +121,7 @@ export class ClaudeDriver implements Driver {
     return args;
   }
 
-  parseEvent(line: Buffer): DriverEvent | null {
+  parseEvent(line: Buffer): ToolPluginEvent | null {
     const raw = line.toString('utf8').replace(/\r/g, '').trim();
     if (!raw) return null;
 
@@ -252,7 +249,7 @@ export class ClaudeDriver implements Driver {
     return null;
   }
 
-  parseSessionID(events: DriverEvent[]): string | null {
+  parseSessionID(events: ToolPluginEvent[]): string | null {
     for (let i = events.length - 1; i >= 0; i -= 1) {
       const session = events[i]?.sessionID?.trim();
       if (session) return session;

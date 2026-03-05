@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
-import { type DriverRegistry, toolDefinition } from '../../driver/registry';
-import type { Driver } from '../../driver/types';
+import { type ToolPluginRegistry, toolDefinition } from '../../plugin/registry';
+import type { ToolPlugin } from '../../plugin/types';
 import {
   loadOrchestratorPrompt,
   ORCHESTRATOR_ALLOWED_TOOLS,
@@ -14,7 +14,7 @@ export function registerOrcCommand(
   deps: {
     repoDir: string;
     configStore: ConfigStore;
-    registry: DriverRegistry;
+    registry: ToolPluginRegistry;
   },
 ) {
   program
@@ -31,7 +31,7 @@ async function runOrcInteractive(
   deps: {
     repoDir: string;
     configStore: ConfigStore;
-    registry: DriverRegistry;
+    registry: ToolPluginRegistry;
   },
   opts: { tool?: string; model?: string },
 ): Promise<void> {
@@ -42,7 +42,7 @@ async function runOrcInteractive(
     throw new Error(`supervisor tool not available: ${toolName}`);
   }
   if (!isSupervisorDriver(tool)) {
-    throw new Error(`driver ${toolName} does not support interactive mode`);
+    throw new Error(`plugin ${toolName} does not support interactive mode`);
   }
 
   const model = await resolveSupervisorModel({
@@ -118,7 +118,7 @@ async function resolveSupervisorModel(input: {
   throw new Error(`no model configured for supervisor tool ${input.toolName}`);
 }
 
-interface InteractiveDriver extends Driver {
+interface InteractivePlugin extends ToolPlugin {
   interactiveArgs(
     mcpConfig: string,
     allowedTools: string[],
@@ -127,7 +127,7 @@ interface InteractiveDriver extends Driver {
   ): string[];
 }
 
-function isSupervisorDriver(value: unknown): value is InteractiveDriver {
+function isSupervisorDriver(value: unknown): value is InteractivePlugin {
   if (!value || typeof value !== 'object') return false;
-  return typeof (value as InteractiveDriver).interactiveArgs === 'function';
+  return typeof (value as InteractivePlugin).interactiveArgs === 'function';
 }

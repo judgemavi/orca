@@ -1,14 +1,13 @@
 import { createHash } from 'node:crypto';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import { loadPrompt } from '../prompts/loader';
-import { createPhaseRunner } from '../shared/phase-runner';
+import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import type { Config, MemoryCategory, MemoryEntry, Task } from '../types';
-import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
-import { extractJSONArray, formatTemplate, resolvePhaseExecution } from './llm';
+import { extractJSONArray, formatTemplate, resolveExecution } from './llm';
 
 export interface RetroSummary {
   highlights: string[];
@@ -38,7 +37,7 @@ export interface RetroDeps {
   interactionStore: InteractionStore;
   memoryStore: MemoryStore;
   config?: Config;
-  registry?: DriverRegistry;
+  registry?: ToolPluginRegistry;
   toolOverride?: string;
   modelOverride?: string;
 }
@@ -50,12 +49,12 @@ export async function runRetro(
   const task = await deps.taskStore.get(taskID);
   if (!task) throw new Error(`task not found: ${taskID}`);
 
-  const execution = resolvePhaseExecution({
+  const execution = resolveExecution({
     config: deps.config,
     registry: deps.registry,
-    phase: PHASES.retro,
     toolOverride: deps.toolOverride ?? '',
     modelOverride: deps.modelOverride ?? '',
+    interactionType: 'retro',
   });
 
   if (!execution) {
@@ -82,7 +81,7 @@ export async function runRetro(
   }
 
   const prompt = await buildRetroPrompt(deps, task, retroContext);
-  const runPhase = await createPhaseRunner({
+  const runInteraction = await createInteractionRunner({
     config: deps.config,
     registry: deps.registry,
     repoDir: deps.repoDir,
@@ -91,11 +90,11 @@ export async function runRetro(
   });
 
   try {
-    const { result, interactionId } = await runPhase(
+    const { result, interactionId } = await runInteraction(
       {
         taskId: taskID,
         taskRunId: `retro-${taskID.slice(0, 8)}`,
-        phase: PHASES.retro,
+        type: 'retro',
         prompt,
         toolOverride: deps.toolOverride ?? '',
         modelOverride: deps.modelOverride ?? '',
@@ -198,12 +197,12 @@ async function collectRetroContext(
   const interactions = await deps.interactionStore.list(task.id);
 
   const planDiffs = interactions
-    .filter((i) => i.phase === PHASES.plan && i.diff)
+    .filter((i) => i.type === 'plan' && i.diff)
     .map((i) => i.diff!)
     .join('\n---\n');
 
   const runDiffs = interactions
-    .filter((i) => i.phase === PHASES.run && i.diff)
+    .filter((i) => i.type === 'run' && i.diff)
     .map((i) => i.diff!)
     .join('\n---\n');
 
@@ -216,14 +215,14 @@ async function collectRetroContext(
   const planReviewFeedback = reviews
     .filter(
       (r) =>
-        (r as any).phase === PHASES.plan ||
+        (r as any).type === 'plan' ||
         r.feedback?.toLowerCase().includes('plan'),
     )
     .map((r) => r.feedback?.trim())
     .filter(Boolean)
     .join('\n---\n');
 
-  const planInteractions = interactions.filter((i) => i.phase === PHASES.plan);
+  const planInteractions = interactions.filter((i) => i.type === 'plan');
   const usedMemoryIDs: string[] = [];
   const usedProvenanceHashes: string[] = [];
   const usedMemoryContent: string[] = [];

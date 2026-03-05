@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DriverRegistry } from '../../driver/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { Executor } from '../../executor/executor';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
@@ -50,7 +50,7 @@ const tasksReviewsSchema = z.object({
 export function reviewTools(deps: {
   repoDir: string;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   taskStore: TaskStore;
   executor: Executor;
   interactions: InteractionStore;

@@ -7,16 +7,16 @@ import {
 } from '../../domain/explore';
 import {
   availableTools,
-  type DriverRegistry,
+  type ToolPluginRegistry,
   toolModels,
-} from '../../driver/registry';
+} from '../../plugin/registry';
 import { printJSON } from '../format';
 import { confirm, pickFromList } from '../helpers';
 
 export function registerExploreCommands(
   program: Command,
   repoDir: string,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ) {
   const cmd = program
     .command('explore')

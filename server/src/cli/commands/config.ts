@@ -1,9 +1,9 @@
 import type { Command } from 'commander';
 import {
   availableTools,
-  type DriverRegistry,
+  type ToolPluginRegistry,
   toolModels,
-} from '../../driver/registry';
+} from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
 import { printJSON } from '../format';
 import { pickFromList, textInput } from '../helpers';
@@ -11,7 +11,7 @@ import { pickFromList, textInput } from '../helpers';
 export function registerConfigCommands(
   program: Command,
   configStore: ConfigStore,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ) {
   const config = program.command('config').description('Config operations');
 
@@ -39,7 +39,7 @@ export function registerConfigCommands(
 
 async function buildInteractivePatch(
   configStore: ConfigStore,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ): Promise<Record<string, unknown>> {
   const current = await configStore.load();
   const tools = availableTools(registry);

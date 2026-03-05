@@ -1,4 +1,4 @@
-You are the retro phase generator for Orca.
+You are the retro generator for Orca.
 Extract durable, reusable engineering memory from a completed task.
 
 ## Task

@@ -1,4 +1,4 @@
-import type { Driver, DriverEvent, HeadlessOpts } from '../driver/types';
+import type { ToolPlugin, ToolPluginEvent, HeadlessOpts } from '../plugin/types';
 import { toErrorMessage } from '../shared/errors';
 import { gitOutput } from '../shared/git';
 
@@ -11,7 +11,7 @@ export interface WorkerOutputLine {
 export interface WorkerRunOptions {
   taskID: string;
   driverName: string;
-  driver: Driver;
+  plugin: ToolPlugin;
   prompt: string;
   model: string;
   dir: string;
@@ -24,14 +24,14 @@ export interface WorkerRunOptions {
   logPath?: string;
   signal?: AbortSignal;
   onLine?: (line: WorkerOutputLine) => void | Promise<void>;
-  onEvent?: (event: DriverEvent) => void | Promise<void>;
+  onEvent?: (event: ToolPluginEvent) => void | Promise<void>;
 }
 
 export interface WorkerRunResult {
   exitCode: number;
   signalCode: string | number | null;
   sessionID: string;
-  events: DriverEvent[];
+  events: ToolPluginEvent[];
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number;
@@ -52,14 +52,14 @@ export async function runTool(
     `${options.logsDir}/${options.taskID}.${Date.now()}.log`;
   const resumeSession = (options.resumeSessionID ?? '').trim();
   const args = resumeSession
-    ? options.driver.resumeArgs(
+    ? options.plugin.resumeArgs(
         resumeSession,
         options.feedback ?? '',
         options.model,
         options.dir,
         options.headlessOpts,
       )
-    : options.driver.headlessArgs(
+    : options.plugin.headlessArgs(
         options.prompt,
         options.model,
         options.dir,
@@ -70,7 +70,7 @@ export async function runTool(
   await Bun.$`mkdir -p ${dirName(logPath)}`;
 
   const child = Bun.spawn({
-    cmd: [options.driver.binary(), ...args],
+    cmd: [options.plugin.binary(), ...args],
     cwd: options.cwd,
     stdin: 'ignore',
     stdout: 'pipe',
@@ -96,11 +96,11 @@ export async function runTool(
   let inputTokens = 0;
   let outputTokens = 0;
   let estimatedCost = 0;
-  const events: DriverEvent[] = [];
+  const events: ToolPluginEvent[] = [];
   const emitLine = (stream: 'stdout' | 'stderr', line: string) => {
     const value = line.replace(/\r$/, '');
     if (stream === 'stdout') {
-      const event = options.driver.parseEvent(Buffer.from(value));
+      const event = options.plugin.parseEvent(Buffer.from(value));
       if (event) {
         events.push(event);
         if (event.type === 'session' && event.sessionID?.trim()) {
@@ -119,7 +119,7 @@ export async function runTool(
         }
       }
     } else if (value.trim()) {
-      const event: DriverEvent = { type: 'error', text: value, raw: value };
+      const event: ToolPluginEvent = { type: 'error', text: value, raw: value };
       events.push(event);
       if (options.onEvent) {
         void Promise.resolve(options.onEvent(event)).catch(() => {});
@@ -201,7 +201,7 @@ export async function runTool(
     exitCode,
   });
   if (!sessionID) {
-    sessionID = options.driver.parseSessionID(events) ?? '';
+    sessionID = options.plugin.parseSessionID(events) ?? '';
   }
 
   const commitMessage = buildCommitMessage(options.taskID, options.prompt);

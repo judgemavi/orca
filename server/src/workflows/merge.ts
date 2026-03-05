@@ -8,7 +8,7 @@ import {
   type PostMergeEventSink,
   triggerPostMergeHooks,
 } from '../domain/post-merge';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
@@ -21,7 +21,7 @@ export interface MergeWorkflowDeps {
   configStore: ConfigStore;
   interactions: InteractionStore;
   memoryStore: MemoryStore;
-  registry?: DriverRegistry;
+  registry?: ToolPluginRegistry;
   sink?: PostMergeEventSink;
 }
 

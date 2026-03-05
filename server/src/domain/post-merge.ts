@@ -1,4 +1,4 @@
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import { toErrorMessage } from '../shared/errors';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
@@ -17,7 +17,7 @@ export interface PostMergeDeps {
   interactions: InteractionStore;
   memoryStore: MemoryStore;
   configStore: ConfigStore;
-  registry?: DriverRegistry;
+  registry?: ToolPluginRegistry;
   sink?: PostMergeEventSink;
 }
 

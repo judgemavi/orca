@@ -17,7 +17,7 @@ const optionalTrimmedString = () =>
 
 const interactionsListSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
-  phase: optionalTrimmedString(),
+  type: optionalTrimmedString(),
   status: optionalTrimmedString(),
 });
 
@@ -27,7 +27,7 @@ const interactionGetSchema = z.object({
 
 const taskInteractionsSchema = z.object({
   id: requiredTrimmedString('id'),
-  phase: optionalTrimmedString(),
+  type: optionalTrimmedString(),
 });
 
 export function interactionTools(interactions: InteractionStore): Tool[] {
@@ -38,11 +38,11 @@ export function interactionTools(interactions: InteractionStore): Tool[] {
       schema: interactionsListSchema,
       handler: async (input) => {
         const taskID = input.taskId;
-        const phase = input.phase ?? '';
+        const type = input.type ?? '';
         const status = input.status ?? '';
 
-        let items = phase
-          ? await interactions.listByPhase(taskID, phase)
+        let items = type
+          ? await interactions.listByType(taskID, type)
           : await interactions.list(taskID);
         if (status) {
           items = items.filter((item) => item.status === status);
@@ -73,10 +73,10 @@ export function interactionTools(interactions: InteractionStore): Tool[] {
       schema: taskInteractionsSchema,
       handler: async (input) => {
         const taskID = input.id;
-        const phase = input.phase ?? '';
+        const type = input.type ?? '';
         return {
-          interactions: phase
-            ? await interactions.listByPhase(taskID, phase)
+          interactions: type
+            ? await interactions.listByType(taskID, type)
             : await interactions.list(taskID),
         };
       },

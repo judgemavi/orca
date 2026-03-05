@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import { loadPrompt } from '../prompts/loader';
 import { gitOutput, gitRun } from '../shared/git';
-import { createPhaseRunner } from '../shared/phase-runner';
+import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { Config, MemoryCategory } from '../types';
-import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONArray } from './llm';
 
@@ -31,7 +30,7 @@ export interface RunExploreInput {
   interactions: InteractionStore;
   memory: MemoryStore;
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   query?: string;
   toolOverride?: string;
   modelOverride?: string;
@@ -80,7 +79,7 @@ export async function runExplore(
   input: RunExploreInput,
 ): Promise<RunExploreResult> {
   const trackedFiles = await listTrackedFiles(input.repoDir);
-  const runPhase = await createPhaseRunner({
+  const runInteraction = await createInteractionRunner({
     config: input.config,
     registry: input.registry,
     repoDir: input.repoDir,
@@ -95,11 +94,11 @@ export async function runExplore(
     input.memory,
   );
 
-  const { result, interactionId, tool, model } = await runPhase(
+  const { result, interactionId, tool, model } = await runInteraction(
     {
       taskId: null,
       taskRunId: 'explore',
-      phase: PHASES.explore,
+      type: 'explore',
       prompt,
       toolOverride: input.toolOverride ?? '',
       modelOverride: input.modelOverride ?? '',

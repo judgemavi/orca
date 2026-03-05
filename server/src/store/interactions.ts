@@ -16,7 +16,7 @@ import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import { taskInteractions } from '../db/schema';
 import type { InteractionStatus, InteractionStub } from '../types';
-import { INTERACTION_STATUSES, PHASES } from '../types';
+import { INTERACTION_STATUSES } from '../types';
 import type { StoredInteraction, ToolSummary } from './types';
 
 type InteractionRow = typeof taskInteractions.$inferSelect;
@@ -46,17 +46,17 @@ export class InteractionStore {
 
   async begin(input: {
     taskId?: string | null;
-    phase: string;
+    type: string;
     tool: string;
   }): Promise<BeginResult> {
-    const phase = input.phase.trim();
+    const type = input.type.trim();
     const tool = input.tool.trim();
-    if (!phase) throw new Error('phase required');
+    if (!type) throw new Error('type required');
     if (!tool) throw new Error('tool required');
 
     const id = crypto.randomUUID();
-    const attempt = await this.nextAttempt(input.taskId ?? null, phase);
-    const logPath = this.logPath(input.taskId ?? null, phase, attempt, id);
+    const attempt = await this.nextAttempt(input.taskId ?? null, type);
+    const logPath = this.logPath(input.taskId ?? null, type, attempt, id);
 
     await Bun.$`mkdir -p ${this.dirName(logPath)}`;
     await Bun.write(logPath, '');
@@ -64,7 +64,7 @@ export class InteractionStore {
     await this.db.insert(taskInteractions).values({
       id,
       taskId: input.taskId ?? null,
-      phase,
+      type,
       attempt,
       tool,
       logPath,
@@ -193,9 +193,9 @@ export class InteractionStore {
     return rows.map((row) => this.mapStub(row));
   }
 
-  async listByPhase(
+  async listByType(
     taskID: string,
-    phase: string,
+    type: string,
   ): Promise<StoredInteraction[]> {
     const rows = await this.db
       .select()
@@ -203,7 +203,7 @@ export class InteractionStore {
       .where(
         and(
           eq(taskInteractions.taskId, taskID),
-          eq(taskInteractions.phase, phase),
+          eq(taskInteractions.type, type),
         ),
       )
       .orderBy(desc(taskInteractions.startedAt));
@@ -219,25 +219,25 @@ export class InteractionStore {
     return rows.map((row) => this.mapInteraction(row));
   }
 
-  async listProjectByPhase(phase: string): Promise<StoredInteraction[]> {
+  async listProjectByType(type: string): Promise<StoredInteraction[]> {
     const rows = await this.db
       .select()
       .from(taskInteractions)
-      .where(eq(taskInteractions.phase, phase))
+      .where(eq(taskInteractions.type, type))
       .orderBy(desc(taskInteractions.startedAt));
     return rows.map((row) => this.mapInteraction(row));
   }
 
-  async isRunning(taskID: string | null, phase: string): Promise<boolean> {
-    const normalizedPhase = phase.trim();
-    if (!normalizedPhase) throw new Error('phase required');
+  async isRunning(taskID: string | null, type: string): Promise<boolean> {
+    const normalizedType = type.trim();
+    if (!normalizedType) throw new Error('type required');
 
     const rows = await this.db
       .select({ one: sql<number>`1`.as('one') })
       .from(taskInteractions)
       .where(
         and(
-          eq(taskInteractions.phase, normalizedPhase),
+          eq(taskInteractions.type, normalizedType),
           eq(taskInteractions.status, INTERACTION_STATUSES.running),
           taskID?.trim() ? eq(taskInteractions.taskId, taskID) : undefined,
         ),
@@ -449,7 +449,7 @@ export class InteractionStore {
     await Bun.$`rm -rf ${dir}`;
   }
 
-  async supersedeReviewPhase(taskID: string): Promise<void> {
+  async supersedeReviewInteractions(taskID: string): Promise<void> {
     await this.db
       .update(taskInteractions)
       .set({
@@ -466,7 +466,7 @@ export class InteractionStore {
       .where(
         and(
           eq(taskInteractions.taskId, taskID),
-          eq(taskInteractions.phase, PHASES.review),
+          eq(taskInteractions.type, 'review'),
           ne(taskInteractions.status, INTERACTION_STATUSES.failed),
         ),
       );
@@ -474,7 +474,7 @@ export class InteractionStore {
 
   private async nextAttempt(
     taskID: string | null,
-    phase: string,
+    type: string,
   ): Promise<number> {
     const rows = await this.db
       .select({
@@ -486,7 +486,7 @@ export class InteractionStore {
       .from(taskInteractions)
       .where(
         and(
-          eq(taskInteractions.phase, phase),
+          eq(taskInteractions.type, type),
           taskID === null
             ? isNull(taskInteractions.taskId)
             : eq(taskInteractions.taskId, taskID),
@@ -497,12 +497,12 @@ export class InteractionStore {
 
   private logPath(
     taskID: string | null,
-    phase: string,
+    type: string,
     attempt: number,
     interactionID: string,
   ): string {
     const dir = taskID?.trim() ? taskID : '_project';
-    return `${this.baseDir}/${dir}/${phase}-${attempt}-${interactionID}.log`;
+    return `${this.baseDir}/${dir}/${type}-${attempt}-${interactionID}.log`;
   }
 
   private dirName(path: string): string {
@@ -531,7 +531,7 @@ export class InteractionStore {
     return {
       id: row.id,
       taskId: row.taskId,
-      phase: row.phase,
+      type: row.type,
       attempt: row.attempt,
       tool: row.tool,
       status: row.status as InteractionStatus,
@@ -547,7 +547,7 @@ export class InteractionStore {
     return {
       id: row.id,
       taskId: row.taskId,
-      phase: row.phase,
+      type: row.type,
       attempt: row.attempt,
       runId: row.runId,
       tool: row.tool,

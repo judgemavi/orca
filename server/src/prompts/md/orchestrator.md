@@ -24,7 +24,7 @@ For every mutation:
 
 ## Required Task Lifecycle
 
-Every task MUST follow this phase sequence. Never skip phases.
+Every task MUST follow this lifecycle. Never skip steps.
 
 1. **Create** → `tasks_create` — define title, description with enough detail for a worker. Evaluation runs automatically after create — do NOT call `tasks_plan_evaluate` manually.
 2. After create, check evaluation result via `tasks_get`. If `needs_breakdown` is true → `breakdown` to split into subtasks. Each subtask follows this same lifecycle.

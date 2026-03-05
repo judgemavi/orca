@@ -1,8 +1,7 @@
-import type { DriverRegistry } from '../driver/registry';
-import { createPhaseRunner } from '../shared/phase-runner';
+import type { ToolPluginRegistry } from '../plugin/registry';
+import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { Config, ProposedTask } from '../types';
-import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 
 export interface RunPlanInput {
@@ -13,7 +12,7 @@ export interface RunPlanInput {
   feedback?: string;
   memoryContext?: string;
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   interactions: InteractionStore;
   toolOverride?: string;
   modelOverride?: string;
@@ -27,7 +26,7 @@ export interface RunPlanResult {
 }
 
 export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
-  const runPhase = await createPhaseRunner({
+  const runInteraction = await createInteractionRunner({
     config: input.config,
     registry: input.registry,
     repoDir: input.repoDir,
@@ -46,10 +45,10 @@ export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
     interactionId,
     tool,
     model,
-  } = await runPhase(
+  } = await runInteraction(
     {
       taskId: input.taskID,
-      phase: PHASES.plan,
+      type: 'plan',
       promptName: 'plan',
       promptArgs: [memoryContext, title, description],
       extraContext: feedback ? `\n\n## Reviewer Feedback\n${feedback}` : '',
@@ -60,7 +59,7 @@ export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
     },
     (output) => {
       if (!output.trim()) {
-        throw new Error('plan phase returned empty output');
+        throw new Error('plan returned empty output');
       }
       return output;
     },

@@ -8,7 +8,7 @@ import {
   ensureTaskWorktree as ensureTaskWorktreeDomain,
   findTaskWorktree,
 } from '../domain/worktree';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import {
   ORCHESTRATOR_ALLOWED_TOOLS,
   writeMCPConfig,
@@ -31,7 +31,7 @@ import {
 
 export interface ExecutorDeps {
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   taskStore: TaskStore;
   interactionStore?: InteractionStore;
   memoryStore?: MemoryStore;
@@ -55,7 +55,7 @@ interface InternalRunOptions extends RunOptions {
 }
 
 interface ResumeContext {
-  phase: string;
+  interactionType: string;
   resumeSessionID: string;
   feedback: string;
   reviewID: string;
@@ -219,13 +219,13 @@ export class Executor {
     const execution = resolveTaskExecution(
       this.deps.config,
       this.deps.registry,
-      resume.phase,
       options.toolOverride ?? '',
       options.modelOverride ?? '',
+      resume.interactionType,
     );
 
-    if (resume.phase === 'revise') {
-      await this.deps.interactionStore?.supersedeReviewPhase(task.id);
+    if (resume.interactionType === 'revise') {
+      await this.deps.interactionStore?.supersedeReviewInteractions(task.id);
     }
 
     let interactionID = '';
@@ -233,7 +233,7 @@ export class Executor {
     if (this.deps.interactionStore) {
       const interaction = await this.deps.interactionStore.begin({
         taskId: task.id,
-        phase: resume.phase,
+        type: resume.interactionType,
         tool: execution.toolName,
       });
       interactionID = interaction.id;
@@ -272,12 +272,12 @@ export class Executor {
       worktreePath = await this.ensureTaskWorktree(task);
       const mcpConfigPath = await writeMCPConfig(
         this.deps.repoDir,
-        execution.driver,
+        execution.plugin,
       ).catch(() => '');
 
       const result = await runTask({
         taskID: task.id,
-        phase: resume.phase,
+        interactionType: resume.interactionType,
         title: task.title,
         description: task.description ?? '',
         plan: task.plan ?? '',
@@ -288,7 +288,7 @@ export class Executor {
         repoDir: this.deps.repoDir,
         baseBranch: this.deps.config.project.integrationBranch,
         toolName: execution.toolName,
-        driver: execution.driver,
+        plugin: execution.plugin,
         model: execution.model,
         interactionLogPath,
         resumeSessionID: resume.resumeSessionID,
@@ -335,7 +335,7 @@ export class Executor {
       const status: TaskStatus = stopRequested ? 'stopped' : 'failed';
       const failedResult = this.resultCoordinator.buildFailedResult({
         taskID: task.id,
-        phase: resume.phase,
+        interactionType: resume.interactionType,
         toolName: execution.toolName,
         model: execution.model,
         status,
@@ -373,10 +373,10 @@ export class Executor {
 
     const feedback =
       (options.feedback ?? '').trim() || pendingReview?.feedback?.trim() || '';
-    const phase = resumeSessionID || feedback ? 'revise' : 'run';
+    const interactionType = resumeSessionID || feedback ? 'revise' : 'run';
 
     return {
-      phase,
+      interactionType,
       resumeSessionID,
       feedback,
       reviewID: pendingReview?.id ?? '',
@@ -520,10 +520,10 @@ export class Executor {
   }
 }
 
-function enqueuedResult(taskID: string, phase: string): TaskRunResult {
+function enqueuedResult(taskID: string, interactionType: string): TaskRunResult {
   return {
     taskID,
-    phase,
+    interactionType,
     toolName: '',
     model: '',
     status: 'running',

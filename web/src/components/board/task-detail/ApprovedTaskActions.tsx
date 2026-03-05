@@ -21,7 +21,7 @@ export function ApprovedTaskActions() {
         <Button
           variant="primary"
           onClick={actions.handleMerge}
-          disabled={actions.phaseInProgress}
+          disabled={actions.operationInProgress}
         >
           {actions.mergeInProgress ? 'Merging…' : 'Merge'}
         </Button>

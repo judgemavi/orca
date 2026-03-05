@@ -29,16 +29,6 @@ export function parseJSONText(text: string): unknown | null {
   }
 }
 
-export function normalizeToolName(name: string): string {
-  const trimmed = name.trim().toLowerCase();
-  if (!trimmed) return 'tool';
-
-  const mcpMatch = trimmed.match(/^mcp__[^_]+__(.+)$/);
-  if (mcpMatch?.[1]) return mcpMatch[1];
-
-  return trimmed;
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;

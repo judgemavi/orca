@@ -1,6 +1,6 @@
 import type { EventSink } from '../api/ws';
 import { runExplore } from '../domain/explore';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
@@ -19,7 +19,7 @@ import type { JobProcessor } from './processor';
 interface HandlerDeps {
   repoDir: string;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   taskStore: TaskStore;
   interactionStore: InteractionStore;
   memoryStore: MemoryStore;

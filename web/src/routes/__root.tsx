@@ -15,7 +15,6 @@ import { OrchestratorSidebar } from '../components/OrchestratorSidebar';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { queryClient } from '../lib/queryClient';
 import { handleWSEvent } from '../lib/wsQueryBridge';
-import { isKnownWSEvent } from '../types';
 
 const RootLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
@@ -48,14 +47,11 @@ const RootLayout = () => {
   useWebSocket(
     useCallback((event: Parameters<typeof handleWSEvent>[1]) => {
       handleWSEvent(queryClient, event);
-      if (!isKnownWSEvent(event)) return;
     }, []),
   );
 
   const cycleTheme = () => {
-    setThemePreference((current) =>
-      current === 'light' ? 'dark' : 'light',
-    );
+    setThemePreference((current) => (current === 'light' ? 'dark' : 'light'));
   };
 
   return (

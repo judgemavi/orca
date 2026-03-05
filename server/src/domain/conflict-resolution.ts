@@ -1,5 +1,5 @@
-import { resolveModelForPhase, resolveToolForPhase } from '../config/config';
-import { toolDefinition } from '../driver/registry';
+import { resolveModel, resolveTool } from '../config/config';
+import { toolDefinition } from '../plugin/registry';
 import { loadPrompt } from '../prompts/loader';
 import {
   formatRefLockContentionError,
@@ -7,7 +7,7 @@ import {
   gitRunWithRefLockRetry,
   isRefLockErrorResult,
 } from '../shared/git';
-import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../types';
+import { INTERACTION_STATUSES, TASK_STATUSES } from '../types';
 import { runTool } from '../worker/worker';
 import type {
   ConflictResolutionDeps,
@@ -86,22 +86,16 @@ export async function mergeWithConflictResolutionUnlocked(
     return failed('no worktree found for conflict resolution');
   }
 
-  const toolName = resolveToolForPhase(deps.config, PHASES.merge, '');
-  const driver = toolDefinition(deps.registry, toolName);
-  if (!driver) {
+  const toolName = resolveTool(deps.config, '', 'merge');
+  const plugin = toolDefinition(deps.registry, toolName);
+  if (!plugin) {
     return failed(`merge tool not available: ${toolName}`);
   }
-  const model = resolveModelForPhase(
-    deps.config,
-    deps.registry,
-    PHASES.merge,
-    toolName,
-    '',
-  );
+  const model = resolveModel(deps.config, deps.registry, toolName, '', 'merge');
 
   const interaction = await deps.interactionStore.begin({
     taskId: taskID,
-    phase: PHASES.merge,
+    type: 'merge',
     tool: toolName,
   });
 
@@ -215,7 +209,7 @@ export async function mergeWithConflictResolutionUnlocked(
       await runTool({
         taskID,
         driverName: toolName,
-        driver,
+        plugin,
         prompt: conflictPrompt,
         model,
         dir: worktreePath,

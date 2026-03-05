@@ -17,13 +17,13 @@ export interface InteractiveOpts {
   repoDir: string;
 }
 
-export interface DriverCost {
+export interface ToolPluginCost {
   inputTokens: number;
   outputTokens: number;
   totalCost: number;
 }
 
-export interface DriverEvent {
+export interface ToolPluginEvent {
   type:
     | 'text'
     | 'tool_use'
@@ -36,14 +36,14 @@ export interface DriverEvent {
   toolName?: string;
   toolInput?: unknown;
   toolResult?: unknown;
-  cost?: DriverCost;
+  cost?: ToolPluginCost;
   sessionID?: string;
   toolUseID?: string;
   isError?: boolean;
   raw?: string;
 }
 
-export interface Driver {
+export interface ToolPlugin {
   name(): string;
   binary(): string;
   models(): string[];
@@ -61,6 +61,6 @@ export interface Driver {
     opts?: HeadlessOpts,
   ): string[];
   interactiveArgs(opts: InteractiveOpts): Promise<string[]>;
-  parseEvent(line: Buffer): DriverEvent | null;
-  parseSessionID(events: DriverEvent[]): string | null;
+  parseEvent(line: Buffer): ToolPluginEvent | null;
+  parseSessionID(events: ToolPluginEvent[]): string | null;
 }

@@ -4,8 +4,8 @@ Prompt templates live in `md/` as Markdown files, embedded at build time via Bun
 
 ## Files
 
-| File | Phase | `%s` placeholders (in order) |
-|------|-------|------------------------------|
+| File | Interaction Type | `%s` placeholders (in order) |
+|------|------------------|------------------------------|
 | `output_style.md` | all (appended) | — |
 | `executor_style.md` | run | — |
 | `plan.md` | plan | memory context, title, description |

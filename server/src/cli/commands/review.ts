@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import type { DriverRegistry } from '../../driver/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { Executor } from '../../executor/executor';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
@@ -19,7 +19,7 @@ export function registerReviewCommands(
     taskStore: TaskStore;
     interactionStore: InteractionStore;
     configStore: ConfigStore;
-    registry: DriverRegistry;
+    registry: ToolPluginRegistry;
     executor: Executor;
   },
 ) {

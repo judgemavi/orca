@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import type {
-  Driver,
-  DriverEvent,
+  ToolPlugin,
+  ToolPluginEvent,
   HeadlessOpts,
   InteractiveOpts,
   MCPServerDef,
@@ -23,16 +23,20 @@ function mcpFlagsFromDefs(servers: Record<string, MCPServerDef>): string[] {
   const flags: string[] = [];
   for (const [name, server] of Object.entries(servers)) {
     flags.push(
-      '-c', `mcp_servers.${name}.command=${JSON.stringify(server.command)}`,
-      '-c', `mcp_servers.${name}.args=${JSON.stringify(server.args)}`,
-      '-c', `mcp_servers.${name}.cwd=${JSON.stringify(server.cwd)}`,
-      '-c', `mcp_servers.${name}.enabled=true`,
+      '-c',
+      `mcp_servers.${name}.command=${JSON.stringify(server.command)}`,
+      '-c',
+      `mcp_servers.${name}.args=${JSON.stringify(server.args)}`,
+      '-c',
+      `mcp_servers.${name}.cwd=${JSON.stringify(server.cwd)}`,
+      '-c',
+      `mcp_servers.${name}.enabled=true`,
     );
   }
   return flags;
 }
 
-export class CodexDriver implements Driver {
+export class CodexPlugin implements ToolPlugin {
   name(): string {
     return 'codex';
   }
@@ -119,7 +123,7 @@ export class CodexDriver implements Driver {
     return args;
   }
 
-  parseEvent(line: Buffer): DriverEvent | null {
+  parseEvent(line: Buffer): ToolPluginEvent | null {
     const raw = line.toString('utf8').replace(/\r/g, '').trim();
     if (!raw) return null;
 
@@ -184,7 +188,7 @@ export class CodexDriver implements Driver {
     return null;
   }
 
-  parseSessionID(events: DriverEvent[]): string | null {
+  parseSessionID(events: ToolPluginEvent[]): string | null {
     for (let i = events.length - 1; i >= 0; i -= 1) {
       const event = events[i];
       if (event?.type !== 'session') continue;

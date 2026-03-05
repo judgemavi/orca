@@ -2,11 +2,10 @@ import { intro, multiselect, note, outro, spinner } from '@clack/prompts';
 import { defaultConfig } from '../../config/config';
 import { openDatabase } from '../../db/connection';
 import { ensureIntegrationBranch } from '../../domain/worktree';
-import { fallbackDriverRegistry, toolModels } from '../../driver/registry';
+import { fallbackToolPluginRegistry, toolModels } from '../../plugin/registry';
 import { gitRun as sharedGitRun } from '../../shared/git';
 import { ConfigStore } from '../../store/config';
 import type { Config } from '../../types';
-import { PHASES } from '../../types';
 import {
   confirm,
   ensureNotCancelled,
@@ -17,15 +16,6 @@ import {
 interface RunInitOptions {
   yes?: boolean;
 }
-
-const ORCHESTRATOR_PHASES = [
-  PHASES.explore,
-  PHASES.plan,
-  PHASES.run,
-  PHASES.review,
-  PHASES.merge,
-  PHASES.retro,
-];
 
 export async function runInitCommand(
   repoDir: string,
@@ -56,7 +46,7 @@ export async function runInitCommand(
 
   await ensureGitPreflight(repoDir, autoYes);
 
-  const registry = fallbackDriverRegistry();
+  const registry = fallbackToolPluginRegistry();
   const available = registry.available();
   const missing = registry
     .registered()
@@ -203,35 +193,6 @@ export async function runInitCommand(
         pickDefaultModel(supervisorModels, defaults.supervisorModel),
       );
 
-  const phaseConfig: Record<string, { tool: string; model: string }> = {};
-  for (const phase of ORCHESTRATOR_PHASES) {
-    const phaseCurrentTool =
-      current.orchestrator.phases[phase]?.tool || defaultTool;
-    const phaseTool =
-      enabledTools.length === 1
-        ? enabledTools[0]
-        : autoYes
-          ? phaseCurrentTool
-          : await pickFromList(
-              `${phase}: tool`,
-              enabledTools.map((name) => ({ label: name, value: name })),
-              pickDefaultTool(enabledTools, phaseCurrentTool),
-            );
-    const phaseModelsRaw = toolModels(registry, phaseTool);
-    const phaseModels =
-      phaseModelsRaw.length > 0 ? phaseModelsRaw : defaultModels;
-    const phaseCurrentModel = current.orchestrator.phases[phase]?.model || '';
-    const phaseModel = autoYes
-      ? phaseCurrentModel || pickDefaultModel(phaseModels, defaultModel)
-      : await pickFromList(
-          `${phase}: model`,
-          phaseModels.map((model) => ({ label: model, value: model })),
-          pickDefaultModel(phaseModels, phaseCurrentModel || defaultModel),
-        );
-
-    phaseConfig[phase] = { tool: phaseTool, model: phaseModel };
-  }
-
   const config: Config = {
     ...current,
     project: {
@@ -254,10 +215,6 @@ export async function runInitCommand(
       ...current.orchestrator,
       supervisorTool: supervisorTool,
       supervisorModel: supervisorModel,
-      phases: {
-        ...current.orchestrator.phases,
-        ...phaseConfig,
-      },
     },
     quality: {
       ...current.quality,

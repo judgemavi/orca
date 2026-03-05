@@ -1,9 +1,4 @@
-import {
-  INTERACTION_STATUSES,
-  isRunLike,
-  PHASES,
-  REVIEW_STATUSES,
-} from '@orca/types';
+import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/types';
 import type { Interaction, InteractionStub, TaskReview } from '../../../types';
 import { AIReviewResultCard } from './AIReviewResultCard';
 
@@ -14,14 +9,15 @@ type Props = {
   latestCompletedRunStartedAt?: string;
 };
 
-export function ReviewPhaseSection({
+export function ReviewSection({
   interaction,
   runReviewInteractions,
   runReviews,
   latestCompletedRunStartedAt,
 }: Props) {
-  const showRunReviews = isRunLike(interaction.phase);
-  const showReviewInteraction = interaction.phase === PHASES.review;
+  const showRunReviews =
+    interaction.type === 'run' || interaction.type === 'revise';
+  const showReviewInteraction = interaction.type === 'review';
   const latestCompletedRunStartedAtMS = latestCompletedRunStartedAt
     ? Date.parse(latestCompletedRunStartedAt)
     : NaN;
@@ -98,7 +94,7 @@ export function ReviewPhaseSection({
           stub={{
             id: interaction.id,
             taskId: interaction.taskId,
-            phase: interaction.phase,
+            type: interaction.type,
             attempt: interaction.attempt,
             tool: interaction.tool,
             status: interaction.status,

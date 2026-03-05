@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, PHASE_LABELS } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/types';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMemo } from 'react';
 import { LogViewer } from '../../LogViewer';
@@ -62,8 +62,10 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
       ? stream.content || contentQuery.data?.rawContent || ''
       : contentQuery.data?.rawContent || '';
 
-  const titlePrefix =
-    PHASE_LABELS[selectedInteraction?.phase ?? ''] ?? 'Interaction';
+  const type = selectedInteraction?.type ?? '';
+  const titlePrefix = type
+    ? type.charAt(0).toUpperCase() + type.slice(1)
+    : 'Interaction';
   const title = selectedInteraction
     ? `${titlePrefix} #${selectedInteraction.attempt} Log`
     : 'Interaction Log';

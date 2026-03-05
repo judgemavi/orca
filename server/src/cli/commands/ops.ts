@@ -38,7 +38,7 @@ export function registerOpsCommand(
         printTable(
           operations.map((item) => ({
             id: short(item.id),
-            phase: item.phase,
+            type: item.type,
             task: item.taskId ? short(item.taskId) : '-',
             tool: item.tool,
             status: item.status,

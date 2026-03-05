@@ -1,5 +1,6 @@
-import type { Context, Hono } from 'hono';
-import type { DriverRegistry } from '../../driver/registry';
+import type { Context } from 'hono';
+import { Hono } from 'hono';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
@@ -33,11 +34,11 @@ export interface TaskPlanDeps {
   interactions: InteractionStore;
   memory: MemoryStore;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   sink: EventSink;
 }
 
-export function registerTaskPlanHandlers(app: Hono, deps: TaskPlanDeps) {
+export function taskPlanRoutes(deps: TaskPlanDeps) {
   const {
     repoDir,
     taskStore,
@@ -48,158 +49,159 @@ export function registerTaskPlanHandlers(app: Hono, deps: TaskPlanDeps) {
     sink,
   } = deps;
 
-  app.get('/tasks/:id/plan', async (c) => {
-    const taskID = c.req.param('id');
-    return c.json({ data: { plan: await taskStore.getPlan(taskID) } });
-  });
+  return new Hono()
+    .get('/tasks/:id/plan', async (c) => {
+      const taskID = c.req.param('id');
+      return c.json({ plan: await taskStore.getPlan(taskID) });
+    })
 
-  app.put('/tasks/:id/plan', async (c) => {
-    const taskID = c.req.param('id');
-    const task = await taskStore.get(taskID);
-    if (!task) {
-      return c.json({ error: 'task not found' }, 404);
-    }
-    if (task.status !== 'pending' && task.status !== 'planned') {
-      return c.json(
-        {
-          error: `task ${taskID} is ${task.status}; only pending/planned can update plan`,
+    .put('/tasks/:id/plan', async (c) => {
+      const taskID = c.req.param('id');
+      const task = await taskStore.get(taskID);
+      if (!task) {
+        return c.json({ error: 'task not found' }, 404);
+      }
+      if (task.status !== 'pending' && task.status !== 'planned') {
+        return c.json(
+          {
+            error: `task ${taskID} is ${task.status}; only pending/planned can update plan`,
+          },
+          400,
+        );
+      }
+
+      const body = await parseBody<PlanBody>(c.req);
+      await taskStore.setPlan(taskID, body.plan ?? '');
+      const updated = await taskStore.get(taskID);
+      if (updated) {
+        broadcast(sink, 'plan.completed', {
+          taskId: taskID,
+          plan: updated.plan ?? '',
+        });
+      }
+      return c.json({ plan: body.plan ?? '' });
+    })
+
+    .post('/tasks/:id/plan/generate', async (c) => {
+      const taskID = c.req.param('id');
+      const task = await taskStore.get(taskID);
+      if (!task) {
+        return c.json({ error: 'task not found' }, 404);
+      }
+
+      const body = await parseBody<GeneratePlanBody>(c.req);
+      asyncOp(sink, {
+        started: {
+          name: 'plan.generating',
+          payload: { taskId: taskID },
         },
-        400,
+        completed: {
+          name: 'plan.completed',
+          payload: ({ result }) => ({
+            taskId: taskID,
+            plan: result.plan,
+            interactionId: result.interactionId,
+          }),
+        },
+        failed: {
+          name: 'plan.failed',
+          payload: ({ error }) => ({
+            taskId: taskID,
+            error: safeErrorMessage(error),
+          }),
+        },
+        run: async () => {
+          const result = await generatePlan(taskID, {
+            repoDir,
+            taskStore,
+            interactions,
+            memory,
+            configStore,
+            registry,
+            toolOverride: body.tool ?? '',
+            modelOverride: body.model ?? '',
+          });
+          await taskStore.setPlan(taskID, result.plan);
+          return {
+            plan: result.plan,
+            interactionId: result.interactionId,
+          };
+        },
+      });
+
+      return c.json({ status: 'generating' }, 202);
+    })
+
+    .post('/tasks/:id/request-plan-changes', async (c) => {
+      const taskID = c.req.param('id');
+      const task = await taskStore.get(taskID);
+      if (!task) {
+        return c.json({ error: 'task not found' }, 404);
+      }
+
+      const body = await parseBody<RequestPlanChangesBody>(c.req);
+      const feedback = body.feedback?.trim() ?? '';
+      if (!feedback) {
+        return c.json({ error: 'feedback is required' }, 400);
+      }
+
+      asyncOp(sink, {
+        completed: {
+          name: 'plan.completed',
+          payload: ({ result }) => ({
+            taskId: taskID,
+            plan: result.plan,
+            interactionId: result.interactionId,
+          }),
+        },
+        failed: {
+          name: 'plan.failed',
+          payload: ({ error }) => ({
+            taskId: taskID,
+            error: safeErrorMessage(error),
+          }),
+        },
+        run: async () => {
+          const result = await requestPlanChanges(taskID, feedback, {
+            repoDir,
+            taskStore,
+            interactions,
+            memory,
+            configStore,
+            registry,
+            interactionId: body.interactionId ?? '',
+            toolOverride: body.tool ?? '',
+            modelOverride: body.model ?? '',
+          });
+          return {
+            plan: result.plan,
+            interactionId: result.interactionId,
+          };
+        },
+      });
+
+      return c.json({ status: 'generating' }, 202);
+    })
+
+    .post('/tasks/:id/approve-plan', async (c) => {
+      const taskID = c.req.param('id');
+      let updated;
+      try {
+        updated = await approvePlan(taskID, {
+          taskStore,
+          requirePendingStatus: true,
+        });
+      } catch (error) {
+        return errorResponse(c, error);
+      }
+
+      broadcast(
+        sink,
+        'task.updated',
+        updated as unknown as Record<string, unknown>,
       );
-    }
-
-    const body = await parseBody<PlanBody>(c.req);
-    await taskStore.setPlan(taskID, body.plan ?? '');
-    const updated = await taskStore.get(taskID);
-    if (updated) {
-      broadcast(sink, 'plan.completed', {
-        taskId: taskID,
-        plan: updated.plan ?? '',
-      });
-    }
-    return c.json({ data: { plan: body.plan ?? '' } });
-  });
-
-  app.post('/tasks/:id/plan/generate', async (c) => {
-    const taskID = c.req.param('id');
-    const task = await taskStore.get(taskID);
-    if (!task) {
-      return c.json({ error: 'task not found' }, 404);
-    }
-
-    const body = await parseBody<GeneratePlanBody>(c.req);
-    asyncOp(sink, {
-      started: {
-        name: 'plan.generating',
-        payload: { taskId: taskID },
-      },
-      completed: {
-        name: 'plan.completed',
-        payload: ({ result }) => ({
-          taskId: taskID,
-          plan: result.plan,
-          interactionId: result.interactionId,
-        }),
-      },
-      failed: {
-        name: 'plan.failed',
-        payload: ({ error }) => ({
-          taskId: taskID,
-          error: safeErrorMessage(error),
-        }),
-      },
-      run: async () => {
-        const result = await generatePlan(taskID, {
-          repoDir,
-          taskStore,
-          interactions,
-          memory,
-          configStore,
-          registry,
-          toolOverride: body.tool ?? '',
-          modelOverride: body.model ?? '',
-        });
-        await taskStore.setPlan(taskID, result.plan);
-        return {
-          plan: result.plan,
-          interactionId: result.interactionId,
-        };
-      },
+      return c.json(updated);
     });
-
-    return c.json({ data: { status: 'generating' } }, 202);
-  });
-
-  app.post('/tasks/:id/request-plan-changes', async (c) => {
-    const taskID = c.req.param('id');
-    const task = await taskStore.get(taskID);
-    if (!task) {
-      return c.json({ error: 'task not found' }, 404);
-    }
-
-    const body = await parseBody<RequestPlanChangesBody>(c.req);
-    const feedback = body.feedback?.trim() ?? '';
-    if (!feedback) {
-      return c.json({ error: 'feedback is required' }, 400);
-    }
-
-    asyncOp(sink, {
-      completed: {
-        name: 'plan.completed',
-        payload: ({ result }) => ({
-          taskId: taskID,
-          plan: result.plan,
-          interactionId: result.interactionId,
-        }),
-      },
-      failed: {
-        name: 'plan.failed',
-        payload: ({ error }) => ({
-          taskId: taskID,
-          error: safeErrorMessage(error),
-        }),
-      },
-      run: async () => {
-        const result = await requestPlanChanges(taskID, feedback, {
-          repoDir,
-          taskStore,
-          interactions,
-          memory,
-          configStore,
-          registry,
-          interactionId: body.interactionId ?? '',
-          toolOverride: body.tool ?? '',
-          modelOverride: body.model ?? '',
-        });
-        return {
-          plan: result.plan,
-          interactionId: result.interactionId,
-        };
-      },
-    });
-
-    return c.json({ data: { status: 'generating' } }, 202);
-  });
-
-  app.post('/tasks/:id/approve-plan', async (c) => {
-    const taskID = c.req.param('id');
-    let updated;
-    try {
-      updated = await approvePlan(taskID, {
-        taskStore,
-        requirePendingStatus: true,
-      });
-    } catch (error) {
-      return errorResponse(c, error);
-    }
-
-    broadcast(
-      sink,
-      'task.updated',
-      updated as unknown as Record<string, unknown>,
-    );
-    return c.json({ data: updated });
-  });
 }
 
 function errorResponse(c: Context, error: unknown) {

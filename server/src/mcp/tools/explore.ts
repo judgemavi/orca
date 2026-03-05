@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { readExploreContext, runExplore } from '../../domain/explore';
 import { getMemorySyncStatus } from '../../domain/memory-sync';
-import type { DriverRegistry } from '../../driver/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
@@ -30,7 +30,7 @@ export function exploreTools(deps: {
   memory: MemoryStore;
   interactions: InteractionStore;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
 }): Tool[] {
   return [
     defineTool({

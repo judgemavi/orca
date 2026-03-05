@@ -2,7 +2,7 @@ import { watch } from 'node:fs';
 import type { Command } from 'commander';
 import { mergeTaskWithGit } from '../../domain/integrator';
 import { triggerPostMergeHooks } from '../../domain/post-merge';
-import type { DriverRegistry } from '../../driver/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { Executor } from '../../executor/executor';
 import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
@@ -45,7 +45,7 @@ export function registerTaskCommands(
     interactionStore: InteractionStore;
     memoryStore: MemoryStore;
     configStore: ConfigStore;
-    registry: DriverRegistry;
+    registry: ToolPluginRegistry;
     executor: Executor;
     queue?: JobQueue;
   },
@@ -320,11 +320,11 @@ export function registerTaskCommands(
 
   task
     .command('interactions <id>')
-    .option('--phase <phase>', 'phase filter')
-    .action(async (id: string, opts: { phase?: string }) => {
-      const phase = (opts.phase ?? '').trim();
-      const data = phase
-        ? await deps.interactionStore.listByPhase(id, phase)
+    .option('--type <type>', 'type filter')
+    .action(async (id: string, opts: { type?: string }) => {
+      const type = (opts.type ?? '').trim();
+      const data = type
+        ? await deps.interactionStore.listByType(id, type)
         : await deps.interactionStore.list(id);
       printJSON(data);
     });
@@ -426,7 +426,7 @@ export function registerTaskCommands(
   task
     .command('logs [id]')
     .description('View task interaction logs')
-    .option('--phase <phase>', 'filter by interaction phase')
+    .option('--type <type>', 'filter by interaction type')
     .option('--attempt <n>', 'filter by attempt number')
     .option('--json', 'raw JSON output')
     .option('--follow', 'tail the log file')
@@ -434,7 +434,7 @@ export function registerTaskCommands(
       async (
         id: string | undefined,
         opts: {
-          phase?: string;
+          type?: string;
           attempt?: string;
           json?: boolean;
           follow?: boolean;
@@ -447,11 +447,11 @@ export function registerTaskCommands(
           filter: allTasks,
         });
 
-        const phase = (opts.phase ?? '').trim();
+        const type = (opts.type ?? '').trim();
         const attempt = opts.attempt ? Number(opts.attempt) : undefined;
 
-        let interactions = phase
-          ? await deps.interactionStore.listByPhase(taskID, phase)
+        let interactions = type
+          ? await deps.interactionStore.listByType(taskID, type)
           : await deps.interactionStore.list(taskID);
 
         if (attempt !== undefined) {
@@ -460,7 +460,7 @@ export function registerTaskCommands(
 
         if (interactions.length === 0) {
           throw new Error(
-            `no interactions found for task ${taskID}${phase ? ` phase=${phase}` : ''}${attempt !== undefined ? ` attempt=${attempt}` : ''}`,
+            `no interactions found for task ${taskID}${type ? ` type=${type}` : ''}${attempt !== undefined ? ` attempt=${attempt}` : ''}`,
           );
         }
 

@@ -1,8 +1,7 @@
-import type { DriverRegistry } from '../driver/registry';
-import { createPhaseRunner } from '../shared/phase-runner';
+import type { ToolPluginRegistry } from '../plugin/registry';
+import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { Config, ProposedTask } from '../types';
-import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONArray } from './llm';
 
@@ -12,7 +11,7 @@ const FIELD_RE = /^-+\s*([A-Za-z ]+)\s*:\s*(.*)$/;
 export interface RunBreakdownInput {
   repoDir: string;
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   interactions: InteractionStore;
   goal: string;
   taskID?: string;
@@ -61,7 +60,7 @@ export function generateProposedSubtasks(
 export async function runBreakdown(
   input: RunBreakdownInput,
 ): Promise<RunBreakdownResult> {
-  const runPhase = await createPhaseRunner({
+  const runInteraction = await createInteractionRunner({
     config: input.config,
     registry: input.registry,
     repoDir: input.repoDir,
@@ -78,12 +77,11 @@ export async function runBreakdown(
     interactionId,
     tool,
     model,
-  } = await runPhase(
+  } = await runInteraction(
     {
       taskId: input.taskID?.trim() || null,
       taskRunId: input.taskID?.trim() || 'breakdown',
-      phase: PHASES.breakdown,
-      resolvePhase: PHASES.plan,
+      type: 'breakdown',
       promptName: 'breakdown',
       promptArgs: [contextSection, input.goal.trim()],
       toolOverride: input.toolOverride ?? '',

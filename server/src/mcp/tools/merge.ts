@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DriverRegistry } from '../../driver/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
@@ -23,7 +23,7 @@ export function mergeTools(deps: {
   configStore: ConfigStore;
   interactions: InteractionStore;
   memory: MemoryStore;
-  registry?: DriverRegistry;
+  registry?: ToolPluginRegistry;
 }): Tool[] {
   return [
     defineTool({

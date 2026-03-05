@@ -1,34 +1,27 @@
-import type { Hono } from 'hono';
+import { Hono } from 'hono';
 import type { InteractionStore } from '../../store/interactions';
 
-export function registerQualityHandlers(
-  app: Hono,
-  interactions: InteractionStore,
-) {
-  app.get('/tasks/:id/quality', async (c) => {
+export function qualityRoutes(interactions: InteractionStore) {
+  return new Hono().get('/tasks/:id/quality', async (c) => {
     const taskID = c.req.param('id');
-    const latest = (await interactions.listByPhase(taskID, 'run')).find(
+    const latest = (await interactions.listByType(taskID, 'run')).find(
       (interaction) => interaction.qualityJson?.trim(),
     );
 
     if (!latest?.qualityJson) {
-      return c.json({ data: { taskId: taskID, quality: null } });
+      return c.json({ taskId: taskID, quality: null });
     }
 
     try {
       return c.json({
-        data: {
-          taskId: taskID,
-          quality: JSON.parse(latest.qualityJson),
-        },
+        taskId: taskID,
+        quality: JSON.parse(latest.qualityJson),
       });
     } catch {
       return c.json({
-        data: {
-          taskId: taskID,
-          quality: null,
-          malformed: true,
-        },
+        taskId: taskID,
+        quality: null,
+        malformed: true,
       });
     }
   });

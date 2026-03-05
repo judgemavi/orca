@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/types';
 import { useEffect, useMemo, useState } from 'react';
 import { useSavePlanMutation, useTaskPlanQuery } from '../../../hooks/queries';
 import { getErrorMessage } from '../../../lib/utils';
@@ -24,7 +24,7 @@ export function usePlanEditor({ taskId, task, stubs, readOnly = false }: Args) {
       .reverse()
       .find(
         (item) =>
-          item.phase === PHASES.plan &&
+          item.type === 'plan' &&
           item.status === INTERACTION_STATUSES.completed,
       ) ?? null;
 

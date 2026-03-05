@@ -51,7 +51,7 @@ export function TaskActionsLayout({
               onToolChange={onToolChange}
               onModelChange={onModelChange}
               controlClass={controlClass}
-              toolPlaceholder="- phase/default tool"
+              toolPlaceholder="- default tool"
               modelPlaceholder="- default model"
               className="grid grid-cols-1 gap-2 sm:grid-cols-2"
             />

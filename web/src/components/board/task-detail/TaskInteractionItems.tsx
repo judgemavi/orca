@@ -1,13 +1,13 @@
-import { INTERACTION_STATUSES, isRunLike, PHASES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/types';
 import { useCallback, useMemo } from 'react';
 import type { InteractionStub, Task, TaskReview } from '../../../types';
-import { BreakdownPhaseSection } from './BreakdownPhaseSection';
-import { EvaluatePhaseSection } from './EvaluatePhaseSection';
+import { BreakdownSection } from './BreakdownSection';
+import { EvaluateSection } from './EvaluateSection';
 import { InteractionEntry } from './InteractionEntry';
-import { MergePhaseSection } from './MergePhaseSection';
-import { PlanPhaseSection } from './PlanPhaseSection';
-import { ReviewPhaseSection } from './ReviewPhaseSection';
-import { RunPhaseSection } from './RunPhaseSection';
+import { MergeSection } from './MergeSection';
+import { PlanSection } from './PlanSection';
+import { ReviewSection } from './ReviewSection';
+import { RunSection } from './RunSection';
 import { useInteractionMetaQuery } from './useInteractions';
 import type { useMergeHandler } from './useMergeHandler';
 import type { usePlanEditor } from './usePlanEditor';
@@ -25,7 +25,7 @@ type Props = {
   merge: ReturnType<typeof useMergeHandler>;
 };
 
-function PhaseContent({
+function InteractionContent({
   taskId,
   stub,
   expanded,
@@ -75,10 +75,10 @@ function PhaseContent({
 
   return (
     <>
-      <PlanPhaseSection
+      <PlanSection
         interaction={interaction}
         isEditableLatestPlan={
-          stub.phase === PHASES.plan &&
+          stub.type === 'plan' &&
           stub.status === INTERACTION_STATUSES.completed &&
           stub.id === planEditor.latestCompletedPlanId &&
           planEditor.planEditable
@@ -86,8 +86,8 @@ function PhaseContent({
         planEditor={planEditor}
         planReviews={planReviews}
       />
-      <EvaluatePhaseSection interaction={interaction} />
-      <BreakdownPhaseSection
+      <EvaluateSection interaction={interaction} />
+      <BreakdownSection
         interaction={interaction}
         proposals={actions.latestBreakdownProposals}
         onAccept={actions.handleAcceptBreakdown}
@@ -95,14 +95,16 @@ function PhaseContent({
         accepting={actions.acceptBreakdownPending}
         rejecting={actions.rejectBreakdownPending}
       />
-      <RunPhaseSection interaction={interaction} task={task} />
-      <ReviewPhaseSection
+      <RunSection interaction={interaction} task={task} />
+      <ReviewSection
         interaction={interaction}
-        runReviewInteractions={isRunLike(stub.phase) ? runReviewStubs : []}
+        runReviewInteractions={
+          stub.type === 'run' || stub.type === 'revise' ? runReviewStubs : []
+        }
         runReviews={runReviews}
         latestCompletedRunStartedAt={latestCompletedRunStartedAt}
       />
-      <MergePhaseSection
+      <MergeSection
         interaction={interaction}
         readOnly={readOnly}
         tools={tools}
@@ -127,24 +129,23 @@ export function TaskInteractionItems({
 }: Props) {
   const actions = useTaskActions(task);
   const runStubs = useMemo(
-    () => stubs.filter((item) => isRunLike(item.phase)),
+    () =>
+      stubs.filter((item) => item.type === 'run' || item.type === 'revise'),
     [stubs],
   );
   const reviewStubs = useMemo(
-    () => stubs.filter((item) => item.phase === PHASES.review),
+    () => stubs.filter((item) => item.type === 'review'),
     [stubs],
   );
   const mergeStubs = useMemo(
-    () => stubs.filter((item) => item.phase === PHASES.merge),
+    () => stubs.filter((item) => item.type === 'merge'),
     [stubs],
   );
 
   const planStubIds = useMemo(
     () =>
       new Set(
-        stubs
-          .filter((item) => item.phase === PHASES.plan)
-          .map((item) => item.id),
+        stubs.filter((item) => item.type === 'plan').map((item) => item.id),
       ),
     [stubs],
   );
@@ -216,7 +217,7 @@ export function TaskInteractionItems({
     <div className="flex flex-col gap-2">
       {stubs.map((item) => {
         if (
-          item.phase === PHASES.review &&
+          item.type === 'review' &&
           hasReviewCutoff &&
           Date.parse(item.startedAt) <= latestCompletedRunStartedAtMS
         ) {
@@ -229,14 +230,14 @@ export function TaskInteractionItems({
           <InteractionEntry
             key={item.id}
             stub={item}
-            phase={item.phase}
+            type={item.type}
             collapsible
-            showDiffSummary={isRunLike(item.phase)}
+            showDiffSummary={item.type === 'run' || item.type === 'revise'}
             expanded={isExpanded}
             alwaysExpanded={item.status === INTERACTION_STATUSES.running}
             onExpandedChange={() => onToggleInteraction(item.id)}
           >
-            <PhaseContent
+            <InteractionContent
               taskId={taskId}
               stub={item}
               expanded={isExpanded}
@@ -252,7 +253,7 @@ export function TaskInteractionItems({
                 (review) => review.interactionId === item.id,
               )}
               runReviewStubs={
-                isRunLike(item.phase)
+                item.type === 'run' || item.type === 'revise'
                   ? getReviewStubsForRun(item.id, item.startedAt)
                   : []
               }

@@ -104,7 +104,7 @@ function formatTaskDetail(task: Task): string {
 function formatInteractionList(interactions: StoredInteraction[]): string {
   const rows = interactions.map((interaction) => ({
     id: short(interaction.id),
-    phase: interaction.phase,
+    type: interaction.type,
     tool: [interaction.tool, interaction.model].filter(Boolean).join('/'),
     cost: `$${interaction.estimatedCost.toFixed(2)}`,
     status: interaction.status,
@@ -172,7 +172,7 @@ function isInteraction(value: unknown): value is StoredInteraction {
   if (!isRecord(value)) return false;
   return (
     typeof value.id === 'string' &&
-    typeof value.phase === 'string' &&
+    typeof value.type === 'string' &&
     typeof value.tool === 'string' &&
     typeof value.status === 'string' &&
     typeof value.estimatedCost === 'number'

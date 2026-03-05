@@ -1,4 +1,5 @@
 // HTTP client for Orca API. All endpoints return typed promises.
+// Server routes are chained Hono instances exporting AppType for future hc<> RPC client.
 
 import type {
   Config,
@@ -70,9 +71,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw err;
   }
 
-  return json && typeof json === 'object' && json.data !== undefined
-    ? (json.data as T)
-    : (json as T);
+  return json as T;
 }
 
 function normalizePlanText(payload: unknown): string {

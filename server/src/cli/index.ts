@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
@@ -28,7 +28,7 @@ export async function runCLI(deps: {
   taskStore: TaskStore;
   interactionStore: InteractionStore;
   memoryStore: MemoryStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   executor: Executor;
   queue?: JobQueue;
 }) {
@@ -85,18 +85,18 @@ export async function runCLI(deps: {
     .command('logs')
     .option('--interaction <id>', 'interaction id')
     .option('--task <id>', 'task id, prints most recent interaction log')
-    .option('--phase <phase>', 'filter by interaction phase')
+    .option('--type <type>', 'filter by interaction type')
     .option('--json', 'raw JSON output')
     .action(
       async (opts: {
         interaction?: string;
         task?: string;
-        phase?: string;
+        type?: string;
         json?: boolean;
       }) => {
         const interactionID = (opts.interaction ?? '').trim();
         const taskID = (opts.task ?? '').trim();
-        const phase = (opts.phase ?? '').trim();
+        const type = (opts.type ?? '').trim();
 
         if (interactionID) {
           if (opts.json) {
@@ -110,12 +110,12 @@ export async function runCLI(deps: {
         }
 
         if (taskID) {
-          const interactions = phase
-            ? await deps.interactionStore.listByPhase(taskID, phase)
+          const interactions = type
+            ? await deps.interactionStore.listByType(taskID, type)
             : await deps.interactionStore.list(taskID);
           if (interactions.length === 0) {
             throw new Error(
-              `no interactions for task ${taskID}${phase ? ` phase=${phase}` : ''}`,
+              `no interactions for task ${taskID}${type ? ` type=${type}` : ''}`,
             );
           }
           if (opts.json) {
@@ -129,15 +129,15 @@ export async function runCLI(deps: {
           return;
         }
 
-        if (phase) {
+        if (type) {
           const interactions =
-            await deps.interactionStore.listProjectByPhase(phase);
+            await deps.interactionStore.listProjectByType(type);
           if (opts.json) {
             console.log(JSON.stringify(interactions, null, 2));
             return;
           }
           if (interactions.length === 0) {
-            throw new Error(`no interactions for phase ${phase}`);
+            throw new Error(`no interactions for type ${type}`);
           }
           const content = await deps.interactionStore.readLog(
             interactions[0].id,
@@ -147,7 +147,7 @@ export async function runCLI(deps: {
         }
 
         throw new Error(
-          'provide --interaction <id>, --task <id>, or --phase <phase>',
+          'provide --interaction <id>, --task <id>, or --type <type>',
         );
       },
     );

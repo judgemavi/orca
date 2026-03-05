@@ -1,17 +1,3 @@
-export const PHASES = {
-  explore: 'explore',
-  plan: 'plan',
-  evaluate: 'evaluate',
-  breakdown: 'breakdown',
-  run: 'run',
-  revise: 'revise',
-  review: 'review',
-  merge: 'merge',
-  retro: 'retro',
-} as const;
-
-export type InteractionPhase = (typeof PHASES)[keyof typeof PHASES];
-
 export const INTERACTION_STATUSES = {
   running: 'running',
   completed: 'completed',
@@ -42,21 +28,6 @@ export const REVIEW_STATUSES = {
 
 export type ReviewStatus =
   (typeof REVIEW_STATUSES)[keyof typeof REVIEW_STATUSES];
-
-export const PHASE_LABELS: Record<string, string> = {
-  [PHASES.plan]: 'Planning',
-  [PHASES.evaluate]: 'Evaluation',
-  [PHASES.breakdown]: 'Breakdown',
-  [PHASES.run]: 'Run',
-  [PHASES.revise]: 'Revise',
-  [PHASES.review]: 'Review',
-  [PHASES.merge]: 'Merge',
-  [PHASES.retro]: 'Retro',
-  [PHASES.explore]: 'Explore',
-};
-
-export const isRunLike = (phase: string): boolean =>
-  phase === PHASES.run || phase === PHASES.revise;
 
 export interface Task {
   id: string;
@@ -95,7 +66,7 @@ export interface Config {
   orchestrator: {
     supervisorTool: string;
     supervisorModel: string;
-    phases: Record<string, { tool: string; model: string }>;
+    overrides: Record<string, { tool: string; model: string }>;
   };
   monitor: {
     stuckCheckInterval: import('ms').StringValue;
@@ -128,7 +99,7 @@ export interface ModelInfo {
 export interface Interaction {
   id: string;
   taskId: string | null;
-  phase: InteractionPhase | string;
+  type: string;
   attempt: number;
   tool: string;
   status: InteractionStatus;
@@ -147,7 +118,7 @@ export interface Interaction {
 export interface InteractionStub {
   id: string;
   taskId: string | null;
-  phase: string;
+  type: string;
   attempt: number;
   tool: string;
   status: InteractionStatus;

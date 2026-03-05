@@ -1,13 +1,13 @@
-import { resolveModelForPhase } from '../config/config';
-import { type DriverRegistry, toolDefinition } from '../driver/registry';
-import type { Driver, MCPServerDef } from '../driver/types';
+import { resolveModel } from '../config/config';
+import { type ToolPluginRegistry, toolDefinition } from '../plugin/registry';
+import type { ToolPlugin, MCPServerDef } from '../plugin/types';
 import { loadPrompt } from '../prompts/loader';
 import { toErrorMessage } from '../shared/errors';
 import type { ConfigStore } from '../store/config';
 
 export interface SupervisorResolution {
   toolName: string;
-  driver: Driver;
+  plugin: ToolPlugin;
   model: string;
 }
 
@@ -73,9 +73,9 @@ export function buildMCPServerDef(repoDir: string): MCPServerDef {
 
 export async function writeMCPConfig(
   repoDir: string,
-  driver: Driver,
+  plugin: ToolPlugin,
 ): Promise<string> {
-  const target = configTarget(driver.name());
+  const target = configTarget(plugin.name());
   const configPath = resolvePath(repoDir, target.file);
   await Bun.$`mkdir -p ${dirName(configPath)}`;
 
@@ -113,20 +113,19 @@ export async function writeMCPConfig(
 
 export async function resolveSupervisor(
   configStore: ConfigStore,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ): Promise<SupervisorResolution> {
   const config = await configStore.load();
   const toolName =
     config.orchestrator.supervisorTool || config.defaultTool || 'claude';
-  const driver = toolDefinition(registry, toolName);
-  if (!driver) {
+  const plugin = toolDefinition(registry, toolName);
+  if (!plugin) {
     throw new Error(`supervisor tool not available: ${toolName}`);
   }
 
-  const model = resolveModelForPhase(
+  const model = resolveModel(
     config,
     registry,
-    '',
     toolName,
     config.orchestrator.supervisorModel || '',
   );
@@ -134,7 +133,7 @@ export async function resolveSupervisor(
     throw new Error(`supervisor model could not be resolved for ${toolName}`);
   }
 
-  return { toolName, driver, model };
+  return { toolName, plugin, model };
 }
 
 export async function loadOrchestratorPrompt(repoDir: string): Promise<string> {

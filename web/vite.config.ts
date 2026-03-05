@@ -15,16 +15,6 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api/v1/ws': {
-        target: 'ws://localhost:8080',
-        ws: true,
-        rewriteWsOrigin: true,
-      },
-      '/api/v1/terminal': {
-        target: 'ws://localhost:8080',
-        ws: true,
-        rewriteWsOrigin: true,
-      },
       '/api/v1/orchestrator': {
         target: 'ws://localhost:8080',
         ws: true,

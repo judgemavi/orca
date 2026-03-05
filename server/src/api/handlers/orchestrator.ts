@@ -1,9 +1,9 @@
-import type { Hono } from 'hono';
-import type { DriverRegistry } from '../../driver/registry';
+import { Hono } from 'hono';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import {
-  ORCHESTRATOR_ALLOWED_TOOLS,
   buildMCPServerDef,
   loadOrchestratorPrompt,
+  ORCHESTRATOR_ALLOWED_TOOLS,
   resolveSupervisor,
 } from '../../orchestrator/bootstrap';
 import type { ConfigStore } from '../../store/config';
@@ -24,33 +24,36 @@ let activePTY: OrchestratorPTY | null = null;
 export function killActivePTY(): boolean {
   if (!activePTY || activePTY.dead) return false;
   console.log('[orchestrator] killing active PTY pid:', activePTY.proc.pid);
-  try { activePTY.proc.kill(); } catch {}
-  try { activePTY.proc.terminal?.close(); } catch {}
-  try { activePTY.ws?.close(); } catch {}
+  try {
+    activePTY.proc.kill();
+  } catch {}
+  try {
+    activePTY.proc.terminal?.close();
+  } catch {}
+  try {
+    activePTY.ws?.close();
+  } catch {}
   activePTY.dead = true;
   activePTY = null;
   return true;
 }
 
-export function registerOrchestratorHandlers(
-  app: Hono,
+export function orchestratorRoutes(
   _sink: EventSink,
   configStore: ConfigStore,
   repoDir: string,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ) {
-  app.get('/orchestrator', (c) =>
-    c.json({ error: 'websocket upgrade required' }, 426),
-  );
-
-  app.get('/orchestrator/status', (c) =>
-    c.json({
-      data: {
+  return new Hono()
+    .get('/orchestrator', (c) =>
+      c.json({ error: 'websocket upgrade required' }, 426),
+    )
+    .get('/orchestrator/status', (c) =>
+      c.json({
         active: activePTY !== null && !activePTY.dead,
         sessionId: activePTY ? String(activePTY.proc.pid) : null,
-      },
-    }),
-  );
+      }),
+    );
 }
 
 export function handleOrchestratorUpgrade(
@@ -58,7 +61,7 @@ export function handleOrchestratorUpgrade(
   serverRef: { upgrade: (req: Request, opts?: any) => boolean },
   configStore: ConfigStore,
   repoDir: string,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ): boolean {
   const url = new URL(request.url);
   if (url.pathname !== '/api/v1/orchestrator') return false;
@@ -101,7 +104,7 @@ export async function onOrchestratorWSOpen(ws: any) {
     const systemPrompt = await loadOrchestratorPrompt(repoDir);
     const mcpServer = buildMCPServerDef(repoDir);
 
-    const args = await resolved.driver.interactiveArgs({
+    const args = await resolved.plugin.interactiveArgs({
       model: resolved.model,
       systemPrompt,
       allowedTools: ORCHESTRATOR_ALLOWED_TOOLS,
@@ -109,7 +112,7 @@ export async function onOrchestratorWSOpen(ws: any) {
       repoDir,
     });
 
-    const cmd = [resolved.driver.binary(), ...args];
+    const cmd = [resolved.plugin.binary(), ...args];
     console.log('[orchestrator] spawning:', cmd.join(' '));
     console.log('[orchestrator] cwd:', repoDir);
     console.log('[orchestrator] terminal:', cols, 'x', rows);
@@ -142,7 +145,10 @@ export async function onOrchestratorWSOpen(ws: any) {
           // Buffer scrollback for reattach
           pty.scrollback.push(buf);
           pty.scrollbackBytes += buf.length;
-          while (pty.scrollbackBytes > SCROLLBACK_LIMIT && pty.scrollback.length > 1) {
+          while (
+            pty.scrollbackBytes > SCROLLBACK_LIMIT &&
+            pty.scrollback.length > 1
+          ) {
             pty.scrollbackBytes -= pty.scrollback[0]!.length;
             pty.scrollback.shift();
           }
@@ -210,6 +216,9 @@ export function onOrchestratorWSClose(_ws: any) {
   // Detach client but keep PTY alive
   if (activePTY) {
     activePTY.ws = null;
-    console.log('[orchestrator] client detached, PTY still alive pid:', activePTY.proc.pid);
+    console.log(
+      '[orchestrator] client detached, PTY still alive pid:',
+      activePTY.proc.pid,
+    );
   }
 }

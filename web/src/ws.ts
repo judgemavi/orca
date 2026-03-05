@@ -1,29 +1,37 @@
-// WebSocket client. Auto-reconnects. Broadcasts KnownWSEvent to listeners.
+// SSE client. Auto-reconnects via EventSource. Broadcasts WSEvent to listeners.
 
 import type { WSEvent } from './types';
 
 type Listener = (event: WSEvent) => void;
 
-let ws: WebSocket | null = null;
+let es: EventSource | null = null;
 const listeners = new Set<Listener>();
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getURL() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/api/v1/ws`;
+  return '/api/v1/events';
+}
+
+function dispatch(parsed: Record<string, unknown>) {
+  const type = typeof parsed.type === 'string' ? parsed.type : '';
+  if (!type) return;
+
+  const event: WSEvent = {
+    type,
+    timestamp: typeof parsed.timestamp === 'string' ? parsed.timestamp : '',
+    data:
+      parsed.data && typeof parsed.data === 'object'
+        ? (parsed.data as Record<string, unknown>)
+        : {},
+  };
+  for (const fn of listeners) fn(event);
 }
 
 function connect() {
-  if (
-    ws &&
-    (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)
-  ) {
-    return;
-  }
+  if (es) return;
 
-  ws = new WebSocket(getURL());
+  es = new EventSource(getURL());
 
-  ws.onmessage = (e) => {
+  es.onmessage = (e) => {
     let parsed: unknown;
     try {
       parsed = JSON.parse(e.data);
@@ -31,36 +39,25 @@ function connect() {
       return;
     }
     if (!parsed || typeof parsed !== 'object') return;
-
-    const eventObj = parsed as Record<string, unknown>;
-    const type = typeof eventObj.type === 'string' ? eventObj.type : '';
-    if (!type) return;
-
-    const event: WSEvent = {
-      type,
-      timestamp:
-        typeof eventObj.timestamp === 'string' ? eventObj.timestamp : '',
-      data:
-        eventObj.data && typeof eventObj.data === 'object'
-          ? (eventObj.data as Record<string, unknown>)
-          : {},
-    };
-    listeners.forEach((fn) => fn(event));
+    dispatch(parsed as Record<string, unknown>);
   };
 
-  ws.onclose = () => {
-    ws = null;
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connect, 3000);
+  es.onerror = () => {
+    // EventSource auto-reconnects; clean up ref so we can track state
+    es?.close();
+    es = null;
+    setTimeout(connect, 3000);
   };
 }
 
 export function subscribeWS(listener: Listener): () => void {
   listeners.add(listener);
-  if (!ws || ws.readyState === WebSocket.CLOSED) {
-    connect();
-  }
+  if (!es) connect();
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0 && es) {
+      es.close();
+      es = null;
+    }
   };
 }

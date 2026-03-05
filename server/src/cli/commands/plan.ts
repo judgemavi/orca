@@ -1,9 +1,9 @@
 import type { Command } from 'commander';
 import {
   availableTools,
-  type DriverRegistry,
+  type ToolPluginRegistry,
   toolModels,
-} from '../../driver/registry';
+} from '../../plugin/registry';
 import type { InteractionStore } from '../../store/interactions';
 import type { TaskStore } from '../../store/tasks';
 import {
@@ -20,7 +20,7 @@ export function registerPlanCommands(
   deps: {
     taskStore: TaskStore;
     interactionStore: InteractionStore;
-    registry: DriverRegistry;
+    registry: ToolPluginRegistry;
   },
 ) {
   const plan = program.command('plan').description('Global planning workflow');
@@ -51,7 +51,7 @@ export function registerPlanCommands(
       const proposed = breakdown.proposed;
       const interaction = await deps.interactionStore.begin({
         taskId: null,
-        phase: 'breakdown',
+        type: 'breakdown',
         tool,
       });
       await deps.interactionStore.finish(interaction.id, {
@@ -114,7 +114,7 @@ async function resolveOperationID(
     throw new Error('--operation is required in non-interactive mode');
   }
 
-  const operations = await interactionStore.listProjectByPhase('breakdown');
+  const operations = await interactionStore.listProjectByType('breakdown');
   if (operations.length === 0) {
     throw new Error('no recent plan operations found');
   }

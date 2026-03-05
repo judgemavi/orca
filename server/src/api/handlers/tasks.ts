@@ -1,4 +1,4 @@
-import type { Hono } from 'hono';
+import { Hono } from 'hono';
 import type { JobQueue } from '../../queue/queue';
 import { toErrorMessage } from '../../shared/errors';
 import type { InteractionStore } from '../../store/interactions';
@@ -33,142 +33,139 @@ const BLOCKED_MANUAL_STATUSES = new Set<TaskStatus>([
   'review',
 ]);
 
-export function registerTaskHandlers(
-  app: Hono,
-  deps: {
-    taskStore: TaskStore;
-    interactionStore: InteractionStore;
-    sink: EventSink;
-    repoDir: string;
-    queue?: JobQueue;
-  },
-) {
+export function taskRoutes(deps: {
+  taskStore: TaskStore;
+  interactionStore: InteractionStore;
+  sink: EventSink;
+  repoDir: string;
+  queue?: JobQueue;
+}) {
   const { taskStore } = deps;
 
-  app.get('/tasks', async (c) => c.json({ data: await taskStore.list() }));
+  return new Hono()
+    .get('/tasks', async (c) => c.json(await taskStore.list()))
 
-  app.get('/tasks/ready', async (c) =>
-    c.json({ data: await taskStore.getReady() }),
-  );
+    .get('/tasks/ready', async (c) => c.json(await taskStore.getReady()))
 
-  app.get('/tasks/:id', async (c) => {
-    const task = await taskStore.get(c.req.param('id'));
-    if (!task) return c.json({ error: 'task not found' }, 404);
-    return c.json({ data: task });
-  });
+    .get('/tasks/:id', async (c) => {
+      const task = await taskStore.get(c.req.param('id'));
+      if (!task) return c.json({ error: 'task not found' }, 404);
+      return c.json(task);
+    })
 
-  app.post('/tasks', async (c) => {
-    const body = await parseBody<CreateTaskBody>(c.req);
-    const task = await taskStore.create({
-      id: body.id,
-      title: body.title,
-      description: body.description ?? '',
-      parentId: body.parentId ?? null,
-    });
-    if (deps.queue) {
-      await deps.queue.enqueue({
-        type: 'evaluate',
-        taskId: task.id,
-        priority: JOB_PRIORITIES.evaluate,
+    .post('/tasks', async (c) => {
+      const body = await parseBody<CreateTaskBody>(c.req);
+      const task = await taskStore.create({
+        id: body.id,
+        title: body.title,
+        description: body.description ?? '',
+        parentId: body.parentId ?? null,
       });
-    }
-    return c.json({ data: task }, 201);
-  });
-
-  app.patch('/tasks/:id', async (c) => {
-    const taskID = c.req.param('id');
-    const body = await parseBody<PatchTaskBody>(c.req);
-    const existing = await taskStore.get(taskID);
-    if (!existing) {
-      return c.json({ error: 'task not found' }, 404);
-    }
-    if (body.status !== undefined) {
-      const err = validateManualStatusTransition(existing.status, body.status);
-      if (err) {
-        return c.json({ error: err }, 400);
+      if (deps.queue) {
+        await deps.queue.enqueue({
+          type: 'evaluate',
+          taskId: task.id,
+          priority: JOB_PRIORITIES.evaluate,
+        });
       }
-    }
+      return c.json(task, 201);
+    })
 
-    if (Array.isArray(body.dependsOn)) {
-      await taskStore.updateDependencies(taskID, body.dependsOn);
-    }
-
-    await taskStore.update(taskID, {
-      title: body.title,
-      description: body.description,
-      plan: body.plan,
-      status: body.status,
-      sessionId: body.sessionId,
-    });
-
-    const updated = await taskStore.get(taskID);
-    if (!updated) {
-      return c.json({ error: 'task not found' }, 404);
-    }
-
-    return c.json({ data: updated });
-  });
-
-  app.post('/tasks/:id/deps', async (c) => {
-    const taskID = c.req.param('id');
-    const body = await parseBody<{
-      dependsOn?: string;
-      dependsOnIds?: string[];
-    }>(c.req);
-
-    const existing = await taskStore.get(taskID);
-    if (!existing) {
-      return c.json({ error: 'task not found' }, 404);
-    }
-
-    const next = new Set(existing.dependsOn);
-    if (body.dependsOn?.trim()) {
-      next.add(body.dependsOn.trim());
-    }
-    if (Array.isArray(body.dependsOnIds)) {
-      for (const dep of body.dependsOnIds) {
-        const value = dep.trim();
-        if (value) next.add(value);
+    .patch('/tasks/:id', async (c) => {
+      const taskID = c.req.param('id');
+      const body = await parseBody<PatchTaskBody>(c.req);
+      const existing = await taskStore.get(taskID);
+      if (!existing) {
+        return c.json({ error: 'task not found' }, 404);
       }
-    }
+      if (body.status !== undefined) {
+        const err = validateManualStatusTransition(
+          existing.status,
+          body.status,
+        );
+        if (err) {
+          return c.json({ error: err }, 400);
+        }
+      }
 
-    await taskStore.updateDependencies(taskID, [...next]);
-    return c.json({ data: await taskStore.get(taskID) });
-  });
+      if (Array.isArray(body.dependsOn)) {
+        await taskStore.updateDependencies(taskID, body.dependsOn);
+      }
 
-  app.delete('/tasks/:id', async (c) => {
-    const taskID = c.req.param('id');
-
-    try {
-      const result = await deleteTask(taskID, {
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-        repoDir: deps.repoDir,
-        queue: deps.queue,
+      await taskStore.update(taskID, {
+        title: body.title,
+        description: body.description,
+        plan: body.plan,
+        status: body.status,
+        sessionId: body.sessionId,
       });
 
-      broadcast(deps.sink, 'task.deleted', {
-        id: result.taskId,
-        cleanup: result.cleanup,
-      });
+      const updated = await taskStore.get(taskID);
+      if (!updated) {
+        return c.json({ error: 'task not found' }, 404);
+      }
 
-      return c.json({
-        data: {
+      return c.json(updated);
+    })
+
+    .post('/tasks/:id/deps', async (c) => {
+      const taskID = c.req.param('id');
+      const body = await parseBody<{
+        dependsOn?: string;
+        dependsOnIds?: string[];
+      }>(c.req);
+
+      const existing = await taskStore.get(taskID);
+      if (!existing) {
+        return c.json({ error: 'task not found' }, 404);
+      }
+
+      const next = new Set(existing.dependsOn);
+      if (body.dependsOn?.trim()) {
+        next.add(body.dependsOn.trim());
+      }
+      if (Array.isArray(body.dependsOnIds)) {
+        for (const dep of body.dependsOnIds) {
+          const value = dep.trim();
+          if (value) next.add(value);
+        }
+      }
+
+      await taskStore.updateDependencies(taskID, [...next]);
+      return c.json(await taskStore.get(taskID));
+    })
+
+    .delete('/tasks/:id', async (c) => {
+      const taskID = c.req.param('id');
+
+      try {
+        const result = await deleteTask(taskID, {
+          taskStore: deps.taskStore,
+          interactions: deps.interactionStore,
+          repoDir: deps.repoDir,
+          queue: deps.queue,
+        });
+
+        broadcast(deps.sink, 'task.deleted', {
+          id: result.taskId,
+          cleanup: result.cleanup,
+        });
+
+        return c.json({
           deleted: result.taskId,
           cleanup: result.cleanup,
-        },
-      });
-    } catch (error) {
-      if (error instanceof DeleteWorkflowError) {
-        return c.json({ error: error.message }, error.status);
+        });
+      } catch (error) {
+        if (error instanceof DeleteWorkflowError) {
+          return c.json({ error: error.message }, error.status);
+        }
+        return c.json({ error: toErrorMessage(error) }, 500);
       }
-      return c.json({ error: toErrorMessage(error) }, 500);
-    }
-  });
+    })
 
-  app.get('/tasks/:id/reviews', async (c) => {
-    return c.json({ data: await taskStore.listReviews(c.req.param('id')) });
-  });
+    .get('/tasks/:id/reviews', async (c) => {
+      return c.json(await taskStore.listReviews(c.req.param('id')));
+    });
 }
 
 function validateManualStatusTransition(

@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, PHASES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/types';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import type { ReactNode } from 'react';
 import type { InteractionStub } from '../../../types';
@@ -6,7 +6,7 @@ import { useInteractionDetailContext } from './InteractionDetailContext';
 
 interface Props {
   stub: InteractionStub;
-  phase?: string;
+  type?: string;
   collapsible?: boolean;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
@@ -32,26 +32,26 @@ function statusIcon(status: InteractionStub['status']) {
   return '●';
 }
 
-function phaseBadgeTone(phase: string | undefined): string {
-  const normalized = phase?.trim().toLowerCase();
-  if (normalized === PHASES.plan)
+function typeBadgeTone(type: string | undefined): string {
+  const normalized = type?.trim().toLowerCase();
+  if (normalized === 'plan')
     return 'border-indigo-500/35 bg-indigo-500/15 text-indigo-300';
-  if (normalized === PHASES.run)
+  if (normalized === 'run')
     return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300';
-  if (normalized === PHASES.review)
+  if (normalized === 'review')
     return 'border-amber-500/35 bg-amber-500/15 text-amber-300';
-  if (normalized === PHASES.evaluate)
+  if (normalized === 'evaluate')
     return 'border-cyan-500/35 bg-cyan-500/15 text-cyan-300';
-  if (normalized === PHASES.breakdown)
+  if (normalized === 'breakdown')
     return 'border-orange-500/35 bg-orange-500/15 text-orange-300';
-  if (normalized === PHASES.merge)
+  if (normalized === 'merge')
     return 'border-purple-500/35 bg-purple-500/15 text-purple-300';
   return 'border-slate-500/35 bg-slate-500/15 text-slate-300';
 }
 
 export function InteractionEntry({
   stub,
-  phase,
+  type,
   collapsible = false,
   expanded = false,
   onExpandedChange,
@@ -63,7 +63,7 @@ export function InteractionEntry({
   const activeLogId = detailContext?.activeLogId ?? null;
   const onToggleLog = detailContext?.onToggleLog;
   const isRunning = stub.status === INTERACTION_STATUSES.running;
-  const phaseLabel = phase?.trim();
+  const typeLabel = type?.trim();
   const open = collapsible ? alwaysExpanded || expanded : true;
   const diffSummary = showDiffSummary ? stub.diffSummary : null;
   const rowClass = [
@@ -102,14 +102,14 @@ export function InteractionEntry({
                 {statusIcon(stub.status)}
               </span>
               <span className="font-mono">#{stub.attempt}</span>
-              {phaseLabel && (
+              {typeLabel && (
                 <span
                   className={[
                     'rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em]',
-                    phaseBadgeTone(phaseLabel),
+                    typeBadgeTone(typeLabel),
                   ].join(' ')}
                 >
-                  [{phaseLabel.toUpperCase()}]
+                  [{typeLabel.toUpperCase()}]
                 </span>
               )}
               <span className="truncate">{stub.tool || '-'}</span>

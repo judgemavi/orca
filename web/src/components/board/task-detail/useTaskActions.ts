@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../api';
@@ -15,7 +15,7 @@ import {
   type Task,
 } from '../../../types';
 import {
-  selectByPhase,
+  selectByType,
   selectByRunLike,
   useInteractionsQuery,
 } from './useInteractions';
@@ -85,22 +85,22 @@ export function useTaskActions(task: Task) {
   const { tools, isOperationRunning } = useTaskDetailContext();
   const taskPlanQuery = useTaskPlanQuery(task.id);
   const planInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase(PHASES.plan),
+    select: selectByType('plan'),
   });
   const runInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByRunLike,
   });
   const evaluateInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase(PHASES.evaluate),
+    select: selectByType('evaluate'),
   });
   const reviewInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase(PHASES.review),
+    select: selectByType('review'),
   });
   const breakdownInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase(PHASES.breakdown),
+    select: selectByType('breakdown'),
   });
   const mergeInteractionsQuery = useInteractionsQuery(task.id, {
-    select: selectByPhase(PHASES.merge),
+    select: selectByType('merge'),
   });
 
   const startTaskMutation = useMutation({
@@ -338,10 +338,9 @@ export function useTaskActions(task: Task) {
   }, [breakdownInteractions]);
 
   const runningInProgress =
-    task.status === TASK_STATUSES.running ||
-    isOperationRunning(PHASES.run, task.id);
+    task.status === TASK_STATUSES.running || isOperationRunning('run', task.id);
   const runningBusy = runningInProgress || startTaskMutation.isPending;
-  const pendingPhaseInProgress =
+  const pendingBusy =
     planInteractions.some(
       (item) => item.status === INTERACTION_STATUSES.running,
     ) ||
@@ -353,32 +352,32 @@ export function useTaskActions(task: Task) {
     ) ||
     planGenerating ||
     generateTaskPlanMutation.isPending ||
-    isOperationRunning(PHASES.evaluate, task.id) ||
+    isOperationRunning('evaluate', task.id) ||
     evaluateTaskMutation.isPending ||
-    isOperationRunning(PHASES.breakdown, task.id) ||
+    isOperationRunning('breakdown', task.id) ||
     breakingDown ||
     breakdownTaskMutation.isPending;
-  const reviewPhaseInProgress =
+  const reviewBusy =
     reviewInteractions.some(
       (item) => item.status === INTERACTION_STATUSES.running,
     ) ||
-    isOperationRunning(PHASES.review, task.id) ||
+    isOperationRunning('review', task.id) ||
     aiReviewMutation.isPending;
-  const mergePhaseInProgress =
+  const mergeBusy =
     mergeInteractions.some(
       (item) => item.status === INTERACTION_STATUSES.running,
     ) ||
-    isOperationRunning(PHASES.merge, task.id) ||
+    isOperationRunning('merge', task.id) ||
     mergeTaskMutation.isPending;
-  const approvedPhaseInProgress = mergePhaseInProgress;
+  const approvedBusy = mergeBusy;
 
-  const phaseInProgress =
+  const operationInProgress =
     task.status === TASK_STATUSES.pending
-      ? pendingPhaseInProgress
+      ? pendingBusy
       : task.status === TASK_STATUSES.review
-        ? reviewPhaseInProgress
+        ? reviewBusy
         : task.status === TASK_STATUSES.approved
-          ? approvedPhaseInProgress
+          ? approvedBusy
           : false;
 
   useEffect(() => {
@@ -781,7 +780,7 @@ export function useTaskActions(task: Task) {
     evaluating,
     breakingDown,
     latestBreakdownProposals,
-    phaseInProgress,
+    operationInProgress,
     runningBusy,
     requestChangesExpanded,
     setRequestChangesExpanded,
@@ -805,7 +804,7 @@ export function useTaskActions(task: Task) {
     requestChangesPending: requestChangesMutation.isPending,
     aiReviewPending: aiReviewMutation.isPending,
     mergePending: mergeTaskMutation.isPending,
-    mergeInProgress: mergePhaseInProgress,
+    mergeInProgress: mergeBusy,
     resumePending: resumeTaskMutation.isPending,
     generatePlanPending: generateTaskPlanMutation.isPending,
     approvePlanPending: approvePlanMutation.isPending,

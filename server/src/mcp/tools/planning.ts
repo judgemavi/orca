@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DriverRegistry } from '../../driver/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
@@ -73,7 +73,7 @@ const tasksRequestPlanChangesSchema = z.object({
 export function planningTools(deps: {
   repoDir: string;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   taskStore: TaskStore;
   interactions: InteractionStore;
   memory: MemoryStore;

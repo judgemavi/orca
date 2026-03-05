@@ -1,20 +1,15 @@
-import type { Hono } from 'hono';
-import type { DriverRegistry } from '../../driver/registry';
-import { availableTools, toolModels } from '../../driver/registry';
+import { Hono } from 'hono';
+import type { ToolPluginRegistry } from '../../plugin/registry';
+import { availableTools, toolModels } from '../../plugin/registry';
 import type { ModelInfo } from '../../types';
 
-export function registerModelHandlers(app: Hono, registry: DriverRegistry) {
-  app.get('/models', (c) => {
+export function modelRoutes(registry: ToolPluginRegistry) {
+  return new Hono().get('/models', (c) => {
     const requested = c.req.query('tool')?.trim();
     if (requested) {
       return c.json({
-        data: {
-          tools: {
-            [requested]: toModelInfo(
-              requested,
-              toolModels(registry, requested),
-            ),
-          },
+        tools: {
+          [requested]: toModelInfo(requested, toolModels(registry, requested)),
         },
       });
     }
@@ -25,7 +20,7 @@ export function registerModelHandlers(app: Hono, registry: DriverRegistry) {
         toModelInfo(tool, toolModels(registry, tool)),
       ]),
     );
-    return c.json({ data: { tools } });
+    return c.json({ tools });
   });
 }
 

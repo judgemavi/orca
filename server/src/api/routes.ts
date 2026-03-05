@@ -1,45 +1,171 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { OrcaDrizzleDB } from '../db/connection';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
-import { registerCleanupHandlers } from './handlers/cleanup';
-import { registerConfigHandlers } from './handlers/config';
-import { registerExploreHandlers } from './handlers/explore';
-import { registerInteractionHandlers } from './handlers/interactions';
-import { registerMemoryHandlers } from './handlers/memory';
-import { registerMergeHandlers } from './handlers/merge';
-import { registerModelHandlers } from './handlers/models';
-import { registerMonitorHandlers } from './handlers/monitor';
-import { registerOrchestratorHandlers } from './handlers/orchestrator';
-import { registerPlanHandlers } from './handlers/plan';
-import { registerQualityHandlers } from './handlers/quality';
-import { registerQueueHandlers } from './handlers/queue';
-import { registerRunHandlers } from './handlers/run';
-import { registerSessionHandlers } from './handlers/sessions';
-import { registerStatusHandlers } from './handlers/status';
-import { registerTaskPlanHandlers } from './handlers/task-plan';
-import { registerTaskWorkflowHandlers } from './handlers/task-workflow';
-import { registerTaskHandlers } from './handlers/tasks';
+import { cleanupRoutes } from './handlers/cleanup';
+import { configRoutes } from './handlers/config';
+import { eventRoutes } from './handlers/events';
+import { exploreRoutes } from './handlers/explore';
+import { interactionRoutes } from './handlers/interactions';
+import { memoryRoutes } from './handlers/memory';
+import { mergeRoutes } from './handlers/merge';
+import { modelRoutes } from './handlers/models';
+import { monitorRoutes } from './handlers/monitor';
+import { orchestratorRoutes } from './handlers/orchestrator';
+import { planRoutes } from './handlers/plan';
+import { qualityRoutes } from './handlers/quality';
+import { queueRoutes } from './handlers/queue';
+import { runRoutes } from './handlers/run';
+import { sessionRoutes } from './handlers/sessions';
+import { statusRoutes } from './handlers/status';
+import { taskPlanRoutes } from './handlers/task-plan';
+import { taskWorkflowRoutes } from './handlers/task-workflow';
+import { taskRoutes } from './handlers/tasks';
 import type { EventSink } from './ws';
 
-export function buildRoutes(deps: {
+interface RouteDeps {
   db: OrcaDrizzleDB;
   repoDir: string;
   taskStore: TaskStore;
   configStore: ConfigStore;
   interactionStore: InteractionStore;
   memoryStore: MemoryStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   executor: Executor;
   eventSink: EventSink;
   queue: JobQueue;
-}) {
+}
+
+function taskGroup(deps: RouteDeps) {
+  return new Hono()
+    .route(
+      '/',
+      taskRoutes({
+        taskStore: deps.taskStore,
+        interactionStore: deps.interactionStore,
+        sink: deps.eventSink,
+        repoDir: deps.repoDir,
+        queue: deps.queue,
+      }),
+    )
+    .route(
+      '/',
+      taskPlanRoutes({
+        repoDir: deps.repoDir,
+        taskStore: deps.taskStore,
+        interactions: deps.interactionStore,
+        memory: deps.memoryStore,
+        configStore: deps.configStore,
+        registry: deps.registry,
+        sink: deps.eventSink,
+      }),
+    )
+    .route(
+      '/',
+      taskWorkflowRoutes({
+        repoDir: deps.repoDir,
+        taskStore: deps.taskStore,
+        interactionStore: deps.interactionStore,
+        configStore: deps.configStore,
+        registry: deps.registry,
+        executor: deps.executor,
+        sink: deps.eventSink,
+        queue: deps.queue,
+      }),
+    )
+    .route(
+      '/',
+      runRoutes({
+        executor: deps.executor,
+        taskStore: deps.taskStore,
+        sink: deps.eventSink,
+        queue: deps.queue,
+      }),
+    )
+    .route('/', interactionRoutes(deps.interactionStore))
+    .route('/', qualityRoutes(deps.interactionStore));
+}
+
+function dataGroup(deps: RouteDeps) {
+  return new Hono()
+    .route(
+      '/',
+      mergeRoutes({
+        repoDir: deps.repoDir,
+        taskStore: deps.taskStore,
+        configStore: deps.configStore,
+        interactionStore: deps.interactionStore,
+        memoryStore: deps.memoryStore,
+        registry: deps.registry,
+        sink: deps.eventSink,
+        queue: deps.queue,
+      }),
+    )
+    .route('/', memoryRoutes(deps.repoDir, deps.memoryStore))
+    .route(
+      '/',
+      planRoutes({
+        taskStore: deps.taskStore,
+        interactions: deps.interactionStore,
+        sink: deps.eventSink,
+      }),
+    )
+    .route('/', exploreRoutes(deps.repoDir, deps.eventSink, deps.queue))
+    .route(
+      '/',
+      cleanupRoutes({
+        repoDir: deps.repoDir,
+        taskStore: deps.taskStore,
+        sink: deps.eventSink,
+      }),
+    );
+}
+
+function infraGroup(deps: RouteDeps) {
+  return new Hono()
+    .route('/', sessionRoutes(deps.db))
+    .route(
+      '/',
+      orchestratorRoutes(
+        deps.eventSink,
+        deps.configStore,
+        deps.repoDir,
+        deps.registry,
+      ),
+    )
+    .route('/', configRoutes(deps.configStore))
+    .route('/', modelRoutes(deps.registry))
+    .route(
+      '/',
+      statusRoutes({
+        taskStore: deps.taskStore,
+        interactions: deps.interactionStore,
+        memory: deps.memoryStore,
+        repoDir: deps.repoDir,
+      }),
+    )
+    .route('/', monitorRoutes(deps.eventSink))
+    .route('/', queueRoutes({ queue: deps.queue }))
+    .route('/', eventRoutes(deps.eventSink));
+}
+
+function createApi(deps: RouteDeps) {
+  return new Hono()
+    .get('/health', (c) => c.json({ status: 'ok' }))
+    .route('/', taskGroup(deps))
+    .route('/', dataGroup(deps))
+    .route('/', infraGroup(deps));
+}
+
+export type AppType = ReturnType<typeof createApi>;
+
+export function buildRoutes(deps: RouteDeps) {
   const app = new Hono();
   app.use('*', cors());
 
@@ -50,92 +176,7 @@ export function buildRoutes(deps: {
     }),
   );
 
-  const api = app.basePath('/api/v1');
-  api.get('/health', (c) => c.json({ data: { status: 'ok' } }));
-
-  registerTaskHandlers(api, {
-    taskStore: deps.taskStore,
-    interactionStore: deps.interactionStore,
-    sink: deps.eventSink,
-    repoDir: deps.repoDir,
-    queue: deps.queue,
-  });
-  registerTaskPlanHandlers(api, {
-    repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
-    interactions: deps.interactionStore,
-    memory: deps.memoryStore,
-    configStore: deps.configStore,
-    registry: deps.registry,
-    sink: deps.eventSink,
-  });
-  registerTaskWorkflowHandlers(api, {
-    repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
-    interactionStore: deps.interactionStore,
-    configStore: deps.configStore,
-    registry: deps.registry,
-    executor: deps.executor,
-    sink: deps.eventSink,
-    queue: deps.queue,
-  });
-  registerRunHandlers(api, {
-    executor: deps.executor,
-    taskStore: deps.taskStore,
-    sink: deps.eventSink,
-    queue: deps.queue,
-  });
-  registerMergeHandlers(api, {
-    repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
-    configStore: deps.configStore,
-    interactionStore: deps.interactionStore,
-    memoryStore: deps.memoryStore,
-    registry: deps.registry,
-    sink: deps.eventSink,
-    queue: deps.queue,
-  });
-  registerInteractionHandlers(api, deps.interactionStore);
-  registerMemoryHandlers(api, deps.repoDir, deps.memoryStore);
-  registerPlanHandlers(api, {
-    taskStore: deps.taskStore,
-    interactions: deps.interactionStore,
-    sink: deps.eventSink,
-  });
-  registerExploreHandlers(api, deps.repoDir, deps.eventSink, deps.queue);
-  registerCleanupHandlers(api, {
-    repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
-    sink: deps.eventSink,
-  });
-  registerQualityHandlers(api, deps.interactionStore);
-  registerSessionHandlers(api, deps.db);
-  registerOrchestratorHandlers(
-    api,
-    deps.eventSink,
-    deps.configStore,
-    deps.repoDir,
-    deps.registry,
-  );
-  registerConfigHandlers(api, deps.configStore);
-  registerModelHandlers(api, deps.registry);
-  registerStatusHandlers(api, {
-    taskStore: deps.taskStore,
-    interactions: deps.interactionStore,
-    memory: deps.memoryStore,
-    repoDir: deps.repoDir,
-  });
-  registerMonitorHandlers(api, deps.eventSink);
-  registerQueueHandlers(api, { queue: deps.queue });
-  api.get('/ws', (c) => c.json({ error: 'websocket upgrade required' }, 426));
-  api.get('/terminal/:sessionID', (c) =>
-    c.json(
-      {
-        error: `terminal websocket not available for session ${c.req.param('sessionID')}`,
-      },
-      501,
-    ),
-  );
+  app.route('/api/v1', createApi(deps));
 
   return app;
 }

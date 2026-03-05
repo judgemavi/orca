@@ -1,11 +1,11 @@
 import type { Command } from 'commander';
-import type { DriverRegistry } from '../../driver/registry';
-import { availableTools, toolModels } from '../../driver/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
+import { availableTools, toolModels } from '../../plugin/registry';
 import { printJSON } from '../format';
 
 export function registerModelsCommand(
   program: Command,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ) {
   program
     .command('models')

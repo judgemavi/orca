@@ -1,8 +1,7 @@
-import type { DriverRegistry } from '../driver/registry';
-import { createPhaseRunner } from '../shared/phase-runner';
+import type { ToolPluginRegistry } from '../plugin/registry';
+import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { AIReviewCheck, AIReviewFinding, Config } from '../types';
-import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONObject } from './llm';
 
@@ -24,7 +23,7 @@ export interface RunAIReviewInput {
   diff: string;
   prompt?: string;
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   interactions: InteractionStore;
   toolOverride?: string;
   modelOverride?: string;
@@ -45,7 +44,7 @@ export interface RunAIReviewResult {
 export async function runAIReview(
   input: RunAIReviewInput,
 ): Promise<RunAIReviewResult> {
-  const runPhase = await createPhaseRunner({
+  const runInteraction = await createInteractionRunner({
     config: input.config,
     registry: input.registry,
     repoDir: input.repoDir,
@@ -59,10 +58,10 @@ export async function runAIReview(
     interactionId,
     tool,
     model,
-  } = await runPhase(
+  } = await runInteraction(
     {
       taskId: input.taskID,
-      phase: PHASES.review,
+      type: 'review',
       promptName: 'review',
       promptArgs: [
         input.title.trim() || 'Untitled task',

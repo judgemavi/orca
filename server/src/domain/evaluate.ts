@@ -1,8 +1,7 @@
-import type { DriverRegistry } from '../driver/registry';
-import { createPhaseRunner } from '../shared/phase-runner';
+import type { ToolPluginRegistry } from '../plugin/registry';
+import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { Config, Task, TaskEvaluation } from '../types';
-import { PHASES } from '../types';
 import { runTool } from '../worker/worker';
 import { readExploreContext } from './explore';
 import { extractJSONObject } from './llm';
@@ -10,7 +9,7 @@ import { extractJSONObject } from './llm';
 export interface EvaluateOptions {
   repoDir: string;
   config?: Config;
-  registry?: DriverRegistry;
+  registry?: ToolPluginRegistry;
   interactions?: InteractionStore;
   toolOverride?: string;
   modelOverride?: string;
@@ -21,18 +20,18 @@ export async function evaluateTask(
   options: EvaluateOptions,
 ): Promise<TaskEvaluation> {
   const context = await readExploreContext(options.repoDir);
-  const runPhase = await createPhaseRunner({
+  const runInteraction = await createInteractionRunner({
     config: options.config,
     registry: options.registry,
     repoDir: options.repoDir,
     interactions: options.interactions,
     runTool,
   });
-  const { result: evaluation } = await runPhase(
+  const { result: evaluation } = await runInteraction(
     {
       taskId: task.id,
       taskRunId: `evaluate-${task.id.slice(0, 8)}`,
-      phase: PHASES.evaluate,
+      type: 'evaluate',
       promptName: 'evaluate',
       promptArgs: [
         context.trim() || '(no codebase context available)',
@@ -41,8 +40,7 @@ export async function evaluateTask(
       ],
       toolOverride: options.toolOverride ?? '',
       modelOverride: options.modelOverride ?? '',
-      resolveErrorMessage:
-        'no LLM tool available for evaluate phase — check config.defaultTool or orchestrator.phases.evaluate',
+      resolveErrorMessage: 'no LLM tool available — check config.defaultTool',
       exitErrorLabel: 'evaluate',
     },
     (output) => {

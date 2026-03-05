@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, PHASES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/types';
 import {
   parseEvaluationPayload,
   parseJSONText,
@@ -10,9 +10,9 @@ type Props = {
   interaction: Interaction;
 };
 
-export function EvaluatePhaseSection({ interaction }: Props) {
+export function EvaluateSection({ interaction }: Props) {
   if (
-    interaction.phase !== PHASES.evaluate ||
+    interaction.type !== 'evaluate' ||
     interaction.status !== INTERACTION_STATUSES.completed ||
     !interaction.qualityJson
   ) {

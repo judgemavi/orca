@@ -1,9 +1,9 @@
 import {
   collectAssistantText,
   formatTemplate,
-  resolvePhaseExecution,
+  resolveExecution,
 } from '../domain/llm';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import { loadPrompt, type PromptName } from '../prompts/loader';
 import type { InteractionStore } from '../store/interactions';
 import type { Config } from '../types';
@@ -12,17 +12,17 @@ import { toErrorMessage } from './errors';
 
 type Awaitable<T> = T | Promise<T>;
 
-export interface PhaseDeps {
+export interface RunnerDeps {
   config?: Config;
-  registry?: DriverRegistry;
+  registry?: ToolPluginRegistry;
   repoDir: string;
   interactions?: InteractionStore;
   runTool: typeof import('../worker/worker').runTool;
 }
 
-export interface PhaseOpts {
+export interface RunnerOpts {
   taskId: string | null;
-  phase: string;
+  type: string;
   promptName?: PromptName;
   promptArgs?: string[];
   prompt?: string;
@@ -31,8 +31,6 @@ export interface PhaseOpts {
   timeoutMs?: number;
   toolOverride?: string;
   modelOverride?: string;
-  resolvePhase?: string;
-  interactionPhase?: string;
   taskRunId?: string;
   resolveErrorMessage?: string;
   exitErrorLabel?: string;
@@ -52,7 +50,7 @@ interface InteractionFinishFields {
   model?: string | null;
 }
 
-export interface PhaseRunContext {
+export interface RunContext {
   output: string;
   interactionId: string;
   tool: string;
@@ -60,7 +58,7 @@ export interface PhaseRunContext {
   runResult: WorkerRunResult;
 }
 
-export interface PhaseRunResult<T> {
+export interface RunResult<T> {
   result: T;
   interactionId: string;
   tool: string;
@@ -68,43 +66,41 @@ export interface PhaseRunResult<T> {
   output: string;
 }
 
-export async function createPhaseRunner(deps: PhaseDeps) {
-  return async function runPhase<T>(
-    opts: PhaseOpts,
-    parse: (text: string, context: PhaseRunContext) => Awaitable<T>,
+export async function createInteractionRunner(deps: RunnerDeps) {
+  return async function runInteraction<T>(
+    opts: RunnerOpts,
+    parse: (text: string, context: RunContext) => Awaitable<T>,
     onSuccess?: (
       result: T,
-      context: PhaseRunContext,
+      context: RunContext,
     ) => Awaitable<Partial<InteractionFinishFields> | void>,
-  ): Promise<PhaseRunResult<T>> {
-    const phase = opts.phase.trim();
-    const resolvePhase = opts.resolvePhase?.trim() || phase;
-    const interactionPhase = opts.interactionPhase?.trim() || phase;
+  ): Promise<RunResult<T>> {
+    const type = opts.type.trim();
     const interactionTaskId = normalizeTaskID(opts.taskId);
     const worktreePath = opts.worktreePath?.trim() || deps.repoDir;
-    const taskRunID = opts.taskRunId?.trim() || interactionTaskId || phase;
+    const taskRunID = opts.taskRunId?.trim() || interactionTaskId || type;
 
-    const execution = resolvePhaseExecution({
+    const execution = resolveExecution({
       config: deps.config,
       registry: deps.registry,
-      phase: resolvePhase,
       toolOverride: opts.toolOverride ?? '',
       modelOverride: opts.modelOverride ?? '',
+      interactionType: type,
     });
     if (!execution) {
       throw new Error(
-        opts.resolveErrorMessage ?? `unable to resolve ${phase} tool/model`,
+        opts.resolveErrorMessage ?? `unable to resolve tool/model`,
       );
     }
 
-    const prompt = await loadPhasePrompt(deps.repoDir, opts);
+    const prompt = await loadInteractionPrompt(deps.repoDir, opts);
 
     let interactionID = '';
     let interactionLogPath = '';
     if (deps.interactions) {
       const interaction = await deps.interactions.begin({
         taskId: interactionTaskId,
-        phase: interactionPhase,
+        type,
         tool: execution.toolName,
       });
       interactionID = interaction.id;
@@ -122,7 +118,7 @@ export async function createPhaseRunner(deps: PhaseDeps) {
       const runResult = await deps.runTool({
         taskID: taskRunID,
         driverName: execution.toolName,
-        driver: execution.driver,
+        plugin: execution.plugin,
         prompt,
         model: execution.model,
         dir: worktreePath,
@@ -134,13 +130,13 @@ export async function createPhaseRunner(deps: PhaseDeps) {
 
       const output = collectAssistantText(runResult.events);
       if (runResult.exitCode !== 0) {
-        const label = opts.exitErrorLabel?.trim() || phase;
+        const label = opts.exitErrorLabel?.trim() || type;
         throw new Error(
           runResult.error ?? `${label} exited with code ${runResult.exitCode}`,
         );
       }
 
-      const context: PhaseRunContext = {
+      const context: RunContext = {
         output,
         interactionId: interactionID,
         tool: execution.toolName,
@@ -186,9 +182,9 @@ function normalizeTaskID(taskId: string | null): string | null {
   return normalized || null;
 }
 
-async function loadPhasePrompt(
+async function loadInteractionPrompt(
   repoDir: string,
-  opts: PhaseOpts,
+  opts: RunnerOpts,
 ): Promise<string> {
   const inlinePrompt = opts.prompt ?? '';
   const basePrompt = inlinePrompt

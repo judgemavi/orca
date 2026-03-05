@@ -11,7 +11,7 @@ import {
 } from '../domain/memory-retrieval';
 import { refreshMemoryEntries } from '../domain/memory-sync';
 import { generateGlobalPlan, runPlan } from '../domain/plan';
-import type { DriverRegistry } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
@@ -30,7 +30,7 @@ export interface EvaluateTaskWorkflowDeps extends ToolModelOverrides {
   taskStore: TaskStore;
   interactions: InteractionStore;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
 }
 
 export interface BreakdownTaskInput extends ToolModelOverrides {
@@ -43,7 +43,7 @@ export interface BreakdownTaskWorkflowDeps {
   taskStore: TaskStore;
   interactions?: InteractionStore;
   configStore?: ConfigStore;
-  registry?: DriverRegistry;
+  registry?: ToolPluginRegistry;
   memory?: MemoryStore;
 }
 
@@ -65,7 +65,7 @@ export interface GeneratePlanWorkflowDeps extends ToolModelOverrides {
   taskStore: TaskStore;
   interactions: InteractionStore;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   memory?: MemoryStore;
   feedback?: string;
 }
@@ -360,7 +360,7 @@ async function retrievePlanningMemory(input: {
   title: string;
   description: string;
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   interactions: InteractionStore;
 }): Promise<{ memoryContext: string; memory?: BudgetedRetrievalResult }> {
   if (!input.memory) {
@@ -400,7 +400,7 @@ function canRunLLMBreakdown(
   repoDir: string;
   interactions: InteractionStore;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
 } {
   return Boolean(
     deps.repoDir && deps.interactions && deps.configStore && deps.registry,

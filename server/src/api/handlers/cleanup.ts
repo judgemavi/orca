@@ -1,4 +1,4 @@
-import type { Hono } from 'hono';
+import { Hono } from 'hono';
 import { cleanupTaskArtifacts } from '../../domain/task-cleanup';
 import { gitRun } from '../../shared/git';
 import type { TaskStore } from '../../store/tasks';
@@ -16,26 +16,21 @@ interface WorktreeEntry {
   taskID: string;
 }
 
-export function registerCleanupHandlers(
-  app: Hono,
-  deps: {
-    repoDir: string;
-    taskStore: TaskStore;
-    sink: EventSink;
-  },
-) {
-  app.post('/cleanup', async (c) => {
+export function cleanupRoutes(deps: {
+  repoDir: string;
+  taskStore: TaskStore;
+  sink: EventSink;
+}) {
+  return new Hono().post('/cleanup', async (c) => {
     const body = await parseBody<CleanupBody>(c.req);
     const dryRun = Boolean(body.dryRun);
     const stale = await listStaleTaskWorktrees(deps.repoDir, deps.taskStore);
 
     if (dryRun) {
       return c.json({
-        data: {
-          removed: stale.length,
-          worktrees: stale.map((entry) => entry.branch || entry.path),
-          dryRun: true,
-        },
+        removed: stale.length,
+        worktrees: stale.map((entry) => entry.branch || entry.path),
+        dryRun: true,
       });
     }
 
@@ -76,7 +71,7 @@ export function registerCleanupHandlers(
       },
     });
 
-    return c.json({ data: { status: 'running' } }, 202);
+    return c.json({ status: 'running' }, 202);
   });
 }
 

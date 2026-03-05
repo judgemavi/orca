@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import { getMemorySyncStatus } from '../../domain/memory-sync';
-import type { DriverRegistry } from '../../driver/registry';
-import { availableTools, toolModels } from '../../driver/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
+import { availableTools, toolModels } from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
-import { INTERACTION_STATUSES, PHASES, TASK_STATUSES } from '../../types';
+import { INTERACTION_STATUSES, TASK_STATUSES } from '../../types';
 import { defineTool } from '../define-tool';
 import type { Tool } from '../types';
 
@@ -48,7 +48,7 @@ const qualityResultsSchema = z.object({
 export function adminTools(deps: {
   repoDir: string;
   configStore: ConfigStore;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   taskStore: TaskStore;
   interactions: InteractionStore;
   memory: MemoryStore;
@@ -139,11 +139,11 @@ export function adminTools(deps: {
     }),
     defineTool({
       name: 'quality_results',
-      description: 'Get latest run-phase quality results for a task',
+      description: 'Get latest run interaction quality results for a task',
       schema: qualityResultsSchema,
       handler: async (input) => {
         const taskID = input.taskId;
-        const items = await deps.interactions.listByPhase(taskID, PHASES.run);
+        const items = await deps.interactions.listByType(taskID, 'run');
         const latest = items.find((item) => item.qualityJson?.trim());
         if (!latest?.qualityJson) {
           return { taskId: taskID, quality: null };

@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, PHASES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/types';
 import {
   parseBreakdownPayload,
   parseJSONText,
@@ -16,7 +16,7 @@ type Props = {
   rejecting?: boolean;
 };
 
-export function BreakdownPhaseSection({
+export function BreakdownSection({
   interaction,
   proposals,
   onAccept,
@@ -24,7 +24,7 @@ export function BreakdownPhaseSection({
   accepting = false,
   rejecting = false,
 }: Props) {
-  if (interaction.phase !== PHASES.breakdown) return null;
+  if (interaction.type !== 'breakdown') return null;
   if (interaction.status === INTERACTION_STATUSES.running) {
     return <div className="text-xs text-muted">Generating task breakdown…</div>;
   }

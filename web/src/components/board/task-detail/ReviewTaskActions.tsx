@@ -22,14 +22,14 @@ export function ReviewTaskActions() {
             actions.setAIFeedbackAppliedNotice(false);
             actions.setActionError(null);
           }}
-          disabled={actions.phaseInProgress || actions.requestChangesPending}
+          disabled={actions.operationInProgress || actions.requestChangesPending}
         >
           Cancel
         </Button>
         <Button
           variant="primary"
           onClick={actions.handleRequestChanges}
-          disabled={actions.phaseInProgress || actions.requestChangesPending}
+          disabled={actions.operationInProgress || actions.requestChangesPending}
         >
           {actions.requestChangesPending
             ? 'Submitting…'
@@ -47,14 +47,14 @@ export function ReviewTaskActions() {
             actions.setAIReviewPrompt('');
             actions.setActionError(null);
           }}
-          disabled={actions.phaseInProgress}
+          disabled={actions.operationInProgress}
         >
           Cancel
         </Button>
         <Button
           variant="primary"
           onClick={actions.handleAIReview}
-          disabled={actions.phaseInProgress}
+          disabled={actions.operationInProgress}
         >
           {actions.aiReviewPending ? 'Reviewing…' : 'Start Review'}
         </Button>
@@ -67,7 +67,7 @@ export function ReviewTaskActions() {
           variant="primary"
           onClick={actions.handleApprove}
           disabled={
-            actions.phaseInProgress ||
+            actions.operationInProgress ||
             actions.approvePending ||
             actions.requestChangesPending
           }
@@ -83,7 +83,7 @@ export function ReviewTaskActions() {
             actions.setActionError(null);
           }}
           disabled={
-            actions.phaseInProgress ||
+            actions.operationInProgress ||
             actions.approvePending ||
             actions.requestChangesPending
           }
@@ -98,7 +98,7 @@ export function ReviewTaskActions() {
             actions.setAIReviewExpanded(true);
             actions.setActionError(null);
           }}
-          disabled={actions.phaseInProgress || actions.approvePending}
+          disabled={actions.operationInProgress || actions.approvePending}
         >
           {actions.aiReviewPending ? 'Reviewing…' : 'AI Review'}
         </Button>

@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, PHASES, REVIEW_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { controlClass } from '../../../lib/constants';
@@ -30,14 +30,14 @@ function formatRelativeTime(iso: string): string {
   return rtf.format(Math.round(deltaSeconds / 86400), 'day');
 }
 
-export function PlanPhaseSection({
+export function PlanSection({
   interaction,
   isEditableLatestPlan,
   planEditor,
   planReviews,
 }: Props) {
   if (
-    interaction.phase !== PHASES.plan ||
+    interaction.type !== 'plan' ||
     interaction.status !== INTERACTION_STATUSES.completed
   ) {
     return null;

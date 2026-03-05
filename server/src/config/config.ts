@@ -1,17 +1,7 @@
 import deepmerge from 'deepmerge';
-import type { DriverRegistry } from '../driver/registry';
-import { availableTools, toolModels } from '../driver/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
+import { availableTools, toolModels } from '../plugin/registry';
 import type { Config } from '../types';
-import { PHASES } from '../types';
-
-const DEFAULT_PHASES = [
-  PHASES.explore,
-  PHASES.plan,
-  PHASES.run,
-  PHASES.review,
-  PHASES.merge,
-  PHASES.retro,
-];
 
 export function defaultConfig(): Config {
   return {
@@ -28,7 +18,7 @@ export function defaultConfig(): Config {
     orchestrator: {
       supervisorTool: 'claude',
       supervisorModel: '',
-      phases: {},
+      overrides: {},
     },
     monitor: {
       stuckCheckInterval: '60s',
@@ -88,7 +78,7 @@ export function validateConfig(config: Config): Config {
 
 export function sanitizeConfig(
   config: Config,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ): string[] {
   const changes: string[] = [];
   const tools = availableTools(registry);
@@ -123,34 +113,34 @@ export function sanitizeConfig(
     );
     config.orchestrator.supervisorTool = config.defaultTool;
   }
-  const supervisorModels = toolModels(registry, config.orchestrator.supervisorTool);
+  const supervisorModels = toolModels(
+    registry,
+    config.orchestrator.supervisorTool,
+  );
   if (!supervisorModels.includes(config.orchestrator.supervisorModel)) {
-    const fallback = config.orchestrator.supervisorTool === config.defaultTool
-      ? config.defaultModel
-      : (supervisorModels[0] ?? '');
+    const fallback =
+      config.orchestrator.supervisorTool === config.defaultTool
+        ? config.defaultModel
+        : (supervisorModels[0] ?? '');
     changes.push(
       `orchestrator.supervisorModel ${config.orchestrator.supervisorModel} -> ${fallback}`,
     );
     config.orchestrator.supervisorModel = fallback;
   }
 
-  for (const phase of DEFAULT_PHASES) {
-    const phaseCfg = config.orchestrator.phases[phase] ?? {
-      tool: '',
-      model: '',
-    };
-    if (!tools.includes(phaseCfg.tool)) {
-      phaseCfg.tool = config.defaultTool;
-      changes.push(`orchestrator.phases.${phase}.tool -> ${phaseCfg.tool}`);
+  for (const [key, entry] of Object.entries(config.orchestrator.overrides)) {
+    if (!tools.includes(entry.tool)) {
+      entry.tool = config.defaultTool;
+      changes.push(`orchestrator.overrides.${key}.tool -> ${entry.tool}`);
     }
-    const phaseModels = toolModels(registry, phaseCfg.tool);
-    if (!phaseModels.includes(phaseCfg.model)) {
-      phaseCfg.model = phaseCfg.tool === config.defaultTool
-        ? config.defaultModel
-        : (phaseModels[0] ?? '');
-      changes.push(`orchestrator.phases.${phase}.model -> ${phaseCfg.model}`);
+    const entryModels = toolModels(registry, entry.tool);
+    if (!entryModels.includes(entry.model)) {
+      entry.model =
+        entry.tool === config.defaultTool
+          ? config.defaultModel
+          : (entryModels[0] ?? '');
+      changes.push(`orchestrator.overrides.${key}.model -> ${entry.model}`);
     }
-    config.orchestrator.phases[phase] = phaseCfg;
   }
 
   return changes;
@@ -158,7 +148,7 @@ export function sanitizeConfig(
 
 export function validateDefaults(
   config: Config,
-  registry: DriverRegistry,
+  registry: ToolPluginRegistry,
 ): void {
   const tools = availableTools(registry);
   if (!tools.includes(config.defaultTool)) {
@@ -174,36 +164,36 @@ export function validateDefaults(
   }
 }
 
-export function resolveToolForPhase(
+export function resolveTool(
   config: Config,
-  phase: string,
   override: string,
+  interactionType?: string,
 ): string {
   const explicit = override.trim();
   if (explicit) return explicit;
-  const phaseTool = config.orchestrator.phases[phase]?.tool?.trim();
-  if (phaseTool) return phaseTool;
+  const typeTool = interactionType
+    ? config.orchestrator.overrides[interactionType]?.tool?.trim()
+    : '';
+  if (typeTool) return typeTool;
   if (config.defaultTool.trim()) return config.defaultTool;
   return config.tools[0] ?? '';
 }
 
-export function resolveModelForPhase(
+export function resolveModel(
   config: Config,
-  registry: DriverRegistry,
-  phase: string,
+  registry: ToolPluginRegistry,
   toolName: string,
   override: string,
+  interactionType?: string,
 ): string {
   if (override.trim()) return override;
-
-  const phaseModel = config.orchestrator.phases[phase]?.model?.trim();
-  if (phaseModel) return phaseModel;
-
-  // Only use defaultModel if it belongs to the same tool
+  const typeModel = interactionType
+    ? config.orchestrator.overrides[interactionType]?.model?.trim()
+    : '';
+  if (typeModel) return typeModel;
   if (config.defaultModel.trim() && toolName === config.defaultTool) {
     return config.defaultModel;
   }
-
   return toolModels(registry, toolName)[0] ?? '';
 }
 

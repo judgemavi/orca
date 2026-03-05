@@ -1,6 +1,6 @@
 import type { EventSink } from '../api/ws';
 import type { QualityResult } from '../domain/quality';
-import type { DriverEvent } from '../driver/types';
+import type { ToolPluginEvent } from '../plugin/types';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
@@ -24,7 +24,7 @@ export interface OutcomeResult {
 
 export interface TaskRunResultRecord {
   taskID: string;
-  phase: string;
+  interactionType: string;
   toolName: string;
   model: string;
   status: TaskStatus;
@@ -35,7 +35,7 @@ export interface TaskRunResultRecord {
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number;
-  events: DriverEvent[];
+  events: ToolPluginEvent[];
   logPath: string;
   durationMS: number;
   timedOut: boolean;
@@ -48,7 +48,7 @@ export interface TaskRunResultRecord {
 
 export interface FailedTaskRunInput {
   taskID: string;
-  phase: string;
+  interactionType: string;
   toolName: string;
   model: string;
   status: TaskStatus;
@@ -171,7 +171,7 @@ export class ResultCoordinator {
   buildFailedResult(input: FailedTaskRunInput): TaskRunResultRecord {
     return {
       taskID: input.taskID,
-      phase: input.phase,
+      interactionType: input.interactionType,
       toolName: input.toolName,
       model: input.model,
       status: input.status,
@@ -296,7 +296,7 @@ export class ResultCoordinator {
   private async loadUsedMemoryIDs(taskID: string): Promise<string[]> {
     const seen = new Set<string>();
     const planInteractions =
-      (await this.deps.interactionStore?.listByPhase(taskID, 'plan')) ?? [];
+      (await this.deps.interactionStore?.listByType(taskID, 'plan')) ?? [];
     for (const interaction of planInteractions) {
       const payload = interaction.qualityJson?.trim();
       if (!payload) continue;

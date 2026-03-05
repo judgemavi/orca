@@ -6,10 +6,10 @@ import {
 } from './config/config';
 import { type DatabaseConnection, openDatabase } from './db/connection';
 import {
-  type DriverRegistry,
-  fallbackDriverRegistry,
-  loadDriverRegistry,
-} from './driver/registry';
+  type ToolPluginRegistry,
+  fallbackToolPluginRegistry,
+  loadToolPluginRegistry,
+} from './plugin/registry';
 import { Executor } from './executor/executor';
 import { JobQueue } from './queue/queue';
 import { ConfigStore } from './store/config';
@@ -26,7 +26,7 @@ export interface BootstrapOptions {
 export interface BootstrapResult {
   database: DatabaseConnection;
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
   configStore: ConfigStore;
   taskStore: TaskStore;
   interactionStore: InteractionStore;
@@ -44,12 +44,12 @@ export async function bootstrap(
   const database = openDatabase({ repoDir });
   const db = database.db;
 
-  let registry = fallbackDriverRegistry();
+  let registry = fallbackToolPluginRegistry();
   try {
-    registry = await loadDriverRegistry(repoDir);
+    registry = await loadToolPluginRegistry(repoDir);
   } catch (error) {
     console.warn(
-      'failed to load driver registry from .orca/drivers, using built-ins',
+      'failed to load plugin registry from .orca/plugins, using built-ins',
       error,
     );
   }

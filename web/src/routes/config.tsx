@@ -51,7 +51,11 @@ function ConfigPage() {
     if (data)
       setDraft({
         ...data,
-        project: data.project ?? { name: '', integrationBranch: '', worktreeDir: '' },
+        project: data.project ?? {
+          name: '',
+          integrationBranch: '',
+          worktreeDir: '',
+        },
         tools: data.tools ?? [],
         defaultTool: data.defaultTool ?? '',
         defaultModel: data.defaultModel ?? '',
@@ -60,11 +64,23 @@ function ConfigPage() {
         orchestrator: data.orchestrator ?? {
           supervisorTool: data.defaultTool ?? '',
           supervisorModel: data.defaultModel ?? '',
-          phases: {},
+          overrides: {},
         },
-        monitor: data.monitor ?? { stuckCheckInterval: '5m', maxStuckCycles: 3, conflictCheckInterval: '10m' },
-        quality: data.quality ?? { enabled: true, scopeCheck: true, testDelta: true },
-        logging: data.logging ?? { level: 'info', format: 'text', maxFiles: 50 },
+        monitor: data.monitor ?? {
+          stuckCheckInterval: '5m',
+          maxStuckCycles: 3,
+          conflictCheckInterval: '10m',
+        },
+        quality: data.quality ?? {
+          enabled: true,
+          scopeCheck: true,
+          testDelta: true,
+        },
+        logging: data.logging ?? {
+          level: 'info',
+          format: 'text',
+          maxFiles: 50,
+        },
       });
   }, [data]);
 
@@ -223,7 +239,8 @@ function ConfigPage() {
                   updateSection('orchestrator', {
                     ...draft.orchestrator,
                     supervisorTool: e.target.value,
-                    supervisorModel: modelsByTool[e.target.value]?.[0]?.id ?? '',
+                    supervisorModel:
+                      modelsByTool[e.target.value]?.[0]?.id ?? '',
                   })
                 }
               >
@@ -259,27 +276,31 @@ function ConfigPage() {
           </div>
 
           <div className="space-y-2">
-            <div className="text-xs">Phase overrides</div>
-            {Object.entries(draft.orchestrator.phases).map(
-              ([phase, override]) => {
-                const phaseModels = override.tool
-                  ? (modelsByTool[override.tool] ?? [])
+            <div className="text-xs">Interaction type overrides</div>
+            {Object.entries(draft.orchestrator.overrides).map(
+              ([type, override]) => {
+                const typeModels = (override as { tool: string; model: string }).tool
+                  ? (modelsByTool[(override as { tool: string; model: string }).tool] ?? [])
                   : [];
                 return (
                   <div
-                    key={phase}
+                    key={type}
                     className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_1fr_1fr]"
                   >
-                    <div className="self-center text-[13px]">{phase}</div>
+                    <div className="self-center text-[13px]">{type}</div>
                     <select
                       className={inputClass}
-                      value={override.tool}
+                      value={(override as { tool: string; model: string }).tool}
                       onChange={(e) =>
                         updateSection('orchestrator', {
                           ...draft.orchestrator,
-                          phases: {
-                            ...draft.orchestrator.phases,
-                            [phase]: { tool: e.target.value, model: modelsByTool[e.target.value]?.[0]?.id ?? '' },
+                          overrides: {
+                            ...draft.orchestrator.overrides,
+                            [type]: {
+                              tool: e.target.value,
+                              model:
+                                modelsByTool[e.target.value]?.[0]?.id ?? '',
+                            },
                           },
                         })
                       }
@@ -293,19 +314,19 @@ function ConfigPage() {
                     </select>
                     <select
                       className={inputClass}
-                      value={override.model}
+                      value={(override as { tool: string; model: string }).model}
                       onChange={(e) =>
                         updateSection('orchestrator', {
                           ...draft.orchestrator,
-                          phases: {
-                            ...draft.orchestrator.phases,
-                            [phase]: { ...override, model: e.target.value },
+                          overrides: {
+                            ...draft.orchestrator.overrides,
+                            [type]: { ...(override as { tool: string; model: string }), model: e.target.value },
                           },
                         })
                       }
                     >
                       <option value="">Select model</option>
-                      {phaseModels.map((model) => (
+                      {typeModels.map((model) => (
                         <option key={model.id} value={model.id}>
                           {model.id}
                         </option>

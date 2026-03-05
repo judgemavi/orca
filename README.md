@@ -15,12 +15,12 @@ Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 7. `retro + sync` — post-merge automation extracts memory and syncs staleness
 
 Task flow: `pending → planned → running → review → approved → merged`.
-Post-completion phase: `approved/merged → retro → memory sync` (automatic after merge, also available via CLI/MCP/API).
+Post-completion: `approved/merged → retro → memory sync` (automatic after merge, also available via CLI/MCP/API).
 Breakdown branch: `pending → broken_down` (when a parent task is split into child tasks).
 Stop path: `running → stopped` (via `tasks_stop`); `stopped → running` (resume via `tasks_resume`).
 Failure path: `running → failed`.
 
-Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cancel workers, mark in-flight interactions failed, set run-phase tasks to stopped). On next launch, automatic startup recovery detects and resets any stale state left by hard kills (SIGKILL, OOM, power loss).
+Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cancel workers, mark in-flight interactions failed, set running tasks to stopped). On next launch, automatic startup recovery detects and resets any stale state left by hard kills (SIGKILL, OOM, power loss).
 
 ## Features
 
@@ -30,7 +30,7 @@ Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cance
 - Quality gates + review loop (`review request-changes` re-runs task, `review ai` runs automated AI review)
 - Interaction-based tracking: tokens, cost, diffs, and quality per LLM invocation
 - Web UI with live status/events via WebSocket
-- Task table, 3-phase timeline, diff viewer, inline review, terminal console
+- Task table, interaction timeline, diff viewer, inline review, terminal console
 - RAG memory system: explore and retro extract reusable patterns, pitfalls, preferences, conventions, architecture, and dependency insights
 - Memory-informed planning with FTS5/BM25 retrieval
 - Provenance-aware memory lifecycle (provenance hashes, supersession, confidence reinforcement/decay)
@@ -112,7 +112,7 @@ orca tasks / task
   ├── evaluate [id]          [--tool] [--model] [--json]
   ├── retro [id]             [--tool] [--model] [--json]
   ├── reviews [id]
-  └── logs <id>              [--phase] [--attempt] [--raw] [-f] [--json]
+  └── logs <id>              [--type] [--attempt] [--raw] [-f] [--json]
 
 orca review
   ├── approve [id]

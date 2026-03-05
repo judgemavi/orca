@@ -85,7 +85,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     queue: ctx.queue,
   });
 
-  startHTTPServer(app, port, eventSink, {
+  startHTTPServer(app, port, {
     configStore: ctx.configStore,
     repoDir,
     registry: ctx.registry,

@@ -50,7 +50,7 @@ export const taskInteractions = sqliteTable(
   {
     id: text('id').primaryKey(),
     taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
-    phase: text('phase').notNull(),
+    type: text('type').notNull(),
     attempt: integer('attempt').notNull().default(1),
     runId: text('run_id'),
     tool: text('tool').notNull(),
@@ -69,7 +69,7 @@ export const taskInteractions = sqliteTable(
     finishedAt: text('finished_at'),
   },
   (table) => [
-    index('idx_interactions_task_phase').on(table.taskId, table.phase),
+    index('idx_interactions_task_type').on(table.taskId, table.type),
     index('idx_interactions_status').on(table.status),
     index('idx_interactions_run_id').on(table.runId),
   ],

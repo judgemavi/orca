@@ -1,70 +1,61 @@
+import { defaultConfig, resolveModel, resolveTool } from '../config/config';
 import {
-  defaultConfig,
-  resolveModelForPhase,
-  resolveToolForPhase,
-} from '../config/config';
-import {
-  type DriverRegistry,
-  fallbackDriverRegistry,
+  type ToolPluginRegistry,
+  fallbackToolPluginRegistry,
   toolDefinition,
-} from '../driver/registry';
-import type { Driver, DriverEvent } from '../driver/types';
+} from '../plugin/registry';
+import type { ToolPlugin, ToolPluginEvent } from '../plugin/types';
 import { camelizeKeys } from '../shared/camelize';
 import type { Config } from '../types';
 
-export interface ResolvePhaseExecutionInput {
+export interface ResolveExecutionInput {
   config?: Config;
-  registry?: DriverRegistry;
-  phase: string;
+  registry?: ToolPluginRegistry;
   toolOverride?: string;
   modelOverride?: string;
+  interactionType?: string;
 }
 
-export interface ResolvedPhaseExecution {
+export interface ResolvedExecution {
   toolName: string;
-  driver: Driver;
+  plugin: ToolPlugin;
   model: string;
   config: Config;
-  registry: DriverRegistry;
+  registry: ToolPluginRegistry;
 }
 
-export function resolvePhaseExecution(
-  input: ResolvePhaseExecutionInput,
-): ResolvedPhaseExecution | null {
+export function resolveExecution(
+  input: ResolveExecutionInput,
+): ResolvedExecution | null {
   const config = input.config ?? defaultConfig();
-  const registry = input.registry ?? fallbackDriverRegistry();
-  const phase = input.phase.trim();
+  const registry = input.registry ?? fallbackToolPluginRegistry();
   const toolOverride = input.toolOverride ?? '';
   const modelOverride = input.modelOverride ?? '';
 
-  let toolName = resolveToolForPhase(config, phase, toolOverride);
-  let driver = toolDefinition(registry, toolName);
+  const interactionType = input.interactionType?.trim() || '';
 
-  if (!driver) {
+  let toolName = resolveTool(config, toolOverride, interactionType || undefined);
+  let plugin = toolDefinition(registry, toolName);
+
+  if (!plugin) {
     const fallbackTool =
       registry.available()[0] ?? registry.registered()[0] ?? '';
     if (!fallbackTool) return null;
     toolName = fallbackTool;
-    driver = toolDefinition(registry, toolName);
-    if (!driver) return null;
+    plugin = toolDefinition(registry, toolName);
+    if (!plugin) return null;
   }
 
-  let model = resolveModelForPhase(
-    config,
-    registry,
-    phase,
-    toolName,
-    modelOverride,
-  ).trim();
+  let model = resolveModel(config, registry, toolName, modelOverride, interactionType || undefined).trim();
   if (!model) {
-    model = driver.models()[0]?.trim() ?? '';
+    model = plugin.models()[0]?.trim() ?? '';
   }
   if (!model) return null;
 
-  return { toolName, driver, model, config, registry };
+  return { toolName, plugin, model, config, registry };
 }
 
-export function collectAssistantText(events: DriverEvent[]): string {
+export function collectAssistantText(events: ToolPluginEvent[]): string {
   return events
     .filter((event) => event.type === 'text')
     .map((event) => event.text ?? '')

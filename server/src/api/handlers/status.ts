@@ -1,19 +1,16 @@
-import type { Hono } from 'hono';
+import { Hono } from 'hono';
 import { getMemorySyncStatus } from '../../domain/memory-sync';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
 
-export function registerStatusHandlers(
-  app: Hono,
-  deps: {
-    taskStore: TaskStore;
-    interactions: InteractionStore;
-    memory: MemoryStore;
-    repoDir: string;
-  },
-) {
-  app.get('/status', async (c) => {
+export function statusRoutes(deps: {
+  taskStore: TaskStore;
+  interactions: InteractionStore;
+  memory: MemoryStore;
+  repoDir: string;
+}) {
+  return new Hono().get('/status', async (c) => {
     const tasks = await deps.taskStore.list();
 
     const pending = tasks.filter((task) => task.status === 'pending').length;
@@ -35,26 +32,24 @@ export function registerStatusHandlers(
     const sync = await getMemorySyncStatus(deps.repoDir, deps.memory);
 
     return c.json({
-      data: {
-        project: 'orca',
-        totalTasks: tasks.length,
-        pending,
-        inProgress: inProgress,
-        completed,
-        failed,
-        contextExists: contextExists,
-        contextStale: memoryHealth.staleCount > 0,
-        contextAgeMinutes: 0,
-        totalCost: await deps.interactions.projectTotal(),
-        runningOperations: (await deps.interactions.listByStatus('running'))
-          .length,
-        lastSyncedCommit: sync.lastSyncedCommit,
-        currentCommit: sync.currentCommit,
-        syncNeeded: sync.syncNeeded,
-        commitsBehind: sync.commitsBehind,
-        memoryTotal: memoryHealth.totalEntries,
-        memoryStaleCount: memoryHealth.staleCount,
-      },
+      project: 'orca',
+      totalTasks: tasks.length,
+      pending,
+      inProgress: inProgress,
+      completed,
+      failed,
+      contextExists: contextExists,
+      contextStale: memoryHealth.staleCount > 0,
+      contextAgeMinutes: 0,
+      totalCost: await deps.interactions.projectTotal(),
+      runningOperations: (await deps.interactions.listByStatus('running'))
+        .length,
+      lastSyncedCommit: sync.lastSyncedCommit,
+      currentCommit: sync.currentCommit,
+      syncNeeded: sync.syncNeeded,
+      commitsBehind: sync.commitsBehind,
+      memoryTotal: memoryHealth.totalEntries,
+      memoryStaleCount: memoryHealth.staleCount,
     });
   });
 }
