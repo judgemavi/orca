@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/server/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { controlClass } from '../../../lib/constants';

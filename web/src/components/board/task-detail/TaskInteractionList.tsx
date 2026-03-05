@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/server/types';
 import { useCallback, useEffect, useState } from 'react';
 import { useTaskDetailContext } from '../../../context/TaskDetailContext';
 import { useTaskReviewsQuery } from '../../../hooks/queries';

@@ -1,4 +1,4 @@
-import { TASK_STATUSES } from '@orca/types';
+import { TASK_STATUSES } from '@orca/server/types';
 import { useTaskDetailContext } from '../../../context/TaskDetailContext';
 import { Button } from '../../Button';
 import { ApprovedTaskActions } from './ApprovedTaskActions';

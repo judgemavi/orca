@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/server/types';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { controlClass } from '../../../lib/constants';
 import type { Interaction } from '../../../types';

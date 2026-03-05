@@ -20,11 +20,7 @@ export interface TaskUpdateFields {
   sessionId?: string | null;
 }
 
-export interface StoredInteraction extends Interaction {
-  runId?: string | null;
-  model?: string | null;
-  logPath: string;
-}
+export type StoredInteraction = Interaction;
 
 export interface ToolSummary {
   tool: string;

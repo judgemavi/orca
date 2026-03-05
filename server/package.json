@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/api/routes.ts"
+    ".": "./src/api/routes.ts",
+    "./types": "./src/types/index.ts"
   },
   "scripts": {
     "dev": "bun --watch src/index.ts",

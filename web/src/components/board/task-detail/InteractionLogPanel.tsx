@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/server/types';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMemo } from 'react';
 import { LogViewer } from '../../LogViewer';

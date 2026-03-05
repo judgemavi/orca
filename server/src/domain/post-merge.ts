@@ -1,4 +1,3 @@
-import { JOB_PRIORITIES } from '@orca/types';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import { toErrorMessage } from '../shared/errors';
@@ -6,6 +5,7 @@ import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
+import { JOB_PRIORITIES } from '../types';
 import { syncMemoryWithGit } from './memory-sync';
 import { runRetro } from './retro';
 

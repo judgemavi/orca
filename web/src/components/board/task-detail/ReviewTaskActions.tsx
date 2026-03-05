@@ -22,14 +22,18 @@ export function ReviewTaskActions() {
             actions.setAIFeedbackAppliedNotice(false);
             actions.setActionError(null);
           }}
-          disabled={actions.operationInProgress || actions.requestChangesPending}
+          disabled={
+            actions.operationInProgress || actions.requestChangesPending
+          }
         >
           Cancel
         </Button>
         <Button
           variant="primary"
           onClick={actions.handleRequestChanges}
-          disabled={actions.operationInProgress || actions.requestChangesPending}
+          disabled={
+            actions.operationInProgress || actions.requestChangesPending
+          }
         >
           {actions.requestChangesPending
             ? 'Submitting…'

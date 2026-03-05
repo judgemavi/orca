@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/server/types';
 import { parseJSONText } from '../../../lib/orchestratorRichContent';
 import type { AIReviewResult, InteractionStub } from '../../../types';
 import { ReviewResultCard } from '../../shared/ReviewResultCard';

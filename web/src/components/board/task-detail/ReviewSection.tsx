@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/server/types';
 import type { Interaction, InteractionStub, TaskReview } from '../../../types';
 import { AIReviewResultCard } from './AIReviewResultCard';
 

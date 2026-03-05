@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/server/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../api';
@@ -15,8 +15,8 @@ import {
   type Task,
 } from '../../../types';
 import {
-  selectByType,
   selectByRunLike,
+  selectByType,
   useInteractionsQuery,
 } from './useInteractions';
 
@@ -138,8 +138,7 @@ export function useTaskActions(task: Task) {
     }) => api.aiReview(args.taskId, args.tool, args.model, args.prompt),
   });
   const mergeTaskMutation = useMutation({
-    mutationFn: (args: { taskId: string }) =>
-      api.mergeTask(args.taskId),
+    mutationFn: (args: { taskId: string }) => api.mergeTask(args.taskId),
   });
   const resumeTaskMutation = useMutation({
     mutationFn: (args: {

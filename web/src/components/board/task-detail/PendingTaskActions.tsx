@@ -1,4 +1,4 @@
-import { TASK_STATUSES } from '@orca/types';
+import { TASK_STATUSES } from '@orca/server/types';
 import { useTaskDetailContext } from '../../../context/TaskDetailContext';
 import { Button } from '../../Button';
 import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout';
@@ -34,7 +34,9 @@ export function PendingTaskActions() {
           variant="primary"
           onClick={actions.handleGeneratePlan}
           disabled={
-            actions.planLoading || actions.operationInProgress || actions.evaluating
+            actions.planLoading ||
+            actions.operationInProgress ||
+            actions.evaluating
           }
         >
           {actions.planGenerating || actions.generatePlanPending

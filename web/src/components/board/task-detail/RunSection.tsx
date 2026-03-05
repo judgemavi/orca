@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/server/types';
 import type { Interaction, Task } from '../../../types';
 import { DiffViewer } from '../../blocks/DiffViewer';
 

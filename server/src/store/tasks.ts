@@ -417,7 +417,7 @@ export class TaskStore {
       title: row.title,
       description: row.description ?? '',
       parentId: row.parentId,
-      sessionId: row.sessionId ?? undefined,
+      sessionId: row.sessionId,
       status: row.status as TaskStatus,
       dependsOn: dependsOn,
       plan: row.plan,

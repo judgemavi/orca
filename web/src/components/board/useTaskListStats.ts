@@ -1,4 +1,4 @@
-import { TASK_STATUSES } from '@orca/types';
+import { TASK_STATUSES } from '@orca/server/types';
 import { useMemo } from 'react';
 import type { Task } from '../../types';
 

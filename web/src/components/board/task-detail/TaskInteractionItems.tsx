@@ -1,4 +1,4 @@
-import { INTERACTION_STATUSES } from '@orca/types';
+import { INTERACTION_STATUSES } from '@orca/server/types';
 import { useCallback, useMemo } from 'react';
 import type { InteractionStub, Task, TaskReview } from '../../../types';
 import { BreakdownSection } from './BreakdownSection';
@@ -129,8 +129,7 @@ export function TaskInteractionItems({
 }: Props) {
   const actions = useTaskActions(task);
   const runStubs = useMemo(
-    () =>
-      stubs.filter((item) => item.type === 'run' || item.type === 'revise'),
+    () => stubs.filter((item) => item.type === 'run' || item.type === 'revise'),
     [stubs],
   );
   const reviewStubs = useMemo(
