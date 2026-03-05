@@ -78,7 +78,10 @@ export function availableTools(registry: ToolPluginRegistry): string[] {
   return registry.available();
 }
 
-export function toolModels(registry: ToolPluginRegistry, name: string): string[] {
+export function toolModels(
+  registry: ToolPluginRegistry,
+  name: string,
+): string[] {
   return registry.get(name)?.models() ?? [];
 }
 

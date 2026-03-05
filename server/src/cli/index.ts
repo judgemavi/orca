@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';

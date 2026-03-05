@@ -7,8 +7,8 @@ import type { TaskStore } from '../../store/tasks';
 import type { TaskStatus } from '../../types';
 import { JOB_PRIORITIES } from '../../types';
 import { DeleteWorkflowError, deleteTask } from '../../workflows/delete';
-import type { EventSink } from '../ws';
 import { addDepsSchema, createTaskSchema, patchTaskSchema } from '../schemas';
+import type { EventSink } from '../ws';
 import { broadcast } from './utils';
 
 const BLOCKED_MANUAL_STATUSES = new Set<TaskStatus>([

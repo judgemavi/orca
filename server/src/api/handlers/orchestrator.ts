@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
-import type { ToolPluginRegistry } from '../../plugin/registry';
 import {
   buildMCPServerDef,
   loadOrchestratorPrompt,
   ORCHESTRATOR_ALLOWED_TOOLS,
   resolveSupervisor,
 } from '../../orchestrator/bootstrap';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import { trackProcess, untrackProcess } from '../../shared/process-registry';
 import type { ConfigStore } from '../../store/config';
 import type { EventSink } from '../ws';

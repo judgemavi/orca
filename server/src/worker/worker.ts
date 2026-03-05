@@ -1,4 +1,8 @@
-import type { ToolPlugin, ToolPluginEvent, HeadlessOpts } from '../plugin/types';
+import type {
+  HeadlessOpts,
+  ToolPlugin,
+  ToolPluginEvent,
+} from '../plugin/types';
 import { toErrorMessage } from '../shared/errors';
 import { gitOutput } from '../shared/git';
 import { trackProcess, untrackProcess } from '../shared/process-registry';

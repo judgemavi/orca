@@ -1,7 +1,7 @@
 import { runAIReview } from '../domain/review';
-import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
 import type { TaskRunResult } from '../executor/task-runner';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';

@@ -10,8 +10,8 @@ import {
   resumeTask,
   stopTask,
 } from '../../workflows/run';
-import type { EventSink } from '../ws';
 import { resumeSchema, runRequestSchema } from '../schemas';
+import type { EventSink } from '../ws';
 import { broadcast, safeErrorMessage } from './utils';
 
 export function runRoutes(deps: {
@@ -85,21 +85,25 @@ export function runRoutes(deps: {
       return c.json({ status: 'queued', taskIds: taskIDs, jobIds }, 202);
     })
 
-    .post('/tasks/:id/start', zValidator('json', runRequestSchema), async (c) => {
-      const taskID = c.req.param('id');
-      const body = c.req.valid('json');
-      const { id: jobId } = await queue.enqueue({
-        type: 'run',
-        taskId: taskID,
-        priority: JOB_PRIORITIES.run,
-        payload: {
-          tool: body.tool ?? '',
-          model: body.model ?? '',
-          context: body.context ?? '',
-        },
-      });
-      return c.json({ status: 'queued', taskId: taskID, jobId }, 202);
-    })
+    .post(
+      '/tasks/:id/start',
+      zValidator('json', runRequestSchema),
+      async (c) => {
+        const taskID = c.req.param('id');
+        const body = c.req.valid('json');
+        const { id: jobId } = await queue.enqueue({
+          type: 'run',
+          taskId: taskID,
+          priority: JOB_PRIORITIES.run,
+          payload: {
+            tool: body.tool ?? '',
+            model: body.model ?? '',
+            context: body.context ?? '',
+          },
+        });
+        return c.json({ status: 'queued', taskId: taskID, jobId }, 202);
+      },
+    )
 
     .post('/tasks/:id/resume', zValidator('json', resumeSchema), async (c) => {
       const taskID = c.req.param('id');

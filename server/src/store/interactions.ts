@@ -193,10 +193,7 @@ export class InteractionStore {
     return rows.map((row) => this.mapStub(row));
   }
 
-  async listByType(
-    taskID: string,
-    type: string,
-  ): Promise<StoredInteraction[]> {
+  async listByType(taskID: string, type: string): Promise<StoredInteraction[]> {
     const rows = await this.db
       .select()
       .from(taskInteractions)

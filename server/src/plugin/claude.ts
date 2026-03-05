@@ -1,8 +1,8 @@
 import type {
-  ToolPlugin,
-  ToolPluginEvent,
   HeadlessOpts,
   InteractiveOpts,
+  ToolPlugin,
+  ToolPluginEvent,
 } from './types';
 
 export class ClaudePlugin implements ToolPlugin {

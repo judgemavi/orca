@@ -235,9 +235,7 @@ export const changelog = sqliteTable(
     action: text('action').notNull(),
     createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   },
-  (table) => [
-    index('idx_changelog_id').on(table.id),
-  ],
+  (table) => [index('idx_changelog_id').on(table.id)],
 );
 
 export const jobs = sqliteTable(

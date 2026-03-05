@@ -25,9 +25,16 @@ const pending: PendingChanges = {
   deletes: new Map(),
 };
 
-function addPending(map: Map<string, Set<string>>, table: string, ids: string[]) {
+function addPending(
+  map: Map<string, Set<string>>,
+  table: string,
+  ids: string[],
+) {
   let set = map.get(table);
-  if (!set) { set = new Set(); map.set(table, set); }
+  if (!set) {
+    set = new Set();
+    map.set(table, set);
+  }
   for (const id of ids) set.add(id);
 }
 
@@ -80,7 +87,9 @@ function flushDbChanges(qc: QueryClient) {
         void qc.invalidateQueries({ queryKey: queryKeys.tasks });
         for (const id of ids) {
           void qc.invalidateQueries({ queryKey: queryKeys.task(id) });
-          void qc.invalidateQueries({ queryKey: queryKeys.interactionStubs(id) });
+          void qc.invalidateQueries({
+            queryKey: queryKeys.interactionStubs(id),
+          });
         }
       } else if (table === 'task_interactions') {
         // Interactions don't have a direct id→taskId mapping in the event,
@@ -202,13 +211,19 @@ export function handleWSEvent(qc: QueryClient, event: WSEvent) {
     : [type, ''];
 
   // db changelog events — batch and debounce
-  if (entity === 'db' && (action === 'insert' || action === 'update' || action === 'delete')) {
+  if (
+    entity === 'db' &&
+    (action === 'insert' || action === 'update' || action === 'delete')
+  ) {
     const table = typeof d.table === 'string' ? d.table : '';
     const ids = Array.isArray(d.ids) ? (d.ids as string[]) : [];
     if (table && ids.length > 0) {
-      const map = action === 'insert' ? pending.inserts
-        : action === 'delete' ? pending.deletes
-        : pending.updates;
+      const map =
+        action === 'insert'
+          ? pending.inserts
+          : action === 'delete'
+            ? pending.deletes
+            : pending.updates;
       addPending(map, table, ids);
       scheduleDbFlush(qc);
     }

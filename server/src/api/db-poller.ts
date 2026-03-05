@@ -54,9 +54,12 @@ export class DbChangePoller {
       const deletes = new Map<string, string[]>();
 
       for (const row of rows) {
-        const map = row.action === 'insert' ? creates
-          : row.action === 'delete' ? deletes
-          : updates;
+        const map =
+          row.action === 'insert'
+            ? creates
+            : row.action === 'delete'
+              ? deletes
+              : updates;
         const list = map.get(row.table_name);
         if (list) list.push(row.row_id);
         else map.set(row.table_name, [row.row_id]);

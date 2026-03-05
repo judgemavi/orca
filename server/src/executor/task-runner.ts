@@ -6,7 +6,11 @@ import {
 } from '../domain/quality';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { toolDefinition } from '../plugin/registry';
-import type { ToolPlugin, ToolPluginEvent, HeadlessOpts } from '../plugin/types';
+import type {
+  HeadlessOpts,
+  ToolPlugin,
+  ToolPluginEvent,
+} from '../plugin/types';
 import { loadPrompt } from '../prompts/loader';
 import { gitRun } from '../shared/git';
 import type { Config, TaskStatus } from '../types';
@@ -85,7 +89,13 @@ export function resolveTaskExecution(
     throw new Error(`tool not available: ${toolName}`);
   }
 
-  const model = resolveModel(config, registry, toolName, modelOverride, interactionType);
+  const model = resolveModel(
+    config,
+    registry,
+    toolName,
+    modelOverride,
+    interactionType,
+  );
   if (!model.trim()) {
     throw new Error(
       `model could not be resolved for tool ${JSON.stringify(toolName)}`,

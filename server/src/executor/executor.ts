@@ -8,11 +8,11 @@ import {
   ensureTaskWorktree as ensureTaskWorktreeDomain,
   findTaskWorktree,
 } from '../domain/worktree';
-import type { ToolPluginRegistry } from '../plugin/registry';
 import {
   ORCHESTRATOR_ALLOWED_TOOLS,
   writeMCPConfig,
 } from '../orchestrator/bootstrap';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import { toErrorMessage } from '../shared/errors';
 import { gitRun } from '../shared/git';
@@ -520,7 +520,10 @@ export class Executor {
   }
 }
 
-function enqueuedResult(taskID: string, interactionType: string): TaskRunResult {
+function enqueuedResult(
+  taskID: string,
+  interactionType: string,
+): TaskRunResult {
   return {
     taskID,
     interactionType,

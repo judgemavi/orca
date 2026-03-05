@@ -1,7 +1,7 @@
-import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { configPatchSchema } from '../schemas';
+import { Hono } from 'hono';
 import type { ConfigStore } from '../../store/config';
+import { configPatchSchema } from '../schemas';
 import { killActivePTY } from './orchestrator';
 
 export function configRoutes(configStore: ConfigStore) {

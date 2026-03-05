@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { OrcaDrizzleDB } from '../db/connection';
-import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';

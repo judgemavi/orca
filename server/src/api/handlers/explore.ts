@@ -1,3 +1,4 @@
+import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import {
   listTrackedFiles,
@@ -6,7 +7,6 @@ import {
 } from '../../domain/explore';
 import type { JobQueue } from '../../queue/queue';
 import { JOB_PRIORITIES } from '../../types';
-import { zValidator } from '@hono/zod-validator';
 import { exploreContextSchema, exploreSchema } from '../schemas';
 import type { EventSink } from '../ws';
 
@@ -43,12 +43,16 @@ export function exploreRoutes(
       const content = await readExploreContext(repoDir);
       return c.json(content);
     })
-    .put('/explore/context', zValidator('json', exploreContextSchema), async (c) => {
-      const body = c.req.valid('json');
-      const path = await writeExploreContext(
-        repoDir,
-        (body.content ?? '').trim(),
-      );
-      return c.json(path);
-    });
+    .put(
+      '/explore/context',
+      zValidator('json', exploreContextSchema),
+      async (c) => {
+        const body = c.req.valid('json');
+        const path = await writeExploreContext(
+          repoDir,
+          (body.content ?? '').trim(),
+        );
+        return c.json(path);
+      },
+    );
 }

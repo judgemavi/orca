@@ -1,7 +1,7 @@
 import { defaultConfig, resolveModel, resolveTool } from '../config/config';
 import {
-  type ToolPluginRegistry,
   fallbackToolPluginRegistry,
+  type ToolPluginRegistry,
   toolDefinition,
 } from '../plugin/registry';
 import type { ToolPlugin, ToolPluginEvent } from '../plugin/types';
@@ -34,7 +34,11 @@ export function resolveExecution(
 
   const interactionType = input.interactionType?.trim() || '';
 
-  let toolName = resolveTool(config, toolOverride, interactionType || undefined);
+  let toolName = resolveTool(
+    config,
+    toolOverride,
+    interactionType || undefined,
+  );
   let plugin = toolDefinition(registry, toolName);
 
   if (!plugin) {
@@ -46,7 +50,13 @@ export function resolveExecution(
     if (!plugin) return null;
   }
 
-  let model = resolveModel(config, registry, toolName, modelOverride, interactionType || undefined).trim();
+  let model = resolveModel(
+    config,
+    registry,
+    toolName,
+    modelOverride,
+    interactionType || undefined,
+  ).trim();
   if (!model) {
     model = plugin.models()[0]?.trim() ?? '';
   }

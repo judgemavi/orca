@@ -31,7 +31,9 @@ export function killAllTracked(signal: string = 'SIGTERM'): Promise<number> {
         console.error(`[shutdown] killed ${label} (pid ${pid})`);
       })
       .catch(() => {
-        console.error(`[shutdown] failed to kill ${label} (pid ${pid}), may have already exited`);
+        console.error(
+          `[shutdown] failed to kill ${label} (pid ${pid}), may have already exited`,
+        );
       }),
   );
 

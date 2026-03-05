@@ -1,3 +1,4 @@
+import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { getMemoryDetail, queryMemory } from '../../domain/memory';
 import {
@@ -7,7 +8,6 @@ import {
 } from '../../domain/memory-sync';
 import type { MemoryStore } from '../../store/memory';
 import type { MemoryCategory, MemorySourceType } from '../../types';
-import { zValidator } from '@hono/zod-validator';
 import { memoryRefreshSchema, memoryUpdateSchema } from '../schemas';
 import { asBoolean } from './utils';
 
@@ -90,19 +90,23 @@ export function memoryRoutes(repoDir: string, memory: MemoryStore) {
         return c.json({ error: (error as Error).message }, 500);
       }
     })
-    .post('/memory/refresh', zValidator('json', memoryRefreshSchema), async (c) => {
-      try {
-        const body = c.req.valid('json');
-        const result = await refreshMemoryEntries(
-          repoDir,
-          memory,
-          body.entryId ?? '',
-        );
-        return c.json(result);
-      } catch (error) {
-        return c.json({ error: (error as Error).message }, 500);
-      }
-    })
+    .post(
+      '/memory/refresh',
+      zValidator('json', memoryRefreshSchema),
+      async (c) => {
+        try {
+          const body = c.req.valid('json');
+          const result = await refreshMemoryEntries(
+            repoDir,
+            memory,
+            body.entryId ?? '',
+          );
+          return c.json(result);
+        } catch (error) {
+          return c.json({ error: (error as Error).message }, 500);
+        }
+      },
+    )
     .get('/memory/status', async (c) => {
       try {
         const status = await getMemorySyncStatus(repoDir, memory);

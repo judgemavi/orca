@@ -1,12 +1,12 @@
 import type { Command } from 'commander';
-import { type ToolPluginRegistry, toolDefinition } from '../../plugin/registry';
-import type { ToolPlugin } from '../../plugin/types';
 import {
   loadOrchestratorPrompt,
   ORCHESTRATOR_ALLOWED_TOOLS,
   resolveSupervisor,
   writeMCPConfig,
 } from '../../orchestrator/bootstrap';
+import { type ToolPluginRegistry, toolDefinition } from '../../plugin/registry';
+import type { ToolPlugin } from '../../plugin/types';
 import type { ConfigStore } from '../../store/config';
 
 export function registerOrcCommand(

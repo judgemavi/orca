@@ -1,15 +1,14 @@
 import type { EventSink } from '../api/ws';
 import { runExplore } from '../domain/explore';
 import { runRetro } from '../domain/retro';
-import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import type { Job } from '../types';
 import { mergeTask } from '../workflows/merge';
-import type { JobQueue } from './queue';
 import {
   breakdownTask,
   evaluateTaskWorkflow,
@@ -17,6 +16,7 @@ import {
 } from '../workflows/planning';
 import { runAIReviewWorkflow } from '../workflows/review';
 import type { JobProcessor } from './processor';
+import type { JobQueue } from './queue';
 
 interface HandlerDeps {
   repoDir: string;

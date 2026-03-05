@@ -5,8 +5,8 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { EventSink } from '../api/ws';
-import type { ToolPluginRegistry } from '../plugin/registry';
 import type { Executor } from '../executor/executor';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';

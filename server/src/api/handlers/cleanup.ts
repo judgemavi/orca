@@ -1,11 +1,11 @@
+import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { cleanupTaskArtifacts } from '../../domain/task-cleanup';
 import { gitRun } from '../../shared/git';
 import type { TaskStore } from '../../store/tasks';
+import { cleanupSchema } from '../schemas';
 import type { EventSink } from '../ws';
 import { asyncOp } from './async-op';
-import { zValidator } from '@hono/zod-validator';
-import { cleanupSchema } from '../schemas';
 import { broadcast } from './utils';
 
 interface WorktreeEntry {
@@ -19,58 +19,62 @@ export function cleanupRoutes(deps: {
   taskStore: TaskStore;
   sink: EventSink;
 }) {
-  return new Hono().post('/cleanup', zValidator('json', cleanupSchema), async (c) => {
-    const body = c.req.valid('json');
-    const dryRun = Boolean(body.dryRun);
-    const stale = await listStaleTaskWorktrees(deps.repoDir, deps.taskStore);
+  return new Hono().post(
+    '/cleanup',
+    zValidator('json', cleanupSchema),
+    async (c) => {
+      const body = c.req.valid('json');
+      const dryRun = Boolean(body.dryRun);
+      const stale = await listStaleTaskWorktrees(deps.repoDir, deps.taskStore);
 
-    if (dryRun) {
-      return c.json({
-        removed: stale.length,
-        worktrees: stale.map((entry) => entry.branch || entry.path),
-        dryRun: true,
-      });
-    }
+      if (dryRun) {
+        return c.json({
+          removed: stale.length,
+          worktrees: stale.map((entry) => entry.branch || entry.path),
+          dryRun: true,
+        });
+      }
 
-    asyncOp(deps.sink, {
-      started: {
-        name: 'cleanup.started',
-      },
-      completed: {
-        name: 'cleanup.completed',
-        payload: ({ result }) => result,
-      },
-      run: async () => {
-        const removed: string[] = [];
-        const warnings: string[] = [];
+      asyncOp(deps.sink, {
+        started: {
+          name: 'cleanup.started',
+        },
+        completed: {
+          name: 'cleanup.completed',
+          payload: ({ result }) => result,
+        },
+        run: async () => {
+          const removed: string[] = [];
+          const warnings: string[] = [];
 
-        for (const entry of stale) {
-          const cleanup = await cleanupTaskArtifacts({
-            repoDir: deps.repoDir,
-            taskID: entry.taskID,
-          });
-          if (cleanup.worktreeRemoved || cleanup.removedBranches.length > 0) {
-            removed.push(entry.taskID);
-            broadcast(deps.sink, 'cleanup.progress', {
-              taskId: entry.taskID,
-              branch: entry.branch,
+          for (const entry of stale) {
+            const cleanup = await cleanupTaskArtifacts({
+              repoDir: deps.repoDir,
+              taskID: entry.taskID,
             });
+            if (cleanup.worktreeRemoved || cleanup.removedBranches.length > 0) {
+              removed.push(entry.taskID);
+              broadcast(deps.sink, 'cleanup.progress', {
+                taskId: entry.taskID,
+                branch: entry.branch,
+              });
+            }
+            if (cleanup.warnings.length > 0) {
+              warnings.push(...cleanup.warnings);
+            }
           }
-          if (cleanup.warnings.length > 0) {
-            warnings.push(...cleanup.warnings);
-          }
-        }
 
-        return {
-          removed: removed.length,
-          taskIds: removed,
-          warnings,
-        };
-      },
-    });
+          return {
+            removed: removed.length,
+            taskIds: removed,
+            warnings,
+          };
+        },
+      });
 
-    return c.json({ status: 'running' }, 202);
-  });
+      return c.json({ status: 'running' }, 202);
+    },
+  );
 }
 
 async function listStaleTaskWorktrees(

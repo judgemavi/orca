@@ -279,8 +279,11 @@ function ConfigPage() {
             <div className="text-xs">Interaction type overrides</div>
             {Object.entries(draft.orchestrator.overrides).map(
               ([type, override]) => {
-                const typeModels = (override as { tool: string; model: string }).tool
-                  ? (modelsByTool[(override as { tool: string; model: string }).tool] ?? [])
+                const typeModels = (override as { tool: string; model: string })
+                  .tool
+                  ? (modelsByTool[
+                      (override as { tool: string; model: string }).tool
+                    ] ?? [])
                   : [];
                 return (
                   <div
@@ -314,13 +317,18 @@ function ConfigPage() {
                     </select>
                     <select
                       className={inputClass}
-                      value={(override as { tool: string; model: string }).model}
+                      value={
+                        (override as { tool: string; model: string }).model
+                      }
                       onChange={(e) =>
                         updateSection('orchestrator', {
                           ...draft.orchestrator,
                           overrides: {
                             ...draft.orchestrator.overrides,
-                            [type]: { ...(override as { tool: string; model: string }), model: e.target.value },
+                            [type]: {
+                              ...(override as { tool: string; model: string }),
+                              model: e.target.value,
+                            },
                           },
                         })
                       }

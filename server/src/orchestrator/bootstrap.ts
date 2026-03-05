@@ -1,6 +1,6 @@
 import { resolveModel } from '../config/config';
 import { type ToolPluginRegistry, toolDefinition } from '../plugin/registry';
-import type { ToolPlugin, MCPServerDef } from '../plugin/types';
+import type { MCPServerDef, ToolPlugin } from '../plugin/types';
 import { loadPrompt } from '../prompts/loader';
 import { toErrorMessage } from '../shared/errors';
 import type { ConfigStore } from '../store/config';

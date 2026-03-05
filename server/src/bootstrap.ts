@@ -5,12 +5,12 @@ import {
   validateDefaults,
 } from './config/config';
 import { type DatabaseConnection, openDatabase } from './db/connection';
+import { Executor } from './executor/executor';
 import {
-  type ToolPluginRegistry,
   fallbackToolPluginRegistry,
   loadToolPluginRegistry,
+  type ToolPluginRegistry,
 } from './plugin/registry';
-import { Executor } from './executor/executor';
 import { JobQueue } from './queue/queue';
 import { ConfigStore } from './store/config';
 import { InteractionStore } from './store/interactions';

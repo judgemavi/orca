@@ -1,10 +1,10 @@
 import { readFileSync } from 'fs';
 import type {
-  ToolPlugin,
-  ToolPluginEvent,
   HeadlessOpts,
   InteractiveOpts,
   MCPServerDef,
+  ToolPlugin,
+  ToolPluginEvent,
 } from './types';
 
 function mcpFlagsFromFile(configPath: string): string[] {

@@ -63,13 +63,20 @@ function createChangelogTriggers(db: OrcaDrizzleDB) {
     for (const action of ['insert', 'update', 'delete'] as const) {
       const ref = action === 'delete' ? 'OLD' : 'NEW';
       const name = `${table}_after_${action}`;
-      const timing = action === 'delete' ? 'AFTER DELETE' : action === 'insert' ? 'AFTER INSERT' : 'AFTER UPDATE';
-      db.run(sql.raw(`
+      const timing =
+        action === 'delete'
+          ? 'AFTER DELETE'
+          : action === 'insert'
+            ? 'AFTER INSERT'
+            : 'AFTER UPDATE';
+      db.run(
+        sql.raw(`
         CREATE TRIGGER IF NOT EXISTS ${name} ${timing} ON ${table}
         BEGIN
           INSERT INTO _changelog(table_name, row_id, action) VALUES ('${table}', ${ref}.${idCol}, '${action}');
         END
-      `));
+      `),
+      );
     }
   }
 }

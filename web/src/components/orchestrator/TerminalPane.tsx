@@ -228,7 +228,9 @@ export function TerminalPane({ className, theme }: Props) {
   };
 
   return (
-    <div className={`relative h-full w-full overflow-hidden ${className ?? ''}`}>
+    <div
+      className={`relative h-full w-full overflow-hidden ${className ?? ''}`}
+    >
       <div
         ref={containerRef}
         className={`h-full w-full ${state === 'idle' || state === 'checking' || state === 'ended' ? 'hidden' : ''}`}
