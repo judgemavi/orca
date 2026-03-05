@@ -1,6 +1,7 @@
 import type { ToolPlugin, ToolPluginEvent, HeadlessOpts } from '../plugin/types';
 import { toErrorMessage } from '../shared/errors';
 import { gitOutput } from '../shared/git';
+import { trackProcess, untrackProcess } from '../shared/process-registry';
 
 export interface WorkerOutputLine {
   stream: 'stdout' | 'stderr';
@@ -77,6 +78,7 @@ export async function runTool(
     stderr: 'pipe',
     env: filteredEnv(process.env),
   });
+  trackProcess(child, `run:${options.taskID}`);
 
   const writer = Bun.file(logPath).writer();
   let writeQueue = Promise.resolve();
@@ -177,6 +179,7 @@ export async function runTool(
   ]);
 
   const exitCode = await child.exited;
+  untrackProcess(child);
 
   clearTimeout(timeoutHandle);
   removeAbortListener?.();

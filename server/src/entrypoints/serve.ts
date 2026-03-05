@@ -9,6 +9,7 @@ import {
 } from '../domain/recovery';
 import { registerJobHandlers } from '../queue/handlers';
 import { JobProcessor } from '../queue/processor';
+import { killAllTracked, trackedCount } from '../shared/process-registry';
 
 export async function runServeEntrypoint(repoDir: string, port: number) {
   const eventSink = createEventSink();
@@ -49,13 +50,22 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) {
+      console.error('[shutdown] forced exit');
       process.exit(1);
     }
     shuttingDown = true;
     console.error('[shutdown] signal received, stopping…');
+
     ctx.executor.stopAllTasks();
     poller.stop();
     await processor.stop();
+
+    const numProcs = trackedCount();
+    if (numProcs > 0) {
+      console.error(`[shutdown] killing ${numProcs} child process(es)…`);
+      await killAllTracked('SIGTERM');
+    }
+
     await failInFlightForShutdown(
       ctx.taskStore,
       ctx.interactionStore,

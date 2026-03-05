@@ -6,6 +6,7 @@ import {
   ORCHESTRATOR_ALLOWED_TOOLS,
   resolveSupervisor,
 } from '../../orchestrator/bootstrap';
+import { trackProcess, untrackProcess } from '../../shared/process-registry';
 import type { ConfigStore } from '../../store/config';
 import type { EventSink } from '../ws';
 
@@ -173,10 +174,12 @@ export async function onOrchestratorWSOpen(ws: any) {
 
     pty.proc = proc;
     activePTY = pty;
+    trackProcess(proc, 'pty:orchestrator');
     console.log('[orchestrator] spawned pid:', proc.pid);
 
     proc.exited.then((code) => {
       console.log('[orchestrator] process exited, code:', code);
+      untrackProcess(proc);
       pty.dead = true;
       if (activePTY === pty) activePTY = null;
       try {

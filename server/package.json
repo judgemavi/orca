@@ -28,6 +28,7 @@
     "deepmerge": "^4.3.1",
     "drizzle-orm": "^0.45.1",
     "hono": "4.12.5",
+    "tree-kill": "^1.2.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {
