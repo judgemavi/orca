@@ -85,6 +85,10 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     queue: ctx.queue,
   });
 
-  startHTTPServer(app, port, eventSink);
+  startHTTPServer(app, port, eventSink, {
+    configStore: ctx.configStore,
+    repoDir,
+    registry: ctx.registry,
+  });
   console.log(`orca server listening on :${port}`);
 }

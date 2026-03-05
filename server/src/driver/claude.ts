@@ -1,4 +1,9 @@
-import type { Driver, DriverEvent, HeadlessOpts } from './types';
+import type {
+  Driver,
+  DriverEvent,
+  HeadlessOpts,
+  InteractiveOpts,
+} from './types';
 
 export class ClaudeDriver implements Driver {
   private readonly partialToolInput = new Map<string, string>();
@@ -83,29 +88,38 @@ export class ClaudeDriver implements Driver {
     return args;
   }
 
-  interactiveArgs(
-    mcpConfig: string,
-    allowedTools: string[],
-    context: string,
-    model: string,
-  ): string[] {
+  async interactiveArgs(opts: InteractiveOpts): Promise<string[]> {
     const args = [
-      '--output-format',
-      'stream-json',
-      '--verbose',
       '--permission-mode',
-      'bypassPermissions',
+      'acceptEdits',
       '--model',
-      model,
+      opts.model,
     ];
-    if (mcpConfig.trim()) {
-      args.push('--mcp-config', mcpConfig.trim());
+
+    if (Object.keys(opts.mcpServers).length > 0) {
+      const configPath = `${opts.repoDir.replace(/\/+$/, '')}/.orca/mcp.json`;
+      await Bun.$`mkdir -p ${configPath.slice(0, configPath.lastIndexOf('/'))}`;
+      const existing = await Bun.file(configPath).text().catch(() => '');
+      const root = existing.trim() ? JSON.parse(existing) : {};
+      if (!root.mcpServers || typeof root.mcpServers !== 'object') {
+        root.mcpServers = {};
+      }
+      for (const [name, server] of Object.entries(opts.mcpServers)) {
+        root.mcpServers[name] = {
+          command: server.command,
+          args: [...server.args],
+          cwd: server.cwd,
+        };
+      }
+      await Bun.write(configPath, JSON.stringify(root, null, 2) + '\n');
+      args.push('--mcp-config', configPath);
     }
-    if (allowedTools.length > 0) {
-      args.push('--allowedTools', allowedTools.join(','));
+
+    if (opts.allowedTools.length > 0) {
+      args.push('--allowedTools', opts.allowedTools.join(','));
     }
-    if (context.trim()) {
-      args.push('--append-system-prompt', context.trim());
+    if (opts.systemPrompt.trim()) {
+      args.push('--append-system-prompt', opts.systemPrompt.trim());
     }
     return args;
   }

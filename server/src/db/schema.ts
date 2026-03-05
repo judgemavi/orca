@@ -226,45 +226,6 @@ export const exploreContext = sqliteTable(
   (table) => [check('explore_context_singleton', sql`${table.id} = 1`)],
 );
 
-export const orchestratorSessions = sqliteTable(
-  'orchestrator_sessions',
-  {
-    id: text('id').primaryKey(),
-    tool: text('tool').notNull(),
-    model: text('model').notNull().default(''),
-    claudeSessionId: text('claude_session_id').notNull().default(''),
-    status: text('status').notNull().default('active'),
-    createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
-  },
-  (table) => [
-    check(
-      'orchestrator_session_status',
-      sql`${table.status} IN ('active', 'closed')`,
-    ),
-  ],
-);
-
-export const orchestratorMessages = sqliteTable(
-  'orchestrator_messages',
-  {
-    id: text('id').primaryKey(),
-    sessionId: text('session_id')
-      .notNull()
-      .references(() => orchestratorSessions.id, { onDelete: 'cascade' }),
-    role: text('role').notNull(),
-    content: text('content').notNull(),
-    metadata: text('metadata').notNull().default('{}'),
-    createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
-  },
-  (table) => [
-    index('idx_orch_msg_session').on(table.sessionId, table.createdAt),
-    check(
-      'orchestrator_message_role',
-      sql`${table.role} IN ('user', 'assistant', 'tool_use', 'tool_result')`,
-    ),
-  ],
-);
-
 export const jobs = sqliteTable(
   'jobs',
   {

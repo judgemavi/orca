@@ -14,8 +14,6 @@ import type {
   MemorySyncResult,
   ModelInfo,
   Operation,
-  OrchestratorMessage,
-  OrchestratorSessionSummary,
   ProjectStatus,
   ProposedTask,
   Task,
@@ -287,29 +285,6 @@ export const api = {
         createdAt: string;
       }>
     >('/sessions'),
-  getOrchestratorStatus: () =>
-    request<{ active: boolean; sessionId: string | null }>(
-      '/orchestrator/status',
-    ),
-  startOrchestrator: () => post<{ status: string }>('/orchestrator/start'),
-  sendOrchestratorMessage: (
-    message: string,
-    signal?: AbortSignal,
-  ): Promise<Response> =>
-    fetch(`${BASE}/orchestrator/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
-      signal,
-    }),
-  getOrchestratorHistory: () =>
-    request<OrchestratorMessage[]>('/orchestrator/chat/history'),
-  newOrchestratorSession: () => post<{ id: string }>('/orchestrator/chat/new'),
-  listOrchestratorSessions: () =>
-    request<OrchestratorSessionSummary[]>('/orchestrator/sessions'),
-  resumeOrchestratorSession: (id: string) =>
-    post<{ id: string; status: string }>(`/orchestrator/sessions/${id}/resume`),
-
   listQueue: (params?: { status?: string; taskId?: string; limit?: number }) =>
     request<Job[]>(
       withQuery('/queue', {

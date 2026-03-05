@@ -48,7 +48,24 @@ function ConfigPage() {
   const [errors, setErrors] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
-    if (data) setDraft(data);
+    if (data)
+      setDraft({
+        ...data,
+        project: data.project ?? { name: '', integrationBranch: '', worktreeDir: '' },
+        tools: data.tools ?? [],
+        defaultTool: data.defaultTool ?? '',
+        defaultModel: data.defaultModel ?? '',
+        validation: data.validation ?? { commands: [] },
+        workers: data.workers ?? { maxParallel: 3 },
+        orchestrator: data.orchestrator ?? {
+          supervisorTool: data.defaultTool ?? '',
+          supervisorModel: data.defaultModel ?? '',
+          phases: {},
+        },
+        monitor: data.monitor ?? { stuckCheckInterval: '5m', maxStuckCycles: 3, conflictCheckInterval: '10m' },
+        quality: data.quality ?? { enabled: true, scopeCheck: true, testDelta: true },
+        logging: data.logging ?? { level: 'info', format: 'text', maxFiles: 50 },
+      });
   }, [data]);
 
   const toolOptions = useMemo(() => {
@@ -206,7 +223,7 @@ function ConfigPage() {
                   updateSection('orchestrator', {
                     ...draft.orchestrator,
                     supervisorTool: e.target.value,
-                    supervisorModel: '',
+                    supervisorModel: modelsByTool[e.target.value]?.[0]?.id ?? '',
                   })
                 }
               >
@@ -262,7 +279,7 @@ function ConfigPage() {
                           ...draft.orchestrator,
                           phases: {
                             ...draft.orchestrator.phases,
-                            [phase]: { tool: e.target.value, model: '' },
+                            [phase]: { tool: e.target.value, model: modelsByTool[e.target.value]?.[0]?.id ?? '' },
                           },
                         })
                       }

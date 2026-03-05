@@ -112,7 +112,6 @@ export function buildRoutes(deps: {
   registerSessionHandlers(api, deps.db);
   registerOrchestratorHandlers(
     api,
-    deps.db,
     deps.eventSink,
     deps.configStore,
     deps.repoDir,

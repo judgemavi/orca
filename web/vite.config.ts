@@ -25,6 +25,11 @@ export default defineConfig({
         ws: true,
         rewriteWsOrigin: true,
       },
+      '/api/v1/orchestrator': {
+        target: 'ws://localhost:8080',
+        ws: true,
+        rewriteWsOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
       },

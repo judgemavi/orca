@@ -1,27 +1,13 @@
-import { api } from '../api';
-import { Button } from './Button';
-import { ChatPane } from './orchestrator/ChatPane';
+import { TerminalPane } from './orchestrator/TerminalPane';
 
 interface Props {
-  orchestratorId?: string;
+  theme: 'light' | 'dark';
 }
 
-export function OrchestratorSidebar({ orchestratorId }: Props) {
+export function OrchestratorSidebar({ theme }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {orchestratorId ? (
-        <ChatPane className="flex-1 min-h-0" />
-      ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-3 text-muted">
-          <span>No orchestrator session</span>
-          <Button
-            variant="primary"
-            onClick={() => api.startOrchestrator().catch(() => {})}
-          >
-            Start Session
-          </Button>
-        </div>
-      )}
+      <TerminalPane className="flex-1 min-h-0" theme={theme} />
     </div>
   );
 }

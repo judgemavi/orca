@@ -3,6 +3,20 @@ export interface HeadlessOpts {
   allowedTools?: string[] | string;
 }
 
+export interface MCPServerDef {
+  command: string;
+  args: string[];
+  cwd: string;
+}
+
+export interface InteractiveOpts {
+  model: string;
+  systemPrompt: string;
+  allowedTools: string[];
+  mcpServers: Record<string, MCPServerDef>;
+  repoDir: string;
+}
+
 export interface DriverCost {
   inputTokens: number;
   outputTokens: number;
@@ -46,6 +60,7 @@ export interface Driver {
     dir: string,
     opts?: HeadlessOpts,
   ): string[];
+  interactiveArgs(opts: InteractiveOpts): Promise<string[]>;
   parseEvent(line: Buffer): DriverEvent | null;
   parseSessionID(events: DriverEvent[]): string | null;
 }

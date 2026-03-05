@@ -1,31 +1,14 @@
-import { eq } from 'drizzle-orm';
 import { resolveModelForPhase } from '../config/config';
-import type { OrcaDrizzleDB } from '../db/connection';
-import { orchestratorSessions } from '../db/schema';
 import { type DriverRegistry, toolDefinition } from '../driver/registry';
-import type { Driver, DriverCost, DriverEvent } from '../driver/types';
+import type { Driver, MCPServerDef } from '../driver/types';
 import { loadPrompt } from '../prompts/loader';
 import { toErrorMessage } from '../shared/errors';
 import type { ConfigStore } from '../store/config';
-
-export interface OrchestratorSession {
-  id: string;
-  tool: string;
-  model: string;
-  claude_session_id: string;
-  status: string;
-}
 
 export interface SupervisorResolution {
   toolName: string;
   driver: Driver;
   model: string;
-}
-
-export interface OrchestratorTurnResult {
-  assistant: string;
-  sessionId: string;
-  cost: DriverCost | null;
 }
 
 export const ORCHESTRATOR_ALLOWED_TOOLS = [
@@ -77,6 +60,15 @@ export const ORCHESTRATOR_ALLOWED_TOOLS = [
 
 function buildSystemPrompt(basePrompt: string): string {
   return basePrompt.trim();
+}
+
+export function buildMCPServerDef(repoDir: string): MCPServerDef {
+  const command = process.execPath || 'bun';
+  const scriptPathRaw = process.argv[1]?.trim() || 'server/src/index.ts';
+  const scriptPath = isAbsolutePath(scriptPathRaw)
+    ? scriptPathRaw
+    : `${process.cwd().replace(/\/+$/g, '')}/${scriptPathRaw}`;
+  return { command, args: [scriptPath, 'mcp'], cwd: repoDir };
 }
 
 export async function writeMCPConfig(
@@ -152,174 +144,6 @@ export async function loadOrchestratorPrompt(repoDir: string): Promise<string> {
     .filter(Boolean)
     .join('\n\n');
   return buildSystemPrompt(prompt);
-}
-
-export async function runOrchestratorTurn(
-  deps: {
-    db: OrcaDrizzleDB;
-    repoDir: string;
-    configStore: ConfigStore;
-    registry: DriverRegistry;
-  },
-  session: OrchestratorSession,
-  message: string,
-  onEvent: (event: DriverEvent) => void,
-): Promise<OrchestratorTurnResult> {
-  const resolved = await resolveSupervisor(deps.configStore, deps.registry);
-  const mcpConfigPath = await writeMCPConfig(deps.repoDir, resolved.driver);
-  const headlessOpts = {
-    mcpConfig: mcpConfigPath,
-    allowedTools: ORCHESTRATOR_ALLOWED_TOOLS,
-  };
-
-  const resumeSID = (session.claude_session_id ?? '').trim();
-  let args: string[];
-
-  if (resumeSID) {
-    args = resolved.driver.resumeArgs(
-      resumeSID,
-      message,
-      resolved.model,
-      deps.repoDir,
-      headlessOpts,
-    );
-  } else {
-    const systemPrompt = await loadOrchestratorPrompt(deps.repoDir);
-    const prompt = `${systemPrompt}\n\n${message}`;
-    args = resolved.driver.headlessArgs(
-      prompt,
-      resolved.model,
-      deps.repoDir,
-      headlessOpts,
-    );
-  }
-
-  const child = Bun.spawn({
-    cmd: [resolved.driver.binary(), ...args],
-    cwd: deps.repoDir,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: filteredEnv(process.env),
-  });
-
-  const events: DriverEvent[] = [];
-  const texts: string[] = [];
-
-  const emitEvent = (event: DriverEvent) => {
-    events.push(event);
-    if (event.type === 'text' && event.text?.trim()) {
-      texts.push(event.text);
-    }
-    onEvent(event);
-  };
-
-  await Promise.all([
-    consumeStream(child.stdout, 'stdout', resolved.driver, emitEvent),
-    consumeStream(child.stderr, 'stderr', resolved.driver, emitEvent),
-  ]);
-
-  await child.exited;
-
-  let sessionId = resolved.driver.parseSessionID(events) ?? '';
-  if (!sessionId) {
-    for (const ev of events) {
-      if (ev.type === 'session' && ev.sessionID?.trim()) {
-        sessionId = ev.sessionID.trim();
-        break;
-      }
-      if (ev.type === 'cost' && ev.sessionID?.trim()) {
-        sessionId = ev.sessionID.trim();
-      }
-    }
-  }
-
-  if (sessionId) {
-    await deps.db
-      .update(orchestratorSessions)
-      .set({ claudeSessionId: sessionId })
-      .where(eq(orchestratorSessions.id, session.id));
-  }
-
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let totalCost = 0;
-  for (const ev of events) {
-    if (ev.type !== 'cost' || !ev.cost) continue;
-    inputTokens += Math.trunc(ev.cost.inputTokens);
-    outputTokens += Math.trunc(ev.cost.outputTokens);
-    totalCost += ev.cost.totalCost;
-  }
-  const hasCost = inputTokens !== 0 || outputTokens !== 0 || totalCost !== 0;
-
-  const assistant = texts
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-
-  return {
-    assistant,
-    sessionId: sessionId || session.claude_session_id || '',
-    cost: hasCost ? { inputTokens, outputTokens, totalCost } : null,
-  };
-}
-
-async function consumeStream(
-  stream: ReadableStream<Uint8Array> | null,
-  source: 'stdout' | 'stderr',
-  driver: Driver,
-  emit: (event: DriverEvent) => void,
-): Promise<void> {
-  if (!stream) return;
-
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let pending = '';
-
-  const processLine = (line: string) => {
-    const cleaned = line.replace(/\r/g, '').trim();
-    if (!cleaned) return;
-
-    if (source === 'stderr') {
-      emit({ type: 'error', text: cleaned, raw: line });
-      return;
-    }
-
-    const parsed = driver.parseEvent(Buffer.from(line));
-    if (parsed) {
-      emit(parsed);
-    }
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value || value.length === 0) continue;
-
-    pending += decoder.decode(value, { stream: true });
-    let idx = pending.indexOf('\n');
-    while (idx >= 0) {
-      processLine(pending.slice(0, idx));
-      pending = pending.slice(idx + 1);
-      idx = pending.indexOf('\n');
-    }
-  }
-
-  const tail = pending + decoder.decode();
-  if (tail.trim()) {
-    processLine(tail);
-  }
-}
-
-function filteredEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (key === 'CLAUDECODE') continue;
-    if (value === undefined) continue;
-    out[key] = value;
-  }
-  return out;
 }
 
 function configTarget(name: string): {

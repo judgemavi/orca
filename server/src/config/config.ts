@@ -123,15 +123,15 @@ export function sanitizeConfig(
     );
     config.orchestrator.supervisorTool = config.defaultTool;
   }
-  if (
-    !toolModels(registry, config.orchestrator.supervisorTool).includes(
-      config.orchestrator.supervisorModel,
-    )
-  ) {
+  const supervisorModels = toolModels(registry, config.orchestrator.supervisorTool);
+  if (!supervisorModels.includes(config.orchestrator.supervisorModel)) {
+    const fallback = config.orchestrator.supervisorTool === config.defaultTool
+      ? config.defaultModel
+      : (supervisorModels[0] ?? '');
     changes.push(
-      `orchestrator.supervisorModel ${config.orchestrator.supervisorModel} -> ${config.defaultModel}`,
+      `orchestrator.supervisorModel ${config.orchestrator.supervisorModel} -> ${fallback}`,
     );
-    config.orchestrator.supervisorModel = config.defaultModel;
+    config.orchestrator.supervisorModel = fallback;
   }
 
   for (const phase of DEFAULT_PHASES) {
@@ -143,8 +143,11 @@ export function sanitizeConfig(
       phaseCfg.tool = config.defaultTool;
       changes.push(`orchestrator.phases.${phase}.tool -> ${phaseCfg.tool}`);
     }
-    if (!toolModels(registry, phaseCfg.tool).includes(phaseCfg.model)) {
-      phaseCfg.model = config.defaultModel;
+    const phaseModels = toolModels(registry, phaseCfg.tool);
+    if (!phaseModels.includes(phaseCfg.model)) {
+      phaseCfg.model = phaseCfg.tool === config.defaultTool
+        ? config.defaultModel
+        : (phaseModels[0] ?? '');
       changes.push(`orchestrator.phases.${phase}.model -> ${phaseCfg.model}`);
     }
     config.orchestrator.phases[phase] = phaseCfg;
@@ -196,7 +199,10 @@ export function resolveModelForPhase(
   const phaseModel = config.orchestrator.phases[phase]?.model?.trim();
   if (phaseModel) return phaseModel;
 
-  if (config.defaultModel.trim()) return config.defaultModel;
+  // Only use defaultModel if it belongs to the same tool
+  if (config.defaultModel.trim() && toolName === config.defaultTool) {
+    return config.defaultModel;
+  }
 
   return toolModels(registry, toolName)[0] ?? '';
 }

@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
-import { api } from '../api';
 import { Button } from '../components/Button';
 import { OrchestratorSidebar } from '../components/OrchestratorSidebar';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -19,7 +18,6 @@ import { handleWSEvent } from '../lib/wsQueryBridge';
 import { isKnownWSEvent } from '../types';
 
 const RootLayout = () => {
-  const [orchestratorId, setOrchestratorId] = useState<string>();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('orchestrator.sidebar.open');
     return saved === 'true';
@@ -33,15 +31,6 @@ const RootLayout = () => {
         : 'light';
     },
   );
-
-  useEffect(() => {
-    api
-      .getOrchestratorStatus()
-      .then((res) => {
-        if (res?.active && res.sessionId) setOrchestratorId(res.sessionId);
-      })
-      .catch(() => {});
-  }, []);
 
   const ThemeIcon = themePreference === 'light' ? Sun : Moon;
 
@@ -60,27 +49,13 @@ const RootLayout = () => {
     useCallback((event: Parameters<typeof handleWSEvent>[1]) => {
       handleWSEvent(queryClient, event);
       if (!isKnownWSEvent(event)) return;
-
-      if (
-        event.type === 'session.created' &&
-        event.data.type === 'orchestrator'
-      ) {
-        setOrchestratorId(event.data.id);
-      }
-      if (
-        event.type === 'session.exited' &&
-        event.data.type === 'orchestrator'
-      ) {
-        setOrchestratorId(undefined);
-      }
     }, []),
   );
 
   const cycleTheme = () => {
-    setThemePreference((current) => {
-      const next = current === 'light' ? 'dark' : 'light';
-      return next;
-    });
+    setThemePreference((current) =>
+      current === 'light' ? 'dark' : 'light',
+    );
   };
 
   return (
@@ -133,11 +108,11 @@ const RootLayout = () => {
             <Outlet />
           </div>
         </main>
-        {sidebarOpen ? (
-          <aside className="flex h-full w-[clamp(240px,32vw,400px)] shrink-0 flex-col border-l border-border-subtle bg-surface">
-            <OrchestratorSidebar orchestratorId={orchestratorId} />
-          </aside>
-        ) : null}
+        <aside
+          className={`flex h-full w-[clamp(240px,32vw,400px)] shrink-0 flex-col border-l border-border-subtle bg-surface ${sidebarOpen ? '' : 'hidden'}`}
+        >
+          <OrchestratorSidebar theme={themePreference} />
+        </aside>
       </div>
       <Toaster theme={themePreference} position="bottom-center" richColors />
     </div>
