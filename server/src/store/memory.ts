@@ -677,6 +677,7 @@ export class MemoryStore {
 
   async reembedAll(batchSize = 50): Promise<number> {
     if (!this.vectorStore) return 0;
+    this.vectorStore.invalidateIndex();
     await this.db
       .update(memoryEntries)
       .set({ embedding: null })

@@ -113,10 +113,30 @@ export async function retrieveBudgetedMemory(
   ).slice(0, budgets.exact);
   for (const entry of exactMatches) seen.add(entry.id);
 
-  // Layer 3: vector semantic search
+  // Layer 3: vector semantic search with query expansion
+  const expandedQueries = [query];
+  const titleOnly = input.title.trim();
+  if (titleOnly && titleOnly !== query) expandedQueries.push(titleOnly);
+
+  const allScored = await Promise.all(
+    expandedQueries.map((q) =>
+      memory.searchWithScores(q, budgets.semantic * 2),
+    ),
+  );
+  const bestByEntry = new Map<string, { entry: MemoryEntry; score: number }>();
+  for (const results of allScored) {
+    for (const { entry, score } of results) {
+      if (seen.has(entry.id)) continue;
+      const existing = bestByEntry.get(entry.id);
+      if (!existing || score > existing.score) {
+        bestByEntry.set(entry.id, { entry, score });
+      }
+    }
+  }
   const semanticMatches = await prepareEntries(
-    (await memory.search(query, budgets.semantic * 2))
-      .filter((entry) => !seen.has(entry.id))
+    [...bestByEntry.values()]
+      .sort((a, b) => b.score - a.score)
+      .map(({ entry }) => entry)
       .slice(0, budgets.semantic),
   );
   for (const entry of semanticMatches) seen.add(entry.id);
