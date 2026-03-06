@@ -1,16 +1,6 @@
 import { toErrorMessage } from '../../shared/errors';
 import type { EventSink } from '../ws';
 
-export async function parseBody<T>(request: {
-  json: () => Promise<unknown>;
-}): Promise<T> {
-  try {
-    return (await request.json()) as T;
-  } catch {
-    return {} as T;
-  }
-}
-
 export function safeErrorMessage(error: unknown): string {
   return toErrorMessage(error);
 }

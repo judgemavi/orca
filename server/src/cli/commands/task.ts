@@ -1,9 +1,9 @@
 import type { Command } from 'commander';
 import { mergeTaskWithGit } from '../../domain/integrator';
 import { triggerPostMergeHooks } from '../../domain/post-merge';
-import { unblockDependents } from '../../queue/chain';
 import type { Executor } from '../../executor/executor';
 import type { ToolPluginRegistry } from '../../plugin/registry';
+import { unblockDependents } from '../../queue/chain';
 import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';

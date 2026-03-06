@@ -6,8 +6,7 @@ import { TASK_STATUSES } from '../types';
 export interface RetrievalBudgets {
   summary: number;
   exact: number;
-  fts: number;
-  tags: number;
+  semantic: number;
   recency: number;
   siblings: number;
 }
@@ -25,7 +24,6 @@ export interface BudgetedRetrievalResult {
   summary: MemoryEntry | null;
   exactMatches: MemoryEntry[];
   semanticMatches: MemoryEntry[];
-  tagMatches: MemoryEntry[];
   recencyMatches: MemoryEntry[];
   siblingTasks: Array<{
     id: string;
@@ -44,8 +42,7 @@ export interface MemoryRetrievalSyncer {
 const DEFAULT_BUDGETS: RetrievalBudgets = {
   summary: 1,
   exact: 4,
-  fts: 4,
-  tags: 3,
+  semantic: 6,
   recency: 3,
   siblings: 3,
 };
@@ -61,7 +58,6 @@ export async function retrieveBudgetedMemory(
   };
   const files = normalizeList(input.filePaths ?? []);
   const query = `${input.title.trim()}\n${input.description.trim()}`.trim();
-  const tags = extractTagsFromText(query);
   const seen = new Set<string>();
 
   const refreshed = new Set<string>();
@@ -89,12 +85,12 @@ export async function retrieveBudgetedMemory(
       await input.syncer.refresh(entry.id);
       staleRefreshed += 1;
     } catch {
-      // Keep original stale entry when refresh fails.
       return entry;
     }
     return (await memory.get(entry.id)) ?? entry;
   };
 
+  // Layer 1: project summary
   let summary: MemoryEntry | null = null;
   if (budgets.summary > 0) {
     const summaries = await memory.list({ tag: 'project-summary' });
@@ -107,6 +103,7 @@ export async function retrieveBudgetedMemory(
     }
   }
 
+  // Layer 2: exact file path matches
   const exactMatches = (
     await prepareEntries(
       dedupeEntries(await memory.findByFilePaths(files)).filter(
@@ -116,28 +113,15 @@ export async function retrieveBudgetedMemory(
   ).slice(0, budgets.exact);
   for (const entry of exactMatches) seen.add(entry.id);
 
+  // Layer 3: vector semantic search
   const semanticMatches = await prepareEntries(
-    (await memory.searchExcluding(query, budgets.fts * 2, []))
+    (await memory.search(query, budgets.semantic * 2))
       .filter((entry) => !seen.has(entry.id))
-      .slice(0, budgets.fts),
+      .slice(0, budgets.semantic),
   );
   for (const entry of semanticMatches) seen.add(entry.id);
 
-  const tagMatches: MemoryEntry[] = [];
-  for (const tag of tags) {
-    if (tagMatches.length >= budgets.tags) break;
-    const rows = (await memory.list({ tag })).filter(
-      (entry) => !seen.has(entry.id),
-    );
-    for (const row of rows) {
-      if (tagMatches.length >= budgets.tags) break;
-      const prepared = await prepareEntry(row);
-      if (!prepared) continue;
-      tagMatches.push(prepared);
-      seen.add(row.id);
-    }
-  }
-
+  // Layer 4: recency
   const recencyMatches = await prepareEntries(
     [...(await memory.list())]
       .reverse()
@@ -146,6 +130,7 @@ export async function retrieveBudgetedMemory(
   );
   for (const entry of recencyMatches) seen.add(entry.id);
 
+  // Siblings: related active tasks by file overlap
   const siblingCandidatesTasks = (await tasks.list())
     .filter(
       (task) =>
@@ -176,11 +161,10 @@ export async function retrieveBudgetedMemory(
 
   return {
     summary,
-    exactMatches: exactMatches,
-    semanticMatches: semanticMatches,
-    tagMatches: tagMatches,
-    recencyMatches: recencyMatches,
-    siblingTasks: siblingTasks,
+    exactMatches,
+    semanticMatches,
+    recencyMatches,
+    siblingTasks,
     totalEntries: seen.size,
     staleRefreshed,
   };
@@ -190,7 +174,6 @@ export function buildMemoryContext(result: BudgetedRetrievalResult): string {
   const entries = [
     ...result.exactMatches,
     ...result.semanticMatches,
-    ...result.tagMatches,
     ...result.recencyMatches,
   ];
   const blocks: string[] = [];
@@ -241,16 +224,6 @@ function dedupeEntries(entries: MemoryEntry[]): MemoryEntry[] {
 
 function normalizeList(items: string[]): string[] {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))];
-}
-
-function extractTagsFromText(text: string): string[] {
-  return normalizeList(
-    text
-      .toLowerCase()
-      .split(/[^a-z0-9_/-]+/g)
-      .filter((word) => word.length >= 4)
-      .slice(0, 20),
-  );
 }
 
 function overlapCount(left: string[], right: string[]): number {

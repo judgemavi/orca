@@ -1,0 +1,1 @@
+ALTER TABLE `memory_entries` ADD `embedding` blob;

@@ -1,4 +1,4 @@
-import { runInitCommand } from './cli/commands/init';
+import { type RunInitOptions, runInitCommand } from './cli/commands/init';
 
 type Mode = 'mcp' | 'serve' | 'cli';
 
@@ -19,6 +19,56 @@ function parsePort(): number {
 
 function isInitCommand(): boolean {
   return Bun.argv.some((arg) => arg === 'init');
+}
+
+function parseInitOptions(): RunInitOptions {
+  const args = Bun.argv;
+  const opts: RunInitOptions = {
+    yes: args.includes('-y') || args.includes('--yes'),
+  };
+
+  const str = (flag: string): string | undefined => {
+    const idx = args.findIndex((a) => a === flag);
+    return idx >= 0 && idx + 1 < args.length ? args[idx + 1] : undefined;
+  };
+  const num = (flag: string): number | undefined => {
+    const v = str(flag);
+    if (v == null) return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const bool = (flag: string): boolean | undefined => {
+    if (args.includes(flag)) return true;
+    if (args.includes(`--no-${flag.replace(/^--/, '')}`)) return false;
+    return undefined;
+  };
+  const multi = (flag: string): string[] => {
+    const result: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === flag && i + 1 < args.length) {
+        result.push(args[i + 1]!);
+        i++;
+      }
+    }
+    return result;
+  };
+
+  opts.name = str('--name');
+  opts.integrationBranch = str('--integration-branch');
+  opts.maxParallel = num('--max-parallel');
+  opts.tools = multi('--tool');
+  if (opts.tools.length === 0) opts.tools = undefined;
+  opts.orchestratorTool = str('--orchestrator-tool');
+  opts.orchestratorModel = str('--orchestrator-model');
+  opts.validationCommand = str('--validation-command');
+  opts.costBudget = num('--cost-budget');
+  opts.scopeCheck = bool('--scope-check');
+  opts.testDelta = bool('--test-delta');
+  opts.llmAlignment = bool('--llm-alignment');
+  opts.interaction = multi('--interaction');
+  if (opts.interaction.length === 0) opts.interaction = undefined;
+
+  return opts;
 }
 
 async function isInitialized(repoDir: string): Promise<boolean> {
@@ -53,9 +103,7 @@ async function main() {
   const repoDir = await detectRepoDir(cwd);
 
   if (isInitCommand()) {
-    await runInitCommand(repoDir, {
-      yes: Bun.argv.includes('-y') || Bun.argv.includes('--yes'),
-    });
+    await runInitCommand(repoDir, parseInitOptions());
     return;
   }
 

@@ -118,7 +118,7 @@ function dataGroup(deps: RouteDeps) {
         sink: deps.eventSink,
       }),
     )
-    .route('/', exploreRoutes(deps.repoDir, deps.eventSink, deps.queue))
+    .route('/', exploreRoutes(deps.repoDir, deps.queue))
     .route(
       '/',
       cleanupRoutes({

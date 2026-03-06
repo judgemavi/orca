@@ -98,6 +98,7 @@ export type MemoryEntry = Omit<
   | 'sourceInteractionId'
   | 'supersededBy'
   | 'coveredAtCommit'
+  | 'embedding'
 > & {
   category: MemoryCategory;
   tags: string[];

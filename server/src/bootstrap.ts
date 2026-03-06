@@ -5,6 +5,8 @@ import {
   validateDefaults,
 } from './config/config';
 import { type DatabaseConnection, openDatabase } from './db/connection';
+import { loadEmbeddingRegistry } from './embedding/registry';
+import { VectorStore } from './embedding/vector-store';
 import { Executor } from './executor/executor';
 import {
   fallbackToolPluginRegistry,
@@ -69,6 +71,34 @@ export async function bootstrap(
       log.warn('config sanitized', { change });
     }
     await configStore.save(config);
+  }
+
+  // Initialize embedding provider (non-blocking, graceful fallback)
+  if (config.embeddings?.provider) {
+    try {
+      const embeddingRegistry = await loadEmbeddingRegistry(repoDir);
+      const embeddingPlugin = await embeddingRegistry.resolve(
+        config.embeddings,
+      );
+      if (embeddingPlugin) {
+        const vectorStore = new VectorStore(database.db, embeddingPlugin);
+        memoryStore.setVectorStore(vectorStore);
+        // Backfill existing entries in background
+        queueMicrotask(async () => {
+          try {
+            await memoryStore.backfillEmbeddings();
+          } catch (err) {
+            log.warn('embedding backfill failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        });
+      }
+    } catch (err) {
+      log.warn('embedding initialization failed, using FTS fallback', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   const executor = new Executor({

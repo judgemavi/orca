@@ -198,9 +198,9 @@ function buildExistingMemorySection(
   const lines: string[] = [];
   for (let i = 0; i < max; i += 1) {
     const entry = entries[i];
-    lines.push(`- [${entry.category}] ${entry.content.trim()}`);
-    if (entry.filePaths?.length) {
-      lines.push(`  files: ${entry.filePaths.join(', ')}`);
+    lines.push(`- [${entry?.category}] ${entry?.content.trim()}`);
+    if (entry?.filePaths?.length) {
+      lines.push(`  files: ${entry?.filePaths.join(', ')}`);
     }
   }
   return lines.join('\n').trim();

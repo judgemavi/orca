@@ -15,6 +15,13 @@
       "when": 1772763662512,
       "tag": "0001_heavy_black_widow",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1772809970680,
+      "tag": "0002_steady_the_order",
+      "breakpoints": true
     }
   ]
 }

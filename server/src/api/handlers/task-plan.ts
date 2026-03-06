@@ -14,9 +14,9 @@ import {
   requestPlanChanges,
 } from '../../workflows/planning';
 import {
-  generatePlanSchema,
   planBodySchema,
   requestPlanChangesSchema,
+  toolModelSchema,
 } from '../schemas';
 import type { EventSink } from '../ws';
 import { asyncOp } from './async-op';
@@ -79,7 +79,7 @@ export function taskPlanRoutes(deps: TaskPlanDeps) {
 
     .post(
       '/tasks/:id/plan/generate',
-      zValidator('json', generatePlanSchema),
+      zValidator('json', toolModelSchema),
       async (c) => {
         const taskID = c.req.param('id');
         const task = await taskStore.get(taskID);

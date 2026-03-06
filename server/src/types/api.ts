@@ -63,6 +63,11 @@ export interface Config {
   cost?: {
     budgetUsd?: number;
   };
+  embeddings?: {
+    provider: string;
+    model?: string;
+    baseUrl?: string;
+  };
   logging: { level: string; file: string; maxSize: string };
 }
 

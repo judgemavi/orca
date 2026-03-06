@@ -23,6 +23,8 @@ import {
   taskInteractions,
   tasks,
 } from '../db/schema';
+import type { VectorStore } from '../embedding/vector-store';
+import { log } from '../shared/logger';
 import type { MemoryEntry, MemorySourceType, MemoryUsedByTask } from '../types';
 import type {
   MemoryEntryInput,
@@ -33,18 +35,21 @@ import type {
 
 type MemoryRow = typeof memoryEntries.$inferSelect;
 
-interface TaskUsageRow {
-  taskId: string;
-  title: string;
-  status: string;
-  qualityJson: string | null;
-}
-
 export class MemoryStore {
+  private vectorStore: VectorStore | null = null;
+
   constructor(
     private readonly db: OrcaDrizzleDB,
     private readonly sink?: EventSink,
   ) {}
+
+  setVectorStore(vs: VectorStore): void {
+    this.vectorStore = vs;
+  }
+
+  getVectorStore(): VectorStore | null {
+    return this.vectorStore;
+  }
 
   async getMeta(key: string): Promise<string> {
     const normalized = key.trim();
@@ -111,8 +116,6 @@ export class MemoryStore {
         updatedAt: sql`(CURRENT_TIMESTAMP)`,
       });
 
-      await this.upsertFTSInTx(tx, id, content, tags);
-
       for (const filePath of filePaths) {
         await tx
           .insert(memoryFileAssociations)
@@ -131,6 +134,11 @@ export class MemoryStore {
 
     const created = await this.get(id);
     if (!created) throw new Error(`failed to create memory entry ${id}`);
+
+    if (this.vectorStore) {
+      await this.vectorStore.upsert(id, content);
+    }
+
     this.sink?.broadcast('memory.sync', { id, op: 'INSERT' });
     return created;
   }
@@ -256,50 +264,39 @@ export class MemoryStore {
 
     updateSet.updatedAt = sql`(CURRENT_TIMESTAMP)`;
 
-    await this.db.transaction(async (tx) => {
-      const result = await tx
-        .update(memoryEntries)
-        .set(updateSet)
-        .where(eq(memoryEntries.id, id))
-        .returning({ id: memoryEntries.id });
-      if (result.length === 0) {
-        throw new Error(`memory entry ${id} not found`);
-      }
+    const result = await this.db
+      .update(memoryEntries)
+      .set(updateSet)
+      .where(eq(memoryEntries.id, id))
+      .returning({ id: memoryEntries.id });
+    if (result.length === 0) {
+      throw new Error(`memory entry ${id} not found`);
+    }
 
-      const rowArr = await tx
-        .select({
-          content: memoryEntries.content,
-          tags: memoryEntries.tags,
-        })
-        .from(memoryEntries)
-        .where(eq(memoryEntries.id, id))
-        .limit(1);
-      const row = rowArr[0];
-      if (!row) {
-        throw new Error(`memory entry ${id} not found`);
-      }
-      await this.upsertFTSInTx(tx, id, row.content, parseTags(row.tags));
-    });
+    if (this.vectorStore && fields.content !== undefined) {
+      const entry = await this.get(id);
+      if (entry) await this.vectorStore.upsert(id, entry.content);
+    }
 
     this.sink?.broadcast('memory.sync', { id, op: 'UPDATE' });
   }
 
   async delete(id: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      tx.run(sql`DELETE FROM memory_entries_fts WHERE id = ${id}`);
-      const result = await tx
-        .delete(memoryEntries)
-        .where(eq(memoryEntries.id, id))
-        .returning({ id: memoryEntries.id });
-      if (result.length === 0) {
-        throw new Error(`memory entry ${id} not found`);
-      }
-    });
+    const result = await this.db
+      .delete(memoryEntries)
+      .where(eq(memoryEntries.id, id))
+      .returning({ id: memoryEntries.id });
+    if (result.length === 0) {
+      throw new Error(`memory entry ${id} not found`);
+    }
+    if (this.vectorStore) {
+      await this.vectorStore.remove(id);
+    }
     this.sink?.broadcast('memory.sync', { id, op: 'DELETE' });
   }
 
   async search(query: string, limit: number): Promise<MemoryEntry[]> {
-    return this.searchInternal(query, limit, []);
+    return this.vectorSearch(query, limit, []);
   }
 
   async searchExcluding(
@@ -307,7 +304,42 @@ export class MemoryStore {
     limit: number,
     excludeHashes: string[],
   ): Promise<MemoryEntry[]> {
-    return this.searchInternal(query, limit, excludeHashes);
+    return this.vectorSearch(query, limit, excludeHashes);
+  }
+
+  private async vectorSearch(
+    query: string,
+    limit: number,
+    excludeHashes: string[],
+  ): Promise<MemoryEntry[]> {
+    if (!this.vectorStore || !query.trim() || limit <= 0) return [];
+
+    const candidates = await this.vectorStore.search(query, limit * 3);
+    if (candidates.length === 0) return [];
+
+    const ids = candidates.map((c) => c.memoryId);
+    const rows = await this.db
+      .select()
+      .from(memoryEntries)
+      .where(
+        and(
+          inArray(memoryEntries.id, ids),
+          isNull(memoryEntries.supersededBy),
+          gte(memoryEntries.confidence, 0.3),
+          ...(excludeHashes.length > 0
+            ? [notInArray(memoryEntries.provenanceHash, excludeHashes)]
+            : []),
+        ),
+      );
+
+    const idOrder = new Map(ids.map((id, i) => [id, i]));
+    const entries = rows
+      .map((row) => this.mapRow(row as MemoryRow))
+      .sort((a, b) => (idOrder.get(a.id) ?? 999) - (idOrder.get(b.id) ?? 999))
+      .slice(0, limit);
+
+    await this.loadFilePaths(entries);
+    return entries;
   }
 
   async supersede(oldID: string, newID: string): Promise<void> {
@@ -628,66 +660,35 @@ export class MemoryStore {
     };
   }
 
-  private async searchInternal(
-    query: string,
-    limit: number,
-    excludeHashes: string[],
-  ): Promise<MemoryEntry[]> {
-    if (!query.trim() || limit <= 0) return [];
+  async backfillEmbeddings(batchSize = 50): Promise<number> {
+    if (!this.vectorStore) return 0;
 
-    const ftsQuery = buildFTSQuery(query);
-    if (!ftsQuery) return [];
-
-    const conditions: SQL[] = [
-      isNull(memoryEntries.supersededBy),
-      gte(memoryEntries.confidence, 0.3),
-    ];
-
-    if (excludeHashes.length > 0) {
-      conditions.push(notInArray(memoryEntries.provenanceHash, excludeHashes));
-    }
-
-    const rows = await this.db
-      .select({
-        id: memoryEntries.id,
-        content: memoryEntries.content,
-        category: memoryEntries.category,
-        tags: memoryEntries.tags,
-        sourceTaskId: memoryEntries.sourceTaskId,
-        sourceInteractionId: memoryEntries.sourceInteractionId,
-        confidence: memoryEntries.confidence,
-        provenanceHash: memoryEntries.provenanceHash,
-        supersededBy: memoryEntries.supersededBy,
-        sourceType: memoryEntries.sourceType,
-        coveredAtCommit: memoryEntries.coveredAtCommit,
-        stale: memoryEntries.stale,
-        createdAt: memoryEntries.createdAt,
-        updatedAt: memoryEntries.updatedAt,
-      })
+    const allRows = await this.db
+      .select({ id: memoryEntries.id, content: memoryEntries.content })
       .from(memoryEntries)
-      .innerJoin(
-        sql`memory_entries_fts`,
-        sql`memory_entries.id = memory_entries_fts.id`,
-      )
-      .where(and(sql`memory_entries_fts MATCH ${ftsQuery}`, ...conditions))
-      .orderBy(sql`memory_entries_fts.rank`, desc(memoryEntries.createdAt))
-      .limit(limit);
-    const entries = rows.map((row) => this.mapRow(row as MemoryRow));
-    await this.loadFilePaths(entries);
-    return entries;
-  }
+      .where(and(isNull(memoryEntries.supersededBy), isNull(memoryEntries.embedding)))
+      .orderBy(asc(memoryEntries.createdAt));
 
-  private async upsertFTSInTx(
-    tx: Parameters<Parameters<OrcaDrizzleDB['transaction']>[0]>[0],
-    id: string,
-    content: string,
-    tags: string[],
-  ): Promise<void> {
-    const tagsText = tags.join(' ');
-    tx.run(sql`DELETE FROM memory_entries_fts WHERE id = ${id}`);
-    tx.run(
-      sql`INSERT INTO memory_entries_fts(id, content, tags) VALUES(${id}, ${content}, ${tagsText})`,
-    );
+    const missing = allRows;
+    if (missing.length === 0) return 0;
+
+    log.info('backfilling embeddings', { count: missing.length });
+    let embedded = 0;
+    for (let i = 0; i < missing.length; i += batchSize) {
+      const batch = missing.slice(i, i + batchSize);
+      try {
+        await this.vectorStore.upsertBatch(
+          batch.map((r) => ({ id: r.id, text: r.content })),
+        );
+        embedded += batch.length;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn('backfill batch failed', { offset: i, error: msg });
+        break;
+      }
+    }
+    log.info('backfill complete', { embedded, total: missing.length });
+    return embedded;
   }
 
   private mapRow(row: MemoryRow): MemoryEntry {
@@ -797,15 +798,4 @@ function parseUsedMemoryIDs(raw: string | null | undefined): string[] {
   } catch {
     return [];
   }
-}
-
-function buildFTSQuery(raw: string): string {
-  const words = raw
-    .trim()
-    .split(/\s+/)
-    .map((word) => word.replace(/[^a-zA-Z0-9_]/g, ''))
-    .filter(Boolean);
-
-  if (words.length === 0) return '';
-  return words.map((word) => `${word}*`).join(' OR ');
 }

@@ -8,11 +8,9 @@ import {
 import type { JobQueue } from '../../queue/queue';
 import { JOB_PRIORITIES } from '../../types';
 import { exploreContextSchema, exploreSchema } from '../schemas';
-import type { EventSink } from '../ws';
 
 export function exploreRoutes(
   repoDir: string,
-  sink: EventSink,
   queue: JobQueue,
 ) {
   return new Hono()

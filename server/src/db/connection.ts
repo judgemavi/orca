@@ -32,12 +32,6 @@ export function openDatabase(options: OpenDatabaseOptions): DatabaseConnection {
 
   migrate(db, { migrationsFolder });
 
-  // FTS5 virtual table for memory search — standalone (not content-synced)
-  db.run(sql`
-    CREATE VIRTUAL TABLE IF NOT EXISTS memory_entries_fts
-    USING fts5(id UNINDEXED, content, tags)
-  `);
-
   // Change-tracking triggers (drizzle can't generate these)
   createChangelogTriggers(db);
 

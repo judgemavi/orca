@@ -61,8 +61,6 @@ export const planBodySchema = z.object({
   plan: z.string().optional(),
 });
 
-export const generatePlanSchema = toolModelSchema;
-
 export const requestPlanChangesSchema = toolModelSchema.extend({
   feedback: z.string().optional(),
   interactionId: z.string().optional(),

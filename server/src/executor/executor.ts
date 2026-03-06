@@ -410,7 +410,6 @@ export class Executor {
       ...(result.summary ? [result.summary] : []),
       ...result.exactMatches,
       ...result.semanticMatches,
-      ...result.tagMatches,
       ...result.recencyMatches,
     ];
     for (const entry of allEntries) {

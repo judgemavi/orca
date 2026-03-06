@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  blob,
   check,
   index,
   integer,
@@ -183,6 +184,7 @@ export const memoryEntries = sqliteTable(
     sourceType: text('source_type').notNull().default('retro'),
     coveredAtCommit: text('covered_at_commit').notNull().default(''),
     stale: integer('stale', { mode: 'boolean' }).notNull().default(false),
+    embedding: blob('embedding', { mode: 'buffer' }),
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
     updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },

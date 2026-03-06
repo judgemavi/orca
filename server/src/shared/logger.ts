@@ -37,10 +37,6 @@ export function initLogger(opts: {
   return logger;
 }
 
-export function getLogger(): pino.Logger {
-  return logger;
-}
-
 export const log = {
   debug: (msg: string, data?: Record<string, unknown>) =>
     data ? logger.debug(data, msg) : logger.debug(msg),

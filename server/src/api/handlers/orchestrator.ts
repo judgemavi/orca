@@ -42,9 +42,6 @@ export function killActivePTY(): boolean {
 
 export function orchestratorRoutes(
   _sink: EventSink,
-  configStore: ConfigStore,
-  repoDir: string,
-  registry: ToolPluginRegistry,
 ) {
   return new Hono()
     .get('/orchestrator', (c) =>

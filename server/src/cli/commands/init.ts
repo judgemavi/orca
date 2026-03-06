@@ -14,8 +14,21 @@ import {
   textInput,
 } from '../helpers';
 
-interface RunInitOptions {
+export interface RunInitOptions {
   yes?: boolean;
+  name?: string;
+  integrationBranch?: string;
+  maxParallel?: number;
+  tools?: string[];
+  orchestratorTool?: string;
+  orchestratorModel?: string;
+  validationCommand?: string;
+  costBudget?: number;
+  scopeCheck?: boolean;
+  testDelta?: boolean;
+  llmAlignment?: boolean;
+  /** Format: "type:tool:model:autoRun" e.g. "code:claude:sonnet:true" */
+  interaction?: string[];
 }
 
 export async function runInitCommand(
@@ -67,9 +80,9 @@ export async function runInitCommand(
 
   let enabledTools: string[];
   if (autoYes || available.length === 1) {
-    enabledTools = initialEnabled;
+    enabledTools = options.tools?.length ? options.tools : initialEnabled;
     note(
-      initialEnabled.map((name) => `✓ ${name}`).join('\n'),
+      enabledTools.map((name) => `✓ ${name}`).join('\n'),
       'Tool Detection',
     );
   } else {
@@ -98,19 +111,19 @@ export async function runInitCommand(
   const defaults = buildDefaults(repoDir, current, available);
 
   const projectName = autoYes
-    ? defaults.projectName
+    ? (options.name ?? defaults.projectName)
     : await textInput('Project name', {
         defaultValue: defaults.projectName,
         required: true,
       });
   const integrationBranch = autoYes
-    ? defaults.integrationBranch
+    ? (options.integrationBranch ?? defaults.integrationBranch)
     : await textInput('Integration branch', {
         defaultValue: defaults.integrationBranch,
         required: true,
       });
   const maxParallelRaw = autoYes
-    ? String(defaults.maxParallel)
+    ? String(options.maxParallel ?? defaults.maxParallel)
     : await textInput('Max parallel workers', {
         defaultValue: String(defaults.maxParallel),
         required: true,
@@ -128,7 +141,7 @@ export async function runInitCommand(
     enabledTools.length === 1
       ? enabledTools[0]!
       : autoYes
-        ? pickDefault(enabledTools, defaults.orchestrator.tool)
+        ? (options.orchestratorTool ?? pickDefault(enabledTools, defaults.orchestrator.tool))
         : await pickFromList(
             'Orchestrator tool',
             enabledTools.map((name) => ({ label: name, value: name })),
@@ -136,7 +149,7 @@ export async function runInitCommand(
           );
   const orchModels = toolModels(registry, orchestratorTool);
   const orchestratorModel = autoYes
-    ? pickDefault(orchModels, defaults.orchestrator.model)
+    ? (options.orchestratorModel ?? pickDefault(orchModels, defaults.orchestrator.model))
     : await pickFromList(
         'Orchestrator model',
         orchModels.map((m) => ({ label: m, value: m })),
@@ -145,13 +158,15 @@ export async function runInitCommand(
 
   // Interaction defaults
   const interactions = {} as Record<InteractionType, InteractionConfig>;
+  const cliInteractionOverrides = parseInteractionOverrides(options.interaction ?? []);
   if (autoYes) {
     for (const type of INTERACTION_TYPES) {
       const def = defaults.interactions[type];
+      const override = cliInteractionOverrides.get(type);
       interactions[type] = {
-        tool: def.tool,
-        model: def.model,
-        autoRun: def.autoRun ?? true,
+        tool: override?.tool ?? def.tool,
+        model: override?.model ?? def.model,
+        autoRun: override?.autoRun ?? def.autoRun ?? true,
       };
     }
   } else {
@@ -181,13 +196,13 @@ export async function runInitCommand(
   }
 
   const validationCommand = autoYes
-    ? defaults.validationCommand
+    ? (options.validationCommand ?? defaults.validationCommand)
     : await textInput('Validation command (optional)', {
         defaultValue: defaults.validationCommand,
       });
 
   const costBudgetRaw = autoYes
-    ? defaults.costBudget
+    ? (options.costBudget != null ? String(options.costBudget) : defaults.costBudget)
     : await textInput('Cost budget in USD (optional)', {
         defaultValue: defaults.costBudget,
         validate: (value) => {
@@ -200,8 +215,9 @@ export async function runInitCommand(
       });
   const costBudget = costBudgetRaw ? Number.parseFloat(costBudgetRaw) : 0;
 
+  const qualityOverrides = applyQualityOverrides(defaults.qualitySelected, options);
   const qualitySelected = autoYes
-    ? defaults.qualitySelected
+    ? qualityOverrides
     : ensureNotCancelled(
         await (await import('@clack/prompts')).multiselect({
           message: 'Quality gates',
@@ -434,4 +450,35 @@ function baseName(path: string): string {
   const idx = normalized.lastIndexOf('/');
   if (idx < 0) return normalized;
   return normalized.slice(idx + 1);
+}
+
+function parseInteractionOverrides(
+  raw: string[],
+): Map<InteractionType, Partial<InteractionConfig>> {
+  const map = new Map<InteractionType, Partial<InteractionConfig>>();
+  for (const entry of raw) {
+    const parts = entry.split(':');
+    const type = parts[0] as InteractionType;
+    if (!INTERACTION_TYPES.includes(type)) continue;
+    const override: Partial<InteractionConfig> = {};
+    if (parts[1]) override.tool = parts[1];
+    if (parts[2]) override.model = parts[2];
+    if (parts[3] != null) override.autoRun = parts[3] !== 'false';
+    map.set(type, override);
+  }
+  return map;
+}
+
+function applyQualityOverrides(
+  defaults: string[],
+  options: RunInitOptions,
+): string[] {
+  const result = new Set(defaults);
+  if (options.scopeCheck === true) result.add('scopeCheck');
+  if (options.scopeCheck === false) result.delete('scopeCheck');
+  if (options.testDelta === true) result.add('testDelta');
+  if (options.testDelta === false) result.delete('testDelta');
+  if (options.llmAlignment === true) result.add('llmAlignment');
+  if (options.llmAlignment === false) result.delete('llmAlignment');
+  return [...result];
 }
