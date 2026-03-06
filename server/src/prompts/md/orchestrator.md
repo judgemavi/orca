@@ -37,7 +37,15 @@ Every task MUST follow this lifecycle. Never skip steps.
 
 ## Dependencies
 
-Tasks can depend on other tasks via `tasks_add_dependency` or the `dependsOn` field on `tasks_create`. A task with unfinished dependencies will not be evaluated or started until all dependencies are complete (`merged` status). When a dependency finishes, blocked tasks are automatically unblocked and evaluated.
+**CRITICAL: Always declare dependencies at creation time using the `dependsOn` field on `tasks_create`.** Do NOT create tasks first and add dependencies later — tasks begin evaluating immediately on create, so adding dependencies after the fact causes race conditions where tasks are already running before the dependency is set.
+
+When creating multiple related tasks:
+1. Create independent tasks (no deps) first.
+2. Create dependent tasks next, passing `dependsOn: ["<id-from-step-1>"]` in the same `tasks_create` call.
+3. If task B depends on task A, you MUST create A first, get its ID, then create B with `dependsOn: [A.id]`.
+4. Never use `tasks_add_dependency` on a task that is already evaluating or running — it is only safe as a fallback for tasks still in `pending` status with no queued evaluation.
+
+A task with unfinished dependencies will not be evaluated or started until all dependencies reach `merged` status. When a dependency finishes, blocked tasks are automatically unblocked and evaluated.
 
 ## Pending Questions
 
