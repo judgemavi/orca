@@ -12,6 +12,7 @@ export function interactionRoutes(interactions: InteractionStore) {
 
       if (fields === 'stub') {
         let stubs = await interactions.listStubs(taskID);
+        stubs = stubs.filter((s) => s.type !== 'explore');
         if (type) stubs = stubs.filter((s) => s.type === type);
         if (status) stubs = stubs.filter((s) => s.status === status);
         stubs = stubs.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
@@ -21,6 +22,7 @@ export function interactionRoutes(interactions: InteractionStore) {
       let data = type
         ? await interactions.listByType(taskID, type)
         : await interactions.list(taskID);
+      data = data.filter((item) => item.type !== 'explore');
       if (status) {
         data = data.filter((item) => item.status === status);
       }
