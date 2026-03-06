@@ -105,10 +105,9 @@ async function resolveSupervisorModel(input: {
 
   const config = await input.configStore.load();
   const candidates = [
-    input.toolName === config.orchestrator.supervisorTool
-      ? config.orchestrator.supervisorModel
+    input.toolName === config.orchestrator.tool
+      ? config.orchestrator.model
       : '',
-    input.toolName === config.defaultTool ? config.defaultModel : '',
     input.toolModels[0] ?? '',
   ].filter((value) => value.trim());
 

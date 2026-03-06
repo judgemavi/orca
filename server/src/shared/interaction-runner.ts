@@ -9,6 +9,7 @@ import type { InteractionStore } from '../store/interactions';
 import type { Config } from '../types';
 import type { WorkerRunResult } from '../worker/worker';
 import { toErrorMessage } from './errors';
+import { log } from './logger';
 
 type Awaitable<T> = T | Promise<T>;
 
@@ -95,6 +96,13 @@ export async function createInteractionRunner(deps: RunnerDeps) {
 
     const prompt = await loadInteractionPrompt(deps.repoDir, opts);
 
+    log.info('starting interaction', {
+      type,
+      taskId: interactionTaskId,
+      tool: execution.toolName,
+      model: execution.model,
+    });
+
     let interactionID = '';
     let interactionLogPath = '';
     if (deps.interactions) {
@@ -166,6 +174,12 @@ export async function createInteractionRunner(deps: RunnerDeps) {
         output,
       };
     } catch (error) {
+      log.error('interaction failed', {
+        type,
+        taskId: interactionTaskId,
+        tool: execution.toolName,
+        error: toErrorMessage(error),
+      });
       await finishInteraction({
         status: 'failed',
         model: execution.model,

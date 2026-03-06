@@ -5,6 +5,8 @@ import {
   toolModels,
 } from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
+import type { InteractionConfig, InteractionType } from '../../types';
+import { INTERACTION_TYPES } from '../../types';
 import { printJSON } from '../format';
 import { pickFromList, textInput } from '../helpers';
 
@@ -42,23 +44,54 @@ async function buildInteractivePatch(
   registry: ToolPluginRegistry,
 ): Promise<Record<string, unknown>> {
   const current = await configStore.load();
-  const tools = availableTools(registry);
-  const defaultTool = await pickFromList(
-    'Default tool',
-    tools.map((tool) => ({ label: tool, value: tool })),
-    tools.includes(current.defaultTool) ? current.defaultTool : tools[0],
-  );
-  const models = toolModels(registry, defaultTool);
-  const defaultModel =
-    models.length > 0
+  const allTools = availableTools(registry);
+  const enabled = current.tools.filter((t) => allTools.includes(t));
+  const tools = enabled.length > 0 ? enabled : allTools;
+
+  const orchTool =
+    tools.length === 1
+      ? tools[0]!
+      : await pickFromList(
+          'Orchestrator tool',
+          tools.map((t) => ({ label: t, value: t })),
+          tools.includes(current.orchestrator?.tool)
+            ? current.orchestrator.tool
+            : tools[0],
+        );
+  const orchModels = toolModels(registry, orchTool);
+  const orchModel =
+    orchModels.length > 0
       ? await pickFromList(
-          `Default model (${defaultTool})`,
-          models.map((model) => ({ label: model, value: model })),
-          models.includes(current.defaultModel)
-            ? current.defaultModel
-            : models[0],
+          'Orchestrator model',
+          orchModels.map((m) => ({ label: m, value: m })),
+          orchModels.includes(current.orchestrator?.model)
+            ? current.orchestrator.model
+            : orchModels[0],
         )
       : '';
+
+  const interactions = {} as Record<InteractionType, InteractionConfig>;
+  for (const type of INTERACTION_TYPES) {
+    const existing = current.interactions?.[type];
+    const tool =
+      tools.length === 1
+        ? tools[0]!
+        : await pickFromList(
+            `${type} tool`,
+            tools.map((t) => ({ label: t, value: t })),
+            tools.includes(existing?.tool) ? existing.tool : tools[0],
+          );
+    const models = toolModels(registry, tool);
+    const model =
+      models.length > 0
+        ? await pickFromList(
+            `${type} model`,
+            models.map((m) => ({ label: m, value: m })),
+            models.includes(existing?.model) ? existing.model : models[0],
+          )
+        : '';
+    interactions[type] = { tool, model };
+  }
 
   const branch = await textInput('Integration branch', {
     defaultValue: current.project.integrationBranch,
@@ -77,14 +110,10 @@ async function buildInteractivePatch(
   const maxParallel = Number.parseInt(maxParallelRaw, 10);
 
   return {
-    defaultTool: defaultTool,
-    defaultModel: defaultModel,
-    project: {
-      integrationBranch: branch,
-    },
-    workers: {
-      maxParallel: maxParallel,
-    },
+    interactions,
+    orchestrator: { tool: orchTool, model: orchModel },
+    project: { integrationBranch: branch },
+    workers: { maxParallel },
   };
 }
 

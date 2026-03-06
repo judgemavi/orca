@@ -1,6 +1,32 @@
 import type { MemoryCategory, MemorySourceType } from './constants';
 import type { MemoryEntry } from './models';
 
+export interface InteractionConfig {
+  tool: string;
+  model: string;
+}
+
+export type InteractionType =
+  | 'run'
+  | 'evaluate'
+  | 'review'
+  | 'plan'
+  | 'breakdown'
+  | 'explore'
+  | 'retro'
+  | 'merge';
+
+export const INTERACTION_TYPES: InteractionType[] = [
+  'run',
+  'evaluate',
+  'review',
+  'plan',
+  'breakdown',
+  'explore',
+  'retro',
+  'merge',
+];
+
 export interface Config {
   project: {
     name: string;
@@ -8,15 +34,13 @@ export interface Config {
     worktreeDir: string;
   };
   tools: string[];
-  defaultTool: string;
-  defaultModel: string;
+  interactions: Record<InteractionType, InteractionConfig>;
+  orchestrator: {
+    tool: string;
+    model: string;
+  };
   validation: { commands: string[] };
   workers: { maxParallel: number };
-  orchestrator: {
-    supervisorTool: string;
-    supervisorModel: string;
-    overrides: Record<string, { tool: string; model: string }>;
-  };
   monitor: {
     stuckCheckInterval: import('ms').StringValue;
     maxStuckCycles: number;

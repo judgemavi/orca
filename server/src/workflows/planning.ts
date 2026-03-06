@@ -189,7 +189,6 @@ export async function acceptBreakdown(
       parentId: normalizedParentID || null,
     });
     createdIDs.push(created.id);
-    await deps.taskStore.updateStatus(created.id, TASK_STATUSES.planned);
     if (deps.queue) {
       await deps.queue.enqueue({
         type: 'evaluate',

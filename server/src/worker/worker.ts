@@ -5,6 +5,7 @@ import type {
 } from '../plugin/types';
 import { toErrorMessage } from '../shared/errors';
 import { gitOutput } from '../shared/git';
+import { log } from '../shared/logger';
 import { trackProcess, untrackProcess } from '../shared/process-registry';
 
 export interface WorkerOutputLine {
@@ -74,8 +75,17 @@ export async function runTool(
 
   await Bun.$`mkdir -p ${dirName(logPath)}`;
 
+  const cmd = [options.plugin.binary(), ...args];
+  log.info('spawning tool', {
+    taskId: options.taskID,
+    tool: options.driverName,
+    model: options.model,
+    cmd: cmd.join(' '),
+    cwd: options.cwd,
+  });
+
   const child = Bun.spawn({
-    cmd: [options.plugin.binary(), ...args],
+    cmd,
     cwd: options.cwd,
     stdin: 'ignore',
     stdout: 'pipe',
@@ -210,6 +220,18 @@ export async function runTool(
   if (!sessionID) {
     sessionID = options.plugin.parseSessionID(events) ?? '';
   }
+
+  log.info('tool exited', {
+    taskId: options.taskID,
+    tool: options.driverName,
+    exitCode,
+    durationMs: Date.now() - start,
+    timedOut,
+    aborted,
+    inputTokens,
+    outputTokens,
+    ...(error ? { error } : {}),
+  });
 
   const commitMessage = buildCommitMessage(options.taskID, options.prompt);
   const { diff, filesChanged } = await finalizeGitWorktree(

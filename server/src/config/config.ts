@@ -1,9 +1,19 @@
 import deepmerge from 'deepmerge';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { availableTools, toolModels } from '../plugin/registry';
-import type { Config } from '../types';
+import type { Config, InteractionConfig, InteractionType } from '../types';
+import { INTERACTION_TYPES } from '../types';
+
+function defaultInteraction(): InteractionConfig {
+  return { tool: 'claude', model: 'claude-sonnet-4-6' };
+}
 
 export function defaultConfig(): Config {
+  const interactions = {} as Record<InteractionType, InteractionConfig>;
+  for (const type of INTERACTION_TYPES) {
+    interactions[type] = defaultInteraction();
+  }
+
   return {
     project: {
       name: '',
@@ -11,15 +21,13 @@ export function defaultConfig(): Config {
       worktreeDir: '.orca/worktrees',
     },
     tools: ['claude'],
-    defaultTool: 'claude',
-    defaultModel: 'claude-sonnet-4-6',
+    interactions,
+    orchestrator: {
+      tool: 'claude',
+      model: '',
+    },
     validation: { commands: [] },
     workers: { maxParallel: 3 },
-    orchestrator: {
-      supervisorTool: 'claude',
-      supervisorModel: '',
-      overrides: {},
-    },
     monitor: {
       stuckCheckInterval: '60s',
       maxStuckCycles: 10,
@@ -88,59 +96,80 @@ export function sanitizeConfig(
     );
   }
 
-  if (!tools.includes(config.defaultTool)) {
-    const prior = config.defaultTool;
-    config.defaultTool = tools[0] as string;
-    changes.push(`defaultTool ${prior} -> ${config.defaultTool}`);
+  const fallbackTool = tools[0] as string;
+
+  // Migrate legacy config shape
+  const legacy = config as unknown as Record<string, unknown>;
+  if ('defaultTool' in legacy || 'defaultModel' in legacy) {
+    const legacyTool = String(legacy.defaultTool ?? fallbackTool);
+    const legacyModel = String(legacy.defaultModel ?? '');
+    if (!config.interactions) {
+      config.interactions = {} as Record<InteractionType, InteractionConfig>;
+    }
+    for (const type of INTERACTION_TYPES) {
+      if (!config.interactions[type]) {
+        config.interactions[type] = { tool: legacyTool, model: legacyModel };
+      }
+    }
+    delete legacy.defaultTool;
+    delete legacy.defaultModel;
+    changes.push('migrated defaultTool/defaultModel to interactions');
+  }
+  if (legacy.orchestrator && typeof legacy.orchestrator === 'object') {
+    const legacyOrch = legacy.orchestrator as Record<string, unknown>;
+    if ('supervisorTool' in legacyOrch) {
+      config.orchestrator.tool = String(legacyOrch.supervisorTool ?? fallbackTool);
+      config.orchestrator.model = String(legacyOrch.supervisorModel ?? '');
+      delete legacyOrch.supervisorTool;
+      delete legacyOrch.supervisorModel;
+      delete legacyOrch.overrides;
+      changes.push('migrated orchestrator.supervisorTool/Model to orchestrator.tool/model');
+    }
   }
 
-  const defaultModels = toolModels(registry, config.defaultTool);
-  if (!defaultModels.includes(config.defaultModel)) {
-    const prior = config.defaultModel;
-    config.defaultModel = defaultModels[0] ?? '';
-    changes.push(`defaultModel ${prior} -> ${config.defaultModel}`);
+  // Ensure all interaction types exist
+  if (!config.interactions) {
+    config.interactions = {} as Record<InteractionType, InteractionConfig>;
+  }
+  for (const type of INTERACTION_TYPES) {
+    if (!config.interactions[type]) {
+      config.interactions[type] = { tool: fallbackTool, model: '' };
+      changes.push(`interactions.${type} added with fallback`);
+    }
   }
 
+  // Sanitize each interaction type
+  for (const type of INTERACTION_TYPES) {
+    const entry = config.interactions[type];
+    if (!tools.includes(entry.tool)) {
+      changes.push(`interactions.${type}.tool ${entry.tool} -> ${fallbackTool}`);
+      entry.tool = fallbackTool;
+    }
+    const models = toolModels(registry, entry.tool);
+    if (models.length > 0 && !models.includes(entry.model)) {
+      const newModel = models[0] ?? '';
+      changes.push(`interactions.${type}.model ${entry.model} -> ${newModel}`);
+      entry.model = newModel;
+    }
+  }
+
+  // Sanitize orchestrator
+  if (!tools.includes(config.orchestrator.tool)) {
+    changes.push(`orchestrator.tool ${config.orchestrator.tool} -> ${fallbackTool}`);
+    config.orchestrator.tool = fallbackTool;
+  }
+  const orchModels = toolModels(registry, config.orchestrator.tool);
+  if (orchModels.length > 0 && !orchModels.includes(config.orchestrator.model)) {
+    const newModel = orchModels[0] ?? '';
+    changes.push(`orchestrator.model ${config.orchestrator.model} -> ${newModel}`);
+    config.orchestrator.model = newModel;
+  }
+
+  // Sanitize tools list
   config.tools = config.tools.filter((name) => tools.includes(name));
   if (config.tools.length === 0) {
-    config.tools = [config.defaultTool];
-    changes.push('tools reset to defaultTool');
-  }
-
-  if (!tools.includes(config.orchestrator.supervisorTool)) {
-    changes.push(
-      `orchestrator.supervisorTool ${config.orchestrator.supervisorTool} -> ${config.defaultTool}`,
-    );
-    config.orchestrator.supervisorTool = config.defaultTool;
-  }
-  const supervisorModels = toolModels(
-    registry,
-    config.orchestrator.supervisorTool,
-  );
-  if (!supervisorModels.includes(config.orchestrator.supervisorModel)) {
-    const fallback =
-      config.orchestrator.supervisorTool === config.defaultTool
-        ? config.defaultModel
-        : (supervisorModels[0] ?? '');
-    changes.push(
-      `orchestrator.supervisorModel ${config.orchestrator.supervisorModel} -> ${fallback}`,
-    );
-    config.orchestrator.supervisorModel = fallback;
-  }
-
-  for (const [key, entry] of Object.entries(config.orchestrator.overrides)) {
-    if (!tools.includes(entry.tool)) {
-      entry.tool = config.defaultTool;
-      changes.push(`orchestrator.overrides.${key}.tool -> ${entry.tool}`);
-    }
-    const entryModels = toolModels(registry, entry.tool);
-    if (!entryModels.includes(entry.model)) {
-      entry.model =
-        entry.tool === config.defaultTool
-          ? config.defaultModel
-          : (entryModels[0] ?? '');
-      changes.push(`orchestrator.overrides.${key}.model -> ${entry.model}`);
-    }
+    config.tools = [fallbackTool];
+    changes.push(`tools reset to [${fallbackTool}]`);
   }
 
   return changes;
@@ -151,15 +180,20 @@ export function validateDefaults(
   registry: ToolPluginRegistry,
 ): void {
   const tools = availableTools(registry);
-  if (!tools.includes(config.defaultTool)) {
-    throw new Error(
-      `defaultTool ${JSON.stringify(config.defaultTool)} not found in available tools`,
-    );
+  for (const type of INTERACTION_TYPES) {
+    const entry = config.interactions[type];
+    if (!entry) {
+      throw new Error(`interactions.${type} is not configured`);
+    }
+    if (!tools.includes(entry.tool)) {
+      throw new Error(
+        `interactions.${type}.tool ${JSON.stringify(entry.tool)} not found`,
+      );
+    }
   }
-  const models = toolModels(registry, config.defaultTool);
-  if (!models.includes(config.defaultModel)) {
+  if (!tools.includes(config.orchestrator.tool)) {
     throw new Error(
-      `defaultModel ${JSON.stringify(config.defaultModel)} is invalid for defaultTool ${JSON.stringify(config.defaultTool)}`,
+      `orchestrator.tool ${JSON.stringify(config.orchestrator.tool)} not found`,
     );
   }
 }
@@ -171,12 +205,11 @@ export function resolveTool(
 ): string {
   const explicit = override.trim();
   if (explicit) return explicit;
-  const typeTool = interactionType
-    ? config.orchestrator.overrides[interactionType]?.tool?.trim()
-    : '';
-  if (typeTool) return typeTool;
-  if (config.defaultTool.trim()) return config.defaultTool;
-  return config.tools[0] ?? '';
+  if (interactionType) {
+    const entry = config.interactions[interactionType as InteractionType];
+    if (entry?.tool?.trim()) return entry.tool;
+  }
+  return config.interactions.run?.tool ?? config.tools[0] ?? '';
 }
 
 export function resolveModel(
@@ -187,12 +220,9 @@ export function resolveModel(
   interactionType?: string,
 ): string {
   if (override.trim()) return override;
-  const typeModel = interactionType
-    ? config.orchestrator.overrides[interactionType]?.model?.trim()
-    : '';
-  if (typeModel) return typeModel;
-  if (config.defaultModel.trim() && toolName === config.defaultTool) {
-    return config.defaultModel;
+  if (interactionType) {
+    const entry = config.interactions[interactionType as InteractionType];
+    if (entry?.model?.trim()) return entry.model;
   }
   return toolModels(registry, toolName)[0] ?? '';
 }

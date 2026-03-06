@@ -116,8 +116,7 @@ export async function resolveSupervisor(
   registry: ToolPluginRegistry,
 ): Promise<SupervisorResolution> {
   const config = await configStore.load();
-  const toolName =
-    config.orchestrator.supervisorTool || config.defaultTool || 'claude';
+  const toolName = config.orchestrator.tool || 'claude';
   const plugin = toolDefinition(registry, toolName);
   if (!plugin) {
     throw new Error(`supervisor tool not available: ${toolName}`);
@@ -127,7 +126,7 @@ export async function resolveSupervisor(
     config,
     registry,
     toolName,
-    config.orchestrator.supervisorModel || '',
+    config.orchestrator.model || '',
   );
   if (!model.trim()) {
     throw new Error(`supervisor model could not be resolved for ${toolName}`);

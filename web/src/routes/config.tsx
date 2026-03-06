@@ -4,10 +4,22 @@ import { api } from '../api';
 import { useConfigQuery, useModelsQuery } from '../hooks/queries';
 import type { Config } from '../types';
 
+const INTERACTION_TYPES = [
+  'run',
+  'evaluate',
+  'review',
+  'plan',
+  'breakdown',
+  'explore',
+  'retro',
+  'merge',
+] as const;
+
 type SectionId =
   | 'project'
   | 'tools'
   | 'workers'
+  | 'interactions'
   | 'orchestrator'
   | 'monitor'
   | 'quality'
@@ -57,19 +69,14 @@ function ConfigPage() {
           worktreeDir: '',
         },
         tools: data.tools ?? [],
-        defaultTool: data.defaultTool ?? '',
-        defaultModel: data.defaultModel ?? '',
+        interactions: data.interactions ?? ({} as Config['interactions']),
+        orchestrator: data.orchestrator ?? { tool: '', model: '' },
         validation: data.validation ?? { commands: [] },
         workers: data.workers ?? { maxParallel: 3 },
-        orchestrator: data.orchestrator ?? {
-          supervisorTool: data.defaultTool ?? '',
-          supervisorModel: data.defaultModel ?? '',
-          overrides: {},
-        },
         monitor: data.monitor ?? {
-          stuckCheckInterval: '5m',
+          stuckCheckInterval: '5m' as any,
           maxStuckCycles: 3,
-          conflictCheckInterval: '10m',
+          conflictCheckInterval: '10m' as any,
         },
         quality: data.quality ?? {
           enabled: true,
@@ -78,8 +85,8 @@ function ConfigPage() {
         },
         logging: data.logging ?? {
           level: 'info',
-          format: 'text',
-          maxFiles: 50,
+          file: '.orca/orca.log',
+          maxSize: '50mb',
         },
       });
   }, [data]);
@@ -123,8 +130,8 @@ function ConfigPage() {
     );
   }
 
-  const supervisorModels = draft.orchestrator.supervisorTool
-    ? (modelsByTool[draft.orchestrator.supervisorTool] ?? [])
+  const orchModels = draft.orchestrator.tool
+    ? (modelsByTool[draft.orchestrator.tool] ?? [])
     : [];
 
   return (
@@ -202,6 +209,128 @@ function ConfigPage() {
         </SectionCard>
 
         <SectionCard
+          title="Orchestrator"
+          id="orchestrator"
+          saving={saving.orchestrator}
+          error={errors.orchestrator}
+          onSave={() =>
+            savePatch('orchestrator', { orchestrator: draft.orchestrator })
+          }
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs">
+              Tool
+              <select
+                className={inputClass}
+                value={draft.orchestrator.tool}
+                onChange={(e) =>
+                  updateSection('orchestrator', {
+                    tool: e.target.value,
+                    model: modelsByTool[e.target.value]?.[0]?.id ?? '',
+                  })
+                }
+              >
+                <option value="">Select tool</option>
+                {toolOptions.map((tool) => (
+                  <option key={tool} value={tool}>
+                    {tool}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              Model
+              <select
+                className={inputClass}
+                value={draft.orchestrator.model}
+                onChange={(e) =>
+                  updateSection('orchestrator', {
+                    ...draft.orchestrator,
+                    model: e.target.value,
+                  })
+                }
+              >
+                <option value="">Select model</option>
+                {orchModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Interaction Defaults"
+          id="interactions"
+          saving={saving.interactions}
+          error={errors.interactions}
+          onSave={() =>
+            savePatch('interactions', { interactions: draft.interactions })
+          }
+        >
+          <div className="space-y-2">
+            {INTERACTION_TYPES.map((type) => {
+              const entry = draft.interactions?.[type] ?? {
+                tool: '',
+                model: '',
+              };
+              const typeModels = entry.tool
+                ? (modelsByTool[entry.tool] ?? [])
+                : [];
+              return (
+                <div
+                  key={type}
+                  className="grid items-center gap-3 rounded-md border p-3 sm:grid-cols-[120px_1fr_1fr]"
+                >
+                  <div className="text-[13px] font-medium">{type}</div>
+                  <select
+                    className={inputClass}
+                    value={entry.tool}
+                    onChange={(e) =>
+                      updateSection('interactions', {
+                        ...draft.interactions,
+                        [type]: {
+                          tool: e.target.value,
+                          model:
+                            modelsByTool[e.target.value]?.[0]?.id ?? '',
+                        },
+                      })
+                    }
+                  >
+                    <option value="">Select tool</option>
+                    {toolOptions.map((tool) => (
+                      <option key={tool} value={tool}>
+                        {tool}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className={inputClass}
+                    value={entry.model}
+                    onChange={(e) =>
+                      updateSection('interactions', {
+                        ...draft.interactions,
+                        [type]: { ...entry, model: e.target.value },
+                      })
+                    }
+                  >
+                    <option value="">Select model</option>
+                    {typeModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </SectionCard>
+
+        <SectionCard
           title="Workers"
           id="workers"
           saving={saving.workers}
@@ -218,133 +347,6 @@ function ConfigPage() {
               })
             }
           />
-        </SectionCard>
-
-        <SectionCard
-          title="Orchestrator"
-          id="orchestrator"
-          saving={saving.orchestrator}
-          error={errors.orchestrator}
-          onSave={() =>
-            savePatch('orchestrator', { orchestrator: draft.orchestrator })
-          }
-        >
-          <div className="grid gap-3 sm:grid-cols-4">
-            <label className="flex flex-col gap-1 text-xs">
-              Supervisor tool
-              <select
-                className={inputClass}
-                value={draft.orchestrator.supervisorTool}
-                onChange={(e) =>
-                  updateSection('orchestrator', {
-                    ...draft.orchestrator,
-                    supervisorTool: e.target.value,
-                    supervisorModel:
-                      modelsByTool[e.target.value]?.[0]?.id ?? '',
-                  })
-                }
-              >
-                <option value="">Select tool</option>
-                {toolOptions.map((tool) => (
-                  <option key={tool} value={tool}>
-                    {tool}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="flex flex-col gap-1 text-xs">
-              Supervisor model
-              <select
-                className={inputClass}
-                value={draft.orchestrator.supervisorModel}
-                onChange={(e) =>
-                  updateSection('orchestrator', {
-                    ...draft.orchestrator,
-                    supervisorModel: e.target.value,
-                  })
-                }
-              >
-                <option value="">Select model</option>
-                {supervisorModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="space-y-2">
-            <div className="text-xs">Interaction type overrides</div>
-            {Object.entries(draft.orchestrator.overrides).map(
-              ([type, override]) => {
-                const typeModels = (override as { tool: string; model: string })
-                  .tool
-                  ? (modelsByTool[
-                      (override as { tool: string; model: string }).tool
-                    ] ?? [])
-                  : [];
-                return (
-                  <div
-                    key={type}
-                    className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_1fr_1fr]"
-                  >
-                    <div className="self-center text-[13px]">{type}</div>
-                    <select
-                      className={inputClass}
-                      value={(override as { tool: string; model: string }).tool}
-                      onChange={(e) =>
-                        updateSection('orchestrator', {
-                          ...draft.orchestrator,
-                          overrides: {
-                            ...draft.orchestrator.overrides,
-                            [type]: {
-                              tool: e.target.value,
-                              model:
-                                modelsByTool[e.target.value]?.[0]?.id ?? '',
-                            },
-                          },
-                        })
-                      }
-                    >
-                      <option value="">Select tool</option>
-                      {toolOptions.map((tool) => (
-                        <option key={tool} value={tool}>
-                          {tool}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className={inputClass}
-                      value={
-                        (override as { tool: string; model: string }).model
-                      }
-                      onChange={(e) =>
-                        updateSection('orchestrator', {
-                          ...draft.orchestrator,
-                          overrides: {
-                            ...draft.orchestrator.overrides,
-                            [type]: {
-                              ...(override as { tool: string; model: string }),
-                              model: e.target.value,
-                            },
-                          },
-                        })
-                      }
-                    >
-                      <option value="">Select model</option>
-                      {typeModels.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.id}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                );
-              },
-            )}
-          </div>
         </SectionCard>
 
         <SectionCard
