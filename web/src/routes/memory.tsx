@@ -8,6 +8,8 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import { api } from '../api';
 import { Button } from '../components/Button';
@@ -266,11 +268,13 @@ function MemoryPage() {
                   }}
                   className={
                     isExpanded
-                      ? 'whitespace-pre-wrap break-words text-sm'
-                      : 'line-clamp-2 break-words text-sm'
+                      ? 'prose prose-invert prose-sm max-w-none break-words'
+                      : 'prose prose-invert prose-sm max-w-none line-clamp-2 break-words'
                   }
                 >
-                  {content}
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {content}
+                  </ReactMarkdown>
                 </p>
               </button>
               {showToggle && (
@@ -813,9 +817,11 @@ function MemoryPage() {
                   Close
                 </Button>
               </div>
-              <p className="whitespace-pre-wrap break-words text-sm">
-                {detailQuery.data.entry.content}
-              </p>
+              <div className="prose prose-invert prose-sm max-w-none break-words">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {detailQuery.data.entry.content}
+                </ReactMarkdown>
+              </div>
               <p className="text-xs text-muted">
                 Source: {detailQuery.data.entry.sourceType} • Confidence:{' '}
                 {Math.round(detailQuery.data.entry.confidence * 100)}% • Stale:{' '}
