@@ -63,6 +63,7 @@ export type InteractionStub = Pick<
   | 'finishedAt'
 > & {
   diffSummary?: string | null;
+  memoryCount?: number;
 };
 
 export interface InteractionWithContent extends Interaction {

@@ -535,6 +535,7 @@ export class InteractionStore {
       durationMs: row.durationMs ?? undefined,
       estimatedCost: Number(row.estimatedCost ?? 0),
       diffSummary: this.computeDiffSummary(row.diff),
+      memoryCount: parseMemoryCount(row.qualityJson),
       startedAt: row.startedAt,
       finishedAt: row.finishedAt,
     };
@@ -563,4 +564,16 @@ export class InteractionStore {
       finishedAt: row.finishedAt,
     };
   }
+}
+
+function parseMemoryCount(raw: string | null | undefined): number | undefined {
+  if (!raw?.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const ids = parsed.usedMemoryIds ?? parsed.used_memory_ids;
+    if (Array.isArray(ids) && ids.length > 0) return ids.length;
+  } catch {
+    /* ignore */
+  }
+  return undefined;
 }

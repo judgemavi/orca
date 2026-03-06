@@ -1,6 +1,6 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { Check, Dot, Hammer, X } from 'lucide-react';
+import { Brain, Check, Dot, Hammer, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { InteractionStub } from '../../../types';
 import { useInteractionDetailContext } from './InteractionDetailContext';
@@ -125,6 +125,17 @@ export function InteractionEntry({
               <span className="font-mono">
                 {formatCost(stub.estimatedCost)}
               </span>
+              {stub.memoryCount != null && stub.memoryCount > 0 && (
+                <span
+                  className="inline-flex items-center gap-0.5 text-violet-400"
+                  title={`${stub.memoryCount} memory entries used`}
+                >
+                  <Brain size={12} />
+                  <span className="font-mono text-[10px]">
+                    {stub.memoryCount}
+                  </span>
+                </span>
+              )}
               {diffSummary && (
                 <span className="font-mono text-muted">{diffSummary}</span>
               )}
