@@ -21,6 +21,7 @@ export interface TaskUpdateFields {
   status?: TaskStatus;
   sessionId?: string | null;
   autoRunOverrides?: AutoRunOverrides;
+  pendingQuestion?: string | null;
 }
 
 export type StoredInteraction = Interaction;

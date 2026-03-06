@@ -2,6 +2,8 @@ import { intro, note, outro, spinner } from '@clack/prompts';
 import { defaultConfig } from '../../config/config';
 import { openDatabase } from '../../db/connection';
 import { ensureIntegrationBranch } from '../../domain/worktree';
+import { OllamaEmbeddingPlugin } from '../../embedding/ollama';
+import type { EmbeddingPlugin } from '../../embedding/types';
 import { fallbackToolPluginRegistry, toolModels } from '../../plugin/registry';
 import { gitRun as sharedGitRun } from '../../shared/git';
 import { ConfigStore } from '../../store/config';
@@ -27,6 +29,8 @@ export interface RunInitOptions {
   scopeCheck?: boolean;
   testDelta?: boolean;
   llmAlignment?: boolean;
+  embeddingProvider?: string;
+  embeddingModel?: string;
   /** Format: "type:tool:model:autoRun" e.g. "code:claude:sonnet:true" */
   interaction?: string[];
 }
@@ -81,10 +85,7 @@ export async function runInitCommand(
   let enabledTools: string[];
   if (autoYes || available.length === 1) {
     enabledTools = options.tools?.length ? options.tools : initialEnabled;
-    note(
-      enabledTools.map((name) => `✓ ${name}`).join('\n'),
-      'Tool Detection',
-    );
+    note(enabledTools.map((name) => `✓ ${name}`).join('\n'), 'Tool Detection');
   } else {
     enabledTools = ensureNotCancelled(
       await (await import('@clack/prompts')).multiselect({
@@ -141,7 +142,8 @@ export async function runInitCommand(
     enabledTools.length === 1
       ? enabledTools[0]!
       : autoYes
-        ? (options.orchestratorTool ?? pickDefault(enabledTools, defaults.orchestrator.tool))
+        ? (options.orchestratorTool ??
+          pickDefault(enabledTools, defaults.orchestrator.tool))
         : await pickFromList(
             'Orchestrator tool',
             enabledTools.map((name) => ({ label: name, value: name })),
@@ -149,7 +151,8 @@ export async function runInitCommand(
           );
   const orchModels = toolModels(registry, orchestratorTool);
   const orchestratorModel = autoYes
-    ? (options.orchestratorModel ?? pickDefault(orchModels, defaults.orchestrator.model))
+    ? (options.orchestratorModel ??
+      pickDefault(orchModels, defaults.orchestrator.model))
     : await pickFromList(
         'Orchestrator model',
         orchModels.map((m) => ({ label: m, value: m })),
@@ -158,7 +161,9 @@ export async function runInitCommand(
 
   // Interaction defaults
   const interactions = {} as Record<InteractionType, InteractionConfig>;
-  const cliInteractionOverrides = parseInteractionOverrides(options.interaction ?? []);
+  const cliInteractionOverrides = parseInteractionOverrides(
+    options.interaction ?? [],
+  );
   if (autoYes) {
     for (const type of INTERACTION_TYPES) {
       const def = defaults.interactions[type];
@@ -202,7 +207,9 @@ export async function runInitCommand(
       });
 
   const costBudgetRaw = autoYes
-    ? (options.costBudget != null ? String(options.costBudget) : defaults.costBudget)
+    ? options.costBudget != null
+      ? String(options.costBudget)
+      : defaults.costBudget
     : await textInput('Cost budget in USD (optional)', {
         defaultValue: defaults.costBudget,
         validate: (value) => {
@@ -215,7 +222,98 @@ export async function runInitCommand(
       });
   const costBudget = costBudgetRaw ? Number.parseFloat(costBudgetRaw) : 0;
 
-  const qualityOverrides = applyQualityOverrides(defaults.qualitySelected, options);
+  // Embeddings — discover reachable providers, prompt config fields from plugin
+  const embeddingConfig: Record<string, unknown> = {};
+  const embeddingPlugins: EmbeddingPlugin[] = [new OllamaEmbeddingPlugin()];
+  const reachablePlugins: EmbeddingPlugin[] = [];
+  for (const plugin of embeddingPlugins) {
+    if (await plugin.reachable()) reachablePlugins.push(plugin);
+  }
+
+  let selectedEmbeddingPlugin: EmbeddingPlugin | null = null;
+  if (reachablePlugins.length > 0) {
+    const choices = [
+      ...reachablePlugins.map((p) => ({ label: p.name(), value: p.name() })),
+      { label: 'None (FTS only)', value: 'none' },
+    ];
+    const pick = autoYes
+      ? (options.embeddingProvider ?? reachablePlugins[0]!.name())
+      : await pickFromList(
+          'Embedding provider',
+          choices,
+          reachablePlugins[0]!.name(),
+        );
+
+    if (pick !== 'none') {
+      selectedEmbeddingPlugin =
+        reachablePlugins.find((p) => p.name() === pick) ?? null;
+    }
+  } else if (!autoYes) {
+    note(
+      'No embedding providers detected — using FTS only.\nInstall Ollama and re-run init to enable vector embeddings.',
+      'Embeddings',
+    );
+  }
+
+  if (selectedEmbeddingPlugin) {
+    embeddingConfig.provider = selectedEmbeddingPlugin.name();
+    const currentEmbConf = (current.embeddings ?? {}) as Record<
+      string,
+      unknown
+    >;
+
+    for (const field of selectedEmbeddingPlugin.configFields()) {
+      const existing = currentEmbConf[field.key];
+      const defaultVal =
+        typeof existing === 'string' ? existing : (field.defaultValue ?? '');
+
+      if (autoYes) {
+        // Use CLI option override or existing/default
+        const cliKey =
+          `embedding${field.key.charAt(0).toUpperCase()}${field.key.slice(1)}` as keyof RunInitOptions;
+        const cliVal = options[cliKey];
+        embeddingConfig[field.key] =
+          typeof cliVal === 'string' ? cliVal : defaultVal || undefined;
+      } else if (field.required || field.defaultValue) {
+        embeddingConfig[field.key] = await textInput(
+          field.label + (field.hint ? ` (${field.hint})` : ''),
+          { defaultValue: defaultVal },
+        );
+      }
+    }
+
+    // Setup (e.g. pull model) if plugin supports it
+    if (selectedEmbeddingPlugin.setup) {
+      const ready = await selectedEmbeddingPlugin.available();
+      if (!ready) {
+        // Reconfigure plugin with user-provided values before setup
+        const configured = new OllamaEmbeddingPlugin({
+          model: embeddingConfig.model as string | undefined,
+        });
+        const doPull =
+          autoYes || (await confirm(`Model not found — set it up now?`, true));
+        if (doPull) {
+          const pullOp = spinner();
+          pullOp.start('Setting up embedding model');
+          try {
+            await configured.setup((status) => pullOp.message(status));
+            pullOp.stop('Embedding model ready');
+          } catch (err) {
+            pullOp.stop('Setup failed');
+            note(
+              err instanceof Error ? err.message : String(err),
+              'Embedding setup failed — will use FTS fallback',
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const qualityOverrides = applyQualityOverrides(
+    defaults.qualitySelected,
+    options,
+  );
   const qualitySelected = autoYes
     ? qualityOverrides
     : ensureNotCancelled(
@@ -262,6 +360,9 @@ export async function runInitCommand(
       ...(current.cost ?? {}),
       budgetUsd: costBudget,
     },
+    embeddings: embeddingConfig.provider
+      ? (embeddingConfig as Config['embeddings'])
+      : undefined,
   };
 
   // Remove legacy fields
@@ -306,6 +407,7 @@ export async function runInitCommand(
     ),
     '',
     `Orchestrator: ${orchestratorTool}/${orchestratorModel}`,
+    `Embeddings: ${embeddingConfig.provider ? `${embeddingConfig.provider}/${embeddingConfig.model ?? 'default'}` : 'disabled'}`,
     `Workspace: ${orcaDir}`,
   ];
   note(summaryLines.join('\n'), 'Summary');

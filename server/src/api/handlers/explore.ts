@@ -9,10 +9,7 @@ import type { JobQueue } from '../../queue/queue';
 import { JOB_PRIORITIES } from '../../types';
 import { exploreContextSchema, exploreSchema } from '../schemas';
 
-export function exploreRoutes(
-  repoDir: string,
-  queue: JobQueue,
-) {
+export function exploreRoutes(repoDir: string, queue: JobQueue) {
   return new Hono()
     .post('/explore', zValidator('json', exploreSchema), async (c) => {
       const tracked = await listTrackedFiles(repoDir);

@@ -126,6 +126,7 @@ export class TaskStore {
       status: TaskStatus;
       sessionId: string | null;
       autoRunOverrides: string | null;
+      pendingQuestion: string | null;
       updatedAt: SQL;
     }> = {};
 
@@ -137,6 +138,8 @@ export class TaskStore {
     if (fields.sessionId !== undefined) updateSet.sessionId = fields.sessionId;
     if (fields.autoRunOverrides !== undefined)
       updateSet.autoRunOverrides = JSON.stringify(fields.autoRunOverrides);
+    if (fields.pendingQuestion !== undefined)
+      updateSet.pendingQuestion = fields.pendingQuestion;
 
     if (Object.keys(updateSet).length === 0) return;
 
@@ -438,6 +441,7 @@ export class TaskStore {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       ...(autoRunOverrides ? { autoRunOverrides } : {}),
+      ...(row.pendingQuestion ? { pendingQuestion: row.pendingQuestion } : {}),
     };
   }
 

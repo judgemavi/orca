@@ -88,6 +88,14 @@ const tasksReviewsSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
 });
 
+const tasksProvideInputSchema = z.object({
+  taskId: requiredTrimmedString('taskId'),
+  answer: z.preprocess(
+    (value) => value ?? '',
+    z.coerce.string().trim().min(1, 'answer is required'),
+  ),
+});
+
 const tasksStopSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
 });
@@ -292,6 +300,40 @@ export function taskTools(deps: {
           },
         );
         return { taskId: taskID, status: result.status, result };
+      },
+    }),
+    defineTool({
+      name: 'tasks_provide_input',
+      description:
+        'Answer a pending question for a stopped task. The answer is appended to the task description and evaluate re-runs.',
+      schema: tasksProvideInputSchema,
+      handler: async (input) => {
+        const taskID = input.taskId;
+        const task = await deps.taskStore.get(taskID);
+        if (!task) throw new Error(`task not found: ${taskID}`);
+        if (!task.pendingQuestion) {
+          throw new Error('task has no pending question');
+        }
+
+        const updatedDescription = task.description
+          ? `${task.description}\n\n---\n**User clarification:** ${input.answer}`
+          : `**User clarification:** ${input.answer}`;
+
+        await deps.taskStore.update(taskID, {
+          description: updatedDescription,
+          pendingQuestion: null,
+          status: 'pending',
+        });
+
+        if (deps.queue) {
+          await deps.queue.enqueue({
+            type: 'evaluate',
+            taskId: taskID,
+            priority: JOB_PRIORITIES.evaluate,
+          });
+        }
+
+        return { taskId: taskID, status: 'queued' };
       },
     }),
   ];

@@ -50,6 +50,8 @@ export async function evaluateTask(
         confidence?: number;
         reasoning?: string;
         suggestedSubtaskCount?: number;
+        needsUserInput?: boolean;
+        userInputQuestion?: string;
       }>(output);
 
       if (!parsed) {
@@ -57,6 +59,7 @@ export async function evaluateTask(
       }
 
       const needsBreakdown = Boolean(parsed.needsBreakdown);
+      const needsUserInput = Boolean(parsed.needsUserInput);
       const confidence = Math.max(
         0,
         Math.min(1, Number(parsed.confidence ?? 0.5)),
@@ -70,6 +73,10 @@ export async function evaluateTask(
           ? Math.max(0, Number(parsed.suggestedSubtaskCount ?? 3))
           : 0,
         descriptionHash: hashDescription(task.title, task.description ?? ''),
+        needsUserInput,
+        userInputQuestion: needsUserInput
+          ? String(parsed.userInputQuestion ?? '').trim()
+          : undefined,
       };
     },
     (evaluation) => ({

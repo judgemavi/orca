@@ -32,6 +32,10 @@ export const addDepsSchema = z.object({
   dependsOnIds: z.array(z.string()).optional(),
 });
 
+export const provideInputSchema = z.object({
+  answer: z.string().min(1, 'answer is required'),
+});
+
 // ── Run ──────────────────────────────────────────────────────────────
 
 export const runRequestSchema = z.object({

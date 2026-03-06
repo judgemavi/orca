@@ -40,9 +40,7 @@ export function killActivePTY(): boolean {
   return true;
 }
 
-export function orchestratorRoutes(
-  _sink: EventSink,
-) {
+export function orchestratorRoutes(_sink: EventSink) {
   return new Hono()
     .get('/orchestrator', (c) =>
       c.json({ error: 'websocket upgrade required' }, 426),

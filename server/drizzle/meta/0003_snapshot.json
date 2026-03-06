@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "70a75654-e7b4-4573-bc01-e1101fe985fa",
-  "prevId": "9bca7b2b-f372-427c-9d7c-31955d8fdad8",
+  "id": "63358ed0-c516-41e7-b5dd-0839d4d6fb4b",
+  "prevId": "70a75654-e7b4-4573-bc01-e1101fe985fa",
   "tables": {
     "_changelog": {
       "name": "_changelog",
@@ -1066,6 +1066,13 @@
         },
         "auto_run_overrides": {
           "name": "auto_run_overrides",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pending_question": {
+          "name": "pending_question",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

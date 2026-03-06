@@ -1,4 +1,6 @@
 import type { Command } from 'commander';
+import { OllamaEmbeddingPlugin } from '../../embedding/ollama';
+import type { EmbeddingPlugin } from '../../embedding/types';
 import {
   availableTools,
   type ToolPluginRegistry,
@@ -97,6 +99,74 @@ async function buildInteractivePatch(
     interactions[type] = { tool, model, autoRun };
   }
 
+  // Embeddings — discover reachable providers, prompt config fields from plugin
+  const embeddingConfig: Record<string, unknown> = {};
+  const embeddingPlugins: EmbeddingPlugin[] = [new OllamaEmbeddingPlugin()];
+  const reachablePlugins: EmbeddingPlugin[] = [];
+  for (const plugin of embeddingPlugins) {
+    if (await plugin.reachable()) reachablePlugins.push(plugin);
+  }
+
+  if (reachablePlugins.length > 0) {
+    const choices = [
+      ...reachablePlugins.map((p) => ({ label: p.name(), value: p.name() })),
+      { label: 'None (FTS only)', value: 'none' },
+    ];
+    const pick = await pickFromList(
+      'Embedding provider',
+      choices,
+      current.embeddings?.provider &&
+        reachablePlugins.some((p) => p.name() === current.embeddings?.provider)
+        ? current.embeddings.provider
+        : reachablePlugins[0]!.name(),
+    );
+
+    if (pick !== 'none') {
+      const plugin = reachablePlugins.find((p) => p.name() === pick)!;
+      embeddingConfig.provider = plugin.name();
+      const currentEmbConf = (current.embeddings ?? {}) as Record<
+        string,
+        unknown
+      >;
+
+      for (const field of plugin.configFields()) {
+        const existing = currentEmbConf[field.key];
+        const defaultVal =
+          typeof existing === 'string' ? existing : (field.defaultValue ?? '');
+        embeddingConfig[field.key] = await textInput(
+          field.label + (field.hint ? ` (${field.hint})` : ''),
+          { defaultValue: defaultVal },
+        );
+      }
+
+      if (plugin.setup) {
+        const configured = new OllamaEmbeddingPlugin({
+          model: embeddingConfig.model as string | undefined,
+        });
+        const ready = await configured.available();
+        if (!ready) {
+          const doPull = await confirm(
+            'Model not found — set it up now?',
+            true,
+          );
+          if (doPull) {
+            console.log('Setting up embedding model...');
+            try {
+              await configured.setup((status) =>
+                process.stdout.write(`\r  ${status}  `),
+              );
+              console.log('\n  Embedding model ready');
+            } catch (err) {
+              console.error(
+                `\n  Setup failed: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
   const branch = await textInput('Integration branch', {
     defaultValue: current.project.integrationBranch,
     required: true,
@@ -118,6 +188,7 @@ async function buildInteractivePatch(
     orchestrator: { tool: orchTool, model: orchModel },
     project: { integrationBranch: branch },
     workers: { maxParallel },
+    ...(embeddingConfig.provider ? { embeddings: embeddingConfig } : {}),
   };
 }
 

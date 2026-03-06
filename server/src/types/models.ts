@@ -27,10 +27,14 @@ type OperationRow = typeof interactions.$inferSelect;
 
 // -- API types (row + narrowed enums + computed fields) --
 
-export type Task = Omit<TaskRow, 'status' | 'autoRunOverrides'> & {
+export type Task = Omit<
+  TaskRow,
+  'status' | 'autoRunOverrides' | 'pendingQuestion'
+> & {
   status: TaskStatus;
   dependsOn: string[];
   autoRunOverrides?: AutoRunOverrides;
+  pendingQuestion?: string;
 };
 
 export type Interaction = Omit<

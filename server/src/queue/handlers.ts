@@ -101,6 +101,19 @@ export function registerJobHandlers(
 
       deps.sink.broadcast('evaluate.completed', { taskId, evaluation });
 
+      // If user input is needed, pause the task and store the question
+      if (evaluation.needsUserInput && evaluation.userInputQuestion) {
+        await deps.taskStore.update(taskId, {
+          status: 'stopped',
+          pendingQuestion: evaluation.userInputQuestion,
+        });
+        deps.sink.broadcast('task.awaiting_input', {
+          taskId,
+          question: evaluation.userInputQuestion,
+        });
+        return { evaluation, awaitingInput: true };
+      }
+
       // Chain: evaluate → breakdown or plan
       if (evaluation.needsBreakdown) {
         await enqueueNext(deps, taskId, 'breakdown');

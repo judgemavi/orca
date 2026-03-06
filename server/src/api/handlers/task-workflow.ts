@@ -21,6 +21,7 @@ import {
   aiReviewSchema,
   breakdownAcceptSchema,
   breakdownRejectSchema,
+  provideInputSchema,
   requestChangesSchema,
   toolModelSchema,
 } from '../schemas';
@@ -242,6 +243,45 @@ export function taskWorkflowRoutes(deps: {
           taskIds: accepted.createdIds,
           parentId: parentID,
         });
+      },
+    )
+
+    .post(
+      '/tasks/:id/input',
+      zValidator('json', provideInputSchema),
+      async (c) => {
+        const taskID = c.req.param('id');
+        const task = await deps.taskStore.get(taskID);
+        if (!task) return c.json({ error: 'task not found' }, 404);
+        if (!task.pendingQuestion) {
+          return c.json({ error: 'task has no pending question' }, 400);
+        }
+
+        const body = c.req.valid('json');
+        const answer = body.answer.trim();
+
+        const updatedDescription = task.description
+          ? `${task.description}\n\n---\n**User clarification:** ${answer}`
+          : `**User clarification:** ${answer}`;
+
+        await deps.taskStore.update(taskID, {
+          description: updatedDescription,
+          pendingQuestion: null,
+          status: 'pending',
+        });
+
+        const { id: jobId } = await deps.queue.enqueue({
+          type: 'evaluate',
+          taskId: taskID,
+          priority: JOB_PRIORITIES.evaluate,
+        });
+
+        broadcast(deps.sink, 'task.updated', {
+          id: taskID,
+          status: 'pending',
+        });
+
+        return c.json({ taskId: taskID, jobId, status: 'queued' }, 202);
       },
     )
 
