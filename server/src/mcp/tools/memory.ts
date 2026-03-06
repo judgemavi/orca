@@ -152,7 +152,7 @@ export function memoryTools(repoDir: string, memory: MemoryStore): Tool[] {
       },
     }),
     defineTool({
-      name: 'memorySync',
+      name: 'memory_sync',
       description: 'Trigger git-aware memory sync',
       schema: memorySyncSchema,
       handler: async () => syncMemoryWithGit(repoDir, memory),

@@ -44,8 +44,6 @@ export const ORCHESTRATOR_ALLOWED_TOOLS = [
   'mcp__orca__project_status',
   'mcp__orca__config_get',
   'mcp__orca__models_list',
-  'mcp__orca__worktree_cleanup',
-  'mcp__orca__worktree_status',
   'mcp__orca__cost_status',
   'mcp__orca__quality_results',
   'mcp__orca__queue_list',
