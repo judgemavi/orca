@@ -251,6 +251,7 @@ async function seedExploreMemory(
     if (duplicate && !duplicate.supersededBy) {
       summaryID = duplicate.id;
       await memory.update(summaryID, {
+        content: summary,
         stale: false,
         coveredAtCommit: coveredAtCommit,
         confidence: Math.max(duplicate.confidence, 0.95),
@@ -324,13 +325,29 @@ async function seedExploreMemory(
 }
 
 function buildProjectSummary(contextContent: string): string {
+  return extractSection(contextContent, 'project summary');
+}
+
+/** Extract content between a section heading and the next heading of equal or higher level. */
+function extractSection(text: string, sectionName: string): string {
+  const lines = text.split('\n');
+  const target = sectionName.toLowerCase();
+  let collecting = false;
   const out: string[] = [];
-  for (const line of contextContent.split('\n')) {
+
+  for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!collecting) {
+      if (trimmed.toLowerCase().includes(target)) {
+        collecting = true;
+        if (trimmed) out.push(trimmed);
+      }
+      continue;
+    }
+    // Stop at next heading or memory marker
+    if (trimmed.startsWith('#')) break;
     if (trimmed.toLowerCase().startsWith(MEMORY_MARKER.toLowerCase())) break;
-    out.push(trimmed);
-    if (out.length >= 10) break;
+    if (trimmed) out.push(trimmed);
   }
   return out.join('\n').trim();
 }

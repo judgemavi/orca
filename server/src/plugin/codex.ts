@@ -147,7 +147,11 @@ export class CodexPlugin implements ToolPlugin {
       if (itemType === 'agent_message') {
         const text = pickMessageText((parsed as any).item);
         if (!text) return null;
-        return { type: 'text', text, raw };
+        // Ensure each message is newline-terminated so collectAssistantText
+        // produces properly separated output (unlike Claude's streaming chunks,
+        // each Codex agent_message is a complete discrete message)
+        const separated = text.endsWith('\n') ? text : `${text}\n`;
+        return { type: 'text', text: separated, raw };
       }
       if (itemType === 'mcp_tool_call') {
         return {
