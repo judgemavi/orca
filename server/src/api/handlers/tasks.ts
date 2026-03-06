@@ -1,10 +1,12 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { resumeChain } from '../../queue/chain';
 import type { JobQueue } from '../../queue/queue';
 import { toErrorMessage } from '../../shared/errors';
+import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { TaskStore } from '../../store/tasks';
-import type { TaskStatus } from '../../types';
+import type { AutoRunOverrides, TaskStatus } from '../../types';
 import { JOB_PRIORITIES } from '../../types';
 import { DeleteWorkflowError, deleteTask } from '../../workflows/delete';
 import { addDepsSchema, createTaskSchema, patchTaskSchema } from '../schemas';
@@ -22,6 +24,7 @@ const BLOCKED_MANUAL_STATUSES = new Set<TaskStatus>([
 export function taskRoutes(deps: {
   taskStore: TaskStore;
   interactionStore: InteractionStore;
+  configStore: ConfigStore;
   sink: EventSink;
   repoDir: string;
   queue?: JobQueue;
@@ -46,6 +49,7 @@ export function taskRoutes(deps: {
         title: body.title,
         description: body.description ?? '',
         parentId: body.parentId ?? null,
+        autoRunOverrides: body.autoRunOverrides as AutoRunOverrides,
       });
       if (deps.queue) {
         await deps.queue.enqueue({
@@ -84,11 +88,20 @@ export function taskRoutes(deps: {
         plan: body.plan,
         status: body.status as TaskStatus | undefined,
         sessionId: body.sessionId,
+        autoRunOverrides: body.autoRunOverrides as AutoRunOverrides | undefined,
       });
 
       const updated = await taskStore.get(taskID);
       if (!updated) {
         return c.json({ error: 'task not found' }, 404);
+      }
+
+      if (body.status && deps.queue) {
+        await resumeChain(taskID, body.status as TaskStatus, {
+          configStore: deps.configStore,
+          taskStore: deps.taskStore,
+          queue: deps.queue,
+        });
       }
 
       return c.json(updated);

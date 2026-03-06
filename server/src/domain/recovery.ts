@@ -28,7 +28,7 @@ export async function failInFlightForShutdown(
     });
     interactionsFailed += 1;
 
-    if (item.taskId?.trim() && item.type === 'run') {
+    if (item.taskId?.trim() && item.type === 'code') {
       const task = await taskStore.get(item.taskId);
       if (task && task.status === TASK_STATUSES.running) {
         const next = task.sessionId?.trim()

@@ -1,20 +1,25 @@
 import type { EventSink } from '../api/ws';
+import { isAutoRun } from '../config/config';
 import { runExplore } from '../domain/explore';
 import { runRetro } from '../domain/retro';
 import type { Executor } from '../executor/executor';
 import type { ToolPluginRegistry } from '../plugin/registry';
+import { log } from '../shared/logger';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import type { Job } from '../types';
+import { JOB_PRIORITIES } from '../types';
 import { mergeTask } from '../workflows/merge';
 import {
+  approvePlan,
   breakdownTask,
   evaluateTaskWorkflow,
   generatePlan,
 } from '../workflows/planning';
-import { runAIReviewWorkflow } from '../workflows/review';
+import { approveTask, runAIReviewWorkflow } from '../workflows/review';
+import { resumeChain } from './chain';
 import type { JobProcessor } from './processor';
 import type { JobQueue } from './queue';
 
@@ -32,6 +37,39 @@ interface HandlerDeps {
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+async function shouldAutoRun(
+  deps: { configStore: ConfigStore; taskStore: TaskStore },
+  taskId: string,
+  interactionType: Parameters<typeof isAutoRun>[1],
+): Promise<boolean> {
+  try {
+    const [config, task] = await Promise.all([
+      deps.configStore.load(),
+      deps.taskStore.get(taskId),
+    ]);
+    return isAutoRun(config, interactionType, task?.autoRunOverrides);
+  } catch {
+    return false;
+  }
+}
+
+async function enqueueNext(
+  deps: HandlerDeps,
+  taskId: string,
+  type: Parameters<typeof isAutoRun>[1],
+  payload?: Record<string, unknown>,
+): Promise<void> {
+  const auto = await shouldAutoRun(deps, taskId, type);
+  if (!auto) return;
+  log.info('auto-chaining', { taskId, next: type });
+  await deps.queue.enqueue({
+    type,
+    taskId,
+    priority: JOB_PRIORITIES[type],
+    payload,
+  });
 }
 
 export function registerJobHandlers(
@@ -55,6 +93,14 @@ export function registerJobHandlers(
       });
 
       deps.sink.broadcast('evaluate.completed', { taskId, evaluation });
+
+      // Chain: evaluate → breakdown or plan
+      if (evaluation.needsBreakdown) {
+        await enqueueNext(deps, taskId, 'breakdown');
+      } else {
+        await enqueueNext(deps, taskId, 'plan');
+      }
+
       return { evaluation };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -83,6 +129,22 @@ export function registerJobHandlers(
 
       await deps.taskStore.setPlan(taskId, result.plan);
       deps.sink.broadcast('plan.completed', { taskId, plan: result.plan });
+
+      // Chain: plan → auto-approve → code (via resumeChain)
+      const auto = await shouldAutoRun(deps, taskId, 'code');
+      if (auto) {
+        try {
+          await approvePlan(taskId, { taskStore: deps.taskStore });
+          deps.sink.broadcast('plan.approved', { taskId, automated: true });
+          await resumeChain(taskId, 'planned', deps);
+        } catch (approveErr) {
+          log.warn('auto-approve plan failed', {
+            taskId,
+            error: String(approveErr),
+          });
+        }
+      }
+
       return { plan: result.plan, interactionId: result.interactionId };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -127,7 +189,7 @@ export function registerJobHandlers(
     }
   });
 
-  // review
+  // review (AI review)
   processor.register('review', async (job: Job) => {
     const taskId = job.taskId!;
     deps.sink.broadcast('ai_review.started' as string, { taskId });
@@ -150,6 +212,36 @@ export function registerJobHandlers(
         feedback: result.feedback,
         tool: result.tool,
       });
+
+      // Chain: review → if approved → merge (via resumeChain); if rejected → re-run
+      if (result.approved) {
+        try {
+          await approveTask(taskId, { taskStore: deps.taskStore });
+          deps.sink.broadcast('task.approved', { taskId, automated: true });
+          await resumeChain(taskId, 'approved', deps);
+        } catch (approveErr) {
+          log.warn('auto-approve task failed', {
+            taskId,
+            error: String(approveErr),
+          });
+        }
+      } else {
+        // Auto change-request loop: re-run with feedback, then review again
+        const auto = await shouldAutoRun(deps, taskId, 'review');
+        if (auto) {
+          log.info('auto-requesting changes', {
+            taskId,
+            reviewId: result.reviewId,
+          });
+          await deps.queue.enqueue({
+            type: 'code',
+            taskId,
+            priority: JOB_PRIORITIES.code,
+            payload: { feedback: result.feedback, _autoReviewAfter: true },
+          });
+        }
+      }
+
       return {
         approved: result.approved,
         feedback: result.feedback,
@@ -163,9 +255,11 @@ export function registerJobHandlers(
   });
 
   // run — call internal directly to avoid re-enqueue loop
-  processor.register('run', async (job: Job) => {
+  // code (formerly 'run') — execute task implementation
+  processor.register('code', async (job: Job) => {
     const taskId = job.taskId!;
     const feedback = str(job.payload?.feedback);
+    const autoReviewAfter = Boolean(job.payload?._autoReviewAfter);
 
     let resumeSessionID: string | undefined;
     if (feedback) {
@@ -181,6 +275,21 @@ export function registerJobHandlers(
       resumeSessionID,
       feedback,
     });
+
+    // Chain: run → review (if task landed in 'review' status)
+    if (result.status === 'review') {
+      if (autoReviewAfter) {
+        // Part of auto change-request loop — always review again
+        log.info('auto-review after change request', { taskId });
+        await deps.queue.enqueue({
+          type: 'review',
+          taskId,
+          priority: JOB_PRIORITIES.review,
+        });
+      } else {
+        await enqueueNext(deps, taskId, 'review');
+      }
+    }
 
     return { taskId: result.taskID, status: result.status };
   });
@@ -240,6 +349,7 @@ export function registerJobHandlers(
 
       failBroadcast = false;
       deps.sink.broadcast('merge.completed', { taskId, result });
+      // retro is already triggered by post-merge hooks in mergeTask
       return { taskId, status: result.status };
     } catch (err) {
       if (failBroadcast) {

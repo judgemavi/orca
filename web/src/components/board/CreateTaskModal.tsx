@@ -3,8 +3,12 @@ import { useMutation } from '@tanstack/react-query';
 import { type FormEvent, useMemo, useState } from 'react';
 import { api } from '../../api';
 import { useCreateTaskForm } from '../../hooks/forms/useCreateTaskForm';
-import { useTasksQuery } from '../../hooks/queries';
-import type { Task } from '../../types';
+import { useConfigQuery, useTasksQuery } from '../../hooks/queries';
+import {
+  type AutoRunOverrides,
+  INTERACTION_TYPES,
+  type Task,
+} from '../../types';
 import { Button } from '../Button';
 
 const controlClass =
@@ -16,6 +20,7 @@ export function CreateTaskModal() {
     mutationFn: (data: Partial<Task>) => api.createTask(data),
   });
   const tasksQuery = useTasksQuery();
+  const { data: config } = useConfigQuery();
   const [error, setError] = useState('');
 
   const dependencyTasks = useMemo(
@@ -26,9 +31,14 @@ export function CreateTaskModal() {
   const form = useCreateTaskForm({}, async (values) => {
     setError('');
 
+    const overrides =
+      Object.keys(values.autoRunOverrides).length > 0
+        ? values.autoRunOverrides
+        : undefined;
     const created = await createTaskMutation.mutateAsync({
       title: values.title.trim(),
       description: values.description.trim(),
+      autoRunOverrides: overrides,
     } as any);
 
     const taskId = (created as any).id ?? (created as any).task?.id;
@@ -142,6 +152,60 @@ export function CreateTaskModal() {
                   )}
                 </form.Field>
               )}
+
+              <form.Field name="autoRunOverrides">
+                {(field) => (
+                  <details className="text-xs font-medium">
+                    <summary className="cursor-pointer select-none py-1">
+                      Auto-run overrides
+                      {Object.keys(field.state.value).length > 0 && (
+                        <span className="ml-1 text-muted">
+                          ({Object.keys(field.state.value).length} customized)
+                        </span>
+                      )}
+                    </summary>
+                    <div className="mt-2 grid gap-1 rounded-md border px-3 py-2 sm:grid-cols-2">
+                      {INTERACTION_TYPES.map((type) => {
+                        const configDefault =
+                          config?.interactions?.[type]?.autoRun ?? true;
+                        const overridden = type in field.state.value;
+                        const checked = overridden
+                          ? Boolean(field.state.value[type])
+                          : configDefault;
+                        return (
+                          <label
+                            key={type}
+                            className="flex items-center gap-2 py-0.5 text-[13px]"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const next = {
+                                  ...field.state.value,
+                                } as AutoRunOverrides;
+                                if (e.target.checked === configDefault) {
+                                  delete next[type];
+                                } else {
+                                  next[type] = e.target.checked;
+                                }
+                                field.handleChange(next);
+                              }}
+                            />
+                            <span className={overridden ? 'font-medium' : ''}>
+                              {type}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted">
+                      Toggle to override auto-run for this task. Bold = differs
+                      from config default.
+                    </p>
+                  </details>
+                )}
+              </form.Field>
 
               {error && <p className="text-xs">{error}</p>}
 

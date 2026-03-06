@@ -36,7 +36,7 @@ function typeBadgeTone(type: string | undefined): string {
   const normalized = type?.trim().toLowerCase();
   if (normalized === 'plan')
     return 'border-indigo-500/35 bg-indigo-500/15 text-indigo-300';
-  if (normalized === 'run')
+  if (normalized === 'code')
     return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300';
   if (normalized === 'review')
     return 'border-amber-500/35 bg-amber-500/15 text-amber-300';

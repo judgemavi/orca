@@ -1,4 +1,5 @@
 import type {
+  AutoRunOverrides,
   Interaction,
   MemoryCategory,
   MemorySourceType,
@@ -10,6 +11,7 @@ export interface TaskCreateInput {
   title: string;
   description?: string;
   parentId?: string | null;
+  autoRunOverrides?: AutoRunOverrides;
 }
 
 export interface TaskUpdateFields {
@@ -18,6 +20,7 @@ export interface TaskUpdateFields {
   plan?: string | null;
   status?: TaskStatus;
   sessionId?: string | null;
+  autoRunOverrides?: AutoRunOverrides;
 }
 
 export type StoredInteraction = Interaction;

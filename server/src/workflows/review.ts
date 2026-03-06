@@ -99,7 +99,7 @@ export async function runAIReviewWorkflow(
       `task must be in review status, got ${JSON.stringify(current.status)}`,
   );
 
-  const runInteractions = await deps.interactions.listByType(taskID, 'run');
+  const runInteractions = await deps.interactions.listByType(taskID, 'code');
   const latest = runInteractions.find(
     (item) =>
       item.status === INTERACTION_STATUSES.completed &&

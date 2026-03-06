@@ -57,6 +57,7 @@ export async function startMCPServer(deps: MCPDeps): Promise<void> {
       taskStore: deps.taskStore,
       interactions: deps.interactionStore,
       executor: deps.executor,
+      configStore: deps.configStore,
       sink: deps.eventSink,
       queue: deps.queue,
     }),
@@ -67,6 +68,7 @@ export async function startMCPServer(deps: MCPDeps): Promise<void> {
       taskStore: deps.taskStore,
       interactions: deps.interactionStore,
       memory: deps.memoryStore,
+      queue: deps.queue,
     }),
     ...reviewTools({
       repoDir: deps.repoDir,
@@ -75,6 +77,7 @@ export async function startMCPServer(deps: MCPDeps): Promise<void> {
       taskStore: deps.taskStore,
       executor: deps.executor,
       interactions: deps.interactionStore,
+      queue: deps.queue,
     }),
     ...mergeTools({
       repoDir: deps.repoDir,

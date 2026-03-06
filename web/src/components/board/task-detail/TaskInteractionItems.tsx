@@ -99,7 +99,7 @@ function InteractionContent({
       <ReviewSection
         interaction={interaction}
         runReviewInteractions={
-          stub.type === 'run' || stub.type === 'revise' ? runReviewStubs : []
+          stub.type === 'code' || stub.type === 'revise' ? runReviewStubs : []
         }
         runReviews={runReviews}
         latestCompletedRunStartedAt={latestCompletedRunStartedAt}
@@ -129,7 +129,8 @@ export function TaskInteractionItems({
 }: Props) {
   const actions = useTaskActions(task);
   const runStubs = useMemo(
-    () => stubs.filter((item) => item.type === 'run' || item.type === 'revise'),
+    () =>
+      stubs.filter((item) => item.type === 'code' || item.type === 'revise'),
     [stubs],
   );
   const reviewStubs = useMemo(
@@ -231,7 +232,7 @@ export function TaskInteractionItems({
             stub={item}
             type={item.type}
             collapsible
-            showDiffSummary={item.type === 'run' || item.type === 'revise'}
+            showDiffSummary={item.type === 'code' || item.type === 'revise'}
             expanded={isExpanded}
             alwaysExpanded={item.status === INTERACTION_STATUSES.running}
             onExpandedChange={() => onToggleInteraction(item.id)}
@@ -252,7 +253,7 @@ export function TaskInteractionItems({
                 (review) => review.interactionId === item.id,
               )}
               runReviewStubs={
-                item.type === 'run' || item.type === 'revise'
+                item.type === 'code' || item.type === 'revise'
                   ? getReviewStubsForRun(item.id, item.startedAt)
                   : []
               }

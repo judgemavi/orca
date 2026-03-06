@@ -4,8 +4,8 @@ import { availableTools, toolModels } from '../plugin/registry';
 import type { Config, InteractionConfig, InteractionType } from '../types';
 import { INTERACTION_TYPES } from '../types';
 
-function defaultInteraction(): InteractionConfig {
-  return { tool: 'claude', model: 'claude-sonnet-4-6' };
+function defaultInteraction(autoRun = true): InteractionConfig {
+  return { tool: 'claude', model: 'claude-sonnet-4-6', autoRun };
 }
 
 export function defaultConfig(): Config {
@@ -108,7 +108,11 @@ export function sanitizeConfig(
     }
     for (const type of INTERACTION_TYPES) {
       if (!config.interactions[type]) {
-        config.interactions[type] = { tool: legacyTool, model: legacyModel };
+        config.interactions[type] = {
+          tool: legacyTool,
+          model: legacyModel,
+          autoRun: true,
+        };
       }
     }
     delete legacy.defaultTool;
@@ -118,12 +122,16 @@ export function sanitizeConfig(
   if (legacy.orchestrator && typeof legacy.orchestrator === 'object') {
     const legacyOrch = legacy.orchestrator as Record<string, unknown>;
     if ('supervisorTool' in legacyOrch) {
-      config.orchestrator.tool = String(legacyOrch.supervisorTool ?? fallbackTool);
+      config.orchestrator.tool = String(
+        legacyOrch.supervisorTool ?? fallbackTool,
+      );
       config.orchestrator.model = String(legacyOrch.supervisorModel ?? '');
       delete legacyOrch.supervisorTool;
       delete legacyOrch.supervisorModel;
       delete legacyOrch.overrides;
-      changes.push('migrated orchestrator.supervisorTool/Model to orchestrator.tool/model');
+      changes.push(
+        'migrated orchestrator.supervisorTool/Model to orchestrator.tool/model',
+      );
     }
   }
 
@@ -133,8 +141,15 @@ export function sanitizeConfig(
   }
   for (const type of INTERACTION_TYPES) {
     if (!config.interactions[type]) {
-      config.interactions[type] = { tool: fallbackTool, model: '' };
+      config.interactions[type] = {
+        tool: fallbackTool,
+        model: '',
+        autoRun: true,
+      };
       changes.push(`interactions.${type} added with fallback`);
+    }
+    if (config.interactions[type].autoRun === undefined) {
+      config.interactions[type].autoRun = true;
     }
   }
 
@@ -142,7 +157,9 @@ export function sanitizeConfig(
   for (const type of INTERACTION_TYPES) {
     const entry = config.interactions[type];
     if (!tools.includes(entry.tool)) {
-      changes.push(`interactions.${type}.tool ${entry.tool} -> ${fallbackTool}`);
+      changes.push(
+        `interactions.${type}.tool ${entry.tool} -> ${fallbackTool}`,
+      );
       entry.tool = fallbackTool;
     }
     const models = toolModels(registry, entry.tool);
@@ -155,13 +172,20 @@ export function sanitizeConfig(
 
   // Sanitize orchestrator
   if (!tools.includes(config.orchestrator.tool)) {
-    changes.push(`orchestrator.tool ${config.orchestrator.tool} -> ${fallbackTool}`);
+    changes.push(
+      `orchestrator.tool ${config.orchestrator.tool} -> ${fallbackTool}`,
+    );
     config.orchestrator.tool = fallbackTool;
   }
   const orchModels = toolModels(registry, config.orchestrator.tool);
-  if (orchModels.length > 0 && !orchModels.includes(config.orchestrator.model)) {
+  if (
+    orchModels.length > 0 &&
+    !orchModels.includes(config.orchestrator.model)
+  ) {
     const newModel = orchModels[0] ?? '';
-    changes.push(`orchestrator.model ${config.orchestrator.model} -> ${newModel}`);
+    changes.push(
+      `orchestrator.model ${config.orchestrator.model} -> ${newModel}`,
+    );
     config.orchestrator.model = newModel;
   }
 
@@ -209,7 +233,7 @@ export function resolveTool(
     const entry = config.interactions[interactionType as InteractionType];
     if (entry?.tool?.trim()) return entry.tool;
   }
-  return config.interactions.run?.tool ?? config.tools[0] ?? '';
+  return config.interactions.code?.tool ?? config.tools[0] ?? '';
 }
 
 export function resolveModel(
@@ -225,6 +249,17 @@ export function resolveModel(
     if (entry?.model?.trim()) return entry.model;
   }
   return toolModels(registry, toolName)[0] ?? '';
+}
+
+export function isAutoRun(
+  config: Config,
+  interactionType: InteractionType,
+  taskOverrides?: import('../types').AutoRunOverrides,
+): boolean {
+  if (taskOverrides && interactionType in taskOverrides) {
+    return Boolean(taskOverrides[interactionType]);
+  }
+  return config.interactions[interactionType]?.autoRun ?? true;
 }
 
 function validateDuration(raw: string, field: string): void {

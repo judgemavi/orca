@@ -9,7 +9,7 @@ type Props = {
 
 export function RunSection({ interaction, task }: Props) {
   if (
-    !(interaction.type === 'run' || interaction.type === 'revise') ||
+    !(interaction.type === 'code' || interaction.type === 'revise') ||
     interaction.status !== INTERACTION_STATUSES.completed ||
     !interaction.diff
   ) {

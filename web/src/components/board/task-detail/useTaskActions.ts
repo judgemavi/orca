@@ -337,7 +337,8 @@ export function useTaskActions(task: Task) {
   }, [breakdownInteractions]);
 
   const runningInProgress =
-    task.status === TASK_STATUSES.running || isOperationRunning('run', task.id);
+    task.status === TASK_STATUSES.running ||
+    isOperationRunning('code', task.id);
   const runningBusy = runningInProgress || startTaskMutation.isPending;
   const pendingBusy =
     planInteractions.some(

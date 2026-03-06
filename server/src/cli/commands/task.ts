@@ -8,8 +8,13 @@ import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
-import type { Task, TaskStatus } from '../../types';
-import { JOB_PRIORITIES } from '../../types';
+import type {
+  AutoRunOverrides,
+  InteractionType,
+  Task,
+  TaskStatus,
+} from '../../types';
+import { INTERACTION_TYPES, JOB_PRIORITIES } from '../../types';
 import { deleteTask } from '../../workflows/delete';
 import {
   approvePlan,
@@ -75,11 +80,21 @@ export function registerTaskCommands(
     .option('--title <title>', 'task title')
     .option('--description <description>', 'task description', '')
     .option('--parent <parent>', 'parent task id')
+    .option(
+      '--disable-autorun <types>',
+      'comma-separated interaction types to disable auto-run (e.g. review,merge)',
+    )
+    .option(
+      '--enable-autorun <types>',
+      'comma-separated interaction types to enable auto-run',
+    )
     .action(
       async (opts: {
         title?: string;
         description: string;
         parent?: string;
+        disableAutorun?: string;
+        enableAutorun?: string;
       }) => {
         let title = (opts.title ?? '').trim();
         if (!title) {
@@ -101,10 +116,18 @@ export function registerTaskCommands(
           }
         }
 
+        const autoRunOverrides = parseAutoRunOverrides(
+          opts.disableAutorun,
+          opts.enableAutorun,
+        );
         const created = await deps.taskStore.create({
           title,
           description,
           parentId: parent || null,
+          autoRunOverrides:
+            Object.keys(autoRunOverrides).length > 0
+              ? autoRunOverrides
+              : undefined,
         });
         if (deps.queue) {
           await deps.queue.enqueue({
@@ -124,6 +147,18 @@ export function registerTaskCommands(
     .option('--description <description>', 'new description')
     .option('--status <status>', 'new status')
     .option('--session-id <sessionID>', 'set session id')
+    .option(
+      '--disable-autorun <types>',
+      'comma-separated interaction types to disable auto-run',
+    )
+    .option(
+      '--enable-autorun <types>',
+      'comma-separated interaction types to enable auto-run',
+    )
+    .option(
+      '--reset-autorun [types]',
+      'clear overrides, inherit from config (comma-separated or "all")',
+    )
     .action(
       async (
         id: string,
@@ -132,13 +167,34 @@ export function registerTaskCommands(
           description?: string;
           status?: string;
           sessionId?: string;
+          disableAutorun?: string;
+          enableAutorun?: string;
+          resetAutorun?: string | true;
         },
       ) => {
+        let autoRunOverrides: AutoRunOverrides | undefined;
+        if (opts.resetAutorun !== undefined) {
+          const existing = await deps.taskStore.get(id);
+          autoRunOverrides = mergeAutoRunOverrides(
+            existing?.autoRunOverrides ?? {},
+            opts.disableAutorun,
+            opts.enableAutorun,
+            opts.resetAutorun,
+          );
+        } else {
+          const parsed = parseAutoRunOverrides(
+            opts.disableAutorun,
+            opts.enableAutorun,
+          );
+          if (Object.keys(parsed).length > 0) autoRunOverrides = parsed;
+        }
+
         await deps.taskStore.update(id, {
           title: opts.title,
           description: opts.description,
           status: opts.status as TaskStatus,
           sessionId: opts.sessionId,
+          ...(autoRunOverrides !== undefined ? { autoRunOverrides } : {}),
         });
         printJSON(await deps.taskStore.get(id));
       },
@@ -440,4 +496,50 @@ async function resolveTaskID(input: {
 
 function canPrompt(): boolean {
   return Boolean(process.stdin.isTTY) && !Bun.argv.includes('--json');
+}
+
+function parseAutoRunOverrides(
+  disable?: string,
+  enable?: string,
+): AutoRunOverrides {
+  const overrides: AutoRunOverrides = {};
+  const validTypes = new Set<string>(INTERACTION_TYPES);
+  for (const raw of (disable ?? '').split(',')) {
+    const type = raw.trim() as InteractionType;
+    if (type && validTypes.has(type)) overrides[type] = false;
+  }
+  for (const raw of (enable ?? '').split(',')) {
+    const type = raw.trim() as InteractionType;
+    if (type && validTypes.has(type)) overrides[type] = true;
+  }
+  return overrides;
+}
+
+function mergeAutoRunOverrides(
+  existing: AutoRunOverrides,
+  disable?: string,
+  enable?: string,
+  reset?: string | true,
+): AutoRunOverrides {
+  const validTypes = new Set<string>(INTERACTION_TYPES);
+  let result = { ...existing };
+
+  if (reset === true || reset === 'all' || reset === '') {
+    result = {};
+  } else if (reset) {
+    for (const raw of reset.split(',')) {
+      const type = raw.trim() as InteractionType;
+      if (type && validTypes.has(type)) delete result[type];
+    }
+  }
+
+  for (const raw of (disable ?? '').split(',')) {
+    const type = raw.trim() as InteractionType;
+    if (type && validTypes.has(type)) result[type] = false;
+  }
+  for (const raw of (enable ?? '').split(',')) {
+    const type = raw.trim() as InteractionType;
+    if (type && validTypes.has(type)) result[type] = true;
+  }
+  return result;
 }

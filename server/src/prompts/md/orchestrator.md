@@ -35,6 +35,19 @@ Every task MUST follow this lifecycle. Never skip steps.
 7. **Approve** → `tasks_approve` (or `tasks_request_changes` if review finds issues)
 8. **Merge** → `tasks_merge` — merge changes to integration branch (retro auto-runs post-merge)
 
+## Auto-Run Chaining
+
+Each interaction type (evaluate, breakdown, plan, code, review, merge, retro, explore) has an `autoRun` setting in config. When enabled, completing one step automatically enqueues the next:
+
+`evaluate → plan/breakdown → (auto-approve plan) → code → review → (auto-approve) → merge → retro`
+
+Key transitions driven by status changes:
+- Plan approved (`planned` status) → auto-starts `code` if code autoRun is on
+- Task approved (`approved` status) → auto-starts `merge` if merge autoRun is on
+- Review rejected → auto re-runs code with feedback, then re-reviews (change-request loop)
+
+**Per-task overrides**: `tasks_create` and `tasks_update` accept `autoRunOverrides` — a map of interaction type to boolean. This lets you disable auto-run for specific steps on individual tasks without changing the global config. Example: `{ "review": false }` pauses the chain at review for manual approval on that task only.
+
 ## Status Model
 
 `pending → planned → running → review → approved → merged`

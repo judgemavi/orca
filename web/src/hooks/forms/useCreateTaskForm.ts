@@ -1,15 +1,18 @@
 import { useForm } from '@tanstack/react-form';
+import type { AutoRunOverrides } from '../../types';
 
 interface CreateTaskFormValues {
   title: string;
   description: string;
   dependencies: string[];
+  autoRunOverrides: AutoRunOverrides;
 }
 
 const createTaskFormDefaults: CreateTaskFormValues = {
   title: '',
   description: '',
   dependencies: [],
+  autoRunOverrides: {},
 };
 
 function validate(values: CreateTaskFormValues) {

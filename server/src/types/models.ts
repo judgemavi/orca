@@ -6,6 +6,7 @@ import type {
   taskReviews,
   tasks,
 } from '../db/schema';
+import type { AutoRunOverrides } from './api';
 import type {
   InteractionStatus,
   JobStatus,
@@ -26,9 +27,10 @@ type OperationRow = typeof interactions.$inferSelect;
 
 // -- API types (row + narrowed enums + computed fields) --
 
-export type Task = Omit<TaskRow, 'status'> & {
+export type Task = Omit<TaskRow, 'status' | 'autoRunOverrides'> & {
   status: TaskStatus;
   dependsOn: string[];
+  autoRunOverrides?: AutoRunOverrides;
 };
 
 export type Interaction = Omit<

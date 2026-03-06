@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { ToolPluginRegistry } from '../../plugin/registry';
+import { resumeChain } from '../../queue/chain';
+import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
@@ -77,10 +79,7 @@ const tasksPlanGetSchema = z.object({
 
 const tasksPlanSetSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
-  plan: z.preprocess(
-    (value) => value ?? '',
-    z.coerce.string(),
-  ),
+  plan: z.preprocess((value) => value ?? '', z.coerce.string()),
 });
 
 const breakdownRejectSchema = z.object({
@@ -95,6 +94,7 @@ export function planningTools(deps: {
   taskStore: TaskStore;
   interactions: InteractionStore;
   memory: MemoryStore;
+  queue?: JobQueue;
 }): Tool[] {
   const tools: Tool[] = [
     defineTool({
@@ -200,6 +200,13 @@ export function planningTools(deps: {
         const updated = await approvePlan(input.taskId, {
           taskStore: deps.taskStore,
         });
+        if (deps.queue) {
+          await resumeChain(input.taskId, 'planned', {
+            configStore: deps.configStore,
+            taskStore: deps.taskStore,
+            queue: deps.queue,
+          });
+        }
         return { task: updated };
       },
     }),

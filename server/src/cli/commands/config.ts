@@ -8,7 +8,7 @@ import type { ConfigStore } from '../../store/config';
 import type { InteractionConfig, InteractionType } from '../../types';
 import { INTERACTION_TYPES } from '../../types';
 import { printJSON } from '../format';
-import { pickFromList, textInput } from '../helpers';
+import { confirm, pickFromList, textInput } from '../helpers';
 
 export function registerConfigCommands(
   program: Command,
@@ -90,7 +90,11 @@ async function buildInteractivePatch(
             models.includes(existing?.model) ? existing.model : models[0],
           )
         : '';
-    interactions[type] = { tool, model };
+    const autoRun = await confirm(
+      `${type} auto-run?`,
+      existing?.autoRun ?? true,
+    );
+    interactions[type] = { tool, model, autoRun };
   }
 
   const branch = await textInput('Integration branch', {

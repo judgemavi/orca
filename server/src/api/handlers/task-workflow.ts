@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { Executor } from '../../executor/executor';
 import type { ToolPluginRegistry } from '../../plugin/registry';
+import { resumeChain } from '../../queue/chain';
 import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
@@ -50,6 +51,11 @@ export function taskWorkflowRoutes(deps: {
         'task.updated',
         updated as unknown as Record<string, unknown>,
       );
+      await resumeChain(taskID, 'approved', {
+        configStore: deps.configStore,
+        taskStore: deps.taskStore,
+        queue: deps.queue,
+      });
       return c.json(updated);
     })
 
@@ -81,9 +87,9 @@ export function taskWorkflowRoutes(deps: {
         await deps.interactionStore.supersedeReviewInteractions(taskID);
 
         const { id: jobId } = await deps.queue.enqueue({
-          type: 'run',
+          type: 'code',
           taskId: taskID,
-          priority: JOB_PRIORITIES.run,
+          priority: JOB_PRIORITIES.code,
           payload: { tool, model },
         });
 
@@ -110,7 +116,7 @@ export function taskWorkflowRoutes(deps: {
         const body = c.req.valid('json');
         const runInteractions = await deps.interactionStore.listByType(
           taskID,
-          'run',
+          'code',
         );
         const latest = runInteractions.find(
           (item) => item.status === 'completed' && Boolean(item.diff?.trim()),

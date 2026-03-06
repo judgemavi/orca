@@ -19,6 +19,7 @@ export const tasks = sqliteTable(
     sessionId: text('session_id'),
     parentId: text('parent_id'),
     status: text('status').notNull().default('pending'),
+    autoRunOverrides: text('auto_run_overrides'),
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
     updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },

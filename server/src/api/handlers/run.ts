@@ -34,9 +34,9 @@ export function runRoutes(deps: {
         const jobIds: string[] = [];
         for (const taskID of taskIDs) {
           const { id } = await queue.enqueue({
-            type: 'run',
+            type: 'code',
             taskId: taskID,
-            priority: JOB_PRIORITIES.run,
+            priority: JOB_PRIORITIES.code,
             payload: { tool, model, context },
           });
           jobIds.push(id);
@@ -51,9 +51,9 @@ export function runRoutes(deps: {
       const jobIds: string[] = [];
       for (const task of pending) {
         const { id } = await queue.enqueue({
-          type: 'run',
+          type: 'code',
           taskId: task.id,
-          priority: JOB_PRIORITIES.run,
+          priority: JOB_PRIORITIES.code,
           payload: { tool, model, context },
         });
         jobIds.push(id);
@@ -74,9 +74,9 @@ export function runRoutes(deps: {
       const jobIds: string[] = [];
       for (const taskID of taskIDs) {
         const { id } = await queue.enqueue({
-          type: 'run',
+          type: 'code',
           taskId: taskID,
-          priority: JOB_PRIORITIES.run,
+          priority: JOB_PRIORITIES.code,
           payload: { tool, model, context },
         });
         jobIds.push(id);
@@ -92,9 +92,9 @@ export function runRoutes(deps: {
         const taskID = c.req.param('id');
         const body = c.req.valid('json');
         const { id: jobId } = await queue.enqueue({
-          type: 'run',
+          type: 'code',
           taskId: taskID,
-          priority: JOB_PRIORITIES.run,
+          priority: JOB_PRIORITIES.code,
           payload: {
             tool: body.tool ?? '',
             model: body.model ?? '',

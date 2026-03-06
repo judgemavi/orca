@@ -2,18 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useConfigQuery, useModelsQuery } from '../hooks/queries';
-import type { Config } from '../types';
-
-const INTERACTION_TYPES = [
-  'run',
-  'evaluate',
-  'review',
-  'plan',
-  'breakdown',
-  'explore',
-  'retro',
-  'merge',
-] as const;
+import { type Config, INTERACTION_TYPES } from '../types';
 
 type SectionId =
   | 'project'
@@ -276,6 +265,7 @@ function ConfigPage() {
               const entry = draft.interactions?.[type] ?? {
                 tool: '',
                 model: '',
+                autoRun: true,
               };
               const typeModels = entry.tool
                 ? (modelsByTool[entry.tool] ?? [])
@@ -283,7 +273,7 @@ function ConfigPage() {
               return (
                 <div
                   key={type}
-                  className="grid items-center gap-3 rounded-md border p-3 sm:grid-cols-[120px_1fr_1fr]"
+                  className="grid items-center gap-3 rounded-md border p-3 sm:grid-cols-[120px_1fr_1fr_auto]"
                 >
                   <div className="text-[13px] font-medium">{type}</div>
                   <select
@@ -293,9 +283,9 @@ function ConfigPage() {
                       updateSection('interactions', {
                         ...draft.interactions,
                         [type]: {
+                          ...entry,
                           tool: e.target.value,
-                          model:
-                            modelsByTool[e.target.value]?.[0]?.id ?? '',
+                          model: modelsByTool[e.target.value]?.[0]?.id ?? '',
                         },
                       })
                     }
@@ -324,6 +314,19 @@ function ConfigPage() {
                       </option>
                     ))}
                   </select>
+                  <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={entry.autoRun ?? true}
+                      onChange={(e) =>
+                        updateSection('interactions', {
+                          ...draft.interactions,
+                          [type]: { ...entry, autoRun: e.target.checked },
+                        })
+                      }
+                    />
+                    Auto
+                  </label>
                 </div>
               );
             })}

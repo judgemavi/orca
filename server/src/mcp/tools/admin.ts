@@ -143,7 +143,7 @@ export function adminTools(deps: {
       schema: qualityResultsSchema,
       handler: async (input) => {
         const taskID = input.taskId;
-        const items = await deps.interactions.listByType(taskID, 'run');
+        const items = await deps.interactions.listByType(taskID, 'code');
         const latest = items.find((item) => item.qualityJson?.trim());
         if (!latest?.qualityJson) {
           return { taskId: taskID, quality: null };

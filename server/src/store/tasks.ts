@@ -21,7 +21,7 @@ import {
   taskReviews as taskReviewsTable,
   tasks as tasksTable,
 } from '../db/schema';
-import type { Task, TaskReview, TaskStatus } from '../types';
+import type { AutoRunOverrides, Task, TaskReview, TaskStatus } from '../types';
 import { REVIEW_STATUSES, TASK_STATUSES } from '../types';
 import { detectCycle, topoSort } from './graph';
 import type { TaskCreateInput, TaskUpdateFields } from './types';
@@ -54,6 +54,9 @@ export class TaskStore {
       description: input.description ?? '',
       parentId: input.parentId ?? null,
       status: TASK_STATUSES.pending,
+      autoRunOverrides: input.autoRunOverrides
+        ? JSON.stringify(input.autoRunOverrides)
+        : null,
       createdAt: sql`(CURRENT_TIMESTAMP)`,
       updatedAt: sql`(CURRENT_TIMESTAMP)`,
     });
@@ -122,6 +125,7 @@ export class TaskStore {
       plan: string | null;
       status: TaskStatus;
       sessionId: string | null;
+      autoRunOverrides: string | null;
       updatedAt: SQL;
     }> = {};
 
@@ -131,6 +135,8 @@ export class TaskStore {
     if (fields.plan !== undefined) updateSet.plan = fields.plan;
     if (fields.status !== undefined) updateSet.status = fields.status;
     if (fields.sessionId !== undefined) updateSet.sessionId = fields.sessionId;
+    if (fields.autoRunOverrides !== undefined)
+      updateSet.autoRunOverrides = JSON.stringify(fields.autoRunOverrides);
 
     if (Object.keys(updateSet).length === 0) return;
 
@@ -412,6 +418,14 @@ export class TaskStore {
   }
 
   private mapTask(row: TaskRow, dependsOn: string[]): Task {
+    let autoRunOverrides: AutoRunOverrides | undefined;
+    if (row.autoRunOverrides) {
+      try {
+        autoRunOverrides = JSON.parse(row.autoRunOverrides);
+      } catch {
+        // ignore invalid JSON
+      }
+    }
     return {
       id: row.id,
       title: row.title,
@@ -423,6 +437,7 @@ export class TaskStore {
       plan: row.plan,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      ...(autoRunOverrides ? { autoRunOverrides } : {}),
     };
   }
 

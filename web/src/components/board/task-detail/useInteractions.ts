@@ -19,7 +19,7 @@ export function selectByType(type: string) {
 
 export function selectByRunLike(interactions: Interaction[]) {
   return [...interactions]
-    .filter((i) => i.type === 'run' || i.type === 'revise')
+    .filter((i) => i.type === 'code' || i.type === 'revise')
     .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
 }
 

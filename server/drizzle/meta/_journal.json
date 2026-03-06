@@ -8,6 +8,13 @@
       "when": 1772744847288,
       "tag": "0000_rare_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1772763662512,
+      "tag": "0001_heavy_black_widow",
+      "breakpoints": true
     }
   ]
 }

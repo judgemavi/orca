@@ -183,7 +183,7 @@ const TASK_SCOPED = [
   'plan',
   'evaluate',
   'breakdown',
-  'run',
+  'code',
   'merge',
   'cleanup',
   'explore',

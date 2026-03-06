@@ -49,6 +49,7 @@ function taskGroup(deps: RouteDeps) {
       taskRoutes({
         taskStore: deps.taskStore,
         interactionStore: deps.interactionStore,
+        configStore: deps.configStore,
         sink: deps.eventSink,
         repoDir: deps.repoDir,
         queue: deps.queue,
@@ -64,6 +65,7 @@ function taskGroup(deps: RouteDeps) {
         configStore: deps.configStore,
         registry: deps.registry,
         sink: deps.eventSink,
+        queue: deps.queue,
       }),
     )
     .route(

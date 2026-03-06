@@ -4,28 +4,31 @@ import type { MemoryEntry } from './models';
 export interface InteractionConfig {
   tool: string;
   model: string;
+  autoRun: boolean;
 }
 
 export type InteractionType =
-  | 'run'
   | 'evaluate'
-  | 'review'
-  | 'plan'
   | 'breakdown'
-  | 'explore'
+  | 'plan'
+  | 'code'
+  | 'review'
+  | 'merge'
   | 'retro'
-  | 'merge';
+  | 'explore';
 
 export const INTERACTION_TYPES: InteractionType[] = [
-  'run',
   'evaluate',
-  'review',
-  'plan',
   'breakdown',
-  'explore',
-  'retro',
+  'plan',
+  'code',
+  'review',
   'merge',
+  'retro',
+  'explore',
 ];
+
+export type AutoRunOverrides = Partial<Record<InteractionType, boolean>>;
 
 export interface Config {
   project: {

@@ -40,7 +40,7 @@ export const JOB_STATUSES = {
 export type JobStatus = (typeof JOB_STATUSES)[keyof typeof JOB_STATUSES];
 
 export const JOB_TYPES = {
-  run: 'run',
+  code: 'code',
   evaluate: 'evaluate',
   plan: 'plan',
   breakdown: 'breakdown',
@@ -53,7 +53,7 @@ export const JOB_TYPES = {
 export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
 
 export const JOB_PRIORITIES: Record<JobType, number> = {
-  run: 0,
+  code: 0,
   review: 1,
   merge: 2,
   evaluate: 3,

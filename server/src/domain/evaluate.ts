@@ -40,7 +40,8 @@ export async function evaluateTask(
       ],
       toolOverride: options.toolOverride ?? '',
       modelOverride: options.modelOverride ?? '',
-      resolveErrorMessage: 'no LLM tool available — check config.interactions.evaluate',
+      resolveErrorMessage:
+        'no LLM tool available — check config.interactions.evaluate',
       exitErrorLabel: 'evaluate',
     },
     (output) => {

@@ -1,12 +1,11 @@
 import type { Command } from 'commander';
 import {
+  buildMCPServerDef,
   loadOrchestratorPrompt,
   ORCHESTRATOR_ALLOWED_TOOLS,
   resolveSupervisor,
-  writeMCPConfig,
 } from '../../orchestrator/bootstrap';
 import { type ToolPluginRegistry, toolDefinition } from '../../plugin/registry';
-import type { ToolPlugin } from '../../plugin/types';
 import type { ConfigStore } from '../../store/config';
 
 export function registerOrcCommand(
@@ -41,10 +40,6 @@ async function runOrcInteractive(
   if (!tool) {
     throw new Error(`supervisor tool not available: ${toolName}`);
   }
-  if (!isSupervisorDriver(tool)) {
-    throw new Error(`plugin ${toolName} does not support interactive mode`);
-  }
-
   const model = await resolveSupervisorModel({
     configStore: deps.configStore,
     toolName,
@@ -53,14 +48,15 @@ async function runOrcInteractive(
     override: (opts.model ?? '').trim(),
   });
 
-  const mcpConfigPath = await writeMCPConfig(deps.repoDir, tool);
+  const mcpServer = buildMCPServerDef(deps.repoDir);
   const systemPrompt = await loadOrchestratorPrompt(deps.repoDir);
-  const args = tool.interactiveArgs(
-    mcpConfigPath,
-    ORCHESTRATOR_ALLOWED_TOOLS,
-    systemPrompt,
+  const args = await tool.interactiveArgs({
     model,
-  );
+    systemPrompt,
+    allowedTools: [...ORCHESTRATOR_ALLOWED_TOOLS],
+    mcpServers: { orca: mcpServer },
+    repoDir: deps.repoDir,
+  });
 
   const child = Bun.spawn({
     cmd: [tool.binary(), ...args],
@@ -68,10 +64,6 @@ async function runOrcInteractive(
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
-    env: {
-      ...process.env,
-      ORCA_MCP_CONFIG: mcpConfigPath,
-    },
   });
 
   const stop = () => {
@@ -115,18 +107,4 @@ async function resolveSupervisorModel(input: {
   if (resolved) return resolved;
   if (input.toolModels[0]?.trim()) return input.toolModels[0];
   throw new Error(`no model configured for supervisor tool ${input.toolName}`);
-}
-
-interface InteractivePlugin extends ToolPlugin {
-  interactiveArgs(
-    mcpConfig: string,
-    allowedTools: string[],
-    context: string,
-    model: string,
-  ): string[];
-}
-
-function isSupervisorDriver(value: unknown): value is InteractivePlugin {
-  if (!value || typeof value !== 'object') return false;
-  return typeof (value as InteractivePlugin).interactiveArgs === 'function';
 }

@@ -62,7 +62,8 @@ export async function runInitCommand(
     ? await loadExistingConfig(repoDir)
     : defaultConfig();
   const previouslyEnabled = current.tools.filter((t) => available.includes(t));
-  const initialEnabled = previouslyEnabled.length > 0 ? previouslyEnabled : available;
+  const initialEnabled =
+    previouslyEnabled.length > 0 ? previouslyEnabled : available;
 
   let enabledTools: string[];
   if (autoYes || available.length === 1) {
@@ -73,9 +74,7 @@ export async function runInitCommand(
     );
   } else {
     enabledTools = ensureNotCancelled(
-      await (
-        await import('@clack/prompts')
-      ).multiselect({
+      await (await import('@clack/prompts')).multiselect({
         message: 'Enable tools',
         options: [
           ...available.map((name) => ({
@@ -149,11 +148,15 @@ export async function runInitCommand(
   if (autoYes) {
     for (const type of INTERACTION_TYPES) {
       const def = defaults.interactions[type];
-      interactions[type] = { tool: def.tool, model: def.model };
+      interactions[type] = {
+        tool: def.tool,
+        model: def.model,
+        autoRun: def.autoRun ?? true,
+      };
     }
   } else {
     note(
-      'Configure tool and model for each interaction type.\nPress enter to accept defaults.',
+      'Configure tool, model, and auto-run for each interaction type.\nPress enter to accept defaults.',
       'Interaction Defaults',
     );
     for (const type of INTERACTION_TYPES) {
@@ -172,7 +175,8 @@ export async function runInitCommand(
         models.map((m) => ({ label: m, value: m })),
         pickDefault(models, def.model),
       );
-      interactions[type] = { tool, model };
+      const autoRun = await confirm(`${type} auto-run?`, def.autoRun ?? true);
+      interactions[type] = { tool, model, autoRun };
     }
   }
 
@@ -199,9 +203,7 @@ export async function runInitCommand(
   const qualitySelected = autoYes
     ? defaults.qualitySelected
     : ensureNotCancelled(
-        await (
-          await import('@clack/prompts')
-        ).multiselect({
+        await (await import('@clack/prompts')).multiselect({
           message: 'Quality gates',
           options: [
             { value: 'scopeCheck', label: 'Scope check' },
@@ -283,7 +285,8 @@ export async function runInitCommand(
     '',
     'Interactions:',
     ...INTERACTION_TYPES.map(
-      (type) => `  ${type}: ${interactions[type].tool}/${interactions[type].model}`,
+      (type) =>
+        `  ${type}: ${interactions[type].tool}/${interactions[type].model} ${interactions[type].autoRun ? '(auto)' : '(manual)'}`,
     ),
     '',
     `Orchestrator: ${orchestratorTool}/${orchestratorModel}`,
@@ -325,11 +328,7 @@ async function loadExistingConfig(repoDir: string): Promise<Config> {
   }
 }
 
-function buildDefaults(
-  repoDir: string,
-  current: Config,
-  available: string[],
-) {
+function buildDefaults(repoDir: string, current: Config, available: string[]) {
   const projectName =
     current.project.name || baseName(repoDir) || 'orca-project';
   const validationCommand = current.validation.commands[0] ?? '';
@@ -351,18 +350,25 @@ function buildDefaults(
   for (const type of INTERACTION_TYPES) {
     if (current.interactions?.[type]) {
       interactions[type] = { ...current.interactions[type] };
+      if (interactions[type].autoRun === undefined)
+        interactions[type].autoRun = true;
     } else {
-      interactions[type] = { tool: legacyTool, model: legacyModel };
+      interactions[type] = {
+        tool: legacyTool,
+        model: legacyModel,
+        autoRun: true,
+      };
     }
   }
 
   // Orchestrator defaults
   const orchLegacy = current.orchestrator as Record<string, unknown>;
   const orchestrator = {
-    tool: current.orchestrator?.tool ??
+    tool:
+      current.orchestrator?.tool ??
       String(orchLegacy?.supervisorTool ?? legacyTool),
-    model: current.orchestrator?.model ??
-      String(orchLegacy?.supervisorModel ?? ''),
+    model:
+      current.orchestrator?.model ?? String(orchLegacy?.supervisorModel ?? ''),
   };
 
   return {

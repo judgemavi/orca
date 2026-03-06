@@ -1,5 +1,5 @@
 export interface HeadlessOpts {
-  mcpConfig?: string;
+  mcpServer?: MCPServerDef;
   allowedTools?: string[] | string;
 }
 
@@ -52,14 +52,14 @@ export interface ToolPlugin {
     model: string,
     dir: string,
     opts?: HeadlessOpts,
-  ): string[];
+  ): Promise<string[]>;
   resumeArgs(
     sessionID: string,
     feedback: string,
     model: string,
     dir: string,
     opts?: HeadlessOpts,
-  ): string[];
+  ): Promise<string[]>;
   interactiveArgs(opts: InteractiveOpts): Promise<string[]>;
   parseEvent(line: Buffer): ToolPluginEvent | null;
   parseSessionID(events: ToolPluginEvent[]): string | null;

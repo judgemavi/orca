@@ -1,4 +1,3 @@
-import { readFileSync } from 'fs';
 import type {
   HeadlessOpts,
   InteractiveOpts,
@@ -7,31 +6,23 @@ import type {
   ToolPluginEvent,
 } from './types';
 
-function mcpFlagsFromFile(configPath: string): string[] {
-  try {
-    const raw = readFileSync(configPath, 'utf8');
-    const config = JSON.parse(raw);
-    const servers: Record<string, MCPServerDef> =
-      config.mcpServers ?? config.mcp_servers ?? {};
-    return mcpFlagsFromDefs(servers);
-  } catch {
-    return [];
-  }
+function mcpFlagsFromDef(name: string, server: MCPServerDef): string[] {
+  return [
+    '-c',
+    `mcp_servers.${name}.command=${JSON.stringify(server.command)}`,
+    '-c',
+    `mcp_servers.${name}.args=${JSON.stringify(server.args)}`,
+    '-c',
+    `mcp_servers.${name}.cwd=${JSON.stringify(server.cwd)}`,
+    '-c',
+    `mcp_servers.${name}.enabled=true`,
+  ];
 }
 
 function mcpFlagsFromDefs(servers: Record<string, MCPServerDef>): string[] {
   const flags: string[] = [];
   for (const [name, server] of Object.entries(servers)) {
-    flags.push(
-      '-c',
-      `mcp_servers.${name}.command=${JSON.stringify(server.command)}`,
-      '-c',
-      `mcp_servers.${name}.args=${JSON.stringify(server.args)}`,
-      '-c',
-      `mcp_servers.${name}.cwd=${JSON.stringify(server.cwd)}`,
-      '-c',
-      `mcp_servers.${name}.enabled=true`,
-    );
+    flags.push(...mcpFlagsFromDef(name, server));
   }
   return flags;
 }
@@ -56,12 +47,12 @@ export class CodexPlugin implements ToolPlugin {
     ];
   }
 
-  headlessArgs(
+  async headlessArgs(
     prompt: string,
     model: string,
     dir: string,
     opts?: HeadlessOpts,
-  ): string[] {
+  ): Promise<string[]> {
     const args = ['exec', prompt, '--json', '--full-auto'];
     const resolvedDir = dir.trim();
     const resolvedModel = model.trim();
@@ -72,19 +63,19 @@ export class CodexPlugin implements ToolPlugin {
     if (resolvedModel) {
       args.push('--model', resolvedModel);
     }
-    if (opts?.mcpConfig?.trim()) {
-      args.push(...mcpFlagsFromFile(opts.mcpConfig.trim()));
+    if (opts?.mcpServer) {
+      args.push(...mcpFlagsFromDef('orca', opts.mcpServer));
     }
     return args;
   }
 
-  resumeArgs(
+  async resumeArgs(
     sessionID: string,
     feedback: string,
     model: string,
     dir: string,
     opts?: HeadlessOpts,
-  ): string[] {
+  ): Promise<string[]> {
     const args = [
       'exec',
       'resume',
@@ -102,8 +93,8 @@ export class CodexPlugin implements ToolPlugin {
     if (resolvedModel) {
       args.push('--model', resolvedModel);
     }
-    if (opts?.mcpConfig?.trim()) {
-      args.push(...mcpFlagsFromFile(opts.mcpConfig.trim()));
+    if (opts?.mcpServer) {
+      args.push(...mcpFlagsFromDef('orca', opts.mcpServer));
     }
     return args;
   }

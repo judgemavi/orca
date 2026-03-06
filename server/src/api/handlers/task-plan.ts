@@ -2,6 +2,8 @@ import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { ToolPluginRegistry } from '../../plugin/registry';
+import { resumeChain } from '../../queue/chain';
+import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
@@ -28,6 +30,7 @@ export interface TaskPlanDeps {
   configStore: ConfigStore;
   registry: ToolPluginRegistry;
   sink: EventSink;
+  queue: JobQueue;
 }
 
 export function taskPlanRoutes(deps: TaskPlanDeps) {
@@ -200,6 +203,11 @@ export function taskPlanRoutes(deps: TaskPlanDeps) {
         'task.updated',
         updated as unknown as Record<string, unknown>,
       );
+      await resumeChain(taskID, 'planned', {
+        configStore,
+        taskStore,
+        queue: deps.queue,
+      });
       return c.json(updated);
     });
 }

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import type { EventSink } from '../../api/ws';
 import type { Executor } from '../../executor/executor';
+import { resumeChain } from '../../queue/chain';
 import type { JobQueue } from '../../queue/queue';
+import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { TaskStore } from '../../store/tasks';
 import type { TaskStatus } from '../../types';
@@ -48,6 +50,7 @@ const tasksCreateSchema = z.object({
     (value) => (Array.isArray(value) ? value : undefined),
     z.array(z.preprocess((item) => item ?? '', z.coerce.string())).optional(),
   ),
+  autoRunOverrides: z.record(z.string(), z.boolean()).optional(),
 });
 
 const tasksUpdateSchema = z.object({
@@ -57,6 +60,7 @@ const tasksUpdateSchema = z.object({
   plan: optionalString(),
   status: optionalTrimmedString(),
   sessionId: optionalString(),
+  autoRunOverrides: z.record(z.string(), z.boolean()).optional(),
 });
 
 const tasksDeleteSchema = z.object({
@@ -100,13 +104,15 @@ export function taskTools(deps: {
   taskStore: TaskStore;
   interactions: InteractionStore;
   executor: Executor;
+  configStore?: ConfigStore;
   sink?: EventSink;
   queue?: JobQueue;
 }): Tool[] {
   const tools: Tool[] = [
     defineTool({
       name: 'tasks_ready',
-      description: 'List tasks ready to start (pending with all dependencies merged)',
+      description:
+        'List tasks ready to start (pending with all dependencies merged)',
       schema: tasksReadySchema,
       handler: async () => {
         return { tasks: await deps.taskStore.getReady() };
@@ -152,6 +158,7 @@ export function taskTools(deps: {
           title: input.title,
           description: input.description ?? '',
           parentId: input.parentId ?? null,
+          autoRunOverrides: input.autoRunOverrides,
         });
 
         if (Array.isArray(input.dependsOn) && input.dependsOn.length > 0) {
@@ -194,9 +201,17 @@ export function taskTools(deps: {
           plan: input.plan,
           status: input.status as TaskStatus,
           sessionId: input.sessionId ?? null,
+          autoRunOverrides: input.autoRunOverrides,
         });
         const task = await deps.taskStore.get(taskID);
         if (!task) throw new Error(`task not found: ${taskID}`);
+        if (input.status && deps.queue && deps.configStore) {
+          await resumeChain(taskID, input.status as TaskStatus, {
+            configStore: deps.configStore,
+            taskStore: deps.taskStore,
+            queue: deps.queue,
+          });
+        }
         return { task };
       },
     }),

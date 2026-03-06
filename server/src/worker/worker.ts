@@ -58,14 +58,14 @@ export async function runTool(
     `${options.logsDir}/${options.taskID}.${Date.now()}.log`;
   const resumeSession = (options.resumeSessionID ?? '').trim();
   const args = resumeSession
-    ? options.plugin.resumeArgs(
+    ? await options.plugin.resumeArgs(
         resumeSession,
         options.feedback ?? '',
         options.model,
         options.dir,
         options.headlessOpts,
       )
-    : options.plugin.headlessArgs(
+    : await options.plugin.headlessArgs(
         options.prompt,
         options.model,
         options.dir,

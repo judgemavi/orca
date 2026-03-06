@@ -9,8 +9,8 @@ import {
   findTaskWorktree,
 } from '../domain/worktree';
 import {
+  buildMCPServerDef,
   ORCHESTRATOR_ALLOWED_TOOLS,
-  writeMCPConfig,
 } from '../orchestrator/bootstrap';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
@@ -100,9 +100,9 @@ export class Executor {
 
     for (const taskID of normalizedTaskIDs) {
       await this.deps.queue!.enqueue({
-        type: 'run',
+        type: 'code',
         taskId: taskID,
-        priority: JOB_PRIORITIES.run,
+        priority: JOB_PRIORITIES.code,
         payload: {
           tool: options.toolOverride ?? '',
           model: options.modelOverride ?? '',
@@ -118,9 +118,9 @@ export class Executor {
   ): Promise<TaskRunResult> {
     if (this.deps.queue) {
       await this.deps.queue.enqueue({
-        type: 'run',
+        type: 'code',
         taskId: taskID,
-        priority: JOB_PRIORITIES.run,
+        priority: JOB_PRIORITIES.code,
         payload: {
           tool: options.toolOverride ?? '',
           model: options.modelOverride ?? '',
@@ -128,7 +128,7 @@ export class Executor {
         },
       });
       // Actual result delivered via WS events/job completion
-      return enqueuedResult(taskID, 'run');
+      return enqueuedResult(taskID, 'code');
     }
     return this.runTaskByIDInternal(taskID, {
       ...options,
@@ -161,9 +161,9 @@ export class Executor {
 
     if (this.deps.queue) {
       await this.deps.queue.enqueue({
-        type: 'run',
+        type: 'code',
         taskId: taskID,
-        priority: JOB_PRIORITIES.run,
+        priority: JOB_PRIORITIES.code,
         payload: {
           tool: options.toolOverride ?? '',
           model: options.modelOverride ?? '',
@@ -270,10 +270,7 @@ export class Executor {
 
     try {
       worktreePath = await this.ensureTaskWorktree(task);
-      const mcpConfigPath = await writeMCPConfig(
-        this.deps.repoDir,
-        execution.plugin,
-      ).catch(() => '');
+      const mcpServer = buildMCPServerDef(this.deps.repoDir);
 
       const result = await runTask({
         taskID: task.id,
@@ -293,12 +290,10 @@ export class Executor {
         interactionLogPath,
         resumeSessionID: resume.resumeSessionID,
         feedback: resume.feedback,
-        headlessOpts: mcpConfigPath
-          ? {
-              mcpConfig: mcpConfigPath,
-              allowedTools: ORCHESTRATOR_ALLOWED_TOOLS,
-            }
-          : undefined,
+        headlessOpts: {
+          mcpServer,
+          allowedTools: ORCHESTRATOR_ALLOWED_TOOLS,
+        },
         signal: controller.signal,
         onOutputLine: () => {
           options.monitor?.recordOutput(task.id);
@@ -373,7 +368,7 @@ export class Executor {
 
     const feedback =
       (options.feedback ?? '').trim() || pendingReview?.feedback?.trim() || '';
-    const interactionType = resumeSessionID || feedback ? 'revise' : 'run';
+    const interactionType = resumeSessionID || feedback ? 'revise' : 'code';
 
     return {
       interactionType,

@@ -202,7 +202,7 @@ async function collectRetroContext(
     .join('\n---\n');
 
   const runDiffs = interactions
-    .filter((i) => i.type === 'run' && i.diff)
+    .filter((i) => i.type === 'code' && i.diff)
     .map((i) => i.diff!)
     .join('\n---\n');
 

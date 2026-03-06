@@ -98,8 +98,11 @@ orca start [task-ids...]     [--no-merge]
 
 orca tasks / task
   ├── add <title...>         [--description] [--parent] [--depends-on]
+  │                          [--disable-autorun <types>] [--enable-autorun <types>]
   ├── list
   ├── edit [id]              [--title] [--description] [--plan] [--status]
+  │                          [--disable-autorun <types>] [--enable-autorun <types>]
+  │                          [--reset-autorun [types|"all"]]
   ├── delete [id]            [-y]
   ├── show [id]
   ├── stop [id]
@@ -140,6 +143,17 @@ orca costs                   [--run]
 orca ops                     [--all]
 orca cleanup                 [--dry-run]
 ```
+
+### Auto-Run Overrides
+
+Per-task overrides control which chain steps auto-run, without changing global config.
+
+- `--disable-autorun review,merge` — pause chain at review and merge for this task
+- `--enable-autorun review` — force auto-run review even if config disables it
+- `--reset-autorun all` — clear all overrides, inherit from config
+- `--reset-autorun review,merge` — clear specific overrides
+
+Comma-separated interaction types: `evaluate`, `plan`, `breakdown`, `code`, `review`, `merge`, `retro`.
 
 ## Memory Lifecycle
 

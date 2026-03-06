@@ -1,6 +1,7 @@
 import type {
   HeadlessOpts,
   InteractiveOpts,
+  MCPServerDef,
   ToolPlugin,
   ToolPluginEvent,
 } from './types';
@@ -27,12 +28,12 @@ export class ClaudePlugin implements ToolPlugin {
     ];
   }
 
-  headlessArgs(
+  async headlessArgs(
     prompt: string,
     model: string,
     _dir: string,
     opts?: HeadlessOpts,
-  ): string[] {
+  ): Promise<string[]> {
     const args = [
       '-p',
       prompt,
@@ -46,8 +47,9 @@ export class ClaudePlugin implements ToolPlugin {
     if (resolvedModel) {
       args.push('--model', resolvedModel);
     }
-    if (opts?.mcpConfig?.trim()) {
-      args.push('--mcp-config', opts.mcpConfig.trim());
+    if (opts?.mcpServer) {
+      const configPath = await writeMCPConfigFile(_dir, opts.mcpServer);
+      if (configPath) args.push('--mcp-config', configPath);
     }
     const allowed = normalizeAllowed(opts?.allowedTools);
     if (allowed.length > 0) {
@@ -56,13 +58,13 @@ export class ClaudePlugin implements ToolPlugin {
     return args;
   }
 
-  resumeArgs(
+  async resumeArgs(
     sessionID: string,
     feedback: string,
     model: string,
     _dir: string,
     opts?: HeadlessOpts,
-  ): string[] {
+  ): Promise<string[]> {
     const args = [
       '--resume',
       sessionID,
@@ -78,8 +80,9 @@ export class ClaudePlugin implements ToolPlugin {
     if (resolvedModel) {
       args.push('--model', resolvedModel);
     }
-    if (opts?.mcpConfig?.trim()) {
-      args.push('--mcp-config', opts.mcpConfig.trim());
+    if (opts?.mcpServer) {
+      const configPath = await writeMCPConfigFile(_dir, opts.mcpServer);
+      if (configPath) args.push('--mcp-config', configPath);
     }
     const allowed = normalizeAllowed(opts?.allowedTools);
     if (allowed.length > 0) {
@@ -312,4 +315,26 @@ function asNumber(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+async function writeMCPConfigFile(
+  repoDir: string,
+  server: MCPServerDef,
+): Promise<string> {
+  const configPath = `${repoDir.replace(/\/+$/, '')}/.orca/mcp.json`;
+  await Bun.$`mkdir -p ${configPath.slice(0, configPath.lastIndexOf('/'))}`;
+  const existing = await Bun.file(configPath)
+    .text()
+    .catch(() => '');
+  const root = existing.trim() ? JSON.parse(existing) : {};
+  if (!root.mcpServers || typeof root.mcpServers !== 'object') {
+    root.mcpServers = {};
+  }
+  root.mcpServers.orca = {
+    command: server.command,
+    args: [...server.args],
+    cwd: server.cwd,
+  };
+  await Bun.write(configPath, `${JSON.stringify(root, null, 2)}\n`);
+  return configPath;
 }

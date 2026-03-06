@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { Executor } from '../../executor/executor';
 import type { ToolPluginRegistry } from '../../plugin/registry';
+import { resumeChain } from '../../queue/chain';
+import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { TaskStore } from '../../store/tasks';
@@ -54,6 +56,7 @@ export function reviewTools(deps: {
   taskStore: TaskStore;
   executor: Executor;
   interactions: InteractionStore;
+  queue?: JobQueue;
 }): Tool[] {
   const tools: Tool[] = [
     defineTool({
@@ -64,6 +67,13 @@ export function reviewTools(deps: {
         const updated = await approveTask(input.taskId, {
           taskStore: deps.taskStore,
         });
+        if (deps.queue) {
+          await resumeChain(input.taskId, 'approved', {
+            configStore: deps.configStore,
+            taskStore: deps.taskStore,
+            queue: deps.queue,
+          });
+        }
         return { task: updated };
       },
     }),

@@ -16,7 +16,7 @@ export function ReviewSection({
   latestCompletedRunStartedAt,
 }: Props) {
   const showRunReviews =
-    interaction.type === 'run' || interaction.type === 'revise';
+    interaction.type === 'code' || interaction.type === 'revise';
   const showReviewInteraction = interaction.type === 'review';
   const latestCompletedRunStartedAtMS = latestCompletedRunStartedAt
     ? Date.parse(latestCompletedRunStartedAt)

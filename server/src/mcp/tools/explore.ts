@@ -32,10 +32,7 @@ const exploreStatusSchema = z.object({});
 const exploreContextGetSchema = z.object({});
 
 const exploreContextSetSchema = z.object({
-  text: z.preprocess(
-    (value) => value ?? '',
-    z.coerce.string(),
-  ),
+  text: z.preprocess((value) => value ?? '', z.coerce.string()),
 });
 
 export function exploreTools(deps: {

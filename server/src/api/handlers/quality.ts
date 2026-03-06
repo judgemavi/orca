@@ -4,7 +4,7 @@ import type { InteractionStore } from '../../store/interactions';
 export function qualityRoutes(interactions: InteractionStore) {
   return new Hono().get('/tasks/:id/quality', async (c) => {
     const taskID = c.req.param('id');
-    const latest = (await interactions.listByType(taskID, 'run')).find(
+    const latest = (await interactions.listByType(taskID, 'code')).find(
       (interaction) => interaction.qualityJson?.trim(),
     );
 

@@ -111,7 +111,7 @@ function TasksPage() {
     );
   }
 
-  const startPending = isRunning('run');
+  const startPending = isRunning('code');
   const merging = isRunning('merge');
 
   return (
