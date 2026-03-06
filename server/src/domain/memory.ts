@@ -5,10 +5,11 @@ export async function queryMemory(
   q: string,
   limit: number,
 ) {
-  const results = await memory.search(q, limit);
+  const results = await memory.searchWithScores(q, limit);
   return Promise.all(
-    results.map(async (entry) => ({
+    results.map(async ({ entry, score }) => ({
       entry,
+      score,
       usedByTasks: await memory.findUsedByTasks(entry.id),
     })),
   );

@@ -5,7 +5,10 @@ import {
   validateDefaults,
 } from './config/config';
 import { type DatabaseConnection, openDatabase } from './db/connection';
-import { loadEmbeddingRegistry } from './embedding/registry';
+import {
+  type EmbeddingRegistry,
+  loadEmbeddingRegistry,
+} from './embedding/registry';
 import { VectorStore } from './embedding/vector-store';
 import { Executor } from './executor/executor';
 import {
@@ -30,6 +33,7 @@ export interface BootstrapResult {
   database: DatabaseConnection;
   config: Config;
   registry: ToolPluginRegistry;
+  embeddingRegistry: EmbeddingRegistry;
   configStore: ConfigStore;
   taskStore: TaskStore;
   interactionStore: InteractionStore;
@@ -73,10 +77,10 @@ export async function bootstrap(
     await configStore.save(config);
   }
 
-  // Initialize embedding provider (non-blocking, graceful fallback)
+  // Initialize embedding registry and provider (non-blocking, graceful fallback)
+  const embeddingRegistry = await loadEmbeddingRegistry(repoDir);
   if (config.embeddings?.provider) {
     try {
-      const embeddingRegistry = await loadEmbeddingRegistry(repoDir);
       const embeddingPlugin = await embeddingRegistry.resolve(
         config.embeddings,
       );
@@ -117,6 +121,7 @@ export async function bootstrap(
     database,
     config,
     registry,
+    embeddingRegistry,
     configStore,
     taskStore,
     interactionStore,

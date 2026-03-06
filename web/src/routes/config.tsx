@@ -1,7 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import { useConfigQuery, useModelsQuery } from '../hooks/queries';
+import {
+  useConfigQuery,
+  useEmbeddingProvidersQuery,
+  useModelsQuery,
+} from '../hooks/queries';
 import { type Config, INTERACTION_TYPES } from '../types';
 
 type SectionId =
@@ -12,6 +16,7 @@ type SectionId =
   | 'orchestrator'
   | 'monitor'
   | 'quality'
+  | 'embeddings'
   | 'logging';
 
 type SectionCardProps = {
@@ -40,6 +45,103 @@ const inputClass =
   'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-accent';
 
 const sectionClass = 'rounded-lg border';
+
+function EmbeddingsSection({
+  draft,
+  saving,
+  error,
+  onSave,
+  onUpdate,
+}: {
+  draft: Config;
+  saving?: boolean;
+  error?: string | null;
+  onSave: () => void;
+  onUpdate: (value: Config['embeddings'] | undefined) => void;
+}) {
+  const { data: providers } = useEmbeddingProvidersQuery();
+  const selectedProvider = draft.embeddings?.provider ?? '';
+  const providerFields = useMemo(
+    () =>
+      providers?.find((p) => p.name === selectedProvider)?.configFields ?? [],
+    [providers, selectedProvider],
+  );
+
+  // Seed defaults from plugin configFields when provider changes
+  const handleProviderChange = (provider: string) => {
+    if (!provider) {
+      onUpdate(undefined);
+      return;
+    }
+    const fields =
+      providers?.find((p) => p.name === provider)?.configFields ?? [];
+    const seeded: Record<string, unknown> = { provider };
+    for (const field of fields) {
+      seeded[field.key] =
+        (draft.embeddings as any)?.[field.key] ?? field.defaultValue ?? '';
+    }
+    onUpdate(seeded as Config['embeddings']);
+  };
+
+  // Ensure fields are populated when draft loads with existing provider
+  useEffect(() => {
+    if (!selectedProvider || providerFields.length === 0) return;
+    const current = draft.embeddings ?? {};
+    const missing = providerFields.filter((f) => !(f.key in current));
+    if (missing.length === 0) return;
+    const patched = { ...current };
+    for (const field of missing) {
+      (patched as any)[field.key] = field.defaultValue ?? '';
+    }
+    onUpdate(patched as Config['embeddings']);
+  }, [selectedProvider, providerFields]);
+
+  return (
+    <SectionCard
+      title="Embeddings"
+      id="embeddings"
+      saving={saving}
+      error={error}
+      onSave={onSave}
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-xs">
+          Provider
+          <select
+            className={inputClass}
+            value={selectedProvider}
+            onChange={(e) => handleProviderChange(e.target.value)}
+          >
+            <option value="">None (FTS only)</option>
+            {(providers ?? []).map((p) => (
+              <option key={p.name} value={p.name}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedProvider &&
+          providerFields.map((field) => (
+            <LabeledInput
+              key={field.key}
+              label={field.label + (field.hint ? ` (${field.hint})` : '')}
+              value={String(
+                (draft.embeddings as any)?.[field.key] ??
+                  field.defaultValue ??
+                  '',
+              )}
+              onChange={(next) =>
+                onUpdate({
+                  ...draft.embeddings,
+                  [field.key]: next || undefined,
+                } as Config['embeddings'])
+              }
+            />
+          ))}
+      </div>
+    </SectionCard>
+  );
+}
 
 function ConfigPage() {
   const { data, isLoading } = useConfigQuery();
@@ -77,6 +179,7 @@ function ConfigPage() {
           file: '.orca/orca.log',
           maxSize: '50mb',
         },
+        embeddings: data.embeddings,
       });
   }, [data]);
 
@@ -431,6 +534,16 @@ function ConfigPage() {
             }
           />
         </SectionCard>
+
+        <EmbeddingsSection
+          draft={draft}
+          saving={saving.embeddings}
+          error={errors.embeddings}
+          onSave={() =>
+            savePatch('embeddings', { embeddings: draft.embeddings })
+          }
+          onUpdate={(value) => updateSection('embeddings', value)}
+        />
 
         <SectionCard
           title="Logging"

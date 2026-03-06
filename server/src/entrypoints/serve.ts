@@ -94,6 +94,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     interactionStore: ctx.interactionStore,
     memoryStore: ctx.memoryStore,
     registry: ctx.registry,
+    embeddingRegistry: ctx.embeddingRegistry,
     executor: ctx.executor,
     eventSink,
     queue: ctx.queue,

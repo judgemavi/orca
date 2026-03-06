@@ -32,7 +32,8 @@ export function registerMemoryCommands(
           Math.min(Number.parseInt(opts.limit, 10) || 50, 500),
         );
         if ((opts.q ?? '').trim()) {
-          printJSON(await memory.search(opts.q ?? '', limit));
+          const results = await memory.searchWithScores(opts.q ?? '', limit);
+          printJSON(results.map(({ entry, score }) => ({ ...entry, score })));
           return;
         }
         const rows = await memory.list({
@@ -125,6 +126,14 @@ export function registerMemoryCommands(
     .action(async (opts: { entry?: string }) => {
       const entryID = (opts.entry ?? '').trim();
       printJSON(await refreshMemoryEntries(repoDir, memory, entryID));
+    });
+
+  cmd
+    .command('reembed')
+    .description('Re-generate all embeddings (e.g. after model change)')
+    .action(async () => {
+      const count = await memory.reembedAll();
+      printJSON({ reembedded: count });
     });
 }
 

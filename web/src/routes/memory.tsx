@@ -119,6 +119,18 @@ function MemoryPage() {
     },
   });
 
+  const hasSemanticQuery = queryText.trim().length > 0;
+
+  const scoreMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (queryText.trim() && semanticQuery.data) {
+      for (const item of semanticQuery.data) {
+        map.set(item.entry.id, item.score);
+      }
+    }
+    return map;
+  }, [queryText, semanticQuery.data]);
+
   const entries = useMemo(() => {
     if (queryText.trim()) {
       return (semanticQuery.data ?? []).map((item) => item.entry);
@@ -274,6 +286,33 @@ function MemoryPage() {
           );
         },
       }),
+      ...(hasSemanticQuery
+        ? [
+            columnHelper.display({
+              id: 'score',
+              header: 'Score',
+              cell: ({ row }) => {
+                const score = scoreMap.get(row.original.id);
+                if (score == null)
+                  return <span className="text-xs text-muted">—</span>;
+                const pct = Math.round(score * 100);
+                return (
+                  <div className="flex min-w-[90px] items-center gap-2">
+                    <div className="h-1.5 w-12 rounded bg-surface-alt">
+                      <div
+                        className="h-full rounded bg-accent"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-xs tabular-nums text-muted">
+                      {pct}%
+                    </span>
+                  </div>
+                );
+              },
+            }),
+          ]
+        : []),
       columnHelper.accessor('stale', {
         header: 'Stale',
         cell: ({ getValue }) =>
@@ -525,8 +564,10 @@ function MemoryPage() {
       draft,
       editingId,
       expandedContent,
+      hasSemanticQuery,
       overflowing,
       refreshMutation,
+      scoreMap,
       updateMutation.isPending,
     ],
   );
@@ -536,7 +577,6 @@ function MemoryPage() {
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
-  const hasSemanticQuery = queryText.trim().length > 0;
   const listLoading = hasSemanticQuery
     ? semanticQuery.isLoading
     : memoryQuery.isLoading;

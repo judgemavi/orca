@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { OrcaDrizzleDB } from '../db/connection';
+import type { EmbeddingRegistry } from '../embedding/registry';
 import type { Executor } from '../executor/executor';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
@@ -37,6 +38,7 @@ interface RouteDeps {
   interactionStore: InteractionStore;
   memoryStore: MemoryStore;
   registry: ToolPluginRegistry;
+  embeddingRegistry: EmbeddingRegistry;
   executor: Executor;
   eventSink: EventSink;
   queue: JobQueue;
@@ -141,7 +143,15 @@ function infraGroup(deps: RouteDeps) {
         deps.registry,
       ),
     )
-    .route('/', configRoutes(deps.configStore))
+    .route(
+      '/',
+      configRoutes(
+        deps.configStore,
+        deps.embeddingRegistry,
+        deps.memoryStore,
+        deps.db,
+      ),
+    )
     .route('/', modelRoutes(deps.registry))
     .route(
       '/',

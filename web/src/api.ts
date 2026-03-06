@@ -2,6 +2,7 @@ import type { AppType } from '@orca/server';
 import { hc } from 'hono/client';
 import type {
   Config,
+  EmbeddingConfigField,
   Interaction,
   InteractionStub,
   InteractionWithContent,
@@ -260,6 +261,18 @@ export const api = {
       } as any),
     ),
 
+  // User Input
+  provideInput: (
+    id: string,
+    answer: string,
+  ): Promise<{ taskId: string; jobId: string; status: string }> =>
+    unwrap(
+      client.tasks[':id'].input.$post({
+        param: { id },
+        json: { answer },
+      } as any),
+    ),
+
   // Dependencies
   addDependency: (taskId: string, dependsOn: string) =>
     unwrap(
@@ -319,6 +332,9 @@ export const api = {
   getConfig: (): Promise<Config> => unwrap(client.config.$get()),
   updateConfig: (cfgPatch: Partial<Config>): Promise<Config> =>
     unwrap(client.config.$put({ json: cfgPatch as any })),
+  getEmbeddingProviders: (): Promise<
+    Array<{ name: string; configFields: EmbeddingConfigField[] }>
+  > => unwrap((client.config as any)['embedding-providers'].$get()),
 
   // Models
   listModels: async (tool?: string): Promise<Record<string, ModelInfo[]>> => {

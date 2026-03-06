@@ -23,6 +23,18 @@ export class EmbeddingRegistry {
     return [...this.plugins.keys()].sort();
   }
 
+  providers(): Array<{
+    name: string;
+    configFields: ReturnType<EmbeddingPlugin['configFields']>;
+  }> {
+    return [...this.plugins.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, plugin]) => ({
+        name: plugin.name(),
+        configFields: plugin.configFields(),
+      }));
+  }
+
   register(plugin: EmbeddingPlugin): void {
     const name = plugin.name().trim().toLowerCase();
     if (!name) throw new Error('embedding plugin name is required');
@@ -60,26 +72,26 @@ export class EmbeddingRegistry {
     const name = config.provider.trim().toLowerCase();
     let plugin = this.get(name);
 
-    if (!plugin && name === 'ollama') {
+    // Auto-create ollama plugin with config values
+    if (name === 'ollama') {
+      const model = typeof config.model === 'string' ? config.model : undefined;
+      const documentPrefix =
+        typeof config.documentPrefix === 'string'
+          ? config.documentPrefix
+          : undefined;
+      const queryPrefix =
+        typeof config.queryPrefix === 'string' ? config.queryPrefix : undefined;
       plugin = new OllamaEmbeddingPlugin({
-        baseUrl: config.baseUrl,
-        model: config.model,
+        model,
+        documentPrefix,
+        queryPrefix,
       });
-      this.register(plugin);
+      this.plugins.set(name, plugin);
     }
 
     if (!plugin) {
       log.warn('embedding provider not found', { provider: name });
       return null;
-    }
-
-    // Reinitialize ollama with config overrides if needed
-    if (name === 'ollama' && (config.baseUrl || config.model)) {
-      plugin = new OllamaEmbeddingPlugin({
-        baseUrl: config.baseUrl,
-        model: config.model,
-      });
-      this.plugins.set(name, plugin);
     }
 
     const ok = await plugin.available();

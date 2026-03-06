@@ -296,6 +296,14 @@ export class MemoryStore {
   }
 
   async search(query: string, limit: number): Promise<MemoryEntry[]> {
+    const scored = await this.vectorSearch(query, limit, []);
+    return scored.map((s) => s.entry);
+  }
+
+  async searchWithScores(
+    query: string,
+    limit: number,
+  ): Promise<Array<{ entry: MemoryEntry; score: number }>> {
     return this.vectorSearch(query, limit, []);
   }
 
@@ -304,20 +312,24 @@ export class MemoryStore {
     limit: number,
     excludeHashes: string[],
   ): Promise<MemoryEntry[]> {
-    return this.vectorSearch(query, limit, excludeHashes);
+    const scored = await this.vectorSearch(query, limit, excludeHashes);
+    return scored.map((s) => s.entry);
   }
 
   private async vectorSearch(
     query: string,
     limit: number,
     excludeHashes: string[],
-  ): Promise<MemoryEntry[]> {
+  ): Promise<Array<{ entry: MemoryEntry; score: number }>> {
     if (!this.vectorStore || !query.trim() || limit <= 0) return [];
 
     const candidates = await this.vectorStore.search(query, limit * 3);
     if (candidates.length === 0) return [];
 
     const ids = candidates.map((c) => c.memoryId);
+    const distanceMap = new Map(
+      candidates.map((c) => [c.memoryId, c.distance]),
+    );
     const rows = await this.db
       .select()
       .from(memoryEntries)
@@ -339,7 +351,10 @@ export class MemoryStore {
       .slice(0, limit);
 
     await this.loadFilePaths(entries);
-    return entries;
+    return entries.map((entry) => ({
+      entry,
+      score: Math.round((1 - (distanceMap.get(entry.id) ?? 1)) * 100) / 100,
+    }));
   }
 
   async supersede(oldID: string, newID: string): Promise<void> {
@@ -660,13 +675,27 @@ export class MemoryStore {
     };
   }
 
+  async reembedAll(batchSize = 50): Promise<number> {
+    if (!this.vectorStore) return 0;
+    await this.db
+      .update(memoryEntries)
+      .set({ embedding: null })
+      .where(isNull(memoryEntries.supersededBy));
+    return this.backfillEmbeddings(batchSize);
+  }
+
   async backfillEmbeddings(batchSize = 50): Promise<number> {
     if (!this.vectorStore) return 0;
 
     const allRows = await this.db
       .select({ id: memoryEntries.id, content: memoryEntries.content })
       .from(memoryEntries)
-      .where(and(isNull(memoryEntries.supersededBy), isNull(memoryEntries.embedding)))
+      .where(
+        and(
+          isNull(memoryEntries.supersededBy),
+          isNull(memoryEntries.embedding),
+        ),
+      )
       .orderBy(asc(memoryEntries.createdAt));
 
     const missing = allRows;

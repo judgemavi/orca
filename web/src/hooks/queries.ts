@@ -30,6 +30,13 @@ export function useStatusQuery() {
   return useQuery({ queryKey: queryKeys.status, queryFn: api.getStatus });
 }
 
+export function useEmbeddingProvidersQuery() {
+  return useQuery({
+    queryKey: queryKeys.embeddingProviders,
+    queryFn: api.getEmbeddingProviders,
+  });
+}
+
 // ── Models ──────────────────────────────────────────────────────────────
 
 export function useModelsQuery(tool?: string) {

@@ -65,8 +65,7 @@ export interface Config {
   };
   embeddings?: {
     provider: string;
-    model?: string;
-    baseUrl?: string;
+    [key: string]: unknown;
   };
   logging: { level: string; file: string; maxSize: string };
 }
@@ -91,6 +90,8 @@ export interface TaskEvaluation {
   reasoning: string;
   suggestedSubtaskCount: number;
   descriptionHash?: string;
+  needsUserInput?: boolean;
+  userInputQuestion?: string;
 }
 
 export interface AIReviewCheck {
@@ -152,6 +153,7 @@ export interface MemoryEntryDetail {
 
 export interface MemoryQueryResult {
   entry: MemoryEntry;
+  score: number;
   usedByTasks: MemoryUsedByTask[];
 }
 

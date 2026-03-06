@@ -127,9 +127,13 @@ function formatStatusSummary(summary: {
   ].join('\n');
 }
 
-function formatMemoryList(entries: MemoryEntry[]): string {
+function formatMemoryList(
+  entries: (MemoryEntry & { score?: number })[],
+): string {
+  const hasScores = entries.some((e) => typeof e.score === 'number');
   const rows = entries.map((entry) => ({
     id: short(entry.id),
+    ...(hasScores ? { score: `${Math.round((entry.score ?? 0) * 100)}%` } : {}),
     category: entry.category,
     source: entry.sourceType,
     confidence: entry.confidence.toFixed(2),

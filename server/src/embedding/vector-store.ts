@@ -1,7 +1,6 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import type { OrcaDrizzleDB } from '../db/connection';
 import { memoryEntries } from '../db/schema';
-import { log } from '../shared/logger';
 import type { EmbeddingPlugin } from './types';
 
 export class VectorStore {
@@ -12,7 +11,11 @@ export class VectorStore {
 
   async upsert(memoryId: string, text: string): Promise<void> {
     const vector = await this.plugin.embed(text);
-    const buf = Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength);
+    const buf = Buffer.from(
+      vector.buffer,
+      vector.byteOffset,
+      vector.byteLength,
+    );
     await this.db
       .update(memoryEntries)
       .set({ embedding: buf })
@@ -47,13 +50,18 @@ export class VectorStore {
     query: string,
     limit: number,
   ): Promise<Array<{ memoryId: string; distance: number }>> {
-    const queryVec = await this.plugin.embed(query);
+    const queryVec = this.plugin.embedQuery
+      ? await this.plugin.embedQuery(query)
+      : await this.plugin.embed(query);
 
     const rows = await this.db
       .select({ id: memoryEntries.id, embedding: memoryEntries.embedding })
       .from(memoryEntries)
       .where(
-        and(isNotNull(memoryEntries.embedding), isNull(memoryEntries.supersededBy)),
+        and(
+          isNotNull(memoryEntries.embedding),
+          isNull(memoryEntries.supersededBy),
+        ),
       );
 
     const scored: Array<{ memoryId: string; distance: number }> = [];
