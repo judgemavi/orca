@@ -41,4 +41,4 @@ dist-ssr
 
 .tasks/
 .orca/
-tsconfig.tsbuildinfo
+*.tsbuildinfo
