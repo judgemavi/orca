@@ -441,6 +441,64 @@ export class TaskStore {
     };
   }
 
+  async areDependenciesMet(taskID: string): Promise<boolean> {
+    const depsAlias = alias(taskDepsTable, 'd');
+    const depTaskAlias = alias(tasksTable, 'dep');
+    const blocking = await this.db
+      .select({ one: sql<number>`1` })
+      .from(depsAlias)
+      .innerJoin(depTaskAlias, eq(depTaskAlias.id, depsAlias.dependsOn))
+      .where(
+        and(
+          eq(depsAlias.taskId, taskID),
+          ne(depTaskAlias.status, TASK_STATUSES.merged),
+        ),
+      )
+      .limit(1);
+    return blocking.length === 0;
+  }
+
+  async getUnblockedDependents(mergedTaskId: string): Promise<Task[]> {
+    const dependentRows = await this.db
+      .select({ taskId: taskDepsTable.taskId })
+      .from(taskDepsTable)
+      .where(eq(taskDepsTable.dependsOn, mergedTaskId));
+
+    if (dependentRows.length === 0) return [];
+
+    const candidateIds = dependentRows.map((r) => r.taskId);
+    const depsAlias = alias(taskDepsTable, 'd');
+    const depTaskAlias = alias(tasksTable, 'dep');
+    const blockingDeps = this.db
+      .select({ one: sql<number>`1` })
+      .from(depsAlias)
+      .innerJoin(depTaskAlias, eq(depTaskAlias.id, depsAlias.dependsOn))
+      .where(
+        and(
+          eq(depsAlias.taskId, tasksTable.id),
+          ne(depTaskAlias.status, TASK_STATUSES.merged),
+        ),
+      );
+
+    const rows = await this.db
+      .select()
+      .from(tasksTable)
+      .where(
+        and(
+          inArray(tasksTable.id, candidateIds),
+          inArray(tasksTable.status, [
+            TASK_STATUSES.pending,
+            TASK_STATUSES.planned,
+          ]),
+          notExists(blockingDeps),
+        ),
+      )
+      .orderBy(asc(tasksTable.createdAt));
+
+    const deps = await this.loadDepsForTaskIDs(rows.map((r) => r.id));
+    return rows.map((r) => this.mapTask(r, deps.get(r.id) ?? []));
+  }
+
   private async loadDeps(taskID: string): Promise<string[]> {
     const rows = await this.db
       .select({ dependsOn: taskDepsTable.dependsOn })

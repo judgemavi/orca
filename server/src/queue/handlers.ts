@@ -79,6 +79,13 @@ export function registerJobHandlers(
   // evaluate
   processor.register('evaluate', async (job: Job) => {
     const taskId = job.taskId!;
+
+    const depsMet = await deps.taskStore.areDependenciesMet(taskId);
+    if (!depsMet) {
+      log.info('evaluate skipped: dependencies not met', { taskId });
+      return { taskId, skipped: true, reason: 'dependencies_not_met' };
+    }
+
     deps.sink.broadcast('evaluate.started', { taskId });
 
     try {
@@ -254,10 +261,16 @@ export function registerJobHandlers(
     }
   });
 
-  // run — call internal directly to avoid re-enqueue loop
-  // code (formerly 'run') — execute task implementation
+  // code — execute task implementation
   processor.register('code', async (job: Job) => {
     const taskId = job.taskId!;
+
+    const depsMet = await deps.taskStore.areDependenciesMet(taskId);
+    if (!depsMet) {
+      log.info('code skipped: dependencies not met', { taskId });
+      return { taskId, skipped: true, reason: 'dependencies_not_met' };
+    }
+
     const feedback = str(job.payload?.feedback);
     const autoReviewAfter = Boolean(job.payload?._autoReviewAfter);
 
@@ -349,7 +362,7 @@ export function registerJobHandlers(
 
       failBroadcast = false;
       deps.sink.broadcast('merge.completed', { taskId, result });
-      // retro is already triggered by post-merge hooks in mergeTask
+      // unblockDependents + retro already triggered inside mergeTask
       return { taskId, status: result.status };
     } catch (err) {
       if (failBroadcast) {

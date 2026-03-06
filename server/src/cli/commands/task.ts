@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import { mergeTaskWithGit } from '../../domain/integrator';
 import { triggerPostMergeHooks } from '../../domain/post-merge';
+import { unblockDependents } from '../../queue/chain';
 import type { Executor } from '../../executor/executor';
 import type { ToolPluginRegistry } from '../../plugin/registry';
 import type { JobQueue } from '../../queue/queue';
@@ -443,6 +444,13 @@ export function registerTaskCommands(
           memoryStore: deps.memoryStore,
           configStore: deps.configStore,
         });
+        if (deps.queue) {
+          await unblockDependents(taskID, {
+            configStore: deps.configStore,
+            taskStore: deps.taskStore,
+            queue: deps.queue,
+          });
+        }
       } else {
         await deps.taskStore.updateStatus(taskID, 'failed');
       }

@@ -189,15 +189,9 @@ export async function acceptBreakdown(
       parentId: normalizedParentID || null,
     });
     createdIDs.push(created.id);
-    if (deps.queue) {
-      await deps.queue.enqueue({
-        type: 'evaluate',
-        taskId: created.id,
-        priority: JOB_PRIORITIES.evaluate,
-      });
-    }
   }
 
+  // Set deps before enqueueing evaluate so dep checks work
   for (const [index, item] of normalizedProposals.entries()) {
     const taskID = createdIDs[index];
     const dependencyIDs = (item.dependsOnIndices ?? [])
@@ -205,6 +199,20 @@ export async function acceptBreakdown(
       .filter(Boolean);
     if (dependencyIDs.length > 0) {
       await deps.taskStore.updateDependencies(taskID, dependencyIDs);
+    }
+  }
+
+  // Only enqueue evaluate for tasks with all deps met (or no deps)
+  if (deps.queue) {
+    for (const taskId of createdIDs) {
+      const met = await deps.taskStore.areDependenciesMet(taskId);
+      if (met) {
+        await deps.queue.enqueue({
+          type: 'evaluate',
+          taskId,
+          priority: JOB_PRIORITIES.evaluate,
+        });
+      }
     }
   }
 

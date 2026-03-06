@@ -33,6 +33,16 @@ export async function resumeChain(
   ]);
   if (!isAutoRun(config, next.interactionType, task?.autoRunOverrides)) return;
 
+  const depsMet = await deps.taskStore.areDependenciesMet(taskId);
+  if (!depsMet) {
+    log.info('auto-chain skipped: dependencies not met', {
+      taskId,
+      status: newStatus,
+      next: next.jobType,
+    });
+    return;
+  }
+
   log.info('auto-chaining from status change', {
     taskId,
     status: newStatus,
@@ -43,4 +53,42 @@ export async function resumeChain(
     taskId,
     priority: JOB_PRIORITIES[next.jobType],
   });
+}
+
+export async function unblockDependents(
+  mergedTaskId: string,
+  deps: ChainDeps,
+): Promise<void> {
+  const unblocked = await deps.taskStore.getUnblockedDependents(mergedTaskId);
+  if (unblocked.length === 0) return;
+
+  const config = await deps.configStore.load();
+
+  for (const task of unblocked) {
+    if (task.status === 'planned') {
+      // Task already planned, resume chain to start code
+      if (!isAutoRun(config, 'code', task.autoRunOverrides)) continue;
+      log.info('unblocking planned task for code', {
+        taskId: task.id,
+        unblockedBy: mergedTaskId,
+      });
+      await deps.queue.enqueue({
+        type: 'code',
+        taskId: task.id,
+        priority: JOB_PRIORITIES.code,
+      });
+    } else {
+      // Task is pending, start from evaluate
+      if (!isAutoRun(config, 'evaluate', task.autoRunOverrides)) continue;
+      log.info('unblocking pending task for evaluate', {
+        taskId: task.id,
+        unblockedBy: mergedTaskId,
+      });
+      await deps.queue.enqueue({
+        type: 'evaluate',
+        taskId: task.id,
+        priority: JOB_PRIORITIES.evaluate,
+      });
+    }
+  }
 }

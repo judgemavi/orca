@@ -161,14 +161,16 @@ export function taskTools(deps: {
           autoRunOverrides: input.autoRunOverrides,
         });
 
-        if (Array.isArray(input.dependsOn) && input.dependsOn.length > 0) {
+        const hasDeps =
+          Array.isArray(input.dependsOn) && input.dependsOn.length > 0;
+        if (hasDeps) {
           await deps.taskStore.updateDependencies(
             task.id,
-            input.dependsOn.map((value) => value.trim()).filter(Boolean),
+            input.dependsOn!.map((value) => value.trim()).filter(Boolean),
           );
         }
 
-        if (deps.queue) {
+        if (deps.queue && !hasDeps) {
           await deps.queue.enqueue({
             type: 'evaluate',
             taskId: task.id,

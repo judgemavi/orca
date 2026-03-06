@@ -9,6 +9,7 @@ import {
   triggerPostMergeHooks,
 } from '../domain/post-merge';
 import type { ToolPluginRegistry } from '../plugin/registry';
+import { unblockDependents } from '../queue/chain';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
@@ -70,6 +71,14 @@ export async function mergeTask(
     queue: deps.queue,
   });
 
+  if (deps.queue) {
+    await unblockDependents(taskID, {
+      configStore: deps.configStore,
+      taskStore: deps.taskStore,
+      queue: deps.queue,
+    });
+  }
+
   return result;
 }
 
@@ -96,6 +105,17 @@ export async function mergeAllApproved(
       sink: deps.sink,
       queue: deps.queue,
     });
+  }
+
+  // Unblock dependents after all merges are done
+  if (deps.queue) {
+    for (const id of result.merged) {
+      await unblockDependents(id, {
+        configStore: deps.configStore,
+        taskStore: deps.taskStore,
+        queue: deps.queue,
+      });
+    }
   }
 
   for (const id of result.failed) {
