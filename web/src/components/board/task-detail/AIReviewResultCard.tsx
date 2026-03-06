@@ -69,7 +69,14 @@ export function AIReviewResultCard({
   }
   if (!ri) return null;
 
-  if (ri.status === INTERACTION_STATUSES.failed) {
+  const isFailed = ri.status === INTERACTION_STATUSES.failed;
+  const parsed = ri.qualityJson ? parseJSONText(ri.qualityJson) : null;
+  const result =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Partial<AIReviewResult>)
+      : null;
+
+  if (isFailed && !result?.feedback) {
     return (
       <div className="rounded-lg border border-danger/30 bg-danger/10 p-2.5">
         <div className="flex items-center gap-2">
@@ -86,15 +93,8 @@ export function AIReviewResultCard({
     );
   }
 
-  if (!ri.qualityJson) return null;
+  if (!result || typeof result.feedback !== 'string') return null;
 
-  const parsed = parseJSONText(ri.qualityJson);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return null;
-  }
-
-  const result = parsed as Partial<AIReviewResult>;
-  if (typeof result.feedback !== 'string') return null;
   const cost =
     ri.estimatedCost > 0 ? `$${ri.estimatedCost.toFixed(2)}` : undefined;
 
@@ -102,6 +102,11 @@ export function AIReviewResultCard({
     <div className="space-y-1">
       <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.05em]">
         <span>AI Review</span>
+        {isFailed && ri.error && (
+          <span className="text-[10px] font-normal text-muted">
+            ({ri.error})
+          </span>
+        )}
         {logButton}
       </div>
       <ReviewResultCard

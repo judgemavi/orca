@@ -1,5 +1,6 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
 import * as Collapsible from '@radix-ui/react-collapsible';
+import { Check, Dot, Hammer, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { InteractionStub } from '../../../types';
 import { useInteractionDetailContext } from './InteractionDetailContext';
@@ -26,10 +27,13 @@ function formatCost(value: number | undefined): string {
   return `$${(value ?? 0).toFixed(2)}`;
 }
 
-function statusIcon(status: InteractionStub['status']) {
-  if (status === INTERACTION_STATUSES.completed) return '✓';
-  if (status === INTERACTION_STATUSES.failed) return '✗';
-  return '●';
+function statusIcon(status: InteractionStub['status'], type?: string) {
+  if (status === INTERACTION_STATUSES.completed) return <Check size={14} />;
+  if (status === INTERACTION_STATUSES.failed) {
+    if (type === 'review') return <Hammer size={14} />;
+    return <X size={14} />;
+  }
+  return <Dot size={14} />;
 }
 
 function typeBadgeTone(type: string | undefined): string {
@@ -94,12 +98,14 @@ export function InteractionEntry({
                   stub.status === INTERACTION_STATUSES.completed
                     ? 'border-emerald-500 text-emerald-500'
                     : stub.status === INTERACTION_STATUSES.failed
-                      ? 'border-danger text-danger'
+                      ? stub.type === 'review'
+                        ? 'border-amber-500 text-amber-500'
+                        : 'border-danger text-danger'
                       : 'animate-pulse border-accent text-accent',
                 ].join(' ')}
                 aria-hidden
               >
-                {statusIcon(stub.status)}
+                {statusIcon(stub.status, stub.type)}
               </span>
               <span className="font-mono">#{stub.attempt}</span>
               {typeLabel && (

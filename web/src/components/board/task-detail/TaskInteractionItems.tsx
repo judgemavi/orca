@@ -1,5 +1,5 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import type { InteractionStub, Task, TaskReview } from '../../../types';
 import { BreakdownSection } from './BreakdownSection';
 import { EvaluateSection } from './EvaluateSection';
@@ -36,7 +36,6 @@ function InteractionContent({
   merge,
   planReviews,
   runReviews,
-  runReviewStubs,
   latestCompletedRunStartedAt,
   isLatestRunningMerge,
   isLatestFailedMerge,
@@ -52,7 +51,6 @@ function InteractionContent({
   merge: ReturnType<typeof useMergeHandler>;
   planReviews: TaskReview[];
   runReviews: TaskReview[];
-  runReviewStubs: InteractionStub[];
   latestCompletedRunStartedAt?: string;
   isLatestRunningMerge: boolean;
   isLatestFailedMerge: boolean;
@@ -98,9 +96,6 @@ function InteractionContent({
       <RunSection interaction={interaction} task={task} />
       <ReviewSection
         interaction={interaction}
-        runReviewInteractions={
-          stub.type === 'code' || stub.type === 'revise' ? runReviewStubs : []
-        }
         runReviews={runReviews}
         latestCompletedRunStartedAt={latestCompletedRunStartedAt}
       />
@@ -131,10 +126,6 @@ export function TaskInteractionItems({
   const runStubs = useMemo(
     () =>
       stubs.filter((item) => item.type === 'code' || item.type === 'revise'),
-    [stubs],
-  );
-  const reviewStubs = useMemo(
-    () => stubs.filter((item) => item.type === 'review'),
     [stubs],
   );
   const mergeStubs = useMemo(
@@ -189,28 +180,6 @@ export function TaskInteractionItems({
     : NaN;
   const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS);
 
-  const getReviewStubsForRun = useCallback(
-    (runId: string, runStartedAt: string): InteractionStub[] => {
-      const runIndex = runStubs.findIndex((run) => run.id === runId);
-      const nextRunStartedAt =
-        runIndex < runStubs.length - 1
-          ? runStubs[runIndex + 1]?.startedAt
-          : null;
-
-      return reviewStubs.filter((reviewStub) => {
-        const reviewStart = Date.parse(reviewStub.startedAt);
-        const runStart = Date.parse(runStartedAt);
-        if (!Number.isFinite(reviewStart) || !Number.isFinite(runStart))
-          return false;
-        if (reviewStart < runStart) return false;
-        if (nextRunStartedAt && reviewStart >= Date.parse(nextRunStartedAt))
-          return false;
-        return true;
-      });
-    },
-    [reviewStubs, runStubs],
-  );
-
   const taskId = task.id;
 
   return (
@@ -252,11 +221,6 @@ export function TaskInteractionItems({
               runReviews={runReviews.filter(
                 (review) => review.interactionId === item.id,
               )}
-              runReviewStubs={
-                item.type === 'code' || item.type === 'revise'
-                  ? getReviewStubsForRun(item.id, item.startedAt)
-                  : []
-              }
               latestCompletedRunStartedAt={
                 latestCompletedRunStartedAt ?? undefined
               }

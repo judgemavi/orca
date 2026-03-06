@@ -57,10 +57,14 @@ export function ReviewResultCard({
               ? 'bg-surface text-muted'
               : approved
                 ? 'bg-emerald-500/15 text-emerald-700'
-                : 'bg-rose-500/15 text-rose-700',
+                : 'bg-amber-500/15 text-amber-700',
           ].join(' ')}
         >
-          {isDismissed ? 'dismissed' : approved ? 'pass' : 'fail'}
+          {isDismissed
+            ? 'dismissed'
+            : approved
+              ? 'approved'
+              : 'changes requested'}
         </span>
         {taskId ? (
           <span className="text-muted">

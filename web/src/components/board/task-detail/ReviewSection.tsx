@@ -1,17 +1,15 @@
 import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/server/types';
-import type { Interaction, InteractionStub, TaskReview } from '../../../types';
+import type { Interaction, TaskReview } from '../../../types';
 import { AIReviewResultCard } from './AIReviewResultCard';
 
 type Props = {
   interaction: Interaction;
-  runReviewInteractions: InteractionStub[];
   runReviews: TaskReview[];
   latestCompletedRunStartedAt?: string;
 };
 
 export function ReviewSection({
   interaction,
-  runReviewInteractions,
   runReviews,
   latestCompletedRunStartedAt,
 }: Props) {
@@ -22,11 +20,6 @@ export function ReviewSection({
     ? Date.parse(latestCompletedRunStartedAt)
     : NaN;
   const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS);
-  const visibleRunReviewInteractions = hasReviewCutoff
-    ? runReviewInteractions.filter(
-        (item) => Date.parse(item.startedAt) > latestCompletedRunStartedAtMS,
-      )
-    : runReviewInteractions;
   const visibleRunReviews = hasReviewCutoff
     ? runReviews.filter(
         (review) =>
@@ -38,18 +31,6 @@ export function ReviewSection({
 
   return (
     <>
-      {showRunReviews && visibleRunReviewInteractions.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {visibleRunReviewInteractions.map((reviewStub) => (
-            <AIReviewResultCard
-              key={reviewStub.id}
-              stub={reviewStub}
-              showLogButton
-            />
-          ))}
-        </div>
-      )}
-
       {showRunReviews &&
         interaction.status === INTERACTION_STATUSES.completed &&
         visibleRunReviews.length > 0 && (
