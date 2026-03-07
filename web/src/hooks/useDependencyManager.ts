@@ -17,7 +17,7 @@ export function useDependencyManager(taskId: string, currentDeps: string[]) {
       setSelectedDependencyId('');
       await queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
     },
-    onError: (err: any) => {
+    onError: (err) => {
       setDependencyError(err?.message ?? 'Failed to add dependency');
     },
   });

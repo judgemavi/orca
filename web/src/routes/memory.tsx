@@ -70,15 +70,7 @@ type EditDraft = {
   category: MemoryCategory;
 };
 
-function formatDate(iso: string) {
-  const date = new Date(iso);
-  if (!Number.isFinite(date.getTime())) return '—';
-  return date.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-  });
-}
+import { formatDate } from '../lib/format';
 
 function MemoryPage() {
   const [queryText, setQueryText] = useState('');

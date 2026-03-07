@@ -30,9 +30,9 @@ export function defaultConfig(): Config {
     validation: { commands: [] },
     workers: { maxParallel: 3 },
     monitor: {
-      stuckCheckInterval: '60s',
+      stuckCheckIntervalMs: 60_000,
       maxStuckCycles: 10,
-      conflictCheckInterval: '30s',
+      conflictCheckIntervalMs: 30_000,
     },
     quality: {
       enabled: true,
@@ -74,14 +74,12 @@ export function validateConfig(config: Config): Config {
       `monitor.maxStuckCycles must be >= 0, got ${config.monitor.maxStuckCycles}`,
     );
   }
-  validateDuration(
-    config.monitor.stuckCheckInterval,
-    'monitor.stuckCheckInterval',
-  );
-  validateDuration(
-    config.monitor.conflictCheckInterval,
-    'monitor.conflictCheckInterval',
-  );
+  if (config.monitor.stuckCheckIntervalMs <= 0) {
+    throw new Error('monitor.stuckCheckIntervalMs must be > 0');
+  }
+  if (config.monitor.conflictCheckIntervalMs <= 0) {
+    throw new Error('monitor.conflictCheckIntervalMs must be > 0');
+  }
   return config;
 }
 
@@ -267,10 +265,3 @@ export function isAutoRun(
   return config.interactions[interactionType]?.autoRun ?? true;
 }
 
-function validateDuration(raw: string, field: string): void {
-  const normalized = raw.trim();
-  if (!normalized) return;
-  if (!/^(\d+(ns|us|ms|s|m|h))+$/.test(normalized)) {
-    throw new Error(`${field} must be a valid duration`);
-  }
-}

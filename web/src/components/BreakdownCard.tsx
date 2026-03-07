@@ -1,4 +1,4 @@
-import type { ProposedTask } from '../../types';
+import type { ProposedTask } from '../types';
 
 interface BreakdownCardProps {
   proposed: ProposedTask[];

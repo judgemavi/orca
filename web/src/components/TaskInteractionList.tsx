@@ -1,12 +1,12 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
 import { useCallback, useEffect, useState } from 'react';
-import { useTaskDetailContext } from '../../../context/TaskDetailContext';
-import { useTaskReviewsQuery } from '../../../hooks/queries';
+import { useTaskDetailContext } from '../context/TaskDetailContext';
+import { useTaskReviewsQuery } from '../hooks/queries';
+import { useInteractionStubsQuery } from '../hooks/useInteractions';
+import { useMergeHandler } from '../hooks/useMergeHandler';
+import { usePlanEditor } from '../hooks/usePlanEditor';
 import { InteractionDetailProvider } from './InteractionDetailContext';
 import { TaskInteractionItems } from './TaskInteractionItems';
-import { useInteractionStubsQuery } from './useInteractions';
-import { useMergeHandler } from './useMergeHandler';
-import { usePlanEditor } from './usePlanEditor';
 
 interface Props {
   taskId: string;

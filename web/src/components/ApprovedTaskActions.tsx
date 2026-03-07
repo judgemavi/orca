@@ -1,13 +1,9 @@
-import { useTaskDetailContext } from '../../../context/TaskDetailContext';
-import { Button } from '../../Button';
+import { useTaskDetailContext } from '../context/TaskDetailContext';
+import { useTaskActions } from '../hooks/useTaskActions';
+import { Button } from './Button';
 import { TaskActionsLayout } from './TaskActionsLayout';
-import { useTaskActions } from './useTaskActions';
 
-interface Props {
-  onClose: () => void;
-}
-
-export function MergedTaskActions({ onClose }: Props) {
+export function ApprovedTaskActions() {
   const { task } = useTaskDetailContext();
   const actions = useTaskActions(task);
 
@@ -22,8 +18,12 @@ export function MergedTaskActions({ onClose }: Props) {
       onModelChange={actions.setActionModel}
       actionError={actions.actionError}
       actions={
-        <Button variant="default" onClick={onClose} type="button">
-          Close
+        <Button
+          variant="primary"
+          onClick={actions.handleMerge}
+          disabled={actions.operationInProgress}
+        >
+          {actions.mergeInProgress ? 'Merging…' : 'Merge'}
         </Button>
       }
     />

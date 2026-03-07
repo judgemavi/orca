@@ -1,13 +1,13 @@
 import { TASK_STATUSES } from '@orca/server/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../../../api';
-import { useTaskDetailContext } from '../../../context/TaskDetailContext';
-import { queryKeys } from '../../../lib/queryKeys';
-import { getErrorMessage } from '../../../lib/utils';
-import { Button } from '../../Button';
+import { api } from '../api';
+import { useTaskDetailContext } from '../context/TaskDetailContext';
+import { useTaskActions } from '../hooks/useTaskActions';
+import { queryKeys } from '../lib/queryKeys';
+import { getErrorMessage } from '../lib/utils';
+import { Button } from './Button';
 import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout';
-import { useTaskActions } from './useTaskActions';
 
 function PendingQuestionActions({ question }: { question: string }) {
   const { task } = useTaskDetailContext();

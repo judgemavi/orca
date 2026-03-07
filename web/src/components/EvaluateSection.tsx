@@ -2,9 +2,9 @@ import { INTERACTION_STATUSES } from '@orca/server/types';
 import {
   parseEvaluationPayload,
   parseJSONText,
-} from '../../../lib/orchestratorRichContent';
-import type { Interaction } from '../../../types';
-import { EvaluationCard } from '../../shared/EvaluationCard';
+} from '../lib/orchestratorRichContent';
+import type { Interaction } from '../types';
+import { EvaluationCard } from './EvaluationCard';
 
 type Props = {
   interaction: Interaction;

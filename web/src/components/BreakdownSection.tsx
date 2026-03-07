@@ -2,10 +2,10 @@ import { INTERACTION_STATUSES } from '@orca/server/types';
 import {
   parseBreakdownPayload,
   parseJSONText,
-} from '../../../lib/orchestratorRichContent';
-import type { Interaction, ProposedTask } from '../../../types';
-import { Button } from '../../Button';
-import { BreakdownCard } from '../../shared/BreakdownCard';
+} from '../lib/orchestratorRichContent';
+import type { Interaction, ProposedTask } from '../types';
+import { BreakdownCard } from './BreakdownCard';
+import { Button } from './Button';
 
 type Props = {
   interaction: Interaction;

@@ -6,7 +6,13 @@ import ReactDOM from 'react-dom/client';
 import { routeTree } from './routeTree.gen';
 
 // Create a new router instance
-export const router = createRouter({ routeTree, basepath: '/ui' });
+export const router = createRouter({
+  routeTree,
+  basepath: '/ui',
+  context: {
+    colorScheme: 'dark',
+  },
+});
 
 // Register the router instance for type safety
 declare module '@tanstack/react-router' {

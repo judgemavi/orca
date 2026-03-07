@@ -1,7 +1,7 @@
 import { TASK_STATUSES } from '@orca/server/types';
-import { useTaskDetailContext } from '../../../context/TaskDetailContext';
-import { Button } from '../../Button';
+import { useTaskDetailContext } from '../context/TaskDetailContext';
 import { ApprovedTaskActions } from './ApprovedTaskActions';
+import { Button } from './Button';
 import { FailedTaskActions } from './FailedTaskActions';
 import { MergedTaskActions } from './MergedTaskActions';
 import { PendingTaskActions } from './PendingTaskActions';

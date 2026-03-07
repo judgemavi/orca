@@ -1,5 +1,5 @@
 import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/server/types';
-import type { Interaction, TaskReview } from '../../../types';
+import type { Interaction, TaskReview } from '../types';
 import { AIReviewResultCard } from './AIReviewResultCard';
 
 type Props = {

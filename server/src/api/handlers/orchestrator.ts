@@ -195,7 +195,7 @@ export async function onOrchestratorWSOpen(ws: any) {
   }
 }
 
-export function onOrchestratorWSMessage(ws: any, message: any) {
+export function onOrchestratorWSMessage(message: any) {
   if (!activePTY || activePTY.dead) return;
   const proc = activePTY.proc;
 

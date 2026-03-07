@@ -1,6 +1,10 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
 import { useMemo } from 'react';
-import type { InteractionStub, Task, TaskReview } from '../../../types';
+import { useInteractionMetaQuery } from '../hooks/useInteractions';
+import type { useMergeHandler } from '../hooks/useMergeHandler';
+import type { usePlanEditor } from '../hooks/usePlanEditor';
+import { useTaskActions } from '../hooks/useTaskActions';
+import type { InteractionStub, Task, TaskReview } from '../types';
 import { BreakdownSection } from './BreakdownSection';
 import { EvaluateSection } from './EvaluateSection';
 import { InteractionEntry } from './InteractionEntry';
@@ -8,10 +12,6 @@ import { MergeSection } from './MergeSection';
 import { PlanSection } from './PlanSection';
 import { ReviewSection } from './ReviewSection';
 import { RunSection } from './RunSection';
-import { useInteractionMetaQuery } from './useInteractions';
-import type { useMergeHandler } from './useMergeHandler';
-import type { usePlanEditor } from './usePlanEditor';
-import { useTaskActions } from './useTaskActions';
 
 type Props = {
   stubs: InteractionStub[];

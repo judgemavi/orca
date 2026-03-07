@@ -42,34 +42,7 @@ type TaskDetailFormProps = {
   saving: boolean;
 };
 
-function formatRelativeTime(iso: string) {
-  const timestamp = Date.parse(iso);
-  if (!Number.isFinite(timestamp)) return 'just now';
-
-  const deltaSeconds = Math.round((timestamp - Date.now()) / 1000);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-  const ranges: Array<{
-    limit: number;
-    unit: Intl.RelativeTimeFormatUnit;
-    inSeconds: number;
-  }> = [
-    { limit: 60, unit: 'second', inSeconds: 1 },
-    { limit: 3600, unit: 'minute', inSeconds: 60 },
-    { limit: 86400, unit: 'hour', inSeconds: 3600 },
-    { limit: 604800, unit: 'day', inSeconds: 86400 },
-    { limit: 2629800, unit: 'week', inSeconds: 604800 },
-    { limit: 31557600, unit: 'month', inSeconds: 2629800 },
-    { limit: Number.POSITIVE_INFINITY, unit: 'year', inSeconds: 31557600 },
-  ];
-
-  for (const range of ranges) {
-    if (Math.abs(deltaSeconds) < range.limit) {
-      return rtf.format(Math.round(deltaSeconds / range.inSeconds), range.unit);
-    }
-  }
-
-  return 'just now';
-}
+import { formatRelativeTime } from '../lib/format';
 
 function TaskDetailPage() {
   const { taskId } = useParams({ from: '/$taskId' });

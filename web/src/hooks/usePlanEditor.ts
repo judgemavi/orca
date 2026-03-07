@@ -1,8 +1,8 @@
 import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/server/types';
 import { useEffect, useMemo, useState } from 'react';
-import { useSavePlanMutation, useTaskPlanQuery } from '../../../hooks/queries';
-import { getErrorMessage } from '../../../lib/utils';
-import type { InteractionStub, Task } from '../../../types';
+import { getErrorMessage } from '../lib/utils';
+import type { InteractionStub, Task } from '../types';
+import { useSavePlanMutation, useTaskPlanQuery } from './queries';
 
 type Args = {
   taskId: string;

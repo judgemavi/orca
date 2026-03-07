@@ -1,9 +1,9 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
-import { parseJSONText } from '../../../lib/orchestratorRichContent';
-import type { AIReviewResult, InteractionStub } from '../../../types';
-import { ReviewResultCard } from '../../shared/ReviewResultCard';
+import { useInteractionMetaQuery } from '../hooks/useInteractions';
+import { parseJSONText } from '../lib/orchestratorRichContent';
+import type { AIReviewResult, InteractionStub } from '../types';
 import { useInteractionDetailContext } from './InteractionDetailContext';
-import { useInteractionMetaQuery } from './useInteractions';
+import { ReviewResultCard } from './ReviewResultCard';
 
 interface Props {
   stub: InteractionStub;

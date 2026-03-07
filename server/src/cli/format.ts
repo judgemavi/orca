@@ -31,8 +31,7 @@ export function printResult(data: unknown) {
 }
 
 export function printError(error: unknown, code = 'ERROR') {
-  const message =
-    error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
   if (jsonMode) {
     console.error(JSON.stringify({ ok: false, error: message, code }));
   } else {

@@ -1,10 +1,10 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { controlClass } from '../../../lib/constants';
-import type { Interaction } from '../../../types';
-import { Button } from '../../Button';
-import { ToolModelSelector } from '../../common/ToolModelSelector';
-import type { useMergeHandler } from './useMergeHandler';
+import type { useMergeHandler } from '../hooks/useMergeHandler';
+import { controlClass } from '../lib/constants';
+import type { Interaction } from '../types';
+import { Button } from './Button';
+import { ToolModelSelector } from './ToolModelSelector';
 
 type MergeState = ReturnType<typeof useMergeHandler>;
 

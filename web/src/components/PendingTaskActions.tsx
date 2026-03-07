@@ -1,8 +1,8 @@
 import { TASK_STATUSES } from '@orca/server/types';
-import { useTaskDetailContext } from '../../../context/TaskDetailContext';
-import { Button } from '../../Button';
+import { useTaskDetailContext } from '../context/TaskDetailContext';
+import { useTaskActions } from '../hooks/useTaskActions';
+import { Button } from './Button';
 import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout';
-import { useTaskActions } from './useTaskActions';
 
 export function PendingTaskActions() {
   const { task } = useTaskDetailContext();

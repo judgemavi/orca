@@ -37,16 +37,7 @@ const JOB_VARIANT: Record<JobStatus, BadgeVariant> = {
   cancelled: 'default',
 };
 
-function relativeTime(iso: string | null): string {
-  if (!iso) return '—';
-  const diffMs = Date.now() - Date.parse(iso);
-  if (!Number.isFinite(diffMs)) return '—';
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  return `${Math.floor(min / 60)}h ago`;
-}
+import { formatRelativeTime } from '../lib/format';
 
 function JobStatusBadge({ status }: { status: JobStatus }) {
   return (
@@ -95,10 +86,10 @@ function JobRow({
         {job.priority}
       </TableCell>
       <TableCell className="text-xs text-muted">
-        {relativeTime(job.createdAt)}
+        {formatRelativeTime(job.createdAt)}
       </TableCell>
       <TableCell className="text-xs text-muted">
-        {relativeTime(job.startedAt)}
+        {formatRelativeTime(job.startedAt)}
       </TableCell>
       <TableCell>
         {job.status === 'queued' ? (

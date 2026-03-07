@@ -54,7 +54,7 @@ export async function bootstrap(
   let registry = fallbackToolPluginRegistry();
   try {
     registry = await loadToolPluginRegistry(repoDir);
-  } catch (error) {
+  } catch (_) {
     log.warn(
       'failed to load plugin registry from .orca/plugins, using built-ins',
     );

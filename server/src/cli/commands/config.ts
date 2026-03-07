@@ -17,7 +17,10 @@ export function registerConfigCommands(
   configStore: ConfigStore,
   registry: ToolPluginRegistry,
 ) {
-  const config = program.command('config').alias('c').description('Config operations');
+  const config = program
+    .command('config')
+    .alias('c')
+    .description('Config operations');
 
   config.command('get').action(async () => {
     printJSON(await configStore.load());

@@ -1,10 +1,10 @@
 import { TASK_STATUSES } from '@orca/server/types';
 import { useMutation } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../../../api';
-import { useToolModelSelection } from '../../../hooks/useToolModelSelection';
-import { useWebSocket } from '../../../hooks/useWebSocket';
-import { isKnownWSEvent } from '../../../types';
+import { api } from '../api';
+import { isKnownWSEvent } from '../types';
+import { useToolModelSelection } from './useToolModelSelection';
+import { useWebSocket } from './useWebSocket';
 
 type Args = {
   taskId: string;

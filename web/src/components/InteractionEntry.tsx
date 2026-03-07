@@ -17,16 +17,7 @@ interface Props {
   children?: ReactNode;
 }
 
-function formatDuration(durationMs: number | undefined): string {
-  if (!Number.isFinite(durationMs) || !durationMs || durationMs < 0) return '-';
-  if (durationMs < 1000) return `${durationMs} ms`;
-  return `${(durationMs / 1000).toFixed(1)}s`;
-}
-
-function formatCost(value: number | undefined): string {
-  if (!Number.isFinite(value)) return '$0.00';
-  return `$${(value ?? 0).toFixed(2)}`;
-}
+import { formatCost, formatDuration } from '../lib/format';
 
 function statusIcon(status: InteractionStub['status'], type?: string) {
   if (status === INTERACTION_STATUSES.completed) return <Check size={14} />;

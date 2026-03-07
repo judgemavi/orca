@@ -46,8 +46,8 @@ export function startHTTPServer(
         orchestratorSockets.add(ws);
         onOrchestratorWSOpen(ws);
       },
-      message(ws: any, message: any) {
-        onOrchestratorWSMessage(ws, message);
+      message(message: any) {
+        onOrchestratorWSMessage(message);
       },
       close(ws: any) {
         orchestratorSockets.delete(ws);

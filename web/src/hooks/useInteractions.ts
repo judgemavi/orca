@@ -1,8 +1,8 @@
 import { type UseQueryOptions, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { api } from '../../../api';
-import { queryKeys } from '../../../lib/queryKeys';
-import type { Interaction } from '../../../types';
+import { api } from '../api';
+import { queryKeys } from '../lib/queryKeys';
+import type { Interaction } from '../types';
 
 type InteractionsQueryKey = ReturnType<typeof queryKeys.taskInteractions>;
 type InteractionsSelect<TSelected> = Pick<

@@ -11,7 +11,8 @@ export function registerQueueCommands(
   const { queue, taskStore } = deps;
 
   const cmd = program
-    .command('queue').alias('q')
+    .command('queue')
+    .alias('q')
     .description('Inspect and manage the job queue')
     .option('--status <status>', 'filter by status')
     .option('--task <id>', 'filter by task id')

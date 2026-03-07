@@ -41,7 +41,10 @@ export async function runCLI(deps: {
     .description('Initialize orca workspace (handled at startup)')
     .action(() => {});
 
-  const taskCmd = program.command('task').alias('t').description('Task operations');
+  const taskCmd = program
+    .command('task')
+    .alias('t')
+    .description('Task operations');
   registerTaskCommands(taskCmd, {
     repoDir: deps.repoDir,
     taskStore: deps.taskStore,
@@ -79,11 +82,19 @@ export async function runCLI(deps: {
   try {
     await program.parseAsync(Bun.argv);
   } catch (err: any) {
-    if (err?.code === 'commander.helpDisplayed' || err?.code === 'commander.version') return;
-    const code = err?.code === 'commander.missingArgument' ? 'MISSING_ARG'
-      : err?.code === 'commander.unknownCommand' ? 'UNKNOWN_COMMAND'
-      : err?.message?.includes('not found') ? 'NOT_FOUND'
-      : 'ERROR';
+    if (
+      err?.code === 'commander.helpDisplayed' ||
+      err?.code === 'commander.version'
+    )
+      return;
+    const code =
+      err?.code === 'commander.missingArgument'
+        ? 'MISSING_ARG'
+        : err?.code === 'commander.unknownCommand'
+          ? 'UNKNOWN_COMMAND'
+          : err?.message?.includes('not found')
+            ? 'NOT_FOUND'
+            : 'ERROR';
     printError(err, code);
     process.exit(1);
   }

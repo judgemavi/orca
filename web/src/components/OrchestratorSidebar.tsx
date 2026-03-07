@@ -1,4 +1,4 @@
-import { TerminalPane } from './orchestrator/TerminalPane';
+import { TerminalPane } from './TerminalPane';
 
 interface Props {
   theme: 'light' | 'dark';

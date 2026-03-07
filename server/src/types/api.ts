@@ -1,5 +1,5 @@
-import type { StringValue } from 'ms';
 import type { MemoryCategory, MemorySourceType } from './constants';
+
 import type { MemoryEntry } from './models';
 export interface InteractionConfig {
   tool: string;
@@ -46,9 +46,9 @@ export interface Config {
   validation: { commands: string[] };
   workers: { maxParallel: number };
   monitor: {
-    stuckCheckInterval: StringValue;
+    stuckCheckIntervalMs: number;
     maxStuckCycles: number;
-    conflictCheckInterval: StringValue;
+    conflictCheckIntervalMs: number;
   };
   quality: {
     enabled: boolean;

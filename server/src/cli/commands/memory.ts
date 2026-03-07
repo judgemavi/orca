@@ -18,10 +18,14 @@ export function registerMemoryCommands(
   repoDir: string,
   memory: MemoryStore,
 ) {
-  const cmd = program.command('memory').alias('m').description('Memory operations');
+  const cmd = program
+    .command('memory')
+    .alias('m')
+    .description('Memory operations');
 
   cmd
-    .command('list').alias('ls')
+    .command('list')
+    .alias('ls')
     .option('-c, --category <category>', 'memory category')
     .option('--tag <tag>', 'tag filter')
     .option('--q <query>', 'full-text query')
@@ -138,7 +142,8 @@ export function registerMemoryCommands(
   });
 
   cmd
-    .command('search <query>').alias('s')
+    .command('search <query>')
+    .alias('s')
     .option('-l, --limit <limit>', 'result limit', '20')
     .action(async (query: string, opts: { limit: string }) => {
       const limit = Math.max(

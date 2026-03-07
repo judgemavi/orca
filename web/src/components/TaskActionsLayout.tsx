@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { controlClass } from '../../../lib/constants';
-import { ToolModelSelector } from '../../common/ToolModelSelector';
+import { controlClass } from '../lib/constants';
+import { ToolModelSelector } from './ToolModelSelector';
 
 type ToolModelOption = {
   id: string;

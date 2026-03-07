@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button } from '../Button';
+import { Button } from './Button';
 import 'xterm/css/xterm.css';
+import type { FitAddon } from '@xterm/addon-fit';
+import type { Terminal } from 'xterm';
 
 const WS_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
 
@@ -37,7 +39,7 @@ async function checkSession(): Promise<boolean> {
 
 export function TerminalPane({ className, theme }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const terminalRef = useRef<any>(null);
+  const terminalRef = useRef<Terminal>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const [state, setState] = useState<SessionState>('checking');
 
@@ -64,7 +66,7 @@ export function TerminalPane({ className, theme }: Props) {
     setState('connecting');
     let cancelled = false;
     let ws: WebSocket | null = null;
-    let fitAddon: any = null;
+    let fitAddon: FitAddon | null = null;
     let resizeObserver: ResizeObserver | null = null;
 
     async function init() {

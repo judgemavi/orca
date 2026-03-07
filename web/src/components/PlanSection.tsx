@@ -1,11 +1,11 @@
 import { INTERACTION_STATUSES, REVIEW_STATUSES } from '@orca/server/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { controlClass } from '../../../lib/constants';
-import type { Interaction, TaskReview } from '../../../types';
-import { Button } from '../../Button';
-import { PlanMarkdownCard } from '../../shared/PlanMarkdownCard';
-import type { usePlanEditor } from './usePlanEditor';
+import type { usePlanEditor } from '../hooks/usePlanEditor';
+import { controlClass } from '../lib/constants';
+import type { Interaction, TaskReview } from '../types';
+import { Button } from './Button';
+import { PlanMarkdownCard } from './PlanMarkdownCard';
 
 type PlanEditorState = ReturnType<typeof usePlanEditor>;
 

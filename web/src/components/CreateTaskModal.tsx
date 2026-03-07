@@ -4,11 +4,7 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useCreateTaskForm } from '../hooks/forms/useCreateTaskForm';
 import { useConfigQuery, useTasksQuery } from '../hooks/queries';
-import {
-  type AutoRunOverrides,
-  INTERACTION_TYPES,
-  type Task,
-} from '../types';
+import { type AutoRunOverrides, INTERACTION_TYPES, type Task } from '../types';
 import { Button } from './Button';
 
 const controlClass =

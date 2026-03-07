@@ -1,12 +1,12 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMemo } from 'react';
-import { LogViewer } from '../../LogViewer';
 import {
   useInteractionContent,
   useInteractionStream,
   useInteractionsQuery,
-} from './useInteractions';
+} from '../hooks/useInteractions';
+import { LogViewer } from './LogViewer';
 
 interface Props {
   taskId: string;
@@ -14,26 +14,7 @@ interface Props {
   onClose: () => void;
 }
 
-function formatTokenCount(value: number | undefined): string {
-  if (!Number.isFinite(value)) return '0';
-  if (value && value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return `${value ?? 0}`;
-}
-
-function formatCost(value: number | undefined): string {
-  if (!Number.isFinite(value)) return '$0.00';
-  return `$${(value ?? 0).toFixed(2)}`;
-}
-
-function formatDuration(durationMs: number | undefined): string {
-  if (!Number.isFinite(durationMs) || !durationMs || durationMs < 0) return '-';
-  if (durationMs < 1000) return `${durationMs} ms`;
-  const totalSeconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes < 1) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
-}
+import { formatCost, formatDuration, formatTokens } from '../lib/format';
 
 export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
   const interactionsQuery = useInteractionsQuery(taskId);
@@ -117,8 +98,8 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
 
             <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border-subtle px-5 py-3 text-xs text-muted">
               <span>
-                Tokens: {formatTokenCount(selectedInteraction?.inputTokens)} in
-                / {formatTokenCount(selectedInteraction?.outputTokens)} out
+                Tokens: {formatTokens(selectedInteraction?.inputTokens)} in
+                / {formatTokens(selectedInteraction?.outputTokens)} out
               </span>
               <span>
                 Cost: {formatCost(selectedInteraction?.estimatedCost)}

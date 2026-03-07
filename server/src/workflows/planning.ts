@@ -198,7 +198,7 @@ export async function acceptBreakdown(
       .map((depIndex) => createdIDs[depIndex] ?? '')
       .filter(Boolean);
     if (dependencyIDs.length > 0) {
-      await deps.taskStore.updateDependencies(taskID, dependencyIDs);
+      await deps.taskStore.updateDependencies(taskID!, dependencyIDs);
     }
   }
 

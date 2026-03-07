@@ -119,15 +119,7 @@ function dataGroup(deps: RouteDeps) {
 function infraGroup(deps: RouteDeps) {
   return new Hono()
     .route('/', sessionRoutes(deps.db))
-    .route(
-      '/',
-      orchestratorRoutes(
-        deps.eventSink,
-        deps.configStore,
-        deps.repoDir,
-        deps.registry,
-      ),
-    )
+    .route('/', orchestratorRoutes(deps.eventSink))
     .route(
       '/',
       configRoutes(

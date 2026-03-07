@@ -1,24 +1,24 @@
 import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/server/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../../../api';
-import { useTaskDetailContext } from '../../../context/TaskDetailContext';
-import { useTaskPlanQuery } from '../../../hooks/queries';
-import { useToolModelSelection } from '../../../hooks/useToolModelSelection';
-import { useWebSocket } from '../../../hooks/useWebSocket';
-import { queryKeys } from '../../../lib/queryKeys';
-import { getErrorMessage } from '../../../lib/utils';
+import { api } from '../api';
+import { useTaskDetailContext } from '../context/TaskDetailContext';
+import { queryKeys } from '../lib/queryKeys';
+import { getErrorMessage } from '../lib/utils';
 import {
   type AIReviewResult,
   isKnownWSEvent,
   type ProposedTask,
   type Task,
-} from '../../../types';
+} from '../types';
+import { useTaskPlanQuery } from './queries';
 import {
   selectByRunLike,
   selectByType,
   useInteractionsQuery,
 } from './useInteractions';
+import { useToolModelSelection } from './useToolModelSelection';
+import { useWebSocket } from './useWebSocket';
 
 async function sha256Hex(value: string): Promise<string> {
   const buffer = new TextEncoder().encode(value);

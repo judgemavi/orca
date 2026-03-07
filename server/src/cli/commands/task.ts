@@ -65,7 +65,8 @@ export function registerTaskCommands(
   },
 ) {
   task
-    .command('list').alias('ls')
+    .command('list')
+    .alias('ls')
     .option('-s, --status <status>', 'filter by status')
     .action(async (opts: { status?: string }) => {
       const status = (opts.status ?? '').trim();
@@ -79,14 +80,18 @@ export function registerTaskCommands(
     printJSON(await deps.taskStore.getReady());
   });
 
-  task.command('get <id>').alias('g').action(async (id: string) => {
-    const taskItem = await deps.taskStore.get(id);
-    if (!taskItem) throw new Error(`task not found: ${id}`);
-    printJSON(taskItem);
-  });
+  task
+    .command('get <id>')
+    .alias('g')
+    .action(async (id: string) => {
+      const taskItem = await deps.taskStore.get(id);
+      if (!taskItem) throw new Error(`task not found: ${id}`);
+      printJSON(taskItem);
+    });
 
   task
-    .command('create').alias('new')
+    .command('create')
+    .alias('new')
     .option('-t, --title <title>', 'task title')
     .option('-d, --description <description>', 'task description', '')
     .option('--parent <parent>', 'parent task id')
@@ -260,7 +265,8 @@ export function registerTaskCommands(
     });
 
   task
-    .command('start [id]').alias('run')
+    .command('start [id]')
+    .alias('run')
     .option('-T, --tool <tool>', 'tool override')
     .option('-M, --model <model>', 'model override')
     .option('--context <context>', 'extra context')
@@ -351,7 +357,8 @@ export function registerTaskCommands(
   });
 
   task
-    .command('request-changes [id]').alias('rc')
+    .command('request-changes [id]')
+    .alias('rc')
     .option('-f, --feedback <feedback>', 'reviewer feedback')
     .action(async (id: string | undefined, opts: { feedback?: string }) => {
       const taskID = await resolveTaskID({
@@ -448,7 +455,8 @@ export function registerTaskCommands(
     });
 
   task
-    .command('wait [ids...]').alias('w')
+    .command('wait [ids...]')
+    .alias('w')
     .description('Wait for task(s) to reach a target status')
     .option('--any', 'wait for ANY task (ignores ids)')
     .option(
@@ -659,7 +667,8 @@ export function registerTaskCommands(
     });
 
   task
-    .command('merge [id]').alias('mg')
+    .command('merge [id]')
+    .alias('mg')
     .description('Merge a task into integration branch')
     .action(async (id?: string) => {
       const taskID = await resolveTaskID({
@@ -698,7 +707,8 @@ export function registerTaskCommands(
     });
 
   task
-    .command('request-plan-changes [id]').alias('rpc')
+    .command('request-plan-changes [id]')
+    .alias('rpc')
     .description('Add plan feedback and regenerate plan')
     .requiredOption('--feedback <feedback>', 'plan feedback')
     .action(async (id: string | undefined, opts: { feedback: string }) => {
@@ -727,7 +737,8 @@ export function registerTaskCommands(
     });
 
   task
-    .command('ai-review [id]').alias('ar')
+    .command('ai-review [id]')
+    .alias('ar')
     .option('-T, --tool <tool>', 'review tool')
     .option('-M, --model <model>', 'review model')
     .option('--prompt <prompt>', 'additional review instructions')
