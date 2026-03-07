@@ -60,11 +60,7 @@ function parseInitOptions(): RunInitOptions {
   if (opts.tools.length === 0) opts.tools = undefined;
   opts.orchestratorTool = str('--orchestrator-tool');
   opts.orchestratorModel = str('--orchestrator-model');
-  opts.validationCommand = str('--validation-command');
   opts.costBudget = num('--cost-budget');
-  opts.scopeCheck = bool('--scope-check');
-  opts.testDelta = bool('--test-delta');
-  opts.llmAlignment = bool('--llm-alignment');
   opts.interaction = multi('--interaction');
   if (opts.interaction.length === 0) opts.interaction = undefined;
 

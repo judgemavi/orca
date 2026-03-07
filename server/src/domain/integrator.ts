@@ -5,7 +5,6 @@ import {
   isRefLockErrorResult,
   gitRun as sharedGitRun,
 } from '../shared/git';
-import { streamToText } from '../shared/stream';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
 import type { Config } from '../types';
@@ -16,12 +15,6 @@ import {
 } from './conflict-resolution';
 import { findTaskWorktree } from './worktree';
 
-export interface MergeValidationResult {
-  passed: boolean;
-  command?: string;
-  output?: string;
-}
-
 export interface MergeResult {
   taskId: string;
   status: typeof TASK_STATUSES.merged | typeof TASK_STATUSES.failed;
@@ -29,14 +22,12 @@ export interface MergeResult {
   worktreePath: string;
   rebaseAttempted: boolean;
   conflicts: string[];
-  validation: MergeValidationResult;
   error?: string;
 }
 
 export interface IntegratorDeps {
   repoDir: string;
   integrationBranch: string;
-  validationCommands: string[];
   taskStore: TaskStore;
 }
 
@@ -88,7 +79,6 @@ export async function mergeWithConflictResolution(
   return mergeWithConflictResolutionUnlocked(taskID, deps, {
     mergeTaskWithGitUnlocked,
     resolveTaskBranch,
-    runValidation,
     rollbackMergedCommit,
     cleanupTaskWorktree,
     gitRun,
@@ -118,7 +108,6 @@ async function mergeTaskWithGitUnlocked(
     worktreePath: worktreePath,
     rebaseAttempted: Boolean(opts?.rebaseAttempted),
     conflicts: opts?.conflicts ?? [],
-    validation: opts?.validation ?? { passed: false },
     error: message,
   });
 
@@ -193,21 +182,6 @@ async function mergeTaskWithGitUnlocked(
     }
   }
 
-  const validation = await runValidation(deps.repoDir, deps.validationCommands);
-  if (!validation.passed) {
-    const rollbackError = await rollbackMergedCommit(deps.repoDir);
-    return failed(
-      rollbackError
-        ? `validation failed${validation.command ? ` (${validation.command})` : ''} (rollback failed: ${rollbackError})`
-        : `validation failed${validation.command ? ` (${validation.command})` : ''}`,
-      {
-        rebaseAttempted: rebaseAttempted,
-        conflicts,
-        validation,
-      },
-    );
-  }
-
   await cleanupTaskWorktree(deps.repoDir, worktreePath, branch, taskID);
 
   return {
@@ -217,7 +191,6 @@ async function mergeTaskWithGitUnlocked(
     worktreePath: worktreePath,
     rebaseAttempted: rebaseAttempted,
     conflicts,
-    validation,
   };
 }
 
@@ -245,43 +218,6 @@ async function resolveTaskBranch(
     .find(Boolean);
 
   return candidate || exact;
-}
-
-async function runValidation(
-  repoDir: string,
-  commands: string[],
-): Promise<MergeValidationResult> {
-  if (commands.length === 0) {
-    return { passed: true };
-  }
-
-  for (const raw of commands) {
-    const command = raw.trim();
-    if (!command) continue;
-    const child = Bun.spawn({
-      cmd: ['sh', '-lc', command],
-      cwd: repoDir,
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-
-    const [stdout, stderr, code] = await Promise.all([
-      streamToText(child.stdout),
-      streamToText(child.stderr),
-      child.exited,
-    ]);
-
-    if (code !== 0) {
-      return {
-        passed: false,
-        command,
-        output: `${stdout}\n${stderr}`.trim(),
-      };
-    }
-  }
-
-  return { passed: true };
 }
 
 async function rebaseTaskBranch(

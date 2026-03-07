@@ -80,6 +80,9 @@
 }
 
 @layer components {
+  .d2h-diff-tbody tr {
+    position: relative;
+  }
   .dialog-content {
     @apply text-foreground bg-surface-elevated fixed self-center justify-self-center min-w-[28rem] max-w-[70vw] min-h-[20rem] max-h-[80vh] rounded-xl shadow-lg overflow-hidden;
   }

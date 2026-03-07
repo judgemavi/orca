@@ -13,7 +13,6 @@ import type {
   ConflictResolutionDeps,
   IntegratorDeps,
   MergeResult,
-  MergeValidationResult,
 } from './integrator';
 import { findTaskWorktree } from './worktree';
 
@@ -29,10 +28,6 @@ export interface ConflictResolutionRuntime {
     taskID: string,
     worktreePath: string,
   ) => Promise<string>;
-  runValidation: (
-    repoDir: string,
-    commands: string[],
-  ) => Promise<MergeValidationResult>;
   rollbackMergedCommit: (repoDir: string) => Promise<string | undefined>;
   cleanupTaskWorktree: (
     repoDir: string,
@@ -78,7 +73,6 @@ export async function mergeWithConflictResolutionUnlocked(
     worktreePath: worktreePath,
     rebaseAttempted: true,
     conflicts: opts?.conflicts ?? basicResult.conflicts,
-    validation: opts?.validation ?? { passed: false },
     error: message,
   });
 
@@ -151,25 +145,6 @@ export async function mergeWithConflictResolutionUnlocked(
         return failed('merge failed after clean rebase');
       }
 
-      const validation = await runtime.runValidation(
-        deps.repoDir,
-        deps.validationCommands,
-      );
-      if (!validation.passed) {
-        const rollbackError = await runtime.rollbackMergedCommit(deps.repoDir);
-        await deps.interactionStore.finish(interaction.id, {
-          status: INTERACTION_STATUSES.failed,
-          error: `validation failed${validation.command ? ` (${validation.command})` : ''}`,
-          model,
-        });
-        return failed(
-          rollbackError
-            ? `validation failed after clean rebase (rollback failed: ${rollbackError})`
-            : 'validation failed after clean rebase',
-          { validation },
-        );
-      }
-
       await runtime.cleanupTaskWorktree(
         deps.repoDir,
         worktreePath,
@@ -187,7 +162,6 @@ export async function mergeWithConflictResolutionUnlocked(
         worktreePath: worktreePath,
         rebaseAttempted: true,
         conflicts: [],
-        validation,
       };
     }
 
@@ -306,25 +280,6 @@ export async function mergeWithConflictResolutionUnlocked(
       return failed('merge failed after conflict resolution');
     }
 
-    const validation = await runtime.runValidation(
-      deps.repoDir,
-      deps.validationCommands,
-    );
-    if (!validation.passed) {
-      const rollbackError = await runtime.rollbackMergedCommit(deps.repoDir);
-      await deps.interactionStore.finish(interaction.id, {
-        status: INTERACTION_STATUSES.failed,
-        error: `validation failed${validation.command ? ` (${validation.command})` : ''}`,
-        model,
-      });
-      return failed(
-        rollbackError
-          ? `validation failed after conflict resolution (rollback failed: ${rollbackError})`
-          : 'validation failed after conflict resolution',
-        { validation },
-      );
-    }
-
     await runtime.cleanupTaskWorktree(
       deps.repoDir,
       worktreePath,
@@ -343,7 +298,6 @@ export async function mergeWithConflictResolutionUnlocked(
       worktreePath: worktreePath,
       rebaseAttempted: true,
       conflicts: basicResult.conflicts,
-      validation,
     };
   } catch (error) {
     await runtime

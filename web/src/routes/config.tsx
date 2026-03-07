@@ -36,12 +36,6 @@ type LabeledInputProps = {
   type?: React.InputHTMLAttributes<HTMLInputElement>['type'];
 };
 
-type ToggleProps = {
-  label: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
-};
-
 const inputClass =
   'w-full rounded-md border px-2.5 py-2 text-[13px] outline-none transition-colors focus:border-accent';
 
@@ -127,9 +121,7 @@ function EmbeddingsSection({
               key={field.key}
               label={field.label + (field.hint ? ` (${field.hint})` : '')}
               value={String(
-                draft.embeddings?.[field.key] ??
-                  field.defaultValue ??
-                  '',
+                draft.embeddings?.[field.key] ?? field.defaultValue ?? '',
               )}
               onChange={(next) =>
                 onUpdate({
@@ -167,17 +159,11 @@ function ConfigPage() {
           model: '',
           mode: 'cli' as const,
         },
-        validation: data.validation ?? { commands: [] },
         workers: data.workers ?? { maxParallel: 3 },
         monitor: data.monitor ?? {
           stuckCheckInterval: '5m',
           maxStuckCycles: 3,
           conflictCheckInterval: '10m',
-        },
-        quality: data.quality ?? {
-          enabled: true,
-          scopeCheck: true,
-          testDelta: true,
         },
         logging: data.logging ?? {
           level: 'info',
@@ -523,42 +509,6 @@ function ConfigPage() {
           </div>
         </SectionCard>
 
-        <SectionCard
-          title="Quality"
-          id="quality"
-          saving={saving.quality}
-          error={errors.quality}
-          onSave={() => savePatch('quality', { quality: draft.quality })}
-        >
-          <Toggle
-            label="Enabled"
-            checked={draft.quality.enabled}
-            onChange={(checked) =>
-              updateSection('quality', { ...draft.quality, enabled: checked })
-            }
-          />
-          <Toggle
-            label="Scope check"
-            checked={draft.quality.scopeCheck}
-            onChange={(checked) =>
-              updateSection('quality', {
-                ...draft.quality,
-                scopeCheck: checked,
-              })
-            }
-          />
-          <Toggle
-            label="Test delta"
-            checked={draft.quality.testDelta}
-            onChange={(checked) =>
-              updateSection('quality', {
-                ...draft.quality,
-                testDelta: checked,
-              })
-            }
-          />
-        </SectionCard>
-
         <EmbeddingsSection
           draft={draft}
           saving={saving.embeddings}
@@ -664,19 +614,6 @@ function LabeledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
-    </label>
-  );
-}
-
-function Toggle({ label, checked, onChange }: ToggleProps) {
-  return (
-    <label className="flex items-center gap-2 text-[13px]">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      {label}
     </label>
   );
 }

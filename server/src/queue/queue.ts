@@ -2,6 +2,7 @@ import { and, asc, count, eq, lt, or, sql } from 'drizzle-orm';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import { jobs as jobsTable } from '../db/schema';
+import { genId } from '../shared/id';
 import type {
   Job,
   JobStatus as JobStatusType,
@@ -57,7 +58,7 @@ export class JobQueue {
     priority?: number;
     payload?: Record<string, unknown>;
   }): Promise<Job> {
-    const id = crypto.randomUUID();
+    const id = genId();
     const priority = opts.priority ?? JOB_PRIORITIES[opts.type] ?? 5;
 
     await this.db.insert(jobsTable).values({

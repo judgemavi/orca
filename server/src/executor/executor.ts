@@ -16,6 +16,7 @@ import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import { toErrorMessage } from '../shared/errors';
 import { gitRun } from '../shared/git';
+import { genId } from '../shared/id';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
@@ -132,7 +133,7 @@ export class Executor {
     }
     return this.runTaskByIDInternal(taskID, {
       ...options,
-      runID: crypto.randomUUID(),
+      runID: genId(),
     });
   }
 
@@ -176,7 +177,7 @@ export class Executor {
 
     return this.runTaskByIDInternal(taskID, {
       ...options,
-      runID: crypto.randomUUID(),
+      runID: genId(),
       resumeSessionID: task.sessionId,
       feedback,
     });
@@ -297,12 +298,6 @@ export class Executor {
         signal: controller.signal,
         onOutputLine: () => {
           options.monitor?.recordOutput(task.id);
-        },
-        quality: {
-          enabled: this.deps.config.quality.enabled,
-          scopeCheck: this.deps.config.quality.scopeCheck,
-          testDelta: this.deps.config.quality.testDelta,
-          validationCommands: this.deps.config.validation.commands,
         },
       });
 

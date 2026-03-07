@@ -24,6 +24,7 @@ import {
   tasks,
 } from '../db/schema';
 import type { VectorStore } from '../embedding/vector-store';
+import { genId } from '../shared/id';
 import { log } from '../shared/logger';
 import type { MemoryEntry, MemorySourceType, MemoryUsedByTask } from '../types';
 import type {
@@ -90,7 +91,7 @@ export class MemoryStore {
     if (!category) throw new Error('category required');
     if (!provenanceHash) throw new Error('provenanceHash required');
 
-    const id = input.id?.trim() || crypto.randomUUID();
+    const id = input.id?.trim() || genId();
     const tags = normalizeTags(input.tags ?? []);
     const sourceType = normalizeSourceType(input.sourceType);
     const confidence = input.confidence ?? 1.0;
@@ -344,17 +345,20 @@ export class MemoryStore {
         ),
       );
 
-    const idOrder = new Map(ids.map((id, i) => [id, i]));
-    const entries = rows
-      .map((row) => this.mapRow(row as MemoryRow))
-      .sort((a, b) => (idOrder.get(a.id) ?? 999) - (idOrder.get(b.id) ?? 999))
-      .slice(0, limit);
-
+    const entries = rows.map((row) => this.mapRow(row as MemoryRow));
     await this.loadFilePaths(entries);
-    return entries.map((entry) => ({
+
+    const scored = entries.map((entry) => ({
       entry,
-      score: Math.round((1 - (distanceMap.get(entry.id) ?? 1)) * 100) / 100,
+      score: computeSalience(
+        1 - (distanceMap.get(entry.id) ?? 1),
+        entry.confidence,
+        entry.retrievalCount,
+        entry.updatedAt,
+      ),
     }));
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit);
   }
 
   async supersede(oldID: string, newID: string): Promise<void> {
@@ -506,6 +510,17 @@ export class MemoryStore {
           inArray(memoryFileAssociations.filePath, normalizedPaths),
         ),
       )
+      .orderBy(asc(memoryEntries.createdAt));
+    const entries = rows.map((row) => this.mapRow(row as MemoryRow));
+    await this.loadFilePaths(entries);
+    return entries;
+  }
+
+  async findByInteractionId(interactionId: string): Promise<MemoryEntry[]> {
+    const rows = await this.db
+      .select()
+      .from(memoryEntries)
+      .where(eq(memoryEntries.sourceInteractionId, interactionId))
       .orderBy(asc(memoryEntries.createdAt));
     const entries = rows.map((row) => this.mapRow(row as MemoryRow));
     await this.loadFilePaths(entries);
@@ -721,6 +736,18 @@ export class MemoryStore {
     return embedded;
   }
 
+  async bumpRetrievalCount(ids: string[]): Promise<void> {
+    const normalized = ids.map((id) => id.trim()).filter(Boolean);
+    if (normalized.length === 0) return;
+    await this.db
+      .update(memoryEntries)
+      .set({
+        retrievalCount: sql`${memoryEntries.retrievalCount} + 1`,
+        updatedAt: sql`(CURRENT_TIMESTAMP)`,
+      })
+      .where(inArray(memoryEntries.id, normalized));
+  }
+
   private mapRow(row: MemoryRow): MemoryEntry {
     return {
       id: row.id,
@@ -734,6 +761,7 @@ export class MemoryStore {
       coveredAtCommit: (row.coveredAtCommit ?? '').trim(),
       stale: Boolean(row.stale),
       confidence: Number(row.confidence ?? 1),
+      retrievalCount: Number(row.retrievalCount ?? 0),
       provenanceHash: row.provenanceHash,
       supersededBy: row.supersededBy ?? undefined,
       createdAt: String(row.createdAt),
@@ -769,6 +797,33 @@ export class MemoryStore {
 
     return [...seen];
   }
+}
+
+/**
+ * Composite salience score blending similarity, confidence, reinforcement, and recency.
+ * Weights: similarity 0.5, confidence 0.2, reinforcement 0.15, recency 0.15
+ * Reinforcement uses log1p to dampen diminishing returns (10 retrievals ≈ 1.0, 0 ≈ 0).
+ * Recency decays over 30 days — entries updated today score 1.0, 30+ days ago → ~0.
+ */
+function computeSalience(
+  similarity: number,
+  confidence: number,
+  retrievalCount: number,
+  updatedAt: string,
+): number {
+  const reinforcement = Math.min(
+    1,
+    Math.log1p(retrievalCount) / Math.log1p(10),
+  );
+  const ageMs = Date.now() - new Date(updatedAt).getTime();
+  const recency = Math.max(0, 1 - ageMs / (30 * 24 * 60 * 60 * 1000));
+  return round2(
+    similarity * 0.5 + confidence * 0.2 + reinforcement * 0.15 + recency * 0.15,
+  );
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function nullable(value: string | null | undefined): string | null {

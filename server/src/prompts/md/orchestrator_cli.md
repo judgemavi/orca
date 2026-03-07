@@ -47,6 +47,8 @@ orca task wait <id> --until review,failed
 orca task wait <id> --timeout 300
 orca task evaluate <id>
 orca task breakdown <id>
+orca task accept-breakdown [id] --operation <interactionId>
+orca task reject-breakdown --operation <interactionId>
 orca task approve <id>
 orca task approve-plan <id>
 orca task request-changes <id> --feedback "..."
@@ -198,6 +200,17 @@ Breakdown: `pending -> broken_down` (parent split into children).
 Stop: `running -> stopped`. Resume: `stopped -> running`.
 Failure: `running -> failed` (return to `pending` via `orca task update <id> --status pending`).
 
+## Breakdown Flow
+
+When evaluation determines `needs_breakdown` is true, use this flow:
+
+1. **Generate proposals** — `orca task breakdown <id>`. Returns proposed subtasks and an `interactionId`.
+2. **Present to user** — show the proposed subtasks (title, description, dependencies, suggested tool) and ask for confirmation.
+3. **Accept** — `orca task accept-breakdown <parentId> --operation <interactionId>`. Creates all subtasks, sets up dependencies, marks parent as `broken_down`, and auto-enqueues evaluation for ready subtasks.
+4. **Reject** — `orca task reject-breakdown --operation <interactionId>` to discard. The parent task stays in `pending` — you can re-run breakdown or update the task.
+
+Always present breakdown proposals to the user before accepting.
+
 ## Workflow Tips
 
 - **Always use `orca task wait --auto`** instead of polling `orca task get` in a loop. The `--auto` flag reads config to determine the correct wait targets based on auto-run settings — no hardcoded statuses, no wasted tokens.
@@ -206,6 +219,6 @@ Failure: `running -> failed` (return to `pending` via `orca task update <id> --s
 - If `wait` times out, the response includes queue state. Just re-run `wait` — tasks are still processing.
 - Run `orca memory explore run` first on new projects to seed memory.
 - Use `orca memory search` before planning to find relevant prior knowledge.
-- Use `orca task breakdown` for large tasks that should be split.
+- Use `orca task breakdown` for large tasks that should be split. Always present proposals to the user before accepting.
 - Retro runs automatically during merge — do not run it separately.
 - Use `orca config get` to check auto-run settings; `orca config set` to change them.

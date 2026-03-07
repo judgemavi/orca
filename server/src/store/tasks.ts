@@ -21,6 +21,7 @@ import {
   taskReviews as taskReviewsTable,
   tasks as tasksTable,
 } from '../db/schema';
+import { genId } from '../shared/id';
 import type { AutoRunOverrides, Task, TaskReview, TaskStatus } from '../types';
 import { REVIEW_STATUSES, TASK_STATUSES } from '../types';
 import { detectCycle, topoSort } from './graph';
@@ -44,7 +45,7 @@ export class TaskStore {
   ) {}
 
   async create(input: TaskCreateInput): Promise<Task> {
-    const id = input.id?.trim() || crypto.randomUUID();
+    const id = input.id?.trim() || genId();
     const title = input.title.trim();
     if (!title) throw new Error('title required');
 
@@ -293,7 +294,7 @@ export class TaskStore {
     feedback: string,
     interactionID = '',
   ): Promise<string> {
-    const id = crypto.randomUUID();
+    const id = genId();
     await this.db.insert(taskReviewsTable).values({
       id,
       taskId: taskID,

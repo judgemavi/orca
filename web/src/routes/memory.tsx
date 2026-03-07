@@ -44,6 +44,7 @@ const CATEGORIES: MemoryCategory[] = [
   'convention',
   'architecture',
   'dependency',
+  'tooling',
 ];
 
 const SOURCE_TYPES: MemorySourceType[] = ['retro', 'explore'];
@@ -55,6 +56,7 @@ const CATEGORY_VARIANT: Record<MemoryCategory, BadgeVariant> = {
   convention: 'blue',
   architecture: 'indigo',
   dependency: 'cyan',
+  tooling: 'violet',
 };
 
 const SOURCE_VARIANT: Record<MemorySourceType, BadgeVariant> = {
@@ -247,7 +249,7 @@ function MemoryPage() {
           }
 
           return (
-            <div className="max-w-[560px]">
+            <div className="max-w-140">
               <button
                 type="button"
                 className="text-left"
@@ -269,8 +271,8 @@ function MemoryPage() {
                   }}
                   className={
                     isExpanded
-                      ? 'prose prose-invert prose-sm max-w-none break-words'
-                      : 'prose prose-invert prose-sm max-w-none line-clamp-2 break-words'
+                      ? 'prose prose-invert prose-sm wrap-break-words'
+                      : 'prose prose-invert prose-sm line-clamp-2 wrap-break-words'
                   }
                 >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>

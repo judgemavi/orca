@@ -104,12 +104,14 @@ export type MemoryEntry = Omit<
   | 'supersededBy'
   | 'coveredAtCommit'
   | 'embedding'
+  | 'retrievalCount'
 > & {
   category: MemoryCategory;
   tags: string[];
   sourceType: MemorySourceType;
   stale: boolean;
   confidence: number;
+  retrievalCount: number;
   filePaths?: string[];
   sourceTaskId?: string;
   sourceInteractionId?: string;

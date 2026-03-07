@@ -43,18 +43,11 @@ export interface Config {
     model: string;
     mode: 'cli' | 'mcp';
   };
-  validation: { commands: string[] };
   workers: { maxParallel: number };
   monitor: {
     stuckCheckIntervalMs: number;
     maxStuckCycles: number;
     conflictCheckIntervalMs: number;
-  };
-  quality: {
-    enabled: boolean;
-    scopeCheck: boolean;
-    testDelta: boolean;
-    llmAlignment?: boolean;
   };
   postMerge?: {
     enabled?: boolean;

@@ -19,7 +19,6 @@ import { mergeRoutes } from './handlers/merge';
 import { modelRoutes } from './handlers/models';
 import { monitorRoutes } from './handlers/monitor';
 import { orchestratorRoutes } from './handlers/orchestrator';
-import { qualityRoutes } from './handlers/quality';
 import { queueRoutes } from './handlers/queue';
 import { runRoutes } from './handlers/run';
 import { sessionRoutes } from './handlers/sessions';
@@ -91,8 +90,7 @@ function taskGroup(deps: RouteDeps) {
         queue: deps.queue,
       }),
     )
-    .route('/', interactionRoutes(deps.interactionStore))
-    .route('/', qualityRoutes(deps.interactionStore));
+    .route('/', interactionRoutes(deps.interactionStore));
 }
 
 function dataGroup(deps: RouteDeps) {

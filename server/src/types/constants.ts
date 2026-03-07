@@ -20,6 +20,7 @@ export type MemoryCategory =
   | 'preference'
   | 'convention'
   | 'architecture'
-  | 'dependency';
+  | 'dependency'
+  | 'tooling';
 
 export type MemorySourceType = 'retro' | 'explore';

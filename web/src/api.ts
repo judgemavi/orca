@@ -323,6 +323,12 @@ export const api = {
     unwrap(client.memory[':id'].$patch({ param: { id }, json: data })),
   deleteMemory: (id: string): Promise<{ deleted: string }> =>
     unwrap(client.memory[':id'].$delete({ param: { id } })),
+  getMemoriesByInteraction: (interactionId: string): Promise<MemoryEntry[]> =>
+    unwrap(
+      client.memory['by-interaction'][':interactionId'].$get({
+        param: { interactionId },
+      }),
+    ),
   syncMemory: (): Promise<MemorySyncResult> =>
     unwrap(client.memory.sync.$post({})),
   refreshMemory: (entryId?: string): Promise<MemoryRefreshResult> =>

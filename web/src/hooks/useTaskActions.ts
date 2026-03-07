@@ -428,12 +428,22 @@ export function useTaskActions(task: Task) {
         'status' in evt.data && typeof evt.data.status === 'string'
           ? evt.data.status
           : null;
-      if (
-        evt.data.id === task.id &&
-        latestTaskStatusRef.current === TASK_STATUSES.review &&
-        nextStatus === TASK_STATUSES.running
-      ) {
-        resetReviewUIState();
+      if (evt.data.id === task.id) {
+        if (
+          latestTaskStatusRef.current === TASK_STATUSES.review &&
+          nextStatus === TASK_STATUSES.running
+        ) {
+          resetReviewUIState();
+        }
+        if (nextStatus === TASK_STATUSES.broken_down) {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.taskInteractions(task.id),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.task(task.id),
+          });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
+        }
       }
       return;
     }

@@ -15,6 +15,7 @@ import {
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import { taskInteractions } from '../db/schema';
+import { genId } from '../shared/id';
 import type { InteractionStatus, InteractionStub } from '../types';
 import { INTERACTION_STATUSES } from '../types';
 import type { StoredInteraction, ToolSummary } from './types';
@@ -54,7 +55,7 @@ export class InteractionStore {
     if (!type) throw new Error('type required');
     if (!tool) throw new Error('tool required');
 
-    const id = crypto.randomUUID();
+    const id = genId();
     const attempt = await this.nextAttempt(input.taskId ?? null, type);
     const logPath = this.logPath(input.taskId ?? null, type, attempt, id);
 

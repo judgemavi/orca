@@ -1,5 +1,4 @@
 import type { EventSink } from '../api/ws';
-import type { QualityResult } from '../domain/quality';
 import type { ToolPluginEvent } from '../plugin/types';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
@@ -13,7 +12,6 @@ export interface OutcomeInput {
   diff: string;
   outputTail: string;
   workerError?: string;
-  quality?: QualityResult | null;
 }
 
 export interface OutcomeResult {
@@ -42,7 +40,6 @@ export interface TaskRunResultRecord {
   aborted: boolean;
   diff: string;
   filesChanged: string[];
-  quality?: QualityResult;
   error?: string;
 }
 
@@ -108,15 +105,6 @@ export function evaluateTaskOutcome(input: OutcomeInput): OutcomeResult {
       taskStatus: 'failed',
       interactionStatus: 'failed',
       error: input.workerError || `process exited with code ${input.exitCode}`,
-    };
-  }
-
-  const qualityIssues = input.quality?.blockingIssues ?? [];
-  if (qualityIssues.length > 0) {
-    return {
-      taskStatus: 'failed',
-      interactionStatus: 'failed',
-      error: `quality gate failure: ${qualityIssues.join('; ')}`,
     };
   }
 
@@ -189,7 +177,6 @@ export class ResultCoordinator {
       aborted: input.aborted,
       diff: '',
       filesChanged: [],
-      quality: undefined,
       error: input.error,
     };
   }
@@ -204,13 +191,6 @@ export class ResultCoordinator {
 
     await this.deps.taskStore.updateStatus(input.taskID, input.result.status);
     this.reinforceMemoryConfidence(input.taskID, input.result.exitCode);
-
-    if ((input.result.quality?.blockingIssues?.length ?? 0) > 0) {
-      this.deps.eventSink?.broadcast('quality.alert', {
-        taskId: input.taskID,
-        issues: input.result.quality?.blockingIssues ?? [],
-      });
-    }
 
     if (input.reviewID && input.result.status === 'review') {
       await this.deps.taskStore.addressReview(input.reviewID);
@@ -245,18 +225,17 @@ export class ResultCoordinator {
     if (!interactionID || !this.deps.interactionStore) return;
 
     let qualityJson: string | null = null;
-    if (result.quality || memoryMeta) {
-      const payload: Record<string, unknown> = result.quality
-        ? { ...result.quality }
-        : {};
-
-      if (memoryMeta?.usedMemoryIds?.length) {
+    if (memoryMeta) {
+      const payload: Record<string, unknown> = {};
+      if (memoryMeta.usedMemoryIds?.length) {
         payload.usedMemoryIds = memoryMeta.usedMemoryIds;
       }
-      if (memoryMeta?.usedProvenanceHashes?.length) {
+      if (memoryMeta.usedProvenanceHashes?.length) {
         payload.usedProvenanceHashes = memoryMeta.usedProvenanceHashes;
       }
-      qualityJson = JSON.stringify(payload);
+      if (Object.keys(payload).length > 0) {
+        qualityJson = JSON.stringify(payload);
+      }
     }
 
     void this.deps.interactionStore.finish(interactionID, {

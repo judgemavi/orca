@@ -81,7 +81,7 @@ export async function textInput(
     placeholder?: string;
     defaultValue?: string;
     required?: boolean;
-    validate?: (value: string) => string | Error | void;
+    validate?: (value: string) => string | Error;
   },
 ): Promise<string> {
   const value = await text({

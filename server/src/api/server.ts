@@ -3,6 +3,8 @@ import type { ToolPluginRegistry } from '../plugin/registry';
 import type { ConfigStore } from '../store/config';
 import {
   handleOrchestratorUpgrade,
+  type OrchestratorWebSocket,
+  type OrchestratorWSData,
   onOrchestratorWSClose,
   onOrchestratorWSMessage,
   onOrchestratorWSOpen,
@@ -17,9 +19,9 @@ export function startHTTPServer(
     registry: ToolPluginRegistry;
   },
 ) {
-  const orchestratorSockets = new Set<any>();
+  const orchestratorSockets = new Set<OrchestratorWebSocket>();
 
-  const server = Bun.serve({
+  const server = Bun.serve<OrchestratorWSData>({
     port,
     idleTimeout: 255,
     fetch(request, serverRef) {
@@ -42,14 +44,14 @@ export function startHTTPServer(
       return app.fetch(request);
     },
     websocket: {
-      open(ws: any) {
+      open(ws: OrchestratorWebSocket) {
         orchestratorSockets.add(ws);
         onOrchestratorWSOpen(ws);
       },
-      message(message: any) {
+      message(_: OrchestratorWebSocket, message: string | Buffer<ArrayBuffer>) {
         onOrchestratorWSMessage(message);
       },
-      close(ws: any) {
+      close(ws: OrchestratorWebSocket) {
         orchestratorSockets.delete(ws);
         onOrchestratorWSClose(ws);
       },

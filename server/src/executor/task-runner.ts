@@ -1,9 +1,4 @@
 import { resolveModel, resolveTool } from '../config/config';
-import {
-  evaluateQualityGates,
-  type QualityResult,
-  takeValidationSnapshot,
-} from '../domain/quality';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { toolDefinition } from '../plugin/registry';
 import type {
@@ -44,12 +39,6 @@ export interface TaskRunInput {
   headlessOpts?: HeadlessOpts;
   signal?: AbortSignal;
   onOutputLine?: (line: WorkerOutputLine) => void | Promise<void>;
-  quality?: {
-    enabled: boolean;
-    scopeCheck: boolean;
-    testDelta: boolean;
-    validationCommands: string[];
-  };
 }
 
 export interface TaskRunResult {
@@ -72,7 +61,6 @@ export interface TaskRunResult {
   aborted: boolean;
   diff: string;
   filesChanged: string[];
-  quality?: QualityResult;
   error?: string;
 }
 
@@ -108,16 +96,6 @@ export function resolveTaskExecution(
 export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
   const prompt = await buildPrompt(input);
 
-  const beforeSnapshot =
-    input.quality?.enabled &&
-    input.quality?.testDelta &&
-    (input.quality?.validationCommands?.length ?? 0) > 0
-      ? await takeValidationSnapshot(
-          input.worktreePath,
-          input.quality.validationCommands,
-        )
-      : null;
-
   const result = await runTool({
     taskID: input.taskID,
     driverName: input.toolName,
@@ -144,41 +122,6 @@ export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
     '--name-only',
     input.baseBranch,
   ]).catch(() => '');
-  const nameStatusRaw = await gitOutput(input.worktreePath, [
-    'diff',
-    '--name-status',
-    input.baseBranch,
-  ]).catch(() => '');
-  const numStatRaw = await gitOutput(input.worktreePath, [
-    'diff',
-    '--numstat',
-    input.baseBranch,
-  ]).catch(() => '');
-
-  const afterSnapshot =
-    input.quality?.enabled &&
-    input.quality?.testDelta &&
-    (input.quality?.validationCommands?.length ?? 0) > 0
-      ? await takeValidationSnapshot(
-          input.worktreePath,
-          input.quality.validationCommands,
-        )
-      : null;
-
-  const quality = input.quality
-    ? evaluateQualityGates({
-        enabled: input.quality.enabled,
-        scopeCheck: input.quality.scopeCheck,
-        testDelta: input.quality.testDelta,
-        taskId: input.taskID,
-        taskTitle: input.title,
-        diff,
-        nameStatus: nameStatusRaw,
-        numStat: numStatRaw,
-        before: beforeSnapshot,
-        after: afterSnapshot,
-      })
-    : undefined;
 
   const outputTail = await readTail(result.logPath, 8_000);
   const outcome = evaluateTaskOutcome({
@@ -188,7 +131,6 @@ export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
     diff,
     outputTail,
     workerError: result.error,
-    quality: quality ?? null,
   });
 
   return {
@@ -211,7 +153,6 @@ export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
     aborted: result.aborted,
     diff,
     filesChanged: normalizeList(filesChangedRaw.split('\n')),
-    quality,
     error: outcome.error,
   };
 }

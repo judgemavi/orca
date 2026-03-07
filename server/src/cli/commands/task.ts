@@ -405,10 +405,60 @@ export function registerTaskCommands(
     });
     const breakdown = await breakdownTask(
       { taskId: taskID },
-      { taskStore: deps.taskStore },
+      {
+        repoDir: deps.repoDir,
+        taskStore: deps.taskStore,
+        interactions: deps.interactionStore,
+        configStore: deps.configStore,
+        registry: deps.registry,
+        memory: deps.memoryStore,
+      },
     );
-    printJSON(breakdown.proposed);
+    printJSON({
+      taskId: taskID,
+      proposed: breakdown.proposed,
+      interactionId: breakdown.interactionId,
+    });
   });
+
+  task
+    .command('accept-breakdown [id]')
+    .option('--operation <id>', 'interaction id from breakdown')
+    .action(async (id: string | undefined, opts: { operation?: string }) => {
+      const operationID = (opts.operation ?? '').trim();
+      if (!operationID) throw new Error('--operation is required');
+      const parentID = id?.trim() || null;
+      const proposed = await loadProposedTasksFromInteraction(operationID, {
+        interactions: deps.interactionStore,
+      });
+      if (proposed.length === 0) {
+        throw new Error(
+          'No proposed tasks found for interaction ' + operationID,
+        );
+      }
+      const accepted = await acceptBreakdown(parentID, proposed, {
+        taskStore: deps.taskStore,
+        queue: deps.queue,
+      });
+      printJSON({
+        created: accepted.createdIds.length,
+        taskIds: accepted.createdIds,
+        parentId: accepted.parentId,
+        operationId: operationID,
+      });
+    });
+
+  task
+    .command('reject-breakdown')
+    .option('--operation <id>', 'interaction id from breakdown')
+    .action(async (opts: { operation?: string }) => {
+      const operationID = (opts.operation ?? '').trim();
+      if (!operationID) throw new Error('--operation is required');
+      await rejectBreakdown('', operationID, {
+        interactions: deps.interactionStore,
+      });
+      printJSON({ rejected: true, operationId: operationID });
+    });
 
   task
     .command('provide-input [id]')
@@ -681,7 +731,6 @@ export function registerTaskCommands(
       const result = await mergeTaskWithGit(taskID, {
         repoDir: deps.repoDir,
         integrationBranch: config.project.integrationBranch,
-        validationCommands: config.validation.commands,
         taskStore: deps.taskStore,
       });
       if (result.status === 'merged') {

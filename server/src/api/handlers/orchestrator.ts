@@ -13,11 +13,22 @@ import type { EventSink } from '../ws';
 
 const SCROLLBACK_LIMIT = 100_000;
 
+export interface OrchestratorWSData {
+  configStore: ConfigStore;
+  repoDir: string;
+  registry: ToolPluginRegistry;
+  cols: number;
+  rows: number;
+  reattached?: boolean;
+}
+
+export type OrchestratorWebSocket = Bun.ServerWebSocket<OrchestratorWSData>;
+
 interface OrchestratorPTY {
   proc: ReturnType<typeof Bun.spawn>;
   scrollback: Buffer[];
   scrollbackBytes: number;
-  ws: any | null;
+  ws: OrchestratorWebSocket | null;
   dead: boolean;
 }
 
@@ -71,7 +82,7 @@ export function handleOrchestratorUpgrade(
   });
 }
 
-export async function onOrchestratorWSOpen(ws: any) {
+export async function onOrchestratorWSOpen(ws: OrchestratorWebSocket) {
   const { configStore, repoDir, registry, cols, rows } = ws.data;
 
   // Reattach to existing PTY if alive
@@ -153,7 +164,7 @@ export async function onOrchestratorWSOpen(ws: any) {
             pty.scrollbackBytes > SCROLLBACK_LIMIT &&
             pty.scrollback.length > 1
           ) {
-            pty.scrollbackBytes -= pty.scrollback[0]!.length;
+            pty.scrollbackBytes -= pty.scrollback[0].length;
             pty.scrollback.shift();
           }
 
@@ -164,7 +175,7 @@ export async function onOrchestratorWSOpen(ws: any) {
             } catch {}
           }
         },
-        exit(_terminal: any, exitCode: number, signal: string | null) {
+        exit(_terminal: Bun.Terminal, exitCode: number, signal: string | null) {
           log.info('PTY exited', { exitCode, signal });
         },
       },
@@ -195,7 +206,7 @@ export async function onOrchestratorWSOpen(ws: any) {
   }
 }
 
-export function onOrchestratorWSMessage(message: any) {
+export function onOrchestratorWSMessage(message: string | Buffer<ArrayBuffer>) {
   if (!activePTY || activePTY.dead) return;
   const proc = activePTY.proc;
 
@@ -213,7 +224,7 @@ export function onOrchestratorWSMessage(message: any) {
   }
 }
 
-export function onOrchestratorWSClose(_ws: any) {
+export function onOrchestratorWSClose(_ws: OrchestratorWebSocket) {
   // Detach client but keep PTY alive
   if (activePTY) {
     activePTY.ws = null;

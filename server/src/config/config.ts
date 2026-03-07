@@ -27,18 +27,11 @@ export function defaultConfig(): Config {
       model: '',
       mode: 'cli',
     },
-    validation: { commands: [] },
     workers: { maxParallel: 3 },
     monitor: {
       stuckCheckIntervalMs: 60_000,
       maxStuckCycles: 10,
       conflictCheckIntervalMs: 30_000,
-    },
-    quality: {
-      enabled: true,
-      scopeCheck: true,
-      testDelta: true,
-      llmAlignment: true,
     },
     postMerge: {
       enabled: true,

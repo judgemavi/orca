@@ -181,7 +181,7 @@ export function registerMemoryCommands(
     .command('run')
     .option('--tool <tool>', 'explore tool')
     .option('--model <model>', 'explore model')
-    .action(async (opts: { tool?: string; model?: string }) => {
+    .action(async (_: { tool?: string; model?: string }) => {
       const files = await listTrackedFiles(repoDir);
       const path = await writeExploreContext(
         repoDir,

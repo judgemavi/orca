@@ -1,0 +1,1 @@
+ALTER TABLE `memory_entries` ADD `retrieval_count` integer DEFAULT 0 NOT NULL;

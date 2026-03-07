@@ -15,6 +15,7 @@ const ALLOWED_EXPLORE_CATEGORIES = new Set<MemoryCategory>([
   'dependency',
   'pattern',
   'convention',
+  'tooling',
 ]);
 
 interface ExtractedMemoryEntry {

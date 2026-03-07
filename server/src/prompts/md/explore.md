@@ -5,14 +5,20 @@ Focus on what another developer (or AI agent) needs to contribute effectively:
 1. **Project overview** — what this does, in 1-2 sentences
 2. **Architecture** — how the system is structured, key modules and their relationships
 3. **Conventions** — naming patterns, error handling style, file organization, anything non-obvious
-4. **Non-standard tooling** — only note build/test/task runners if the project uses something beyond the standard for its stack (e.g. Taskfile, Makefile, custom scripts). Skip if it's just `go test` / `npm test` / etc.
+4. **Development tooling** — detect and document the project's dev tooling by inspecting config files, package.json scripts, Makefiles, etc:
+   - **Package manager** — npm, yarn, pnpm, bun, etc.
+   - **Linter** — eslint, biome, golangci-lint, etc. Include the check and fix commands.
+   - **Formatter** — prettier, biome format, gofmt, etc. Include the check and fix commands.
+   - **Type checker** — tsc, mypy, etc. Include the check command.
+   - **Test runner** — jest, vitest, bun test, go test, pytest, etc. Include the run command.
+   - **Build** — build command if applicable.
+   - Note: Always include the exact commands as they appear in package.json scripts or config. If standard for the stack, still document them.
 
 Skip:
 - The `.orca/` directory (runtime orchestration state, not project code)
 - Any files/directories listed in `.gitignore` (treat them as non-existent for this context)
 - Directory tree listings (the filesystem is always available)
 - Dependency lists (the package manager already tracks these)
-- Boilerplate explanations of standard tooling
 
 Keep it under 300 lines. Prioritize insight over completeness.
 
@@ -26,8 +32,19 @@ Output format:
 After the context document, add a section exactly titled `## Memory Extraction` and include a JSON array only:
 
 ```json
-[{"content":"...","category":"architecture|dependency|pattern|convention","tags":["..."],"confidence":0.95,"file_paths":["path/to/file"]}]
+[{"content":"...","category":"architecture|dependency|pattern|convention|tooling","tags":["..."],"confidence":0.95,"file_paths":["path/to/file"]}]
 ```
+
+One entry MUST have `category: "tooling"` with a structured description of detected dev commands:
+```
+Package manager: bun
+Lint: bun run lint (biome check), fix: bun run lint --fix
+Format: bun run format (biome format --write)
+Typecheck: bunx tsc --noEmit
+Test: bun test
+Build: bun run build
+```
+Tag it `["dev-tooling"]`. Even if using standard tooling, always include this entry.
 
 Rules:
 - Use repo-root-relative `file_paths`.

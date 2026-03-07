@@ -110,7 +110,6 @@ export type KnownWSEvent =
     >
   | WSEventBase<'monitor.conflict', { taskIds: string[]; files: string[] }>
   | WSEventBase<'monitor.stuck', { taskId: string; message: string }>
-  | WSEventBase<'quality.alert', { taskId: string; issues: string[] }>
   | WSEventBase<
       'queue.job.queued',
       { jobId: string; type: string; taskId?: string; priority: number }

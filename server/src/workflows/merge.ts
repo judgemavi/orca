@@ -35,7 +35,6 @@ export async function mergeTask(
   const baseDeps = {
     repoDir: deps.repoDir,
     integrationBranch: config.project.integrationBranch,
-    validationCommands: config.validation.commands,
     taskStore: deps.taskStore,
   };
 

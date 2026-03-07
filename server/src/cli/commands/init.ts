@@ -24,11 +24,7 @@ export interface RunInitOptions {
   tools?: string[];
   orchestratorTool?: string;
   orchestratorModel?: string;
-  validationCommand?: string;
   costBudget?: number;
-  scopeCheck?: boolean;
-  testDelta?: boolean;
-  llmAlignment?: boolean;
   embeddingProvider?: string;
   embeddingModel?: string;
   /** Format: "type:tool:model:autoRun" e.g. "code:claude:sonnet:true" */
@@ -211,12 +207,6 @@ export async function runInitCommand(
     }
   }
 
-  const validationCommand = autoYes
-    ? (options.validationCommand ?? defaults.validationCommand)
-    : await textInput('Validation command (optional)', {
-        defaultValue: defaults.validationCommand,
-      });
-
   const costBudgetRaw = autoYes
     ? options.costBudget != null
       ? String(options.costBudget)
@@ -321,25 +311,6 @@ export async function runInitCommand(
     }
   }
 
-  const qualityOverrides = applyQualityOverrides(
-    defaults.qualitySelected,
-    options,
-  );
-  const qualitySelected = autoYes
-    ? qualityOverrides
-    : ensureNotCancelled(
-        await (await import('@clack/prompts')).multiselect({
-          message: 'Quality gates',
-          options: [
-            { value: 'scopeCheck', label: 'Scope check' },
-            { value: 'testDelta', label: 'Test delta' },
-            { value: 'llmAlignment', label: 'LLM alignment' },
-          ],
-          initialValues: defaults.qualitySelected,
-          required: false,
-        }),
-      );
-
   const config: Config = {
     ...current,
     project: {
@@ -355,18 +326,9 @@ export async function runInitCommand(
       model: orchestratorModel,
       mode: orchestratorMode,
     },
-    validation: {
-      commands: validationCommand ? [validationCommand] : [],
-    },
     workers: {
       ...current.workers,
       maxParallel,
-    },
-    quality: {
-      ...current.quality,
-      scopeCheck: qualitySelected.includes('scopeCheck'),
-      testDelta: qualitySelected.includes('testDelta'),
-      llmAlignment: qualitySelected.includes('llmAlignment'),
     },
     cost: {
       ...(current.cost ?? {}),
@@ -461,14 +423,8 @@ async function loadExistingConfig(repoDir: string): Promise<Config> {
 function buildDefaults(repoDir: string, current: Config, available: string[]) {
   const projectName =
     current.project.name || baseName(repoDir) || 'orca-project';
-  const validationCommand = current.validation.commands[0] ?? '';
-  const budget = current.cost?.budgetUsd;
-  const qualitySelected: string[] = [];
-  if (current.quality.scopeCheck) qualitySelected.push('scopeCheck');
-  if (current.quality.testDelta) qualitySelected.push('testDelta');
-  if (current.quality.llmAlignment !== false)
-    qualitySelected.push('llmAlignment');
 
+  const budget = current.cost?.budgetUsd;
   const fallbackTool = available[0] ?? 'claude';
 
   // Build interaction defaults from current config or legacy fields
@@ -505,9 +461,7 @@ function buildDefaults(repoDir: string, current: Config, available: string[]) {
     projectName,
     integrationBranch: current.project.integrationBranch || 'orca/integration',
     maxParallel: current.workers.maxParallel || 3,
-    validationCommand,
     costBudget: Number.isFinite(budget) ? String(budget) : '',
-    qualitySelected,
     interactions,
     orchestrator,
   };
@@ -581,18 +535,4 @@ function parseInteractionOverrides(
     map.set(type, override);
   }
   return map;
-}
-
-function applyQualityOverrides(
-  defaults: string[],
-  options: RunInitOptions,
-): string[] {
-  const result = new Set(defaults);
-  if (options.scopeCheck === true) result.add('scopeCheck');
-  if (options.scopeCheck === false) result.delete('scopeCheck');
-  if (options.testDelta === true) result.add('testDelta');
-  if (options.testDelta === false) result.delete('testDelta');
-  if (options.llmAlignment === true) result.add('llmAlignment');
-  if (options.llmAlignment === false) result.delete('llmAlignment');
-  return [...result];
 }

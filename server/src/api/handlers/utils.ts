@@ -1,4 +1,5 @@
 import { toErrorMessage } from '../../shared/errors';
+import { genId } from '../../shared/id';
 import type { EventSink } from '../ws';
 
 export function safeErrorMessage(error: unknown): string {
@@ -23,5 +24,5 @@ export function asBoolean(value: string | undefined): boolean {
 }
 
 export function randomID(prefix = ''): string {
-  return prefix ? `${prefix}-${crypto.randomUUID()}` : crypto.randomUUID();
+  return prefix ? `${prefix}-${genId()}` : genId();
 }

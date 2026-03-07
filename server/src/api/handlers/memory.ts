@@ -77,6 +77,12 @@ export function memoryRoutes(repoDir: string, memory: MemoryStore) {
       if (!updated) return c.json({ error: 'memory entry not found' }, 404);
       return c.json(updated);
     })
+    .get('/memory/by-interaction/:interactionId', async (c) => {
+      const entries = await memory.findByInteractionId(
+        c.req.param('interactionId'),
+      );
+      return c.json(entries);
+    })
     .delete('/memory/:id', async (c) => {
       const id = c.req.param('id');
       await memory.delete(id);

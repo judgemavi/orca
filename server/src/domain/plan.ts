@@ -61,7 +61,7 @@ export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
       if (!output.trim()) {
         throw new Error('plan returned empty output');
       }
-      return output;
+      return stripPreamble(output);
     },
   );
 
@@ -71,6 +71,12 @@ export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
     model,
     interactionId,
   };
+}
+
+function stripPreamble(raw: string): string {
+  const idx = raw.indexOf('## ');
+  if (idx <= 0) return raw.trim();
+  return raw.slice(idx).trim();
 }
 
 export function generateGlobalPlan(goal: string): ProposedTask[] {

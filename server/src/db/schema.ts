@@ -184,6 +184,7 @@ export const memoryEntries = sqliteTable(
     supersededBy: text('superseded_by'),
     sourceType: text('source_type').notNull().default('retro'),
     coveredAtCommit: text('covered_at_commit').notNull().default(''),
+    retrievalCount: integer('retrieval_count').notNull().default(0),
     stale: integer('stale', { mode: 'boolean' }).notNull().default(false),
     embedding: blob('embedding', { mode: 'buffer' }),
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),

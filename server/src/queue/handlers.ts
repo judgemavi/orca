@@ -4,6 +4,7 @@ import { runExplore } from '../domain/explore';
 import { runRetro } from '../domain/retro';
 import type { Executor } from '../executor/executor';
 import type { ToolPluginRegistry } from '../plugin/registry';
+import { genId } from '../shared/id';
 import { log } from '../shared/logger';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
@@ -13,6 +14,7 @@ import type { Job } from '../types';
 import { JOB_PRIORITIES } from '../types';
 import { mergeTask } from '../workflows/merge';
 import {
+  acceptBreakdown,
   approvePlan,
   breakdownTask,
   evaluateTaskWorkflow,
@@ -201,6 +203,42 @@ export function registerJobHandlers(
         proposed: result.proposed,
         interactionId: result.interactionId,
       });
+
+      // Auto-accept breakdown if auto-run is enabled
+      if (taskId) {
+        const auto = await shouldAutoRun(deps, taskId, 'breakdown');
+        if (auto) {
+          try {
+            const accepted = await acceptBreakdown(taskId, result.proposed, {
+              taskStore: deps.taskStore,
+              queue: deps.queue,
+            });
+            if (result.interactionId) {
+              await deps.interactionStore.finish(result.interactionId, {
+                status: 'completed',
+                qualityJson: JSON.stringify({
+                  proposed: result.proposed,
+                  accepted: true,
+                }),
+              });
+            }
+            deps.sink.broadcast('task.updated', {
+              id: taskId,
+              status: 'broken_down',
+            });
+            log.info('auto-accepted breakdown', {
+              taskId,
+              created: accepted.createdIds.length,
+            });
+          } catch (acceptErr) {
+            log.warn('auto-accept breakdown failed', {
+              taskId,
+              error: String(acceptErr),
+            });
+          }
+        }
+      }
+
       return { proposed: result.proposed, interactionId: result.interactionId };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -294,7 +332,7 @@ export function registerJobHandlers(
     }
 
     const result = await deps.executor.runTaskByIDInternal(taskId, {
-      runID: crypto.randomUUID(),
+      runID: genId(),
       toolOverride: str(job.payload?.tool),
       modelOverride: str(job.payload?.model),
       context: str(job.payload?.context),

@@ -179,6 +179,12 @@ export async function retrieveBudgetedMemory(
       plan: (task.task.plan ?? '').trim(),
     }));
 
+  // Bump retrieval counts for all returned entries (reinforcement signal)
+  const retrievedIds = [...seen];
+  if (retrievedIds.length > 0) {
+    await memory.bumpRetrievalCount(retrievedIds);
+  }
+
   return {
     summary,
     exactMatches,

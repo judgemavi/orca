@@ -12,6 +12,7 @@ import {
   breakdownTask,
   evaluateTaskWorkflow,
   generatePlan,
+  loadProposedTasksFromInteraction,
   rejectBreakdown,
   requestPlanChanges,
 } from '../../workflows/planning';
@@ -80,6 +81,11 @@ const tasksPlanGetSchema = z.object({
 const tasksPlanSetSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
   plan: z.preprocess((value) => value ?? '', z.coerce.string()),
+});
+
+const breakdownAcceptSchema = z.object({
+  interactionId: requiredTrimmedString('interactionId'),
+  parentTaskId: optionalTrimmedString(),
 });
 
 const breakdownRejectSchema = z.object({
@@ -249,6 +255,34 @@ export function planningTools(deps: {
       handler: async (input) => {
         await deps.taskStore.setPlan(input.taskId, input.plan);
         return { taskId: input.taskId, plan: input.plan };
+      },
+    }),
+    defineTool({
+      name: 'breakdown_accept',
+      description:
+        'Accept a proposed breakdown and create subtasks from it. Use after calling breakdown with autoCreate=false.',
+      schema: breakdownAcceptSchema,
+      handler: async (input) => {
+        const proposed = await loadProposedTasksFromInteraction(
+          input.interactionId,
+          { interactions: deps.interactions },
+        );
+        if (proposed.length === 0) {
+          throw new Error(
+            'No proposed tasks found for interaction ' + input.interactionId,
+          );
+        }
+        const accepted = await acceptBreakdown(
+          input.parentTaskId ?? null,
+          proposed,
+          { taskStore: deps.taskStore, queue: deps.queue },
+        );
+        return {
+          created: true,
+          taskIds: accepted.createdIds,
+          parentId: accepted.parentId,
+          interactionId: input.interactionId,
+        };
       },
     }),
     defineTool({

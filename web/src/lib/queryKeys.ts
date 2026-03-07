@@ -36,6 +36,8 @@ export const queryKeys = {
   memoryEntry: (id: string) => ['memory', 'entry', id] as const,
   memoryQuery: (q: string, limit?: number) =>
     ['memory', 'query', q, limit ?? null] as const,
+  memoriesByInteraction: (interactionId: string) =>
+    ['memory', 'by-interaction', interactionId] as const,
   embeddingProviders: ['embedding-providers'] as const,
   queue: ['queue'] as const,
   queueCounts: ['queue', 'counts'] as const,

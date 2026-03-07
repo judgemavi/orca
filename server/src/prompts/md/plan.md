@@ -26,6 +26,7 @@ Produce an implementation plan covering:
 - What tests to write or update
 
 Keep it concise. No code blocks - the executor handles implementation.
+All file paths MUST be relative to the workspace root (e.g. `src/api/server.ts`, not `/Users/.../src/api/server.ts`).
 
 Respond using EXACTLY this template:
 
@@ -33,7 +34,7 @@ Respond using EXACTLY this template:
 <strategy in 1-3 sentences>
 
 ## Files
-- `path/to/file` - reason for change
+- `path/to/file` - reason for change (always use workspace-root-relative paths, never absolute)
 
 ## Steps
 1. First step

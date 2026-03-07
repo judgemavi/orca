@@ -10,6 +10,7 @@ import { EvaluateSection } from './EvaluateSection';
 import { InteractionEntry } from './InteractionEntry';
 import { MergeSection } from './MergeSection';
 import { PlanSection } from './PlanSection';
+import { RetroSection } from './RetroSection';
 import { ReviewSection } from './ReviewSection';
 import { RunSection } from './RunSection';
 
@@ -99,6 +100,7 @@ function InteractionContent({
         runReviews={runReviews}
         latestCompletedRunStartedAt={latestCompletedRunStartedAt}
       />
+      <RetroSection interaction={interaction} />
       <MergeSection
         interaction={interaction}
         readOnly={readOnly}
