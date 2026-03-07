@@ -61,13 +61,12 @@ export function DiffViewer({ data, onAction }: Props) {
           <span className="text-xs text-muted">
             {files.length} {files.length === 1 ? 'file' : 'files'}
           </span>
-          <button
-            type="button"
-            className="rounded px-2 py-1 text-xs text-muted hover:bg-surface-alt"
+          <Button
+            className="px-2 py-1 text-xs text-muted"
             onClick={() => setSplitView((v) => !v)}
           >
             {splitView ? 'Unified' : 'Split'}
-          </button>
+          </Button>
         </div>
       </div>
       <div

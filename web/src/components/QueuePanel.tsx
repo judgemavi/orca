@@ -8,6 +8,7 @@ import {
   useQueueQuery,
 } from '../hooks/useQueue';
 import type { Job, JobStatus } from '../types';
+import { Badge, type BadgeVariant } from './Badge';
 import { Button } from './Button';
 import {
   Table,
@@ -28,12 +29,12 @@ const FILTERS: { label: string; value: FilterStatus }[] = [
   { label: 'Failed', value: 'failed' },
 ];
 
-const STATUS_BADGE: Record<JobStatus, string> = {
-  queued: 'bg-surface-alt text-muted',
-  running: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-  completed: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-  failed: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
-  cancelled: 'bg-surface-alt text-muted',
+const JOB_VARIANT: Record<JobStatus, BadgeVariant> = {
+  queued: 'default',
+  running: 'blue',
+  completed: 'emerald',
+  failed: 'rose',
+  cancelled: 'default',
 };
 
 function relativeTime(iso: string | null): string {
@@ -47,11 +48,9 @@ function relativeTime(iso: string | null): string {
   return `${Math.floor(min / 60)}h ago`;
 }
 
-function StatusBadge({ status }: { status: JobStatus }) {
+function JobStatusBadge({ status }: { status: JobStatus }) {
   return (
-    <span
-      className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[status]}`}
-    >
+    <Badge variant={JOB_VARIANT[status]}>
       {status === 'running' ? (
         <span className="flex items-center gap-1">
           <span className="inline-block h-1.5 w-1.5 animate-spin rounded-full border border-blue-600 border-t-transparent dark:border-blue-300" />
@@ -60,7 +59,7 @@ function StatusBadge({ status }: { status: JobStatus }) {
       ) : (
         status
       )}
-    </span>
+    </Badge>
   );
 }
 
@@ -90,7 +89,7 @@ function JobRow({
         )}
       </TableCell>
       <TableCell>
-        <StatusBadge status={job.status} />
+        <JobStatusBadge status={job.status} />
       </TableCell>
       <TableCell className="text-xs tabular-nums text-muted">
         {job.priority}

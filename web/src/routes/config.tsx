@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { Button } from '../components/Button';
 import {
   useConfigQuery,
   useEmbeddingProvidersQuery,
@@ -633,15 +634,15 @@ function SectionCard({
         {children}
         <div className="flex items-center justify-end gap-3 pt-1">
           {error ? <span className="text-xs text-danger">{error}</span> : null}
-          <button
-            type="button"
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+          <Button
+            variant="primary"
+            className="text-xs"
             onClick={onSave}
             disabled={saving}
             data-section={id}
           >
             {saving ? 'Saving...' : 'Save'}
-          </button>
+          </Button>
         </div>
       </div>
     </details>

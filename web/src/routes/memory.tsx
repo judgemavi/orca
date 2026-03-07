@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import { api } from '../api';
+import { Badge, type BadgeVariant } from '../components/Badge';
 import { Button } from '../components/Button';
 import { DialogChrome } from '../components/DialogChrome';
 import {
@@ -47,18 +48,18 @@ const CATEGORIES: MemoryCategory[] = [
 
 const SOURCE_TYPES: MemorySourceType[] = ['retro', 'explore'];
 
-const CATEGORY_TONE: Record<MemoryCategory, string> = {
-  pattern: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-  pitfall: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
-  preference: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  convention: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-  architecture: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300',
-  dependency: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300',
+const CATEGORY_VARIANT: Record<MemoryCategory, BadgeVariant> = {
+  pattern: 'emerald',
+  pitfall: 'rose',
+  preference: 'amber',
+  convention: 'blue',
+  architecture: 'indigo',
+  dependency: 'cyan',
 };
 
-const SOURCE_TONE: Record<MemorySourceType, string> = {
-  retro: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
-  explore: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+const SOURCE_VARIANT: Record<MemorySourceType, BadgeVariant> = {
+  retro: 'violet',
+  explore: 'blue',
 };
 
 const columnHelper = createColumnHelper<MemoryEntry>();
@@ -329,9 +330,7 @@ function MemoryPage() {
         header: 'Stale',
         cell: ({ getValue }) =>
           getValue() ? (
-            <span className="inline-flex rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-              Stale
-            </span>
+            <Badge variant="amber">Stale</Badge>
           ) : (
             <span className="text-xs text-muted">No</span>
           ),
@@ -382,11 +381,9 @@ function MemoryPage() {
 
           const categoryValue = getValue();
           return (
-            <span
-              className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${CATEGORY_TONE[categoryValue]}`}
-            >
+            <Badge variant={CATEGORY_VARIANT[categoryValue]}>
               {categoryValue}
-            </span>
+            </Badge>
           );
         },
       }),
@@ -394,13 +391,7 @@ function MemoryPage() {
         header: 'Source Type',
         cell: ({ getValue }) => {
           const value = getValue();
-          return (
-            <span
-              className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${SOURCE_TONE[value]}`}
-            >
-              {value}
-            </span>
-          );
+          return <Badge variant={SOURCE_VARIANT[value]}>{value}</Badge>;
         },
       }),
       columnHelper.accessor('tags', {

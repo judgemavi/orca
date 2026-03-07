@@ -8,10 +8,11 @@ import {
 } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import { InteractionLogPanel } from '../components/board/task-detail/InteractionLogPanel';
-import { TaskActionsBar } from '../components/board/task-detail/TaskActionsBar';
-import { TaskInteractionList } from '../components/board/task-detail/TaskInteractionList';
-import { StatusBadge } from '../components/common/StatusBadge';
+import { Button } from '../components/Button';
+import { InteractionLogPanel } from '../components/InteractionLogPanel';
+import { StatusBadge } from '../components/StatusBadge';
+import { TaskActionsBar } from '../components/TaskActionsBar';
+import { TaskInteractionList } from '../components/TaskInteractionList';
 import {
   TaskDetailProvider,
   useTaskDetailContext,
@@ -156,8 +157,8 @@ function TaskDetailContent({
     try {
       await deleteMutation.mutateAsync(task.id);
       void navigate({ to: '/', search: {} });
-    } catch (err: any) {
-      alert(err?.message ?? 'Delete failed');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed');
     }
   };
 
@@ -180,14 +181,14 @@ function TaskDetailContent({
             {task.status !== 'running' &&
               task.status !== 'merged' &&
               task.status !== 'broken_down' && (
-                <button
-                  type="button"
-                  className="rounded border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
+                <Button
+                  variant="destructive"
+                  className="text-xs"
                   onClick={() => void handleDelete()}
                   disabled={deleteMutation.isPending}
                 >
                   {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-                </button>
+                </Button>
               )}
           </div>
 
@@ -320,10 +321,14 @@ function TaskDetailForm({
           <div className="flex flex-col gap-4">
             <form.Field name="title">
               {(field) => (
-                <label className="flex flex-col gap-2 text-xs font-medium">
+                <label
+                  className="flex flex-col gap-2 text-xs font-medium"
+                  htmlFor="title"
+                >
                   Title
                   {isEditable ? (
                     <input
+                      id="title"
                       className={controlClass}
                       value={field.state.value}
                       onBlur={field.handleBlur}
@@ -340,10 +345,14 @@ function TaskDetailForm({
 
             <form.Field name="description">
               {(field) => (
-                <label className="flex flex-col gap-2 text-xs font-medium">
+                <label
+                  className="flex flex-col gap-2 text-xs font-medium"
+                  htmlFor="description"
+                >
                   Description
                   {isEditable ? (
                     <textarea
+                      id="description"
                       className={controlClass}
                       value={field.state.value}
                       onBlur={field.handleBlur}
@@ -403,16 +412,15 @@ function TaskDetailForm({
                           </option>
                         ))}
                       </select>
-                      <button
-                        type="button"
-                        className="rounded-md border border-border-subtle px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                      <Button
+                        className="text-xs"
                         onClick={() => {
                           void handleAddDependency();
                         }}
                         disabled={addingDependency || !selectedDependencyId}
                       >
                         {addingDependency ? 'Adding…' : 'Add Dependency'}
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     <p className="text-xs font-normal">
@@ -429,13 +437,14 @@ function TaskDetailForm({
               <form.Subscribe selector={(state) => state.isDirty}>
                 {(isDirty) => (
                   <div className="flex justify-end pt-2">
-                    <button
+                    <Button
                       type="submit"
-                      className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+                      variant="primary"
+                      className="text-xs"
                       disabled={saving || !isDirty}
                     >
                       {saving ? 'Saving…' : 'Save'}
-                    </button>
+                    </Button>
                   </div>
                 )}
               </form.Subscribe>
