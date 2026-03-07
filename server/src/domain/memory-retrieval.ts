@@ -3,7 +3,7 @@ import type { TaskStore } from '../store/tasks';
 import type { MemoryEntry } from '../types';
 import { TASK_STATUSES } from '../types';
 
-export interface RetrievalBudgets {
+interface RetrievalBudgets {
   summary: number;
   exact: number;
   semantic: number;
@@ -11,7 +11,7 @@ export interface RetrievalBudgets {
   siblings: number;
 }
 
-export interface BudgetedRetrievalInput {
+interface BudgetedRetrievalInput {
   taskId?: string;
   title: string;
   description: string;
@@ -35,7 +35,7 @@ export interface BudgetedRetrievalResult {
   staleRefreshed: number;
 }
 
-export interface MemoryRetrievalSyncer {
+interface MemoryRetrievalSyncer {
   refresh(entryID: string): Promise<unknown>;
 }
 

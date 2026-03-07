@@ -13,7 +13,7 @@ import { registerOrcCommand } from './commands/orc';
 import { registerQueueCommands } from './commands/queue';
 import { registerStatusCommand } from './commands/status';
 import { registerTaskCommands } from './commands/task';
-import { printError, setJSONMode, setQuietMode } from './format';
+import { printError, setJSONMode } from './format';
 
 export async function runCLI(deps: {
   repoDir: string;
@@ -33,7 +33,6 @@ export async function runCLI(deps: {
 
   const hasFlag = (flag: string) => Bun.argv.includes(flag);
   setJSONMode(hasFlag('--json') || !process.stdin.isTTY);
-  setQuietMode(hasFlag('--quiet') || hasFlag('-q'));
 
   // init is handled in index.ts before bootstrap — this is a no-op so commander doesn't error on unknown command
   program
@@ -81,18 +80,19 @@ export async function runCLI(deps: {
   program.exitOverride();
   try {
     await program.parseAsync(Bun.argv);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const errObj = err as Record<string, unknown> | null;
     if (
-      err?.code === 'commander.helpDisplayed' ||
-      err?.code === 'commander.version'
+      errObj?.code === 'commander.helpDisplayed' ||
+      errObj?.code === 'commander.version'
     )
       return;
     const code =
-      err?.code === 'commander.missingArgument'
+      errObj?.code === 'commander.missingArgument'
         ? 'MISSING_ARG'
-        : err?.code === 'commander.unknownCommand'
+        : errObj?.code === 'commander.unknownCommand'
           ? 'UNKNOWN_COMMAND'
-          : err?.message?.includes('not found')
+          : String(errObj?.message ?? '').includes('not found')
             ? 'NOT_FOUND'
             : 'ERROR';
     printError(err, code);

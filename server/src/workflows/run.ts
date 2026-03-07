@@ -10,7 +10,7 @@ export interface RunOpts {
   context?: string;
 }
 
-export type TaskResult = TaskRunResult;
+type TaskResult = TaskRunResult;
 
 export class RunWorkflowError extends Error {
   constructor(

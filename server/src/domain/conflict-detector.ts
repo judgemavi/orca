@@ -1,12 +1,12 @@
 import { gitRun } from '../shared/git';
 import { findTaskWorktree } from './worktree';
 
-export interface ConflictDetectionResult {
+interface ConflictDetectionResult {
   taskIds: string[];
   files: string[];
 }
 
-export interface ConflictDetectorOptions {
+interface ConflictDetectorOptions {
   repoDir: string;
   intervalMS?: number;
   getTaskIDs: () => string[];
@@ -17,7 +17,7 @@ export interface MonitorContext {
   signal?: AbortSignal;
 }
 
-export interface RuntimeMonitor {
+interface RuntimeMonitor {
   start(ctx?: MonitorContext): void;
   stop(): void;
 }

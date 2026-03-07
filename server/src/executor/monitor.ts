@@ -4,7 +4,7 @@ import {
 } from '../domain/conflict-detector';
 import { StuckDetector } from '../domain/stuck-detector';
 
-export interface MonitorOptions {
+interface MonitorOptions {
   checkIntervalMS: number;
   conflictCheckIntervalMS: number;
   maxStuckCycles: number;

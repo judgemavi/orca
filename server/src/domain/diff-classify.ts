@@ -5,14 +5,14 @@ export type DiffChangeType =
   | 'deleted'
   | 'renamed';
 
-export interface DiffClassifiedFile {
+interface DiffClassifiedFile {
   type: DiffChangeType;
   oldPath: string;
   newPath: string;
   churn: number;
 }
 
-export interface DiffClassificationResult {
+interface DiffClassificationResult {
   files: DiffClassifiedFile[];
   byPath: Record<string, DiffChangeType>;
   overall: DiffChangeType | '';

@@ -24,3 +24,11 @@ export type MemoryCategory =
   | 'tooling';
 
 export type MemorySourceType = 'retro' | 'explore';
+
+/** Categories representing durable structural knowledge — exempt from time-based decay by default. */
+export const STRUCTURAL_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
+  'architecture',
+  'convention',
+  'tooling',
+  'dependency',
+]);

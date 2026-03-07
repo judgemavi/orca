@@ -5,7 +5,7 @@ import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import type { TaskStatus } from '../types';
 
-export interface OutcomeInput {
+interface OutcomeInput {
   exitCode: number;
   timedOut: boolean;
   aborted: boolean;
@@ -14,13 +14,13 @@ export interface OutcomeInput {
   workerError?: string;
 }
 
-export interface OutcomeResult {
+interface OutcomeResult {
   taskStatus: TaskStatus;
   interactionStatus: 'completed' | 'failed';
   error?: string;
 }
 
-export interface TaskRunResultRecord {
+interface TaskRunResultRecord {
   taskID: string;
   interactionType: string;
   toolName: string;
@@ -43,7 +43,7 @@ export interface TaskRunResultRecord {
   error?: string;
 }
 
-export interface FailedTaskRunInput {
+interface FailedTaskRunInput {
   taskID: string;
   interactionType: string;
   toolName: string;
@@ -54,12 +54,12 @@ export interface FailedTaskRunInput {
   logPath: string;
 }
 
-export interface InteractionMemoryMeta {
+interface InteractionMemoryMeta {
   usedMemoryIds: string[];
   usedProvenanceHashes: string[];
 }
 
-export interface PersistTaskResultInput {
+interface PersistTaskResultInput {
   taskID: string;
   interactionID: string;
   runID: string;
@@ -67,13 +67,12 @@ export interface PersistTaskResultInput {
   result: TaskRunResultRecord;
 }
 
-export interface PersistSuccessfulTaskResultInput
-  extends PersistTaskResultInput {
+interface PersistSuccessfulTaskResultInput extends PersistTaskResultInput {
   reviewID?: string;
   memoryMeta?: InteractionMemoryMeta;
 }
 
-export interface ResultCoordinatorDeps {
+interface ResultCoordinatorDeps {
   taskStore: TaskStore;
   interactionStore?: InteractionStore;
   memoryStore?: MemoryStore;

@@ -30,7 +30,7 @@ import {
   type TaskRunResult,
 } from './task-runner';
 
-export interface ExecutorDeps {
+interface ExecutorDeps {
   config: Config;
   registry: ToolPluginRegistry;
   taskStore: TaskStore;

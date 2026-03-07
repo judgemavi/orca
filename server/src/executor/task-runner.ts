@@ -12,13 +12,13 @@ import type { Config, TaskStatus } from '../types';
 import { runTool, type WorkerOutputLine } from '../worker/worker';
 import { evaluateTaskOutcome } from './results';
 
-export interface ResolvedTaskExecution {
+interface ResolvedTaskExecution {
   toolName: string;
   plugin: ToolPlugin;
   model: string;
 }
 
-export interface TaskRunInput {
+interface TaskRunInput {
   taskID: string;
   interactionType: string;
   title: string;

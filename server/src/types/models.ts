@@ -105,6 +105,7 @@ export type MemoryEntry = Omit<
   | 'coveredAtCommit'
   | 'embedding'
   | 'retrievalCount'
+  | 'decayExempt'
 > & {
   category: MemoryCategory;
   tags: string[];
@@ -112,6 +113,7 @@ export type MemoryEntry = Omit<
   stale: boolean;
   confidence: number;
   retrievalCount: number;
+  decayExempt: boolean;
   filePaths?: string[];
   sourceTaskId?: string;
   sourceInteractionId?: string;

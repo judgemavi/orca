@@ -4,7 +4,7 @@ import type { MCPServerDef, ToolPlugin } from '../plugin/types';
 import { loadPrompt } from '../prompts/loader';
 import type { ConfigStore } from '../store/config';
 
-export interface SupervisorResolution {
+interface SupervisorResolution {
   toolName: string;
   plugin: ToolPlugin;
   model: string;

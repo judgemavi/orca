@@ -8,7 +8,7 @@ import {
 import type { TaskStore } from '../store/tasks';
 import type { Task, TaskStatus } from '../types';
 
-export type TaskFilter = (task: Task) => boolean;
+type TaskFilter = (task: Task) => boolean;
 
 export const allTasks: TaskFilter = () => true;
 export const pendingTasks: TaskFilter = (task) =>

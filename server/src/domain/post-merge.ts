@@ -13,7 +13,7 @@ export interface PostMergeEventSink {
   broadcast: (type: string, data: unknown) => void;
 }
 
-export interface PostMergeDeps {
+interface PostMergeDeps {
   repoDir: string;
   taskStore: TaskStore;
   interactions: InteractionStore;

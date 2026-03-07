@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { gitRun } from '../shared/git';
 import { findTaskWorktree } from './worktree';
 
-export interface StuckDetectorOptions {
+interface StuckDetectorOptions {
   repoDir: string;
   intervalMS?: number;
   maxCycles?: number;
@@ -10,11 +10,11 @@ export interface StuckDetectorOptions {
   onStuck?: (taskID: string, reason: string) => void;
 }
 
-export interface MonitorContext {
+interface MonitorContext {
   signal?: AbortSignal;
 }
 
-export interface RuntimeMonitor {
+interface RuntimeMonitor {
   start(ctx?: MonitorContext): void;
   stop(): void;
 }

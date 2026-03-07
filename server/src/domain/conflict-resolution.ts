@@ -18,7 +18,7 @@ import { findTaskWorktree } from './worktree';
 
 const MAX_CONFLICT_ATTEMPTS = 10;
 
-export interface ConflictResolutionRuntime {
+interface ConflictResolutionRuntime {
   mergeTaskWithGitUnlocked: (
     taskID: string,
     deps: IntegratorDeps,

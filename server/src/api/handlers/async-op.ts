@@ -27,7 +27,7 @@ interface AsyncOpFailedContext {
   error: unknown;
 }
 
-export interface AsyncOpOptions<TResult> {
+interface AsyncOpOptions<TResult> {
   idPrefix?: string;
   started?: AsyncOpEvent<AsyncOpStartContext>;
   completed?: AsyncOpEvent<AsyncOpCompletedContext<TResult>>;

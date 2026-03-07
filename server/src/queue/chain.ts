@@ -6,7 +6,7 @@ import type { InteractionType, JobType, TaskStatus } from '../types';
 import { JOB_PRIORITIES } from '../types';
 import type { JobQueue } from './queue';
 
-export interface ChainDeps {
+interface ChainDeps {
   configStore: ConfigStore;
   taskStore: TaskStore;
   queue: JobQueue;

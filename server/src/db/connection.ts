@@ -6,7 +6,7 @@ import * as schema from './schema';
 
 export type OrcaDrizzleDB = BunSQLiteDatabase<typeof schema>;
 
-export interface OpenDatabaseOptions {
+interface OpenDatabaseOptions {
   repoDir: string;
   dbPath?: string;
   migrationsFolder?: string;

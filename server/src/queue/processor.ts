@@ -3,7 +3,7 @@ import { log } from '../shared/logger';
 import type { Job, JobType } from '../types';
 import type { JobQueue } from './queue';
 
-export type JobHandler = (job: Job) => Promise<Record<string, unknown> | void>;
+type JobHandler = (job: Job) => Promise<Record<string, unknown> | void>;
 
 interface ProcessorDeps {
   queue: JobQueue;

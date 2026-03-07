@@ -8,7 +8,7 @@ import type { ToolPlugin, ToolPluginEvent } from '../plugin/types';
 import { camelizeKeys } from '../shared/camelize';
 import type { Config } from '../types';
 
-export interface ResolveExecutionInput {
+interface ResolveExecutionInput {
   config?: Config;
   registry?: ToolPluginRegistry;
   toolOverride?: string;
@@ -16,7 +16,7 @@ export interface ResolveExecutionInput {
   interactionType?: string;
 }
 
-export interface ResolvedExecution {
+interface ResolvedExecution {
   toolName: string;
   plugin: ToolPlugin;
   model: string;

@@ -19,14 +19,14 @@ import {
 import { readExploreContext, writeExploreContext } from './explore';
 import { extractJSONObject, resolveExecution } from './llm';
 
-export interface MemorySyncStatus {
+interface MemorySyncStatus {
   lastSyncedCommit: string;
   currentCommit: string;
   syncNeeded: boolean;
   commitsBehind: number;
 }
 
-export interface MemoryRefreshOptions {
+interface MemoryRefreshOptions {
   config?: Config;
   registry?: ToolPluginRegistry;
   interactions?: InteractionStore;
@@ -47,7 +47,7 @@ interface RefreshLLMResult {
   valid: boolean;
 }
 
-export interface SyncContextDeps {
+interface SyncContextDeps {
   config: Config;
   registry: ToolPluginRegistry;
   interactions: InteractionStore;
@@ -149,6 +149,14 @@ export async function syncMemoryWithGit(
       superseded += 1;
       continue;
     }
+
+    // Decay-exempt entries only update their covered commit on non-delete changes.
+    // They don't lose confidence or go stale from file modifications.
+    if (entry.decayExempt) {
+      await memory.updateCoveredCommit(entry.id, currentCommit);
+      continue;
+    }
+
     if (classification === 'major') {
       await memory.decayEntry(entry.id, 0.7);
       await memory.markStale(entry.id);

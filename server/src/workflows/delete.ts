@@ -7,7 +7,7 @@ import { toErrorMessage } from '../shared/errors';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
 
-export interface DeleteTaskResult {
+interface DeleteTaskResult {
   taskId: string;
   deleted: boolean;
   cleanup: TaskCleanupResult;

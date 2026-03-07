@@ -56,6 +56,7 @@ export interface MemoryUpdateFields {
   stale?: boolean;
   coveredAtCommit?: string;
   tags?: string[];
+  decayExempt?: boolean;
 }
 
 export interface MemoryEntryInput {
@@ -70,6 +71,7 @@ export interface MemoryEntryInput {
   coveredAtCommit?: string;
   stale?: boolean;
   confidence?: number;
+  decayExempt?: boolean;
   provenanceHash: string;
   supersededBy?: string;
 }

@@ -25,7 +25,7 @@ interface ToolModelOverrides {
   modelOverride?: string;
 }
 
-export interface EvaluateTaskWorkflowDeps extends ToolModelOverrides {
+interface EvaluateTaskWorkflowDeps extends ToolModelOverrides {
   repoDir: string;
   taskStore: TaskStore;
   interactions: InteractionStore;
@@ -33,12 +33,12 @@ export interface EvaluateTaskWorkflowDeps extends ToolModelOverrides {
   registry: ToolPluginRegistry;
 }
 
-export interface BreakdownTaskInput extends ToolModelOverrides {
+interface BreakdownTaskInput extends ToolModelOverrides {
   taskId?: string;
   goal?: string;
 }
 
-export interface BreakdownTaskWorkflowDeps {
+interface BreakdownTaskWorkflowDeps {
   repoDir?: string;
   taskStore: TaskStore;
   interactions?: InteractionStore;
@@ -47,7 +47,7 @@ export interface BreakdownTaskWorkflowDeps {
   memory?: MemoryStore;
 }
 
-export interface BreakdownTaskResult {
+interface BreakdownTaskResult {
   taskId?: string;
   proposed: ProposedTask[];
   interactionId?: string;
@@ -55,12 +55,12 @@ export interface BreakdownTaskResult {
   model?: string;
 }
 
-export interface AcceptBreakdownResult {
+interface AcceptBreakdownResult {
   createdIds: string[];
   parentId?: string;
 }
 
-export interface GeneratePlanWorkflowDeps extends ToolModelOverrides {
+interface GeneratePlanWorkflowDeps extends ToolModelOverrides {
   repoDir: string;
   taskStore: TaskStore;
   interactions: InteractionStore;
@@ -70,7 +70,7 @@ export interface GeneratePlanWorkflowDeps extends ToolModelOverrides {
   feedback?: string;
 }
 
-export interface GeneratePlanWorkflowResult {
+interface GeneratePlanWorkflowResult {
   taskId: string;
   plan: string;
   interactionId: string;
@@ -79,13 +79,12 @@ export interface GeneratePlanWorkflowResult {
   memory?: BudgetedRetrievalResult;
 }
 
-export interface RequestPlanChangesWorkflowDeps
+interface RequestPlanChangesWorkflowDeps
   extends Omit<GeneratePlanWorkflowDeps, 'feedback'> {
   interactionId?: string;
 }
 
-export interface RequestPlanChangesWorkflowResult
-  extends GeneratePlanWorkflowResult {
+interface RequestPlanChangesWorkflowResult extends GeneratePlanWorkflowResult {
   reviewId: string;
 }
 

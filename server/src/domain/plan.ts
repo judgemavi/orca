@@ -4,7 +4,7 @@ import type { InteractionStore } from '../store/interactions';
 import type { Config, ProposedTask } from '../types';
 import { runTool } from '../worker/worker';
 
-export interface RunPlanInput {
+interface RunPlanInput {
   repoDir: string;
   taskID: string;
   title: string;
@@ -18,7 +18,7 @@ export interface RunPlanInput {
   modelOverride?: string;
 }
 
-export interface RunPlanResult {
+interface RunPlanResult {
   plan: string;
   tool: string;
   model: string;

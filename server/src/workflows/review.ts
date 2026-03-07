@@ -8,7 +8,7 @@ import type { TaskStore } from '../store/tasks';
 import type { Task } from '../types';
 import { INTERACTION_STATUSES, TASK_STATUSES } from '../types';
 
-export interface RequestChangesWorkflowDeps {
+interface RequestChangesWorkflowDeps {
   taskStore: TaskStore;
   interactions: InteractionStore;
   executor: Executor;
@@ -19,13 +19,13 @@ export interface RequestChangesWorkflowDeps {
   };
 }
 
-export interface RequestChangesWorkflowResult {
+interface RequestChangesWorkflowResult {
   taskId: string;
   reviewId: string;
   result: TaskRunResult;
 }
 
-export interface RunAIReviewWorkflowDeps {
+interface RunAIReviewWorkflowDeps {
   repoDir: string;
   configStore: ConfigStore;
   registry: ToolPluginRegistry;
@@ -36,7 +36,7 @@ export interface RunAIReviewWorkflowDeps {
   modelOverride?: string;
 }
 
-export interface RunAIReviewWorkflowResult {
+interface RunAIReviewWorkflowResult {
   taskId: string;
   approved: boolean;
   feedback: string;

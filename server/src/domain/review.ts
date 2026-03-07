@@ -15,7 +15,7 @@ interface ParsedReviewPayload {
   findings?: unknown[];
 }
 
-export interface RunAIReviewInput {
+interface RunAIReviewInput {
   repoDir: string;
   taskID: string;
   title: string;
@@ -29,7 +29,7 @@ export interface RunAIReviewInput {
   modelOverride?: string;
 }
 
-export interface RunAIReviewResult {
+interface RunAIReviewResult {
   taskId: string;
   approved: boolean;
   feedback: string;

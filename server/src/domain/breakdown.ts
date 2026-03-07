@@ -8,7 +8,7 @@ import { extractJSONArray } from './llm';
 const TASK_HEADER_RE = /^###\s*task\s+\d+(?::\s*(.*))?$/i;
 const FIELD_RE = /^-+\s*([A-Za-z ]+)\s*:\s*(.*)$/;
 
-export interface RunBreakdownInput {
+interface RunBreakdownInput {
   repoDir: string;
   config: Config;
   registry: ToolPluginRegistry;
@@ -20,7 +20,7 @@ export interface RunBreakdownInput {
   modelOverride?: string;
 }
 
-export interface RunBreakdownResult {
+interface RunBreakdownResult {
   proposed: ProposedTask[];
   interactionId: string;
   tool: string;

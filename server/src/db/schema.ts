@@ -186,6 +186,9 @@ export const memoryEntries = sqliteTable(
     coveredAtCommit: text('covered_at_commit').notNull().default(''),
     retrievalCount: integer('retrieval_count').notNull().default(0),
     stale: integer('stale', { mode: 'boolean' }).notNull().default(false),
+    decayExempt: integer('decay_exempt', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     embedding: blob('embedding', { mode: 'buffer' }),
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
     updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
@@ -197,7 +200,7 @@ export const memoryEntries = sqliteTable(
     index('idx_memory_provenance_hash').on(table.provenanceHash),
     check(
       'memory_category_check',
-      sql`${table.category} IN ('pattern', 'pitfall', 'preference', 'convention', 'architecture', 'dependency')`,
+      sql`${table.category} IN ('pattern', 'pitfall', 'preference', 'convention', 'architecture', 'dependency', 'tooling')`,
     ),
     check(
       'memory_source_type_check',

@@ -3,7 +3,7 @@ import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
 import { INTERACTION_STATUSES, TASK_STATUSES } from '../types';
 
-export interface RecoverySummary {
+interface RecoverySummary {
   interactionsFailed: number;
   tasksStopped: number;
   tasksFailed: number;

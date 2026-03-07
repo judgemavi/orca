@@ -3,7 +3,6 @@ import type { MemoryEntry, Task } from '../types';
 import { short, statusIcon } from './helpers';
 
 let jsonMode = false;
-let quietMode = false;
 
 export function setJSONMode(enabled: boolean) {
   jsonMode = enabled;
@@ -13,20 +12,11 @@ export function isJSONMode(): boolean {
   return jsonMode;
 }
 
-export function setQuietMode(enabled: boolean) {
-  quietMode = enabled;
-}
-
-export function isQuietMode(): boolean {
-  return quietMode;
-}
-
-export function printResult(data: unknown) {
+export function printJSON(data: unknown) {
   if (jsonMode) {
     console.log(JSON.stringify({ ok: true, data }));
     return;
   }
-  if (quietMode) return;
   console.log(formatHuman(data));
 }
 
@@ -37,11 +27,6 @@ export function printError(error: unknown, code = 'ERROR') {
   } else {
     console.error(`error: ${message}`);
   }
-}
-
-/** @deprecated use printResult */
-export function printJSON(data: unknown) {
-  printResult(data);
 }
 
 export function printTable(
@@ -56,11 +41,13 @@ export function printTable(
     ),
   );
 
-  const head = headers.map((header, i) => pad(header, widths[i]!)).join('  ');
-  const line = widths.map((width) => '-'.repeat(width!)).join('  ');
+  const head = headers
+    .map((header, i) => pad(header, widths[i] ?? 0))
+    .join('  ');
+  const line = widths.map((width) => '-'.repeat(width)).join('  ');
   const body = rows.map((row) =>
     headers
-      .map((header, i) => pad(String(row[header] ?? ''), widths[i]!))
+      .map((header, i) => pad(String(row[header] ?? ''), widths[i] ?? 0))
       .join('  '),
   );
 
@@ -222,10 +209,10 @@ function isStatusSummary(value: unknown): value is {
   if (!isRecord(value.byStatus)) return false;
   if (typeof value.runningInteractions !== 'number') return false;
   if (typeof value.totalCost !== 'number') return false;
-  if (!isRecord(value.memory)) return false;
+  const mem = value.memory;
+  if (!isRecord(mem)) return false;
   return (
-    typeof value.memory.totalEntries === 'number' &&
-    typeof value.memory.staleCount === 'number'
+    typeof mem.totalEntries === 'number' && typeof mem.staleCount === 'number'
   );
 }
 
@@ -246,7 +233,7 @@ function isActionResult(value: unknown): value is Record<string, unknown> {
   return isRecord(value);
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object';
 }
 

@@ -16,7 +16,7 @@ import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import { TASK_STATUSES } from '../types';
 
-export interface MergeWorkflowDeps {
+interface MergeWorkflowDeps {
   repoDir: string;
   taskStore: TaskStore;
   configStore: ConfigStore;

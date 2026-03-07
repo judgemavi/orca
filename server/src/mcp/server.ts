@@ -25,7 +25,7 @@ import { statusTools } from './tools/status';
 import { taskTools } from './tools/tasks';
 import type { Tool } from './types';
 
-export interface MCPDeps {
+interface MCPDeps {
   repoDir: string;
   configStore: ConfigStore;
   registry: ToolPluginRegistry;

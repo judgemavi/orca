@@ -5,7 +5,11 @@ import { gitOutput, gitRun } from '../shared/git';
 import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
-import type { Config, MemoryCategory } from '../types';
+import {
+  type Config,
+  type MemoryCategory,
+  STRUCTURAL_CATEGORIES,
+} from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONArray } from './llm';
 
@@ -26,7 +30,7 @@ interface ExtractedMemoryEntry {
   filePaths?: string[];
 }
 
-export interface RunExploreInput {
+interface RunExploreInput {
   repoDir: string;
   interactions: InteractionStore;
   memory: MemoryStore;
@@ -37,7 +41,7 @@ export interface RunExploreInput {
   modelOverride?: string;
 }
 
-export interface RunExploreResult {
+interface RunExploreResult {
   path: string;
   files: number;
   interactionId: string;
@@ -265,6 +269,7 @@ async function seedExploreMemory(
         sourceType: 'explore',
         coveredAtCommit: coveredAtCommit,
         confidence: 0.95,
+        decayExempt: true,
         provenanceHash: provenanceHash,
       });
       summaryID = created.id;
@@ -301,6 +306,7 @@ async function seedExploreMemory(
       filePaths: filePaths,
       coveredAtCommit: coveredAtCommit,
       confidence,
+      decayExempt: STRUCTURAL_CATEGORIES.has(category),
       provenanceHash: provenanceHash,
     });
     createdSeedIDs.push(created.id);

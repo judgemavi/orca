@@ -1,6 +1,6 @@
 import { streamToText } from './stream';
 
-export interface GitRunResult {
+interface GitRunResult {
   stdout: string;
   stderr: string;
   exitCode: number;

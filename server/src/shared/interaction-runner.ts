@@ -13,7 +13,7 @@ import { log } from './logger';
 
 type Awaitable<T> = T | Promise<T>;
 
-export interface RunnerDeps {
+interface RunnerDeps {
   config?: Config;
   registry?: ToolPluginRegistry;
   repoDir: string;
@@ -21,7 +21,7 @@ export interface RunnerDeps {
   runTool: typeof import('../worker/worker').runTool;
 }
 
-export interface RunnerOpts {
+interface RunnerOpts {
   taskId: string | null;
   type: string;
   promptName?: PromptName;
@@ -51,7 +51,7 @@ interface InteractionFinishFields {
   model?: string | null;
 }
 
-export interface RunContext {
+interface RunContext {
   output: string;
   interactionId: string;
   tool: string;
@@ -59,7 +59,7 @@ export interface RunContext {
   runResult: WorkerRunResult;
 }
 
-export interface RunResult<T> {
+interface RunResult<T> {
   result: T;
   interactionId: string;
   tool: string;

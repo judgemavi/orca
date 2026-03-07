@@ -22,13 +22,13 @@ import type { StoredInteraction, ToolSummary } from './types';
 
 type InteractionRow = typeof taskInteractions.$inferSelect;
 
-export interface BeginResult {
+interface BeginResult {
   id: string;
   attempt: number;
   logPath: string;
 }
 
-export interface RunCostSummary {
+interface RunCostSummary {
   runId: string;
   interactions: number;
   inputTokens: number;

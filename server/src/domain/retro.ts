@@ -9,12 +9,12 @@ import type { Config, MemoryCategory, MemoryEntry, Task } from '../types';
 import { runTool } from '../worker/worker';
 import { extractJSONArray, formatTemplate, resolveExecution } from './llm';
 
-export interface RetroSummary {
+interface RetroSummary {
   highlights: string[];
   improvement: string;
 }
 
-export interface RetroMemoryEntry {
+interface RetroMemoryEntry {
   content: string;
   category: MemoryCategory;
   tags: string[];
@@ -23,7 +23,7 @@ export interface RetroMemoryEntry {
   filePaths?: string[];
 }
 
-export interface RetroResult {
+interface RetroResult {
   summary: RetroSummary;
   memoryEntries: RetroMemoryEntry[];
   interactionId?: string;
@@ -31,7 +31,7 @@ export interface RetroResult {
   duplicateProvenance?: boolean;
 }
 
-export interface RetroDeps {
+interface RetroDeps {
   repoDir: string;
   taskStore: TaskStore;
   interactionStore: InteractionStore;

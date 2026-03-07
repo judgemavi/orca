@@ -22,7 +22,7 @@ import type { EventSink } from '../ws';
 import { asyncOp } from './async-op';
 import { broadcast, safeErrorMessage } from './utils';
 
-export interface TaskPlanDeps {
+interface TaskPlanDeps {
   repoDir: string;
   taskStore: TaskStore;
   interactions: InteractionStore;

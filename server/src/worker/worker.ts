@@ -14,7 +14,7 @@ export interface WorkerOutputLine {
   ts: string;
 }
 
-export interface WorkerRunOptions {
+interface WorkerRunOptions {
   taskID: string;
   driverName: string;
   plugin: ToolPlugin;

@@ -24,12 +24,12 @@ import { MemoryStore } from './store/memory';
 import { TaskStore } from './store/tasks';
 import type { Config } from './types';
 
-export interface BootstrapOptions {
+interface BootstrapOptions {
   repoDir: string;
   eventSink?: EventSink;
 }
 
-export interface BootstrapResult {
+interface BootstrapResult {
   database: DatabaseConnection;
   config: Config;
   registry: ToolPluginRegistry;

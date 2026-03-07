@@ -6,7 +6,7 @@ import { runTool } from '../worker/worker';
 import { readExploreContext } from './explore';
 import { extractJSONObject } from './llm';
 
-export interface EvaluateOptions {
+interface EvaluateOptions {
   repoDir: string;
   config?: Config;
   registry?: ToolPluginRegistry;

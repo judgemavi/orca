@@ -97,6 +97,7 @@ export class MemoryStore {
     const confidence = input.confidence ?? 1.0;
     const covered = (input.coveredAtCommit ?? '').trim();
     const stale = Boolean(input.stale);
+    const decayExempt = Boolean(input.decayExempt);
     const filePaths = normalizePaths(input.filePaths ?? []);
 
     await this.db.transaction(async (tx) => {
@@ -113,6 +114,7 @@ export class MemoryStore {
         sourceType,
         coveredAtCommit: covered,
         stale,
+        decayExempt,
         createdAt: sql`(CURRENT_TIMESTAMP)`,
         updatedAt: sql`(CURRENT_TIMESTAMP)`,
       });
@@ -234,6 +236,7 @@ export class MemoryStore {
       confidence: number;
       sourceType: MemorySourceType;
       stale: boolean;
+      decayExempt: boolean;
       coveredAtCommit: string;
       tags: string;
       updatedAt: SQL;
@@ -253,6 +256,9 @@ export class MemoryStore {
     }
     if (fields.stale !== undefined) {
       updateSet.stale = Boolean(fields.stale);
+    }
+    if (fields.decayExempt !== undefined) {
+      updateSet.decayExempt = Boolean(fields.decayExempt);
     }
     if (fields.coveredAtCommit !== undefined) {
       updateSet.coveredAtCommit = fields.coveredAtCommit.trim();
@@ -386,6 +392,7 @@ export class MemoryStore {
       lt(memoryEntries.updatedAt, cutoff),
       isNull(memoryEntries.supersededBy),
       gt(memoryEntries.confidence, 0.1),
+      eq(memoryEntries.decayExempt, false),
     ];
 
     if (usedMemoryIDs.length > 0) {
@@ -760,6 +767,7 @@ export class MemoryStore {
       filePaths: [],
       coveredAtCommit: (row.coveredAtCommit ?? '').trim(),
       stale: Boolean(row.stale),
+      decayExempt: Boolean(row.decayExempt),
       confidence: Number(row.confidence ?? 1),
       retrievalCount: Number(row.retrievalCount ?? 0),
       provenanceHash: row.provenanceHash,
