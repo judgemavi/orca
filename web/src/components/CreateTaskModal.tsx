@@ -1,15 +1,15 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation } from '@tanstack/react-query';
 import { type FormEvent, useMemo, useState } from 'react';
-import { api } from '../../api';
-import { useCreateTaskForm } from '../../hooks/forms/useCreateTaskForm';
-import { useConfigQuery, useTasksQuery } from '../../hooks/queries';
+import { api } from '../api';
+import { useCreateTaskForm } from '../hooks/forms/useCreateTaskForm';
+import { useConfigQuery, useTasksQuery } from '../hooks/queries';
 import {
   type AutoRunOverrides,
   INTERACTION_TYPES,
   type Task,
-} from '../../types';
-import { Button } from '../Button';
+} from '../types';
+import { Button } from './Button';
 
 const controlClass =
   'w-full rounded-md border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent';
@@ -17,7 +17,8 @@ const controlClass =
 export function CreateTaskModal() {
   const [open, setOpen] = useState(false);
   const createTaskMutation = useMutation({
-    mutationFn: (data: Partial<Task>) => api.createTask(data),
+    mutationFn: (data: Pick<Task, 'title'> & Partial<Task>) =>
+      api.createTask(data),
   });
   const tasksQuery = useTasksQuery();
   const { data: config } = useConfigQuery();
@@ -39,9 +40,9 @@ export function CreateTaskModal() {
       title: values.title.trim(),
       description: values.description.trim(),
       autoRunOverrides: overrides,
-    } as any);
+    });
 
-    const taskId = (created as any).id ?? (created as any).task?.id;
+    const taskId = created.id;
     if (taskId) {
       await Promise.all(
         values.dependencies.map((depId) =>
@@ -56,8 +57,8 @@ export function CreateTaskModal() {
     try {
       await form.handleSubmit();
       setOpen(false);
-    } catch (err: any) {
-      setError(err?.message ?? 'Failed to create task');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create task');
     }
   };
 
@@ -93,7 +94,6 @@ export function CreateTaskModal() {
                       onBlur={field.handleBlur}
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder="e.g. Add user authentication"
-                      autoFocus
                     />
                   </label>
                 )}

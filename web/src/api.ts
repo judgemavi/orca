@@ -40,17 +40,21 @@ async function unwrap<T>(req: Promise<Response>): Promise<T> {
   }
 
   if (!res.ok) {
-    const msg =
-      json &&
-      typeof json === 'object' &&
-      typeof (json as any).error === 'string'
-        ? (json as any).error
-        : `Request failed: ${res.status}`;
+    const body = isErrorBody(json) ? json : null;
+    const msg = body?.error ?? `Request failed: ${res.status}`;
     const err = new Error(msg) as ApiError;
-    if (json && typeof json === 'object') Object.assign(err, json);
+    if (body) Object.assign(err, body);
     throw err;
   }
   return json as T;
+}
+
+function isErrorBody(v: unknown): v is { error: string; [k: string]: unknown } {
+  return (
+    v != null &&
+    typeof v === 'object' &&
+    typeof (v as Record<string, unknown>).error === 'string'
+  );
 }
 
 function normalizePlanText(payload: unknown): string {
@@ -67,13 +71,13 @@ export const api = {
   listTasks: (): Promise<Task[]> => unwrap(client.tasks.$get()),
   getTask: (id: string): Promise<Task> =>
     unwrap(client.tasks[':id'].$get({ param: { id } })),
-  createTask: (data: Partial<Task>): Promise<Task> =>
-    unwrap(client.tasks.$post({ json: data as any })),
+  createTask: (data: Pick<Task, 'title'> & Partial<Task>): Promise<Task> =>
+    unwrap(client.tasks.$post({ json: data })),
   updateTask: (
     id: string,
     data: Partial<Task> & { sessionId?: string | null },
   ): Promise<Task> =>
-    unwrap(client.tasks[':id'].$patch({ param: { id }, json: data as any })),
+    unwrap(client.tasks[':id'].$patch({ param: { id }, json: data })),
   deleteTask: (id: string): Promise<{ deleted: string }> =>
     unwrap(client.tasks[':id'].$delete({ param: { id } })),
   getTaskReviews: (id: string): Promise<TaskReview[]> =>
@@ -93,9 +97,8 @@ export const api = {
     unwrap(client.tasks[':id'].interactions.$get({ param: { id: taskId } })),
   listInteractionStubs: (taskId: string): Promise<InteractionStub[]> =>
     unwrap(
-      (client.tasks[':id'].interactions.$get as any)({
+      client.tasks[':id'].interactions.$get({
         param: { id: taskId },
-        query: { fields: 'stub' },
       }),
     ),
   getInteraction: (
@@ -109,9 +112,8 @@ export const api = {
     ),
   getInteractionMeta: (taskId: string, id: string): Promise<Interaction> =>
     unwrap(
-      (client.tasks[':id'].interactions[':interactionID'].$get as any)({
+      client.tasks[':id'].interactions[':interactionID'].$get({
         param: { id: taskId, interactionID: id },
-        query: { content: '0' },
       }),
     ),
 
@@ -121,9 +123,9 @@ export const api = {
     tool?: string,
     model?: string,
   ): Promise<{ status: string; taskIds: string[]; jobIds: string[] }> =>
-    unwrap(client.tasks.start.$post({ json: { taskIds, tool, model } as any })),
+    unwrap(client.tasks.start.$post({ json: { taskIds, tool, model } })),
   stopTask: (id: string): Promise<{ taskId: string; status: string }> =>
-    unwrap(client.tasks[':id'].stop.$post({ param: { id } } as any)),
+    unwrap(client.tasks[':id'].stop.$post({ param: { id } })),
   resumeTask: (
     id: string,
     opts?: { sessionId?: string; feedback?: string },
@@ -132,10 +134,10 @@ export const api = {
       client.tasks[':id'].resume.$post({
         param: { id },
         json: opts ?? {},
-      } as any),
+      }),
     ),
   cancelTask: (id: string): Promise<{ taskId: string; status: string }> =>
-    unwrap(client.tasks[':id'].cancel.$post({ param: { id } } as any)),
+    unwrap(client.tasks[':id'].cancel.$post({ param: { id } })),
 
   // Merge (global merge removed — use mergeTask per task)
   mergeTask: (
@@ -146,7 +148,7 @@ export const api = {
       client.tasks[':id'].merge.$post({
         param: { id: taskId },
         json: { mode },
-      } as any),
+      }),
     ),
 
   // Plan
@@ -159,7 +161,7 @@ export const api = {
       client.tasks[':id'].plan.$put({
         param: { id: taskId },
         json: { plan },
-      } as any),
+      }),
     ),
   generateTaskPlan: (
     taskId: string,
@@ -169,10 +171,10 @@ export const api = {
       client.tasks[':id'].plan.generate.$post({
         param: { id: taskId },
         json: opts ?? {},
-      } as any),
+      }),
     ),
   approvePlan: (id: string): Promise<Task> =>
-    unwrap(client.tasks[':id']['approve-plan'].$post({ param: { id } } as any)),
+    unwrap(client.tasks[':id']['approve-plan'].$post({ param: { id } })),
   requestPlanChanges: (
     id: string,
     feedback: string,
@@ -184,12 +186,12 @@ export const api = {
       client.tasks[':id']['request-plan-changes'].$post({
         param: { id },
         json: { feedback, interactionId, tool, model },
-      } as any),
+      }),
     ),
 
   // Workflow
   approveTask: (id: string): Promise<Task> =>
-    unwrap(client.tasks[':id'].approve.$post({ param: { id } } as any)),
+    unwrap(client.tasks[':id'].approve.$post({ param: { id } })),
   requestChanges: (
     id: string,
     feedback: string,
@@ -201,7 +203,7 @@ export const api = {
       client.tasks[':id']['request-changes'].$post({
         param: { id },
         json: { feedback, interactionId, tool, model },
-      } as any),
+      }),
     ),
   aiReview: (
     id: string,
@@ -213,7 +215,7 @@ export const api = {
       client.tasks[':id']['ai-review'].$post({
         param: { id },
         json: { tool, model, prompt },
-      } as any),
+      }),
     ),
   evaluateTask: (
     id: string,
@@ -224,7 +226,7 @@ export const api = {
       client.tasks[':id'].evaluate.$post({
         param: { id },
         json: { tool, model },
-      } as any),
+      }),
     ),
   breakdownTask: (
     id: string,
@@ -235,7 +237,7 @@ export const api = {
       client.tasks[':id'].breakdown.$post({
         param: { id },
         json: { tool, model },
-      } as any),
+      }),
     ),
   acceptBreakdown: (
     id: string,
@@ -246,7 +248,7 @@ export const api = {
       client.tasks[':id'].breakdown.accept.$post({
         param: { id },
         json: { interactionId, tasks },
-      } as any),
+      }),
     ),
   rejectBreakdown: (
     id: string,
@@ -256,7 +258,7 @@ export const api = {
       client.tasks[':id'].breakdown.reject.$post({
         param: { id },
         json: { interactionId },
-      } as any),
+      }),
     ),
 
   // User Input
@@ -268,7 +270,7 @@ export const api = {
       client.tasks[':id'].input.$post({
         param: { id },
         json: { answer },
-      } as any),
+      }),
     ),
 
   // Dependencies
@@ -277,12 +279,12 @@ export const api = {
       client.tasks[':id'].deps.$post({
         param: { id: taskId },
         json: { dependsOn },
-      } as any),
+      }),
     ),
 
   // Explore (moved under memory)
   runExplore: (): Promise<{ status: string }> =>
-    unwrap((client.memory as any).explore.$post({ json: {} } as any)),
+    unwrap(client.memory.explore.$post({ json: {} })),
 
   // Memory
   listMemory: (params?: ListMemoryParams): Promise<MemoryEntry[]> =>
@@ -303,7 +305,7 @@ export const api = {
             typeof params?.limit === 'number'
               ? String(params.limit)
               : undefined,
-        } as any,
+        },
       }),
     ),
   queryMemory: (q: string, limit?: number): Promise<MemoryQueryResult[]> =>
@@ -312,32 +314,32 @@ export const api = {
         query: {
           q,
           limit: typeof limit === 'number' ? String(limit) : undefined,
-        } as any,
+        },
       }),
     ),
   getMemory: (id: string): Promise<MemoryEntryDetail> =>
     unwrap(client.memory[':id'].$get({ param: { id } })),
   updateMemory: (id: string, data: UpdateMemoryInput): Promise<MemoryEntry> =>
-    unwrap(client.memory[':id'].$patch({ param: { id }, json: data as any })),
+    unwrap(client.memory[':id'].$patch({ param: { id }, json: data })),
   deleteMemory: (id: string): Promise<{ deleted: string }> =>
     unwrap(client.memory[':id'].$delete({ param: { id } })),
   syncMemory: (): Promise<MemorySyncResult> =>
-    unwrap(client.memory.sync.$post({} as any)),
+    unwrap(client.memory.sync.$post({})),
   refreshMemory: (entryId?: string): Promise<MemoryRefreshResult> =>
-    unwrap(client.memory.refresh.$post({ json: { entryId } } as any)),
+    unwrap(client.memory.refresh.$post({ json: { entryId } })),
 
   // Config
   getConfig: (): Promise<Config> => unwrap(client.config.$get()),
   updateConfig: (cfgPatch: Partial<Config>): Promise<Config> =>
-    unwrap(client.config.$put({ json: cfgPatch as any })),
+    unwrap(client.config.$put({ json: cfgPatch })),
   getEmbeddingProviders: (): Promise<
     Array<{ name: string; configFields: EmbeddingConfigField[] }>
-  > => unwrap((client.config as any)['embedding-providers'].$get()),
+  > => unwrap(client.config['embedding-providers'].$get()),
 
   // Models
   listModels: async (tool?: string): Promise<Record<string, ModelInfo[]>> => {
     const data = await unwrap<{ tools: Record<string, ModelInfo[]> }>(
-      (client.config as any).models.$get({ query: { tool } } as any),
+      client.config.models.$get({ query: { tool } }),
     );
     return data.tools;
   },
@@ -370,7 +372,7 @@ export const api = {
           status: params?.status,
           taskId: params?.taskId,
           limit: params?.limit != null ? String(params.limit) : undefined,
-        } as any,
+        },
       }),
     ),
   getQueueJob: (id: string): Promise<Job> =>

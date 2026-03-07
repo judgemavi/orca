@@ -78,7 +78,7 @@ function EmbeddingsSection({
     const seeded: Record<string, unknown> = { provider };
     for (const field of fields) {
       seeded[field.key] =
-        (draft.embeddings as any)?.[field.key] ?? field.defaultValue ?? '';
+        draft.embeddings?.[field.key] ?? field.defaultValue ?? '';
     }
     onUpdate(seeded as Config['embeddings']);
   };
@@ -91,7 +91,7 @@ function EmbeddingsSection({
     if (missing.length === 0) return;
     const patched = { ...current };
     for (const field of missing) {
-      (patched as any)[field.key] = field.defaultValue ?? '';
+      patched[field.key] = field.defaultValue ?? '';
     }
     onUpdate(patched as Config['embeddings']);
   }, [selectedProvider, providerFields]);
@@ -161,7 +161,11 @@ function ConfigPage() {
         },
         tools: data.tools ?? [],
         interactions: data.interactions ?? ({} as Config['interactions']),
-        orchestrator: data.orchestrator ?? { tool: '', model: '', mode: 'cli' as const },
+        orchestrator: data.orchestrator ?? {
+          tool: '',
+          model: '',
+          mode: 'cli' as const,
+        },
         validation: data.validation ?? { commands: [] },
         workers: data.workers ?? { maxParallel: 3 },
         monitor: data.monitor ?? {
@@ -272,8 +276,8 @@ function ConfigPage() {
           error={errors.tools}
           onSave={() => savePatch('tools', { tools: draft.tools })}
         >
-          <label className="flex flex-col gap-1 text-xs">
-            Enabled tools
+          <fieldset>
+            <span className="flex flex-col gap-1 text-xs">Enabled tools</span>
             <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
               {toolOptions.map((tool) => {
                 const checked = draft.tools.includes(tool);
@@ -281,8 +285,10 @@ function ConfigPage() {
                   <label
                     key={tool}
                     className="flex items-center gap-2 text-[13px]"
+                    htmlFor={tool}
                   >
                     <input
+                      id={tool}
                       type="checkbox"
                       checked={checked}
                       onChange={(e) => {
@@ -297,7 +303,7 @@ function ConfigPage() {
                 );
               })}
             </div>
-          </label>
+          </fieldset>
         </SectionCard>
 
         <SectionCard
@@ -319,6 +325,7 @@ function ConfigPage() {
                   updateSection('orchestrator', {
                     tool: e.target.value,
                     model: modelsByTool[e.target.value]?.[0]?.id ?? '',
+                    mode: draft.orchestrator.mode,
                   })
                 }
               >

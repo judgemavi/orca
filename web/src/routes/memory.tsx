@@ -15,6 +15,14 @@ import { api } from '../api';
 import { Button } from '../components/Button';
 import { DialogChrome } from '../components/DialogChrome';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/table';
+import {
   useDeleteMemoryMutation,
   useMemoryEntryQuery,
   useMemoryMutation,
@@ -910,44 +918,38 @@ function MemoryPage() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle">
-          <table className="w-full min-w-[1280px]">
-            <thead className="[&_tr]:border-b">
+          <Table className="min-w-[1280px]">
+            <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id}>
+                <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      className="h-10 px-2 text-left align-middle text-sm font-medium whitespace-nowrap"
-                    >
+                    <TableHead key={header.id} className="text-sm">
                       {header.isPlaceholder
                         ? null
                         : flexRender(
                             header.column.columnDef.header,
                             header.getContext(),
                           )}
-                    </th>
+                    </TableHead>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-            </thead>
-            <tbody className="[&_tr:last-child]:border-0">
+            </TableHeader>
+            <TableBody>
               {table.getRowModel().rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-b align-top transition-colors hover:bg-muted/10"
-                >
+                <TableRow key={row.id} className="align-top">
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="p-2 align-top">
+                    <TableCell key={cell.id} className="align-top">
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext(),
                       )}
-                    </td>
+                    </TableCell>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 
