@@ -137,9 +137,7 @@ export const api = {
   cancelTask: (id: string): Promise<{ taskId: string; status: string }> =>
     unwrap(client.tasks[':id'].cancel.$post({ param: { id } } as any)),
 
-  // Merge
-  merge: (): Promise<{ operationId: string }> =>
-    unwrap(client.merge.$post({ json: {} } as any)),
+  // Merge (global merge removed — use mergeTask per task)
   mergeTask: (
     taskId: string,
     mode?: string,
@@ -282,9 +280,9 @@ export const api = {
       } as any),
     ),
 
-  // Explore
+  // Explore (moved under memory)
   runExplore: (): Promise<{ status: string }> =>
-    unwrap(client.explore.$post({ json: {} } as any)),
+    unwrap((client.memory as any).explore.$post({ json: {} } as any)),
 
   // Memory
   listMemory: (params?: ListMemoryParams): Promise<MemoryEntry[]> =>
@@ -339,7 +337,7 @@ export const api = {
   // Models
   listModels: async (tool?: string): Promise<Record<string, ModelInfo[]>> => {
     const data = await unwrap<{ tools: Record<string, ModelInfo[]> }>(
-      client.models.$get({ query: { tool } } as any),
+      (client.config as any).models.$get({ query: { tool } } as any),
     );
     return data.tools;
   },

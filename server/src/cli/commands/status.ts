@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { isDaemonRunning } from '../../queue/lock';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
@@ -7,14 +8,17 @@ import { printJSON } from '../format';
 export function registerStatusCommand(
   program: Command,
   deps: {
+    repoDir: string;
     taskStore: TaskStore;
     interactions: InteractionStore;
     memory: MemoryStore;
   },
 ) {
   program.command('status').action(async () => {
+    const daemon = isDaemonRunning(deps.repoDir);
     const tasks = await deps.taskStore.list();
     const summary = {
+      daemon,
       totalTasks: tasks.length,
       byStatus: {
         pending: tasks.filter((item) => item.status === 'pending').length,

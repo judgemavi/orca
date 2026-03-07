@@ -161,7 +161,7 @@ function ConfigPage() {
         },
         tools: data.tools ?? [],
         interactions: data.interactions ?? ({} as Config['interactions']),
-        orchestrator: data.orchestrator ?? { tool: '', model: '' },
+        orchestrator: data.orchestrator ?? { tool: '', model: '', mode: 'cli' as const },
         validation: data.validation ?? { commands: [] },
         workers: data.workers ?? { maxParallel: 3 },
         monitor: data.monitor ?? {
@@ -349,6 +349,22 @@ function ConfigPage() {
                     {model.id}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              Mode
+              <select
+                className={inputClass}
+                value={draft.orchestrator.mode ?? 'cli'}
+                onChange={(e) =>
+                  updateSection('orchestrator', {
+                    ...draft.orchestrator,
+                    mode: e.target.value as 'cli' | 'mcp',
+                  })
+                }
+              >
+                <option value="cli">CLI (lower token usage)</option>
+                <option value="mcp">MCP (structured tool calls)</option>
               </select>
             </label>
           </div>

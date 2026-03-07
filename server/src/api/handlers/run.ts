@@ -23,47 +23,6 @@ export function runRoutes(deps: {
   const { executor, taskStore, sink, queue } = deps;
 
   return new Hono()
-    .post('/run/pending', zValidator('json', runRequestSchema), async (c) => {
-      const body = c.req.valid('json');
-      const taskIDs = normalizeTaskIDs(body.taskIds);
-      const tool = body.tool ?? '';
-      const model = body.model ?? '';
-      const context = body.context ?? '';
-
-      if (taskIDs.length > 0) {
-        const jobIds: string[] = [];
-        for (const taskID of taskIDs) {
-          const { id } = await queue.enqueue({
-            type: 'code',
-            taskId: taskID,
-            priority: JOB_PRIORITIES.code,
-            payload: { tool, model, context },
-          });
-          jobIds.push(id);
-        }
-        return c.json({ status: 'queued', taskIds: taskIDs, jobIds }, 202);
-      }
-
-      // Enqueue all pending/runnable tasks
-      const pending = (await taskStore.list()).filter((t) =>
-        ['pending', 'planned', 'failed', 'review'].includes(t.status),
-      );
-      const jobIds: string[] = [];
-      for (const task of pending) {
-        const { id } = await queue.enqueue({
-          type: 'code',
-          taskId: task.id,
-          priority: JOB_PRIORITIES.code,
-          payload: { tool, model, context },
-        });
-        jobIds.push(id);
-      }
-      return c.json(
-        { status: 'queued', taskIds: pending.map((t) => t.id), jobIds },
-        202,
-      );
-    })
-
     .post('/tasks/start', zValidator('json', runRequestSchema), async (c) => {
       const body = c.req.valid('json');
       const taskIDs = normalizeTaskIDs(body.taskIds);

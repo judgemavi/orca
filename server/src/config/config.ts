@@ -25,6 +25,7 @@ export function defaultConfig(): Config {
     orchestrator: {
       tool: 'claude',
       model: '',
+      mode: 'cli',
     },
     validation: { commands: [] },
     workers: { maxParallel: 3 },
@@ -171,6 +172,10 @@ export function sanitizeConfig(
   }
 
   // Sanitize orchestrator
+  if (!config.orchestrator.mode) {
+    config.orchestrator.mode = 'cli';
+    changes.push('orchestrator.mode defaulted to cli');
+  }
   if (!tools.includes(config.orchestrator.tool)) {
     changes.push(
       `orchestrator.tool ${config.orchestrator.tool} -> ${fallbackTool}`,

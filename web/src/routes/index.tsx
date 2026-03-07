@@ -127,10 +127,19 @@ function TasksPage() {
         onStart: () => {
           void startTasks();
         },
-        onMerge: () => {
-          void api.merge().catch((err: any) => {
+        onMerge: async () => {
+          try {
+            const tasks = await api.listTasks();
+            const approved = tasks.filter((t: any) => t.status === 'approved');
+            if (approved.length === 0) {
+              toast.info('No approved tasks to merge');
+              return;
+            }
+            await Promise.all(approved.map((t: any) => api.mergeTask(t.id)));
+            toast.success(`Merged ${approved.length} task(s)`);
+          } catch (err: any) {
             toast.error(err?.message ?? 'Merge failed');
-          });
+          }
         },
       }}
       onSearchChange={setSearch}

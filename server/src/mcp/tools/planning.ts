@@ -264,17 +264,5 @@ export function planningTools(deps: {
     }),
   ];
 
-  return [
-    ...tools,
-    alias('plan_generate', 'tasks_plan_generate', tools),
-    alias('plan_evaluate', 'tasks_plan_evaluate', tools),
-    alias('approve_plan', 'tasks_approve_plan', tools),
-    alias('request_plan_changes', 'tasks_request_plan_changes', tools),
-  ];
-}
-
-function alias(name: string, target: string, tools: Tool[]): Tool {
-  const source = tools.find((tool) => tool.name === target);
-  if (!source) throw new Error(`missing source tool for alias: ${target}`);
-  return { ...source, name };
+  return tools;
 }

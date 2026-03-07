@@ -4,7 +4,7 @@ import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
-import { mergeAllApproved, mergeTask } from '../../workflows/merge';
+import { mergeTask } from '../../workflows/merge';
 import { defineTool } from '../define-tool';
 import type { Tool } from '../types';
 
@@ -14,8 +14,6 @@ const tasksMergeSchema = z.object({
     z.coerce.string().trim().min(1, 'taskId is required'),
   ),
 });
-
-const mergeAllSchema = z.object({});
 
 export function mergeTools(deps: {
   repoDir: string;
@@ -32,21 +30,6 @@ export function mergeTools(deps: {
       schema: tasksMergeSchema,
       handler: async (input) => {
         return await mergeTask(input.taskId, {
-          repoDir: deps.repoDir,
-          taskStore: deps.taskStore,
-          configStore: deps.configStore,
-          interactions: deps.interactions,
-          memoryStore: deps.memory,
-          registry: deps.registry,
-        });
-      },
-    }),
-    defineTool({
-      name: 'merge',
-      description: 'Merge all approved tasks',
-      schema: mergeAllSchema,
-      handler: async () => {
-        return await mergeAllApproved({
           repoDir: deps.repoDir,
           taskStore: deps.taskStore,
           configStore: deps.configStore,

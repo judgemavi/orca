@@ -19,7 +19,6 @@ import { mergeRoutes } from './handlers/merge';
 import { modelRoutes } from './handlers/models';
 import { monitorRoutes } from './handlers/monitor';
 import { orchestratorRoutes } from './handlers/orchestrator';
-import { planRoutes } from './handlers/plan';
 import { qualityRoutes } from './handlers/quality';
 import { queueRoutes } from './handlers/queue';
 import { runRoutes } from './handlers/run';
@@ -101,25 +100,11 @@ function dataGroup(deps: RouteDeps) {
     .route(
       '/',
       mergeRoutes({
-        repoDir: deps.repoDir,
         taskStore: deps.taskStore,
-        configStore: deps.configStore,
-        interactionStore: deps.interactionStore,
-        memoryStore: deps.memoryStore,
-        registry: deps.registry,
-        sink: deps.eventSink,
         queue: deps.queue,
       }),
     )
     .route('/', memoryRoutes(deps.repoDir, deps.memoryStore))
-    .route(
-      '/',
-      planRoutes({
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-        sink: deps.eventSink,
-      }),
-    )
     .route('/', exploreRoutes(deps.repoDir, deps.queue))
     .route(
       '/',

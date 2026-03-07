@@ -1,12 +1,10 @@
 import { z } from 'zod';
-import { getMemorySyncStatus } from '../../domain/memory-sync';
 import type { ToolPluginRegistry } from '../../plugin/registry';
 import { availableTools, toolModels } from '../../plugin/registry';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
-import { INTERACTION_STATUSES, TASK_STATUSES } from '../../types';
 import { defineTool } from '../define-tool';
 import type { Tool } from '../types';
 
@@ -36,8 +34,6 @@ const configUpdateSchema = z.object({
 const modelsListSchema = z.object({
   tool: optionalTrimmedString(),
 });
-
-const projectStatusSchema = z.object({});
 
 const costStatusSchema = z.object({});
 
@@ -87,45 +83,6 @@ export function adminTools(deps: {
           ]),
         );
         return { tools: entries };
-      },
-    }),
-    defineTool({
-      name: 'project_status',
-      description: 'Get project status summary',
-      schema: projectStatusSchema,
-      handler: async () => {
-        const tasks = await deps.taskStore.list();
-        const memoryHealth = await deps.memory.buildHealthSummary();
-        const sync = await getMemorySyncStatus(deps.repoDir, deps.memory);
-
-        return {
-          project: 'orca',
-          totalTasks: tasks.length,
-          pending: tasks.filter((task) => task.status === TASK_STATUSES.pending)
-            .length,
-          inProgress: tasks.filter(
-            (task) => task.status === TASK_STATUSES.running,
-          ).length,
-          completed: tasks.filter(
-            (task) =>
-              task.status === TASK_STATUSES.merged ||
-              task.status === TASK_STATUSES.approved ||
-              task.status === TASK_STATUSES.review ||
-              task.status === TASK_STATUSES.broken_down,
-          ).length,
-          failed: tasks.filter((task) => task.status === TASK_STATUSES.failed)
-            .length,
-          totalCost: await deps.interactions.projectTotal(),
-          runningOperations: (
-            await deps.interactions.listByStatus(INTERACTION_STATUSES.running)
-          ).length,
-          lastSyncedCommit: sync.lastSyncedCommit,
-          currentCommit: sync.currentCommit,
-          syncNeeded: sync.syncNeeded,
-          commitsBehind: sync.commitsBehind,
-          memoryTotal: memoryHealth.totalEntries,
-          memoryStaleCount: memoryHealth.staleCount,
-        };
       },
     }),
     defineTool({

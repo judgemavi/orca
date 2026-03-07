@@ -8,18 +8,12 @@ import type { MemoryStore } from '../store/memory';
 import type { TaskStore } from '../store/tasks';
 import { registerConfigCommands } from './commands/config';
 import { registerCostsCommand } from './commands/costs';
-import { registerExploreCommands } from './commands/explore';
 import { registerMemoryCommands } from './commands/memory';
-import { registerMergeCommands } from './commands/merge';
-import { registerModelsCommand } from './commands/models';
 import { registerOrcCommand } from './commands/orc';
-import { registerPlanCommands } from './commands/plan';
 import { registerQueueCommands } from './commands/queue';
-import { registerReviewCommands } from './commands/review';
 import { registerStatusCommand } from './commands/status';
 import { registerTaskCommands } from './commands/task';
-import { printJSON, setJSONMode } from './format';
-import { confirm } from './helpers';
+import { printError, setJSONMode, setQuietMode } from './format';
 
 export async function runCLI(deps: {
   repoDir: string;
@@ -33,9 +27,13 @@ export async function runCLI(deps: {
 }) {
   const program = new Command();
 
-  program.name('orca-ts').description('Bun-based Orca CLI').version('0.1.0');
-  program.option('--json', 'output raw JSON');
-  setJSONMode(Bun.argv.includes('--json'));
+  program.name('orca').description('Orca CLI').version('0.1.0');
+  program.option('--json', 'output JSON');
+  program.option('-q, --quiet', 'suppress non-essential output');
+
+  const hasFlag = (flag: string) => Bun.argv.includes(flag);
+  setJSONMode(hasFlag('--json') || !process.stdin.isTTY);
+  setQuietMode(hasFlag('--quiet') || hasFlag('-q'));
 
   // init is handled in index.ts before bootstrap — this is a no-op so commander doesn't error on unknown command
   program
@@ -43,64 +41,8 @@ export async function runCLI(deps: {
     .description('Initialize orca workspace (handled at startup)')
     .action(() => {});
 
-  program
-    .command('start')
-    .description('Start pending tasks or specific task IDs')
-    .argument('[taskIds...]', 'task IDs')
-    .option('--tool <tool>', 'tool override')
-    .option('--model <model>', 'model override')
-    .option('--context <context>', 'context prompt')
-    .action(
-      async (
-        taskIDs: string[],
-        opts: { tool?: string; model?: string; context?: string },
-      ) => {
-        if (taskIDs.length > 0) {
-          await deps.executor.runBatch(taskIDs, {
-            toolOverride: opts.tool ?? '',
-            modelOverride: opts.model ?? '',
-            context: opts.context ?? '',
-          });
-          printJSON({ status: 'queued', taskIds: taskIDs });
-          return;
-        }
-
-        if (canPrompt()) {
-          const proceed = await confirm(
-            'Start all ready pending/planned tasks?',
-            true,
-          );
-          if (!proceed) {
-            printJSON({ started: false });
-            return;
-          }
-        }
-        await deps.executor.runPendingTasks();
-        printJSON({ status: 'queued' });
-      },
-    );
-
-  const context = program
-    .command('context')
-    .description('Explore context file operations');
-  context.command('get').action(async () => {
-    const path = `${deps.repoDir}/.orca/explore_context.md`;
-    const content = await Bun.file(path)
-      .text()
-      .catch(() => '');
-    console.log(content);
-  });
-  context
-    .command('set')
-    .requiredOption('--text <text>', 'context text')
-    .action(async (opts: { text: string }) => {
-      const path = `${deps.repoDir}/.orca/explore_context.md`;
-      await Bun.$`mkdir -p ${deps.repoDir}/.orca`;
-      await Bun.write(path, opts.text);
-      console.log(path);
-    });
-
-  registerTaskCommands(program.command('task'), {
+  const taskCmd = program.command('task').alias('t').description('Task operations');
+  registerTaskCommands(taskCmd, {
     repoDir: deps.repoDir,
     taskStore: deps.taskStore,
     interactionStore: deps.interactionStore,
@@ -112,12 +54,12 @@ export async function runCLI(deps: {
   });
 
   registerStatusCommand(program, {
+    repoDir: deps.repoDir,
     taskStore: deps.taskStore,
     interactions: deps.interactionStore,
     memory: deps.memoryStore,
   });
   registerConfigCommands(program, deps.configStore, deps.registry);
-  registerModelsCommand(program, deps.registry);
   registerCostsCommand(program, deps.interactionStore);
   registerOrcCommand(program, {
     repoDir: deps.repoDir,
@@ -125,34 +67,24 @@ export async function runCLI(deps: {
     registry: deps.registry,
   });
   registerMemoryCommands(program, deps.repoDir, deps.memoryStore);
-  registerMergeCommands(program, {
-    repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
-    configStore: deps.configStore,
-    interactionStore: deps.interactionStore,
-    memoryStore: deps.memoryStore,
-  });
-  registerPlanCommands(program, {
-    taskStore: deps.taskStore,
-    interactionStore: deps.interactionStore,
-    registry: deps.registry,
-  });
-  registerReviewCommands(program, {
-    repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
-    interactionStore: deps.interactionStore,
-    configStore: deps.configStore,
-    registry: deps.registry,
-    executor: deps.executor,
-  });
-  registerExploreCommands(program, deps.repoDir, deps.registry);
   if (deps.queue) {
-    registerQueueCommands(program, { queue: deps.queue });
+    registerQueueCommands(program, {
+      queue: deps.queue,
+      taskStore: deps.taskStore,
+    });
   }
 
-  await program.parseAsync(Bun.argv);
-}
-
-function canPrompt(): boolean {
-  return Boolean(process.stdin.isTTY) && !Bun.argv.includes('--json');
+  // Global error handler — structured errors in JSON mode
+  program.exitOverride();
+  try {
+    await program.parseAsync(Bun.argv);
+  } catch (err: any) {
+    if (err?.code === 'commander.helpDisplayed' || err?.code === 'commander.version') return;
+    const code = err?.code === 'commander.missingArgument' ? 'MISSING_ARG'
+      : err?.code === 'commander.unknownCommand' ? 'UNKNOWN_COMMAND'
+      : err?.message?.includes('not found') ? 'NOT_FOUND'
+      : 'ERROR';
+    printError(err, code);
+    process.exit(1);
+  }
 }

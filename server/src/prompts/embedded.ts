@@ -3,7 +3,8 @@ import conflictResolve from './md/conflict_resolve.md' with { type: 'text' };
 import evaluate from './md/evaluate.md' with { type: 'text' };
 import executorStyle from './md/executor_style.md' with { type: 'text' };
 import explore from './md/explore.md' with { type: 'text' };
-import orchestrator from './md/orchestrator.md' with { type: 'text' };
+import orchestratorCli from './md/orchestrator_cli.md' with { type: 'text' };
+import orchestratorMcp from './md/orchestrator_mcp.md' with { type: 'text' };
 import outputStyle from './md/output_style.md' with { type: 'text' };
 import plan from './md/plan.md' with { type: 'text' };
 import retro from './md/retro.md' with { type: 'text' };
@@ -21,7 +22,8 @@ export const embedded: Record<PromptName, string> = {
   breakdown,
   syncContext,
   conflictResolve,
-  orchestrator,
+  orchestratorCli,
+  orchestratorMcp,
 };
 
 export type PromptName = keyof typeof FILE_NAMES;
@@ -37,5 +39,6 @@ export const FILE_NAMES = {
   breakdown: 'breakdown',
   syncContext: 'sync_context',
   conflictResolve: 'conflict_resolve',
-  orchestrator: 'orchestrator',
+  orchestratorCli: 'orchestrator_cli',
+  orchestratorMcp: 'orchestrator_mcp',
 } as const;

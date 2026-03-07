@@ -11,7 +11,7 @@ import { exploreContextSchema, exploreSchema } from '../schemas';
 
 export function exploreRoutes(repoDir: string, queue: JobQueue) {
   return new Hono()
-    .post('/explore', zValidator('json', exploreSchema), async (c) => {
+    .post('/memory/explore', zValidator('json', exploreSchema), async (c) => {
       const tracked = await listTrackedFiles(repoDir);
       if (tracked.length === 0) {
         return c.json({
@@ -34,12 +34,12 @@ export function exploreRoutes(repoDir: string, queue: JobQueue) {
 
       return c.json({ status: 'queued', jobId }, 202);
     })
-    .get('/explore/context', async (c) => {
+    .get('/memory/explore/context', async (c) => {
       const content = await readExploreContext(repoDir);
       return c.json(content);
     })
     .put(
-      '/explore/context',
+      '/memory/explore/context',
       zValidator('json', exploreContextSchema),
       async (c) => {
         const body = c.req.valid('json');

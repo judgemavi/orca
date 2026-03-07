@@ -3,6 +3,7 @@ import type { MemoryEntry, Task } from '../types';
 import { short, statusIcon } from './helpers';
 
 let jsonMode = false;
+let quietMode = false;
 
 export function setJSONMode(enabled: boolean) {
   jsonMode = enabled;
@@ -12,13 +13,36 @@ export function isJSONMode(): boolean {
   return jsonMode;
 }
 
-export function printJSON(data: unknown) {
+export function setQuietMode(enabled: boolean) {
+  quietMode = enabled;
+}
+
+export function isQuietMode(): boolean {
+  return quietMode;
+}
+
+export function printResult(data: unknown) {
   if (jsonMode) {
-    console.log(JSON.stringify(data, null, 2));
+    console.log(JSON.stringify({ ok: true, data }));
     return;
   }
-
+  if (quietMode) return;
   console.log(formatHuman(data));
+}
+
+export function printError(error: unknown, code = 'ERROR') {
+  const message =
+    error instanceof Error ? error.message : String(error);
+  if (jsonMode) {
+    console.error(JSON.stringify({ ok: false, error: message, code }));
+  } else {
+    console.error(`error: ${message}`);
+  }
+}
+
+/** @deprecated use printResult */
+export function printJSON(data: unknown) {
+  printResult(data);
 }
 
 export function printTable(
@@ -33,11 +57,11 @@ export function printTable(
     ),
   );
 
-  const head = headers.map((header, i) => pad(header, widths[i])).join('  ');
-  const line = widths.map((width) => '-'.repeat(width)).join('  ');
+  const head = headers.map((header, i) => pad(header, widths[i]!)).join('  ');
+  const line = widths.map((width) => '-'.repeat(width!)).join('  ');
   const body = rows.map((row) =>
     headers
-      .map((header, i) => pad(String(row[header] ?? ''), widths[i]))
+      .map((header, i) => pad(String(row[header] ?? ''), widths[i]!))
       .join('  '),
   );
 

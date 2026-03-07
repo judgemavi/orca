@@ -4,7 +4,7 @@ import { availableTools, toolModels } from '../../plugin/registry';
 import type { ModelInfo } from '../../types';
 
 export function modelRoutes(registry: ToolPluginRegistry) {
-  return new Hono().get('/models', (c) => {
+  return new Hono().get('/config/models', (c) => {
     const requested = c.req.query('tool')?.trim();
     if (requested) {
       return c.json({

@@ -17,11 +17,29 @@ export function registerConfigCommands(
   configStore: ConfigStore,
   registry: ToolPluginRegistry,
 ) {
-  const config = program.command('config').description('Config operations');
+  const config = program.command('config').alias('c').description('Config operations');
 
   config.command('get').action(async () => {
     printJSON(await configStore.load());
   });
+
+  config
+    .command('models')
+    .option('--tool <tool>', 'tool name')
+    .action((opts: { tool?: string }) => {
+      const tool = (opts.tool ?? '').trim();
+      if (tool) {
+        printJSON({ [tool]: toolModels(registry, tool) });
+        return;
+      }
+      const data = Object.fromEntries(
+        availableTools(registry).map((name) => [
+          name,
+          toolModels(registry, name),
+        ]),
+      );
+      printJSON(data);
+    });
 
   config
     .command('set')
@@ -71,6 +89,15 @@ async function buildInteractivePatch(
             : orchModels[0],
         )
       : '';
+
+  const orchMode = (await pickFromList(
+    'Orchestrator mode',
+    [
+      { label: 'CLI (lower token usage)', value: 'cli' },
+      { label: 'MCP (structured tool calls)', value: 'mcp' },
+    ],
+    current.orchestrator?.mode ?? 'cli',
+  )) as 'cli' | 'mcp';
 
   const interactions = {} as Record<InteractionType, InteractionConfig>;
   for (const type of INTERACTION_TYPES) {
@@ -185,7 +212,7 @@ async function buildInteractivePatch(
 
   return {
     interactions,
-    orchestrator: { tool: orchTool, model: orchModel },
+    orchestrator: { tool: orchTool, model: orchModel, mode: orchMode },
     project: { integrationBranch: branch },
     workers: { maxParallel },
     ...(embeddingConfig.provider ? { embeddings: embeddingConfig } : {}),

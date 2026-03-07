@@ -159,6 +159,17 @@ export async function runInitCommand(
         pickDefault(orchModels, defaults.orchestrator.model),
       );
 
+  const orchestratorMode: 'cli' | 'mcp' = autoYes
+    ? 'cli'
+    : ((await pickFromList(
+        'Orchestrator mode',
+        [
+          { label: 'CLI (lower token usage)', value: 'cli' },
+          { label: 'MCP (structured tool calls)', value: 'mcp' },
+        ],
+        'cli',
+      )) as 'cli' | 'mcp');
+
   // Interaction defaults
   const interactions = {} as Record<InteractionType, InteractionConfig>;
   const cliInteractionOverrides = parseInteractionOverrides(
@@ -342,6 +353,7 @@ export async function runInitCommand(
     orchestrator: {
       tool: orchestratorTool,
       model: orchestratorModel,
+      mode: orchestratorMode,
     },
     validation: {
       commands: validationCommand ? [validationCommand] : [],

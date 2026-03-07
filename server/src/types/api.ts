@@ -1,6 +1,6 @@
+import type { StringValue } from 'ms';
 import type { MemoryCategory, MemorySourceType } from './constants';
 import type { MemoryEntry } from './models';
-
 export interface InteractionConfig {
   tool: string;
   model: string;
@@ -41,13 +41,14 @@ export interface Config {
   orchestrator: {
     tool: string;
     model: string;
+    mode: 'cli' | 'mcp';
   };
   validation: { commands: string[] };
   workers: { maxParallel: number };
   monitor: {
-    stuckCheckInterval: import('ms').StringValue;
+    stuckCheckInterval: StringValue;
     maxStuckCycles: number;
-    conflictCheckInterval: import('ms').StringValue;
+    conflictCheckInterval: StringValue;
   };
   quality: {
     enabled: boolean;

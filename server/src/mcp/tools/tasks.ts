@@ -84,10 +84,6 @@ const tasksStartSchema = z.object({
 
 const tasksReadySchema = z.object({});
 
-const tasksReviewsSchema = z.object({
-  taskId: requiredTrimmedString('taskId'),
-});
-
 const tasksProvideInputSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
   answer: z.preprocess(
@@ -124,14 +120,6 @@ export function taskTools(deps: {
       schema: tasksReadySchema,
       handler: async () => {
         return { tasks: await deps.taskStore.getReady() };
-      },
-    }),
-    defineTool({
-      name: 'tasks_reviews',
-      description: 'List reviews for a task',
-      schema: tasksReviewsSchema,
-      handler: async (input) => {
-        return { reviews: await deps.taskStore.listReviews(input.taskId) };
       },
     }),
     defineTool({
@@ -338,16 +326,7 @@ export function taskTools(deps: {
     }),
   ];
 
-  // Backward-compatible aliases.
-  return [
-    ...tools,
-    alias('task_get', 'tasks_get', tools),
-    alias('task_create', 'tasks_create', tools),
-    alias('task_update_status', 'tasks_update', tools),
-    alias('task_run', 'tasks_start', tools),
-    alias('task_stop', 'tasks_stop', tools),
-    alias('task_resume', 'tasks_resume', tools),
-  ];
+  return tools;
 }
 
 const BLOCKED_MANUAL_STATUSES = new Set<TaskStatus>([
@@ -374,15 +353,4 @@ function validateManualStatusTransition(
     return `cannot manually set status to ${next}`;
   }
   return `cannot manually set status to ${next}`;
-}
-
-function alias(name: string, target: string, tools: Tool[]): Tool {
-  const source = tools.find((tool) => tool.name === target);
-  if (!source) {
-    throw new Error(`missing source tool for alias: ${target}`);
-  }
-  return {
-    ...source,
-    name,
-  };
 }

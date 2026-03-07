@@ -48,8 +48,12 @@ async function runOrcInteractive(
     override: (opts.model ?? '').trim(),
   });
 
+  const config = await deps.configStore.load();
   const mcpServer = buildMCPServerDef(deps.repoDir);
-  const systemPrompt = await loadOrchestratorPrompt(deps.repoDir);
+  const systemPrompt = await loadOrchestratorPrompt(
+    deps.repoDir,
+    config.orchestrator.mode,
+  );
   const args = await tool.interactiveArgs({
     model,
     systemPrompt,

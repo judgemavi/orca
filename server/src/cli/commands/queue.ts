@@ -1,22 +1,36 @@
 import type { Command } from 'commander';
 import type { JobQueue } from '../../queue/queue';
-import type { Job, JobStatus } from '../../types';
+import type { TaskStore } from '../../store/tasks';
+import type { Job, JobStatus, Task } from '../../types';
 import { isJSONMode, printJSON, printTable } from '../format';
 
 export function registerQueueCommands(
   program: Command,
-  deps: { queue: JobQueue },
+  deps: { queue: JobQueue; taskStore: TaskStore },
 ) {
-  const { queue } = deps;
+  const { queue, taskStore } = deps;
 
   const cmd = program
-    .command('queue')
+    .command('queue').alias('q')
     .description('Inspect and manage the job queue')
     .option('--status <status>', 'filter by status')
     .option('--task <id>', 'filter by task id')
+    .option('--watch', 'live view of tasks + queue (refreshes every 2s)')
+    .option('--interval <ms>', 'refresh interval for --watch in ms', '2000')
     .option('--json', 'output raw JSON')
     .action(
-      async (opts: { status?: string; task?: string; json?: boolean }) => {
+      async (opts: {
+        status?: string;
+        task?: string;
+        watch?: boolean;
+        interval: string;
+        json?: boolean;
+      }) => {
+        if (opts.watch) {
+          await runWatch(queue, taskStore, opts.interval);
+          return;
+        }
+
         const status = (opts.status ?? '').trim() as JobStatus | '';
         const taskId = (opts.task ?? '').trim();
 
@@ -105,6 +119,142 @@ export function registerQueueCommands(
       }
       console.log(`cancelled ${cancelled} job(s)`);
     });
+}
+
+async function runWatch(
+  queue: JobQueue,
+  taskStore: TaskStore,
+  intervalStr: string,
+): Promise<void> {
+  const intervalMs = Math.max(500, Number.parseInt(intervalStr, 10) || 2000);
+
+  const render = async () => {
+    const [jobs, tasks, counts] = await Promise.all([
+      queue.list({ limit: 50 }),
+      taskStore.list(),
+      queue.counts(),
+    ]);
+
+    const activeJobs = jobs.filter(
+      (j) => j.status === 'queued' || j.status === 'running',
+    );
+    const recentDone = jobs
+      .filter((j) => j.status === 'completed' || j.status === 'failed')
+      .slice(0, 5);
+
+    const lines: string[] = [];
+    const now = Date.now();
+
+    const q = counts.queued ?? 0;
+    const r = counts.running ?? 0;
+    const c = counts.completed ?? 0;
+    const f = counts.failed ?? 0;
+    lines.push(
+      `── orca ── queued:${q} running:${r} done:${c} failed:${f} ── ${new Date().toLocaleTimeString()} ──`,
+    );
+    lines.push('');
+
+    const tasksByStatus = new Map<string, Task[]>();
+    for (const task of tasks) {
+      const list = tasksByStatus.get(task.status) ?? [];
+      list.push(task);
+      tasksByStatus.set(task.status, list);
+    }
+
+    const activeStatuses = [
+      'running',
+      'review',
+      'planned',
+      'pending',
+      'stopped',
+      'failed',
+    ];
+    let hasActive = false;
+    for (const status of activeStatuses) {
+      const statusTasks = tasksByStatus.get(status);
+      if (!statusTasks || statusTasks.length === 0) continue;
+      hasActive = true;
+      for (const task of statusTasks.slice(0, 10)) {
+        const id = task.id.slice(0, 7);
+        const title =
+          task.title.length > 50 ? `${task.title.slice(0, 47)}...` : task.title;
+        const badge = statusBadge(task.status);
+        const extra =
+          task.status === 'stopped' && task.pendingQuestion
+            ? ' [needs input]'
+            : '';
+        lines.push(` ${badge}  ${id}  ${title}${extra}`);
+      }
+    }
+
+    if (!hasActive) {
+      lines.push(' (no active tasks)');
+    }
+
+    if (activeJobs.length > 0) {
+      lines.push('');
+      lines.push('Jobs:');
+      for (const job of activeJobs) {
+        const id = job.id.slice(0, 8);
+        const taskId = job.taskId ? job.taskId.slice(0, 7) : '-';
+        const age = formatAge(now - new Date(job.createdAt).getTime());
+        const badge = job.status === 'running' ? 'RUN' : 'QUE';
+        lines.push(
+          ` [${badge}] ${id}  ${job.type.padEnd(10)} task:${taskId}  ${age}`,
+        );
+      }
+    }
+
+    if (recentDone.length > 0) {
+      lines.push('');
+      lines.push('Recent:');
+      for (const job of recentDone) {
+        const id = job.id.slice(0, 8);
+        const taskId = job.taskId ? job.taskId.slice(0, 7) : '-';
+        const icon = job.status === 'completed' ? 'OK' : 'ERR';
+        const err = job.error ? ` ${job.error.slice(0, 40)}` : '';
+        lines.push(
+          ` [${icon}] ${id}  ${job.type.padEnd(10)} task:${taskId}${err}`,
+        );
+      }
+    }
+
+    process.stdout.write('\x1B[2J\x1B[H');
+    console.log(lines.join('\n'));
+  };
+
+  await render();
+  const timer = setInterval(render, intervalMs);
+  const stop = () => {
+    clearInterval(timer);
+    process.exit(0);
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+  await new Promise(() => {});
+}
+
+function statusBadge(status: string): string {
+  switch (status) {
+    case 'running':
+      return 'RUN ';
+    case 'review':
+      return 'REV ';
+    case 'planned':
+      return 'PLAN';
+    case 'pending':
+      return 'PEND';
+    case 'stopped':
+      return 'STOP';
+    case 'failed':
+      return 'FAIL';
+    case 'approved':
+      return 'APPR';
+    case 'merged':
+      return 'MRGD';
+    default:
+      return status.slice(0, 4).toUpperCase().padEnd(4);
+  }
 }
 
 function formatJobTable(jobs: Job[]): string {

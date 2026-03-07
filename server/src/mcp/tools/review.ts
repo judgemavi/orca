@@ -122,15 +122,5 @@ export function reviewTools(deps: {
     }),
   ];
 
-  return [
-    ...tools,
-    alias('approve', 'tasks_approve', tools),
-    alias('request_changes', 'tasks_request_changes', tools),
-  ];
-}
-
-function alias(name: string, target: string, tools: Tool[]): Tool {
-  const source = tools.find((tool) => tool.name === target);
-  if (!source) throw new Error(`missing source tool for alias: ${target}`);
-  return { ...source, name };
+  return tools;
 }

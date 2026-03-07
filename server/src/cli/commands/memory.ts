@@ -1,5 +1,11 @@
 import type { Command } from 'commander';
 import {
+  buildExploreContext,
+  listTrackedFiles,
+  readExploreContext,
+  writeExploreContext,
+} from '../../domain/explore';
+import {
   refreshMemoryEntries,
   syncMemoryWithGit,
 } from '../../domain/memory-sync';
@@ -12,14 +18,14 @@ export function registerMemoryCommands(
   repoDir: string,
   memory: MemoryStore,
 ) {
-  const cmd = program.command('memory').description('Memory operations');
+  const cmd = program.command('memory').alias('m').description('Memory operations');
 
   cmd
-    .command('list')
-    .option('--category <category>', 'memory category')
+    .command('list').alias('ls')
+    .option('-c, --category <category>', 'memory category')
     .option('--tag <tag>', 'tag filter')
     .option('--q <query>', 'full-text query')
-    .option('--limit <limit>', 'result limit', '50')
+    .option('-l, --limit <limit>', 'result limit', '50')
     .action(
       async (opts: {
         category?: string;
@@ -67,7 +73,7 @@ export function registerMemoryCommands(
     .command('update <id>')
     .option('--content <content>', 'content text')
     .option('--confidence <confidence>', 'confidence value')
-    .option('--category <category>', 'category value')
+    .option('-c, --category <category>', 'category value')
     .action(
       async (
         id: string,
@@ -116,6 +122,33 @@ export function registerMemoryCommands(
       printJSON({ deleted: entryID });
     });
 
+  cmd.command('status').action(async () => {
+    const entries = await memory.list();
+    const staleCount = entries.filter((e) => e.stale).length;
+    const categories: Record<string, number> = {};
+    for (const e of entries) {
+      categories[e.category] = (categories[e.category] ?? 0) + 1;
+    }
+    printJSON({
+      total: entries.length,
+      stale: staleCount,
+      active: entries.length - staleCount,
+      categories,
+    });
+  });
+
+  cmd
+    .command('search <query>').alias('s')
+    .option('-l, --limit <limit>', 'result limit', '20')
+    .action(async (query: string, opts: { limit: string }) => {
+      const limit = Math.max(
+        1,
+        Math.min(Number.parseInt(opts.limit, 10) || 20, 200),
+      );
+      const results = await memory.searchWithScores(query, limit);
+      printJSON(results.map(({ entry, score }) => ({ ...entry, score })));
+    });
+
   cmd.command('sync').action(async () => {
     printJSON(await syncMemoryWithGit(repoDir, memory));
   });
@@ -134,6 +167,33 @@ export function registerMemoryCommands(
     .action(async () => {
       const count = await memory.reembedAll();
       printJSON({ reembedded: count });
+    });
+
+  const exploreCmd = cmd
+    .command('explore')
+    .description('Explore context operations');
+  exploreCmd
+    .command('run')
+    .option('--tool <tool>', 'explore tool')
+    .option('--model <model>', 'explore model')
+    .action(async (opts: { tool?: string; model?: string }) => {
+      const files = await listTrackedFiles(repoDir);
+      const path = await writeExploreContext(
+        repoDir,
+        buildExploreContext(files),
+      );
+      printJSON({ status: 'completed', path, files: files.length });
+    });
+  exploreCmd.command('get').action(async () => {
+    const content = await readExploreContext(repoDir);
+    printJSON({ path: `${repoDir}/.orca/explore_context.md`, content });
+  });
+  exploreCmd
+    .command('set')
+    .requiredOption('--text <text>', 'context text')
+    .action(async (opts: { text: string }) => {
+      const path = await writeExploreContext(repoDir, opts.text);
+      printJSON({ path });
     });
 }
 
