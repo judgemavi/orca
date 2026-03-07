@@ -98,8 +98,8 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
 
             <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border-subtle px-5 py-3 text-xs text-muted">
               <span>
-                Tokens: {formatTokens(selectedInteraction?.inputTokens)} in
-                / {formatTokens(selectedInteraction?.outputTokens)} out
+                Tokens: {formatTokens(selectedInteraction?.inputTokens)} in /{' '}
+                {formatTokens(selectedInteraction?.outputTokens)} out
               </span>
               <span>
                 Cost: {formatCost(selectedInteraction?.estimatedCost)}

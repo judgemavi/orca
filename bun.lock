@@ -13,9 +13,6 @@
     "packages/types": {
       "name": "@orca/types",
       "version": "0.0.0",
-      "devDependencies": {
-        "@types/ms": "^2.1.0",
-      },
     },
     "server": {
       "name": "@orca/server",

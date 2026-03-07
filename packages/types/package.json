@@ -12,8 +12,5 @@
     "lint:fix": "biome lint --write .",
     "check": "biome check .",
     "check:fix": "biome check --write ."
-  },
-  "devDependencies": {
-    "@types/ms": "^2.1.0"
   }
 }

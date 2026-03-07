@@ -264,4 +264,3 @@ export function isAutoRun(
   }
   return config.interactions[interactionType]?.autoRun ?? true;
 }
-

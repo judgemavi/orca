@@ -90,7 +90,7 @@ function EmbeddingsSection({
     const current = draft.embeddings ?? {};
     const missing = providerFields.filter((f) => !(f.key in current));
     if (missing.length === 0) return;
-    const patched = { ...current };
+    const patched: Record<string, unknown> = { ...current };
     for (const field of missing) {
       patched[field.key] = field.defaultValue ?? '';
     }
@@ -127,7 +127,7 @@ function EmbeddingsSection({
               key={field.key}
               label={field.label + (field.hint ? ` (${field.hint})` : '')}
               value={String(
-                (draft.embeddings as any)?.[field.key] ??
+                draft.embeddings?.[field.key] ??
                   field.defaultValue ??
                   '',
               )}
@@ -170,9 +170,9 @@ function ConfigPage() {
         validation: data.validation ?? { commands: [] },
         workers: data.workers ?? { maxParallel: 3 },
         monitor: data.monitor ?? {
-          stuckCheckInterval: '5m' as any,
+          stuckCheckInterval: '5m',
           maxStuckCycles: 3,
-          conflictCheckInterval: '10m' as any,
+          conflictCheckInterval: '10m',
         },
         quality: data.quality ?? {
           enabled: true,
@@ -209,10 +209,10 @@ function ConfigPage() {
     try {
       const updated = await api.updateConfig(patch);
       setDraft(updated);
-    } catch (err: any) {
+    } catch (err) {
       setErrors((prev) => ({
         ...prev,
-        [sectionId]: err?.message ?? 'Save failed',
+        [sectionId]: err instanceof Error ? err.message : 'Save failed',
       }));
     } finally {
       setSaving((prev) => ({ ...prev, [sectionId]: false }));
@@ -488,13 +488,13 @@ function ConfigPage() {
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <LabeledInput
-              label="Stuck check interval"
-              value={draft.monitor.stuckCheckInterval}
+              label="Stuck check interval (ms)"
+              type="number"
+              value={String(draft.monitor.stuckCheckIntervalMs)}
               onChange={(value) =>
                 updateSection('monitor', {
                   ...draft.monitor,
-                  stuckCheckInterval:
-                    value as typeof draft.monitor.stuckCheckInterval,
+                  stuckCheckIntervalMs: Number(value) || 0,
                 })
               }
             />
@@ -510,13 +510,13 @@ function ConfigPage() {
               }
             />
             <LabeledInput
-              label="Conflict check interval"
-              value={draft.monitor.conflictCheckInterval}
+              label="Conflict check interval (ms)"
+              type="number"
+              value={String(draft.monitor.conflictCheckIntervalMs)}
               onChange={(value) =>
                 updateSection('monitor', {
                   ...draft.monitor,
-                  conflictCheckInterval:
-                    value as typeof draft.monitor.conflictCheckInterval,
+                  conflictCheckIntervalMs: Number(value) || 0,
                 })
               }
             />
