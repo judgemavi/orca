@@ -304,7 +304,7 @@ function MemoryPage() {
                   return <span className="text-xs text-muted">—</span>;
                 const pct = Math.round(score * 100);
                 return (
-                  <div className="flex min-w-[90px] items-center gap-2">
+                  <div className="flex min-w-22.5 items-center gap-2">
                     <div className="h-1.5 w-12 rounded bg-surface-alt">
                       <div
                         className="h-full rounded bg-accent"
@@ -396,7 +396,7 @@ function MemoryPage() {
             return <span className="text-xs text-muted">—</span>;
           }
           return (
-            <div className="flex max-w-[220px] flex-wrap gap-1">
+            <div className="flex max-w-55 flex-wrap gap-1">
               {tags.map((tag) => (
                 <span
                   key={tag}
@@ -417,7 +417,7 @@ function MemoryPage() {
             return <span className="text-xs text-muted">—</span>;
           }
           return (
-            <div className="flex max-w-[260px] flex-wrap gap-1">
+            <div className="flex max-w-65 flex-wrap gap-1">
               {paths.map((path) => (
                 <button
                   key={path}
@@ -457,7 +457,7 @@ function MemoryPage() {
 
           const confidence = Math.max(0, Math.min(1, getValue()));
           return (
-            <div className="flex min-w-[110px] items-center gap-2">
+            <div className="flex min-w-27.5 items-center gap-2">
               <div className="h-1.5 w-16 rounded bg-surface-alt">
                 <div
                   className="h-full rounded bg-accent"
@@ -810,7 +810,7 @@ function MemoryPage() {
                   Close
                 </Button>
               </div>
-              <div className="prose prose-invert prose-sm max-w-none break-words">
+              <div className="prose prose-invert prose-sm max-w-none wrap-break-words">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {detailQuery.data.entry.content}
                 </ReactMarkdown>
@@ -903,7 +903,7 @@ function MemoryPage() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle">
-          <Table className="min-w-[1280px]">
+          <Table className="min-w-7xl">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>

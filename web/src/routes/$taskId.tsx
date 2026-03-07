@@ -109,8 +109,8 @@ function TaskDetailContent({
             description: values.description.trim(),
           },
         });
-      } catch (err: any) {
-        alert(err?.message ?? 'Save failed');
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Save failed');
       } finally {
         setSaving(false);
       }
@@ -267,7 +267,7 @@ function TaskDetailForm({
                       return (
                         <span
                           key={depId}
-                          className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-alt px-1.5 py-0.5 text-[11px]"
+                          className="inline-flex max-w-55 items-center gap-1 rounded bg-surface-alt px-1.5 py-0.5 text-[11px]"
                         >
                           <span className="truncate">
                             {depTask?.title || 'Unknown task'}
@@ -334,7 +334,7 @@ function TaskDetailForm({
                       placeholder="No description"
                     />
                   ) : (
-                    <div className="min-h-[80px] whitespace-pre-wrap rounded-md bg-surface-alt px-3 py-1.5 text-sm font-normal">
+                    <div className="min-h-20 whitespace-pre-wrap rounded-md bg-surface-alt px-3 py-1.5 text-sm font-normal">
                       {field.state.value || 'No description'}
                     </div>
                   )}
@@ -354,7 +354,7 @@ function TaskDetailForm({
                           key={depId}
                           className="inline-flex items-center gap-2 rounded bg-surface-alt px-2 py-0.5 text-xs"
                         >
-                          <span className="max-w-[280px] truncate">
+                          <span className="max-w-70 truncate">
                             {depTask?.title || 'Unknown task'}
                           </span>
                           <span className="font-mono">{depId.slice(0, 8)}</span>
