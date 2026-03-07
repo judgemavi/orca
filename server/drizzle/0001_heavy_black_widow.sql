@@ -1,1 +1,0 @@
-ALTER TABLE `tasks` ADD `auto_run_overrides` text;

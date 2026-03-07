@@ -61,12 +61,15 @@ CREATE TABLE `memory_entries` (
 	`superseded_by` text,
 	`source_type` text DEFAULT 'retro' NOT NULL,
 	`covered_at_commit` text DEFAULT '' NOT NULL,
+	`retrieval_count` integer DEFAULT 0 NOT NULL,
 	`stale` integer DEFAULT false NOT NULL,
+	`decay_exempt` integer DEFAULT false NOT NULL,
+	`embedding` blob,
 	`created_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
 	`updated_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
 	FOREIGN KEY (`source_task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE set null,
 	FOREIGN KEY (`source_interaction_id`) REFERENCES `task_interactions`(`id`) ON UPDATE no action ON DELETE set null,
-	CONSTRAINT "memory_category_check" CHECK("memory_entries"."category" IN ('pattern', 'pitfall', 'preference', 'convention', 'architecture', 'dependency')),
+	CONSTRAINT "memory_category_check" CHECK("memory_entries"."category" IN ('pattern', 'pitfall', 'preference', 'convention', 'architecture', 'dependency', 'tooling')),
 	CONSTRAINT "memory_source_type_check" CHECK("memory_entries"."source_type" IN ('retro', 'explore'))
 );
 --> statement-breakpoint
@@ -167,6 +170,8 @@ CREATE TABLE `tasks` (
 	`session_id` text,
 	`parent_id` text,
 	`status` text DEFAULT 'pending' NOT NULL,
+	`auto_run_overrides` text,
+	`pending_question` text,
 	`created_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
 	`updated_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL
 );

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "50908abb-c4c4-4a23-af42-df67ed0ab466",
+  "id": "cb848691-f53c-4cb7-b8c1-5f6a30d06a84",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "_changelog": {
@@ -389,6 +389,14 @@
           "autoincrement": false,
           "default": "''"
         },
+        "retrieval_count": {
+          "name": "retrieval_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "stale": {
           "name": "stale",
           "type": "integer",
@@ -396,6 +404,21 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "decay_exempt": {
+          "name": "decay_exempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "embedding": {
+          "name": "embedding",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",
@@ -461,7 +484,7 @@
       "checkConstraints": {
         "memory_category_check": {
           "name": "memory_category_check",
-          "value": "\"memory_entries\".\"category\" IN ('pattern', 'pitfall', 'preference', 'convention', 'architecture', 'dependency')"
+          "value": "\"memory_entries\".\"category\" IN ('pattern', 'pitfall', 'preference', 'convention', 'architecture', 'dependency', 'tooling')"
         },
         "memory_source_type_check": {
           "name": "memory_source_type_check",
@@ -1056,6 +1079,20 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'pending'"
+        },
+        "auto_run_overrides": {
+          "name": "auto_run_overrides",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pending_question": {
+          "name": "pending_question",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

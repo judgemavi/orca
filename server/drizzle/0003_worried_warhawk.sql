@@ -1,1 +1,0 @@
-ALTER TABLE `tasks` ADD `pending_question` text;
