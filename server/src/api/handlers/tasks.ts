@@ -9,7 +9,7 @@ import type { TaskStore } from '../../store/tasks';
 import type { AutoRunOverrides, TaskStatus } from '../../types';
 import { JOB_PRIORITIES } from '../../types';
 import { DeleteWorkflowError, deleteTask } from '../../workflows/delete';
-import { addDepsSchema, createTaskSchema, patchTaskSchema } from '../schemas';
+import { createTaskSchema, patchTaskSchema } from '../schemas';
 import type { EventSink } from '../ws';
 import { broadcast } from './utils';
 
@@ -51,14 +51,22 @@ export function taskRoutes(deps: {
         parentId: body.parentId ?? null,
         autoRunOverrides: body.autoRunOverrides as AutoRunOverrides,
       });
-      if (deps.queue) {
+
+      const hasDeps =
+        Array.isArray(body.dependsOn) && body.dependsOn.length > 0;
+      if (hasDeps) {
+        await taskStore.updateDependencies(task.id, body.dependsOn!);
+      }
+
+      if (deps.queue && !hasDeps) {
         await deps.queue.enqueue({
           type: 'evaluate',
           taskId: task.id,
           priority: JOB_PRIORITIES.evaluate,
         });
       }
-      return c.json(task, 201);
+
+      return c.json(hasDeps ? await taskStore.get(task.id) : task, 201);
     })
 
     .patch('/tasks/:id', zValidator('json', patchTaskSchema), async (c) => {
@@ -105,30 +113,6 @@ export function taskRoutes(deps: {
       }
 
       return c.json(updated);
-    })
-
-    .post('/tasks/:id/deps', zValidator('json', addDepsSchema), async (c) => {
-      const taskID = c.req.param('id');
-      const body = c.req.valid('json');
-
-      const existing = await taskStore.get(taskID);
-      if (!existing) {
-        return c.json({ error: 'task not found' }, 404);
-      }
-
-      const next = new Set(existing.dependsOn);
-      if (body.dependsOn?.trim()) {
-        next.add(body.dependsOn.trim());
-      }
-      if (Array.isArray(body.dependsOnIds)) {
-        for (const dep of body.dependsOnIds) {
-          const value = dep.trim();
-          if (value) next.add(value);
-        }
-      }
-
-      await taskStore.updateDependencies(taskID, [...next]);
-      return c.json(await taskStore.get(taskID));
     })
 
     .delete('/tasks/:id', async (c) => {

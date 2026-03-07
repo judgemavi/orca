@@ -12,7 +12,7 @@ export function useDependencyManager(taskId: string, currentDeps: string[]) {
 
   const addDependencyMutation = useMutation({
     mutationFn: (dependencyId: string) =>
-      api.addDependency(taskId, dependencyId),
+      api.updateTask(taskId, { dependsOn: [...currentDeps, dependencyId] }),
     onSuccess: async () => {
       setSelectedDependencyId('');
       await queryClient.invalidateQueries({ queryKey: queryKeys.tasks });

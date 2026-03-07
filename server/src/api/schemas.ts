@@ -14,6 +14,7 @@ export const createTaskSchema = z.object({
   title: z.string().min(1, 'title is required'),
   description: z.string().optional().default(''),
   parentId: z.string().nullable().optional(),
+  dependsOn: z.array(z.string()).optional(),
   autoRunOverrides: z.record(z.string(), z.boolean()).optional(),
 });
 
@@ -25,11 +26,6 @@ export const patchTaskSchema = z.object({
   sessionId: z.string().nullable().optional(),
   dependsOn: z.array(z.string()).optional(),
   autoRunOverrides: z.record(z.string(), z.boolean()).optional(),
-});
-
-export const addDepsSchema = z.object({
-  dependsOn: z.string().optional(),
-  dependsOnIds: z.array(z.string()).optional(),
 });
 
 export const provideInputSchema = z.object({

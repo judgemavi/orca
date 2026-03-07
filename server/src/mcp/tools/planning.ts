@@ -6,6 +6,7 @@ import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
+import type { ProposedTask } from '../../types/api';
 import {
   acceptBreakdown,
   approvePlan,
@@ -83,9 +84,27 @@ const tasksPlanSetSchema = z.object({
   plan: z.preprocess((value) => value ?? '', z.coerce.string()),
 });
 
+const proposedTaskSchema = z.object({
+  title: z.preprocess(
+    (value) => value ?? '',
+    z.coerce.string().trim().min(1, 'title is required'),
+  ),
+  description: optionalString(),
+  dependsOn: z.preprocess(
+    (value) => (Array.isArray(value) ? value : undefined),
+    z.array(z.preprocess((item) => item ?? '', z.coerce.string())).optional(),
+  ),
+  dependsOnIndices: z.preprocess(
+    (value) => (Array.isArray(value) ? value : undefined),
+    z.array(z.number()).optional(),
+  ),
+  suggestedTool: optionalString(),
+});
+
 const breakdownAcceptSchema = z.object({
   interactionId: requiredTrimmedString('interactionId'),
   parentTaskId: optionalTrimmedString(),
+  tasks: z.array(proposedTaskSchema).optional(),
 });
 
 const breakdownRejectSchema = z.object({
@@ -260,13 +279,21 @@ export function planningTools(deps: {
     defineTool({
       name: 'breakdown_accept',
       description:
-        'Accept a proposed breakdown and create subtasks from it. Use after calling breakdown with autoCreate=false.',
+        'Accept a proposed breakdown and create subtasks from it. Use after calling breakdown with autoCreate=false. Optionally pass tasks array to override proposals.',
       schema: breakdownAcceptSchema,
       handler: async (input) => {
-        const proposed = await loadProposedTasksFromInteraction(
-          input.interactionId,
-          { interactions: deps.interactions },
-        );
+        let proposed =
+          Array.isArray(input.tasks) && input.tasks.length > 0
+            ? (input.tasks as ProposedTask[])
+            : [];
+
+        if (proposed.length === 0) {
+          proposed = await loadProposedTasksFromInteraction(
+            input.interactionId,
+            { interactions: deps.interactions },
+          );
+        }
+
         if (proposed.length === 0) {
           throw new Error(
             'No proposed tasks found for interaction ' + input.interactionId,

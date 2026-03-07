@@ -155,7 +155,7 @@ When creating multiple related tasks:
 1. Create independent tasks (no deps) first.
 2. Create dependent tasks next, passing `--depends-on id1,id2` in the same create call.
 3. If task B depends on task A, you MUST create A first, get its ID, then create B with `--depends-on <A_id>`.
-4. Never use `orca task deps add` on a task that is already evaluating or running — it is only safe as a fallback for tasks still in `pending` status with no queued evaluation.
+4. To update dependencies after creation, use `orca task deps add` — but only on tasks still in `pending` status.
 
 A task with unfinished dependencies will not be evaluated or started until all dependencies reach `merged` status. When a dependency finishes, blocked tasks are automatically unblocked and evaluated.
 

@@ -60,16 +60,15 @@ const tasksUpdateSchema = z.object({
   plan: optionalString(),
   status: optionalTrimmedString(),
   sessionId: optionalString(),
+  dependsOn: z.preprocess(
+    (value) => (Array.isArray(value) ? value : undefined),
+    z.array(z.preprocess((item) => item ?? '', z.coerce.string())).optional(),
+  ),
   autoRunOverrides: z.record(z.string(), z.boolean()).optional(),
 });
 
 const tasksDeleteSchema = z.object({
   taskId: requiredTrimmedString('taskId'),
-});
-
-const tasksAddDependencySchema = z.object({
-  taskId: requiredTrimmedString('taskId'),
-  dependsOn: requiredTrimmedString('dependsOn'),
 });
 
 const tasksStartSchema = z.object({
@@ -193,6 +192,13 @@ export function taskTools(deps: {
           if (error) throw new Error(error);
         }
 
+        if (Array.isArray(input.dependsOn)) {
+          await deps.taskStore.updateDependencies(
+            taskID,
+            input.dependsOn.map((v) => v.trim()).filter(Boolean),
+          );
+        }
+
         await deps.taskStore.update(taskID, {
           title: input.title,
           description: input.description,
@@ -224,17 +230,6 @@ export function taskTools(deps: {
           taskStore: deps.taskStore,
           interactions: deps.interactions,
         });
-      },
-    }),
-    defineTool({
-      name: 'tasks_add_dependency',
-      description: 'Add task dependency',
-      schema: tasksAddDependencySchema,
-      handler: async (input) => {
-        const taskID = input.taskId;
-        const dependsOn = input.dependsOn;
-        await deps.taskStore.addDependency(taskID, dependsOn);
-        return { taskId: taskID, dependsOn: dependsOn };
       },
     }),
     defineTool({

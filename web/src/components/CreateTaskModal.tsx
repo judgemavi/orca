@@ -32,20 +32,13 @@ export function CreateTaskModal() {
       Object.keys(values.autoRunOverrides).length > 0
         ? values.autoRunOverrides
         : undefined;
-    const created = await createTaskMutation.mutateAsync({
+    await createTaskMutation.mutateAsync({
       title: values.title.trim(),
       description: values.description.trim(),
+      dependsOn:
+        values.dependencies.length > 0 ? values.dependencies : undefined,
       autoRunOverrides: overrides,
     });
-
-    const taskId = created.id;
-    if (taskId) {
-      await Promise.all(
-        values.dependencies.map((depId) =>
-          api.addDependency(taskId, depId).catch(() => {}),
-        ),
-      );
-    }
   });
 
   const handleSubmit = async (e: FormEvent) => {

@@ -273,15 +273,6 @@ export const api = {
       }),
     ),
 
-  // Dependencies
-  addDependency: (taskId: string, dependsOn: string) =>
-    unwrap(
-      client.tasks[':id'].deps.$post({
-        param: { id: taskId },
-        json: { dependsOn },
-      }),
-    ),
-
   // Explore (moved under memory)
   runExplore: (): Promise<{ status: string }> =>
     unwrap(client.memory.explore.$post({ json: {} })),
