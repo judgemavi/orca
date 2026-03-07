@@ -15,7 +15,6 @@
     "check:fix": "biome check --write ."
   },
   "dependencies": {
-    "@orca/types": "workspace:*",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.4",

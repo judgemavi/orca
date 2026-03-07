@@ -9,6 +9,7 @@ import {
   runStartupRecovery,
 } from '../domain/recovery';
 import { registerJobHandlers } from '../queue/handlers';
+import { clearDaemonPid, writeDaemonPid } from '../queue/lock';
 import { JobProcessor } from '../queue/processor';
 import { initLogger, log } from '../shared/logger';
 import { killAllTracked, trackedCount } from '../shared/process-registry';
@@ -47,6 +48,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
   );
 
   processor.start();
+  writeDaemonPid(repoDir);
 
   const poller = new DbChangePoller(ctx.database.db, eventSink);
   poller.start();
@@ -79,6 +81,7 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
         log.info(event, (data as Record<string, unknown>) ?? {});
       },
     );
+    clearDaemonPid(repoDir);
     ctx.database.close();
     console.log('shutdown complete');
     process.exit(0);

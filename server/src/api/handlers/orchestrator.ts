@@ -98,7 +98,11 @@ export async function onOrchestratorWSOpen(ws: any) {
 
   try {
     const resolved = await resolveSupervisor(configStore, registry);
-    const systemPrompt = await loadOrchestratorPrompt(repoDir);
+    const config = await configStore.load();
+    const systemPrompt = await loadOrchestratorPrompt(
+      repoDir,
+      config.orchestrator.mode,
+    );
     const mcpServer = buildMCPServerDef(repoDir);
 
     const args = await resolved.plugin.interactiveArgs({

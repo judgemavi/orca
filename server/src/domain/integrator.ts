@@ -74,56 +74,6 @@ export async function mergeTaskWithGit(
   return mergeTaskWithGitUnlocked(taskID, deps);
 }
 
-export async function mergeApprovedTasksWithGit(
-  deps: IntegratorDeps,
-): Promise<{ merged: string[]; failed: string[]; results: MergeResult[] }> {
-  const approved = await deps.taskStore.listByStatus(TASK_STATUSES.approved);
-  const sorted = await deps.taskStore.sortTasksTopologically(
-    approved.map((task) => task.id),
-  );
-
-  const merged: string[] = [];
-  const failed: string[] = [];
-  const results: MergeResult[] = [];
-  const failedSet = new Set<string>();
-
-  for (const taskID of sorted) {
-    const task = await deps.taskStore.get(taskID);
-    if (!task) {
-      failed.push(taskID);
-      failedSet.add(taskID);
-      continue;
-    }
-
-    if (task.dependsOn.some((depID) => failedSet.has(depID))) {
-      const skipped: MergeResult = {
-        taskId: taskID,
-        status: TASK_STATUSES.failed,
-        branch: '',
-        worktreePath: '',
-        rebaseAttempted: false,
-        conflicts: [],
-        validation: { passed: false },
-        error: 'skipped: dependency failed to merge in this batch',
-      };
-      failed.push(taskID);
-      failedSet.add(taskID);
-      results.push(skipped);
-      continue;
-    }
-
-    const result = await mergeTaskWithGit(taskID, deps);
-    results.push(result);
-    if (result.status === TASK_STATUSES.merged) merged.push(taskID);
-    else {
-      failed.push(taskID);
-      failedSet.add(taskID);
-    }
-  }
-
-  return { merged, failed, results };
-}
-
 export interface ConflictResolutionDeps extends IntegratorDeps {
   config: Config;
   registry: ToolPluginRegistry;

@@ -98,25 +98,6 @@ export const breakdownRejectSchema = z.object({
   interactionId: z.string().optional(),
 });
 
-// ── Plan (top-level breakdown) ───────────────────────────────────────
-
-export const planRequestSchema = z.object({
-  goal: z.string().optional(),
-  tool: z.string().optional(),
-  sessionId: z.string().optional(),
-});
-
-export const planAcceptSchema = z.object({
-  operationId: z.string().optional(),
-  sessionId: z.string().optional(),
-  tasks: z.array(proposedTaskSchema).optional(),
-});
-
-export const planRejectSchema = z.object({
-  operationId: z.string().optional(),
-  sessionId: z.string().optional(),
-});
-
 // ── Cleanup ──────────────────────────────────────────────────────────
 
 export const cleanupSchema = z.object({

@@ -1,6 +1,5 @@
 import {
   type MergeResult,
-  mergeApprovedTasksWithGit,
   mergeTaskWithGit,
   mergeWithConflictResolution,
 } from '../domain/integrator';
@@ -27,10 +26,6 @@ export interface MergeWorkflowDeps {
   sink?: PostMergeEventSink;
   queue?: JobQueue;
 }
-
-export type BatchMergeResult = Awaited<
-  ReturnType<typeof mergeApprovedTasksWithGit>
->;
 
 export async function mergeTask(
   taskID: string,
@@ -77,49 +72,6 @@ export async function mergeTask(
       taskStore: deps.taskStore,
       queue: deps.queue,
     });
-  }
-
-  return result;
-}
-
-export async function mergeAllApproved(
-  deps: MergeWorkflowDeps,
-): Promise<BatchMergeResult> {
-  const config = await deps.configStore.load();
-  const result = await mergeApprovedTasksWithGit({
-    repoDir: deps.repoDir,
-    integrationBranch: config.project.integrationBranch,
-    validationCommands: config.validation.commands,
-    taskStore: deps.taskStore,
-  });
-
-  for (const id of result.merged) {
-    await deps.taskStore.updateStatus(id, TASK_STATUSES.merged);
-    triggerPostMergeHooks(id, {
-      repoDir: deps.repoDir,
-      taskStore: deps.taskStore,
-      interactions: deps.interactions,
-      memoryStore: deps.memoryStore,
-      configStore: deps.configStore,
-      registry: deps.registry,
-      sink: deps.sink,
-      queue: deps.queue,
-    });
-  }
-
-  // Unblock dependents after all merges are done
-  if (deps.queue) {
-    for (const id of result.merged) {
-      await unblockDependents(id, {
-        configStore: deps.configStore,
-        taskStore: deps.taskStore,
-        queue: deps.queue,
-      });
-    }
-  }
-
-  for (const id of result.failed) {
-    await deps.taskStore.updateStatus(id, TASK_STATUSES.failed);
   }
 
   return result;

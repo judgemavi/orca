@@ -2,7 +2,7 @@ import { Ollama } from 'ollama';
 import { log } from '../shared/logger';
 import type { EmbeddingConfigField, EmbeddingPlugin } from './types';
 
-export const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text';
+const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text';
 const DEFAULT_DOC_PREFIX = 'search_document: ';
 const DEFAULT_QUERY_PREFIX = 'search_query: ';
 
