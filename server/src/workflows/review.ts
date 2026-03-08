@@ -2,6 +2,8 @@ import { runAIReview } from '../domain/review';
 import type { Executor } from '../executor/executor';
 import type { TaskRunResult } from '../executor/task-runner';
 import type { ToolPluginRegistry } from '../plugin/registry';
+import { resumeChain } from '../queue/chain';
+import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { TaskStore } from '../store/tasks';
@@ -51,10 +53,21 @@ interface RunAIReviewWorkflowResult {
 
 export async function approveTask(
   taskID: string,
-  deps: { taskStore: TaskStore },
+  deps: { taskStore: TaskStore; queue?: JobQueue; configStore?: ConfigStore },
 ): Promise<Task> {
   await getTaskInReview(taskID, deps.taskStore, 'task must be in review');
-  return await deps.taskStore.updateStatus(taskID, TASK_STATUSES.approved);
+  const updated = await deps.taskStore.updateStatus(
+    taskID,
+    TASK_STATUSES.approved,
+  );
+  if (deps.queue && deps.configStore) {
+    await resumeChain(taskID, 'approved', {
+      configStore: deps.configStore,
+      taskStore: deps.taskStore,
+      queue: deps.queue,
+    });
+  }
+  return updated;
 }
 
 export async function requestChanges(

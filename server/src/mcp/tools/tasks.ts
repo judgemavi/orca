@@ -1,15 +1,18 @@
 import { z } from 'zod';
-import type { EventSink } from '../../api/ws';
-import type { Executor } from '../../executor/executor';
-import { resumeChain } from '../../queue/chain';
 import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { TaskStore } from '../../store/tasks';
 import type { TaskStatus } from '../../types';
-import { JOB_PRIORITIES } from '../../types';
 import { deleteTask } from '../../workflows/delete';
-import { resumeTask, startTasks, stopTask } from '../../workflows/run';
+import {
+  createTask,
+  enqueueEvaluate,
+  provideInput,
+  resumeTask,
+  stopTask,
+  updateTask,
+} from '../../workflows/tasks';
 import { defineTool } from '../define-tool';
 import type { Tool } from '../types';
 
@@ -78,7 +81,6 @@ const tasksStartSchema = z.object({
   ),
   tool: optionalString(),
   model: optionalString(),
-  context: optionalString(),
 });
 
 const tasksReadySchema = z.object({});
@@ -106,10 +108,8 @@ export function taskTools(deps: {
   repoDir: string;
   taskStore: TaskStore;
   interactions: InteractionStore;
-  executor: Executor;
   configStore?: ConfigStore;
-  sink?: EventSink;
-  queue?: JobQueue;
+  queue: JobQueue;
 }): Tool[] {
   const tools: Tool[] = [
     defineTool({
@@ -149,31 +149,20 @@ export function taskTools(deps: {
       description: 'Create a new task',
       schema: tasksCreateSchema,
       handler: async (input) => {
-        const task = await deps.taskStore.create({
-          title: input.title,
-          description: input.description ?? '',
-          parentId: input.parentId ?? null,
-          autoRunOverrides: input.autoRunOverrides,
-        });
-
-        const hasDeps =
-          Array.isArray(input.dependsOn) && input.dependsOn.length > 0;
-        if (hasDeps) {
-          await deps.taskStore.updateDependencies(
-            task.id,
-            input.dependsOn!.map((value) => value.trim()).filter(Boolean),
-          );
-        }
-
-        if (deps.queue && !hasDeps) {
-          await deps.queue.enqueue({
-            type: 'evaluate',
-            taskId: task.id,
-            priority: JOB_PRIORITIES.evaluate,
-          });
-        }
-
-        return { task: await deps.taskStore.get(task.id) };
+        const task = await createTask(
+          {
+            title: input.title,
+            description: input.description ?? '',
+            parentId: input.parentId ?? null,
+            dependsOn: input.dependsOn,
+            autoRunOverrides: input.autoRunOverrides,
+          },
+          {
+            taskStore: deps.taskStore,
+            queue: deps.queue,
+          },
+        );
+        return { task };
       },
     }),
     defineTool({
@@ -181,41 +170,23 @@ export function taskTools(deps: {
       description: 'Update task fields',
       schema: tasksUpdateSchema,
       handler: async (input) => {
-        const taskID = input.taskId;
-        const existing = await deps.taskStore.get(taskID);
-        if (!existing) throw new Error(`task not found: ${taskID}`);
-        if (input.status !== undefined) {
-          const error = validateManualStatusTransition(
-            existing.status,
-            input.status,
-          );
-          if (error) throw new Error(error);
-        }
-
-        if (Array.isArray(input.dependsOn)) {
-          await deps.taskStore.updateDependencies(
-            taskID,
-            input.dependsOn.map((v) => v.trim()).filter(Boolean),
-          );
-        }
-
-        await deps.taskStore.update(taskID, {
-          title: input.title,
-          description: input.description,
-          plan: input.plan,
-          status: input.status as TaskStatus,
-          sessionId: input.sessionId ?? null,
-          autoRunOverrides: input.autoRunOverrides,
-        });
-        const task = await deps.taskStore.get(taskID);
-        if (!task) throw new Error(`task not found: ${taskID}`);
-        if (input.status && deps.queue && deps.configStore) {
-          await resumeChain(taskID, input.status as TaskStatus, {
-            configStore: deps.configStore,
+        const task = await updateTask(
+          {
+            taskId: input.taskId,
+            title: input.title,
+            description: input.description,
+            plan: input.plan,
+            status: input.status,
+            sessionId: input.sessionId ?? null,
+            dependsOn: input.dependsOn,
+            autoRunOverrides: input.autoRunOverrides,
+          },
+          {
             taskStore: deps.taskStore,
             queue: deps.queue,
-          });
-        }
+            configStore: deps.configStore,
+          },
+        );
         return { task };
       },
     }),
@@ -234,26 +205,23 @@ export function taskTools(deps: {
     }),
     defineTool({
       name: 'tasks_start',
-      description: 'Start one or more tasks',
+      description: 'Start one or more tasks by enqueuing evaluate jobs',
       schema: tasksStartSchema,
       handler: async (input) => {
         const taskIDs = Array.isArray(input.taskIds)
           ? input.taskIds.map((id) => id.trim()).filter(Boolean)
           : [];
-        const runOpts = {
-          taskIds: taskIDs,
-          toolOverride: input.tool ?? '',
-          modelOverride: input.model ?? '',
-          context: input.context ?? '',
-        };
 
-        if (taskIDs.length > 0) {
-          const results = await startTasks(deps.executor, runOpts);
-          return { taskIds: taskIDs, results };
+        const results = [];
+        for (const taskId of taskIDs) {
+          const result = await enqueueEvaluate(
+            taskId,
+            { tool: input.tool, model: input.model },
+            { taskStore: deps.taskStore, queue: deps.queue },
+          );
+          results.push(result);
         }
-
-        const results = await startTasks(deps.executor, runOpts);
-        return { results };
+        return { taskIds: taskIDs, results };
       },
     }),
     defineTool({
@@ -261,28 +229,24 @@ export function taskTools(deps: {
       description: 'Stop a running task',
       schema: tasksStopSchema,
       handler: async (input) => {
-        const taskID = input.taskId;
-        await stopTask(deps.executor, deps.taskStore, taskID);
-        return { taskId: taskID, status: 'stopped' };
+        return await stopTask(input.taskId, {
+          taskStore: deps.taskStore,
+          queue: deps.queue,
+        });
       },
     }),
     defineTool({
       name: 'tasks_resume',
-      description: 'Resume stopped task',
+      description: 'Resume stopped task by enqueuing code job with feedback',
       schema: tasksResumeSchema,
       handler: async (input) => {
-        const taskID = input.taskId;
         const result = await resumeTask(
-          deps.executor,
-          deps.taskStore,
-          taskID,
+          input.taskId,
           input.feedback ?? '',
-          {
-            toolOverride: input.tool ?? '',
-            modelOverride: input.model ?? '',
-          },
+          { tool: input.tool, model: input.model },
+          { taskStore: deps.taskStore, queue: deps.queue },
         );
-        return { taskId: taskID, status: result.status, result };
+        return { ...result, status: 'queued' };
       },
     }),
     defineTool({
@@ -291,61 +255,14 @@ export function taskTools(deps: {
         'Answer a pending question for a stopped task. The answer is appended to the task description and evaluate re-runs.',
       schema: tasksProvideInputSchema,
       handler: async (input) => {
-        const taskID = input.taskId;
-        const task = await deps.taskStore.get(taskID);
-        if (!task) throw new Error(`task not found: ${taskID}`);
-        if (!task.pendingQuestion) {
-          throw new Error('task has no pending question');
-        }
-
-        const updatedDescription = task.description
-          ? `${task.description}\n\n---\n**User clarification:** ${input.answer}`
-          : `**User clarification:** ${input.answer}`;
-
-        await deps.taskStore.update(taskID, {
-          description: updatedDescription,
-          pendingQuestion: null,
-          status: 'pending',
+        const result = await provideInput(input.taskId, input.answer, {
+          taskStore: deps.taskStore,
+          queue: deps.queue,
         });
-
-        if (deps.queue) {
-          await deps.queue.enqueue({
-            type: 'evaluate',
-            taskId: taskID,
-            priority: JOB_PRIORITIES.evaluate,
-          });
-        }
-
-        return { taskId: taskID, status: 'queued' };
+        return { taskId: result.taskId, status: 'queued' };
       },
     }),
   ];
 
   return tools;
-}
-
-const BLOCKED_MANUAL_STATUSES = new Set<TaskStatus>([
-  'planned',
-  'approved',
-  'running',
-  'merged',
-  'review',
-]);
-
-function validateManualStatusTransition(
-  current: TaskStatus,
-  nextRaw: string,
-): string | null {
-  const next = nextRaw.trim() as TaskStatus;
-  if (!next) return 'status must be a string';
-  if (next === 'pending' && current !== 'failed') {
-    return 'can only move failed tasks to pending';
-  }
-  if (next === 'stopped' || next === 'failed' || next === 'pending') {
-    return null;
-  }
-  if (BLOCKED_MANUAL_STATUSES.has(next)) {
-    return `cannot manually set status to ${next}`;
-  }
-  return `cannot manually set status to ${next}`;
 }

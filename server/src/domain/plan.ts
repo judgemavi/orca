@@ -73,7 +73,7 @@ export async function runPlan(input: RunPlanInput): Promise<RunPlanResult> {
   };
 }
 
-function stripPreamble(raw: string): string {
+export function stripPreamble(raw: string): string {
   const idx = raw.indexOf('## ');
   if (idx <= 0) return raw.trim();
   return raw.slice(idx).trim();

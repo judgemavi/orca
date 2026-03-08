@@ -1,15 +1,9 @@
 import type { Command } from 'commander';
 import { isAutoRun } from '../../config/config';
-import { mergeTaskWithGit } from '../../domain/integrator';
-import { triggerPostMergeHooks } from '../../domain/post-merge';
-import type { Executor } from '../../executor/executor';
-import type { ToolPluginRegistry } from '../../plugin/registry';
-import { unblockDependents } from '../../queue/chain';
 import { isDaemonRunning } from '../../queue/lock';
 import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
-import type { MemoryStore } from '../../store/memory';
 import type { TaskStore } from '../../store/tasks';
 import type {
   AutoRunOverrides,
@@ -17,28 +11,27 @@ import type {
   Task,
   TaskStatus,
 } from '../../types';
-import { INTERACTION_TYPES, JOB_PRIORITIES } from '../../types';
+import { INTERACTION_TYPES } from '../../types';
 import { deleteTask } from '../../workflows/delete';
 import {
   acceptBreakdown,
   approvePlan,
-  breakdownTask,
-  evaluateTaskWorkflow,
   loadProposedTasksFromInteraction,
   rejectBreakdown,
-  requestPlanChanges,
 } from '../../workflows/planning';
+import { approveTask } from '../../workflows/review';
 import {
-  approveTask,
+  createTask,
+  enqueueBreakdown,
+  enqueueEvaluate,
+  enqueueMerge,
+  provideInput,
   requestChanges,
-  runAIReviewWorkflow,
-} from '../../workflows/review';
-import {
   resumeTask,
-  startTask,
-  startTasks,
   stopTask,
-} from '../../workflows/run';
+  triggerReview,
+  updateTask,
+} from '../../workflows/tasks';
 import { printJSON } from '../format';
 import {
   allTasks,
@@ -51,19 +44,15 @@ import {
   textInput,
 } from '../helpers';
 
-export function registerTaskCommands(
-  task: Command,
-  deps: {
-    repoDir: string;
-    taskStore: TaskStore;
-    interactionStore: InteractionStore;
-    memoryStore: MemoryStore;
-    configStore: ConfigStore;
-    registry: ToolPluginRegistry;
-    executor: Executor;
-    queue?: JobQueue;
-  },
-) {
+export interface TaskCommandDeps {
+  repoDir: string;
+  taskStore: TaskStore;
+  interactionStore: InteractionStore;
+  configStore: ConfigStore;
+  queue: JobQueue;
+}
+
+export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
   task
     .command('list')
     .alias('ls')
@@ -145,29 +134,24 @@ export function registerTaskCommands(
           opts.disableAutorun,
           opts.enableAutorun,
         );
-        const created = await deps.taskStore.create({
-          title,
-          description,
-          parentId: parent || null,
-          autoRunOverrides:
-            Object.keys(autoRunOverrides).length > 0
-              ? autoRunOverrides
-              : undefined,
-        });
-
-        if (dependsOn.length > 0) {
-          await deps.taskStore.updateDependencies(created.id, dependsOn);
-        }
 
         const serverUp = isDaemonRunning(deps.repoDir);
-        if (deps.queue && dependsOn.length === 0 && serverUp) {
-          await deps.queue.enqueue({
-            type: 'evaluate',
-            taskId: created.id,
-            priority: JOB_PRIORITIES.evaluate,
-          });
-        }
-        const result = await deps.taskStore.get(created.id);
+        const result = await createTask(
+          {
+            title,
+            description,
+            parentId: parent || null,
+            dependsOn,
+            autoRunOverrides:
+              Object.keys(autoRunOverrides).length > 0
+                ? autoRunOverrides
+                : undefined,
+          },
+          {
+            taskStore: deps.taskStore,
+            queue: serverUp ? deps.queue : undefined,
+          },
+        );
         printJSON({
           ...result,
           daemon: serverUp,
@@ -228,14 +212,22 @@ export function registerTaskCommands(
           if (Object.keys(parsed).length > 0) autoRunOverrides = parsed;
         }
 
-        await deps.taskStore.update(id, {
-          title: opts.title,
-          description: opts.description,
-          status: opts.status as TaskStatus,
-          sessionId: opts.sessionId,
-          ...(autoRunOverrides !== undefined ? { autoRunOverrides } : {}),
-        });
-        printJSON(await deps.taskStore.get(id));
+        const updated = await updateTask(
+          {
+            taskId: id,
+            title: opts.title,
+            description: opts.description,
+            status: opts.status,
+            sessionId: opts.sessionId,
+            autoRunOverrides,
+          },
+          {
+            taskStore: deps.taskStore,
+            queue: deps.queue,
+            configStore: deps.configStore,
+          },
+        );
+        printJSON(updated);
       },
     );
 
@@ -269,11 +261,10 @@ export function registerTaskCommands(
     .alias('run')
     .option('-T, --tool <tool>', 'tool override')
     .option('-M, --model <model>', 'model override')
-    .option('--context <context>', 'extra context')
     .action(
       async (
         id: string | undefined,
-        opts: { tool?: string; model?: string; context?: string },
+        opts: { tool?: string; model?: string },
       ) => {
         const taskID = await resolveTaskID({
           id,
@@ -281,19 +272,13 @@ export function registerTaskCommands(
           title: 'Select task to start',
           filter: pendingTasks,
         });
-        const result = await startTask(deps.executor, taskID, {
-          toolOverride: opts.tool ?? '',
-          modelOverride: opts.model ?? '',
-          context: opts.context ?? '',
+        const result = await enqueueEvaluate(taskID, opts, {
+          taskStore: deps.taskStore,
+          queue: deps.queue,
         });
-        printJSON(result);
+        printJSON({ ...result, status: 'queued' });
       },
     );
-
-  task.command('start-pending').action(async () => {
-    const result = await startTasks(deps.executor);
-    printJSON(result);
-  });
 
   task.command('stop [id]').action(async (id?: string) => {
     const taskID = await resolveTaskID({
@@ -302,8 +287,11 @@ export function registerTaskCommands(
       title: 'Select running task to stop',
       filter: runningTasks,
     });
-    await stopTask(deps.executor, deps.taskStore, taskID);
-    printJSON({ taskId: taskID, status: 'stopped' });
+    const result = await stopTask(taskID, {
+      taskStore: deps.taskStore,
+      queue: deps.queue,
+    });
+    printJSON(result);
   });
 
   task
@@ -326,17 +314,11 @@ export function registerTaskCommands(
         if (!feedback && canPrompt()) {
           feedback = await textInput('Reviewer feedback for resume (optional)');
         }
-        const result = await resumeTask(
-          deps.executor,
-          deps.taskStore,
-          taskID,
-          feedback,
-          {
-            toolOverride: opts.tool ?? '',
-            modelOverride: opts.model ?? '',
-          },
-        );
-        printJSON(result);
+        const result = await resumeTask(taskID, feedback, opts, {
+          taskStore: deps.taskStore,
+          queue: deps.queue,
+        });
+        printJSON({ ...result, status: 'queued' });
       },
     );
 
@@ -347,12 +329,20 @@ export function registerTaskCommands(
       title: 'Select task to approve',
       filter: reviewTasks,
     });
-    const updated = await approveTask(taskID, { taskStore: deps.taskStore });
+    const updated = await approveTask(taskID, {
+      taskStore: deps.taskStore,
+      queue: deps.queue,
+      configStore: deps.configStore,
+    });
     printJSON(updated);
   });
 
   task.command('approve-plan <id>').action(async (id: string) => {
-    const updated = await approvePlan(id, { taskStore: deps.taskStore });
+    const updated = await approvePlan(id, {
+      taskStore: deps.taskStore,
+      queue: deps.queue,
+      configStore: deps.configStore,
+    });
     printJSON(updated);
   });
 
@@ -360,66 +350,79 @@ export function registerTaskCommands(
     .command('request-changes [id]')
     .alias('rc')
     .option('-f, --feedback <feedback>', 'reviewer feedback')
-    .action(async (id: string | undefined, opts: { feedback?: string }) => {
-      const taskID = await resolveTaskID({
-        id,
-        taskStore: deps.taskStore,
-        title: 'Select task to request changes',
-        filter: reviewTasks,
-      });
-      let feedback = (opts.feedback ?? '').trim();
-      if (!feedback) {
-        feedback = await textInput('Review feedback', { required: true });
-      }
-      const result = await requestChanges(taskID, feedback, {
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-        executor: deps.executor,
-      });
-      printJSON(result);
-    });
-
-  task.command('evaluate [id]').action(async (id?: string) => {
-    const taskID = await resolveTaskID({
-      id,
-      taskStore: deps.taskStore,
-      title: 'Select task to evaluate',
-      filter: allTasks,
-    });
-    const evaluation = await evaluateTaskWorkflow(taskID, {
-      repoDir: deps.repoDir,
-      taskStore: deps.taskStore,
-      interactions: deps.interactionStore,
-      configStore: deps.configStore,
-      registry: deps.registry,
-    });
-    printJSON(evaluation);
-  });
-
-  task.command('breakdown [id]').action(async (id?: string) => {
-    const taskID = await resolveTaskID({
-      id,
-      taskStore: deps.taskStore,
-      title: 'Select task to break down',
-      filter: pendingTasks,
-    });
-    const breakdown = await breakdownTask(
-      { taskId: taskID },
-      {
-        repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-        configStore: deps.configStore,
-        registry: deps.registry,
-        memory: deps.memoryStore,
+    .option('-T, --tool <tool>', 'tool override')
+    .option('-M, --model <model>', 'model override')
+    .action(
+      async (
+        id: string | undefined,
+        opts: { feedback?: string; tool?: string; model?: string },
+      ) => {
+        const taskID = await resolveTaskID({
+          id,
+          taskStore: deps.taskStore,
+          title: 'Select task to request changes',
+          filter: reviewTasks,
+        });
+        let feedback = (opts.feedback ?? '').trim();
+        if (!feedback) {
+          feedback = await textInput('Review feedback', { required: true });
+        }
+        const result = await requestChanges(taskID, feedback, {
+          taskStore: deps.taskStore,
+          interactionStore: deps.interactionStore,
+          queue: deps.queue,
+          tool: opts.tool,
+          model: opts.model,
+        });
+        printJSON({ ...result, status: 'queued' });
       },
     );
-    printJSON({
-      taskId: taskID,
-      proposed: breakdown.proposed,
-      interactionId: breakdown.interactionId,
-    });
-  });
+
+  task
+    .command('evaluate [id]')
+    .option('-T, --tool <tool>', 'tool override')
+    .option('-M, --model <model>', 'model override')
+    .action(
+      async (
+        id: string | undefined,
+        opts: { tool?: string; model?: string },
+      ) => {
+        const taskID = await resolveTaskID({
+          id,
+          taskStore: deps.taskStore,
+          title: 'Select task to evaluate',
+          filter: allTasks,
+        });
+        const result = await enqueueEvaluate(taskID, opts, {
+          taskStore: deps.taskStore,
+          queue: deps.queue,
+        });
+        printJSON({ ...result, status: 'queued' });
+      },
+    );
+
+  task
+    .command('breakdown [id]')
+    .option('-T, --tool <tool>', 'tool override')
+    .option('-M, --model <model>', 'model override')
+    .action(
+      async (
+        id: string | undefined,
+        opts: { tool?: string; model?: string },
+      ) => {
+        const taskID = await resolveTaskID({
+          id,
+          taskStore: deps.taskStore,
+          title: 'Select task to break down',
+          filter: pendingTasks,
+        });
+        const result = await enqueueBreakdown(taskID, opts, {
+          taskStore: deps.taskStore,
+          queue: deps.queue,
+        });
+        printJSON({ ...result, status: 'queued' });
+      },
+    );
 
   task
     .command('accept-breakdown [id]')
@@ -484,24 +487,11 @@ export function registerTaskCommands(
         answer = await textInput('Your answer', { required: true });
       }
 
-      const updatedDescription = taskItem.description
-        ? `${taskItem.description}\n\n---\n**User clarification:** ${answer}`
-        : `**User clarification:** ${answer}`;
-
-      await deps.taskStore.update(taskID, {
-        description: updatedDescription,
-        pendingQuestion: null,
-        status: 'pending',
+      const result = await provideInput(taskID, answer, {
+        taskStore: deps.taskStore,
+        queue: deps.queue,
       });
-
-      if (deps.queue) {
-        await deps.queue.enqueue({
-          type: 'evaluate',
-          taskId: taskID,
-          priority: JOB_PRIORITIES.evaluate,
-        });
-      }
-      printJSON({ taskId: taskID, status: 'queued' });
+      printJSON(result);
     });
 
   task
@@ -531,8 +521,6 @@ export function registerTaskCommands(
         let targets: Set<string>;
         if (opts.auto) {
           const config = await deps.configStore.load();
-          // Walk the chain: review → merge → retro
-          // Wait at the first step where auto-run is OFF, or at merged if all auto
           const waitStatuses: string[] = ['failed', 'stopped'];
           if (!isAutoRun(config, 'review')) {
             waitStatuses.push('review');
@@ -562,10 +550,10 @@ export function registerTaskCommands(
             ? await deps.taskStore.list()
             : await Promise.all(watchIds.map((id) => deps.taskStore.get(id)));
 
-          for (const task of tasks) {
-            if (!task) continue;
-            if (targets.has(task.status)) {
-              printJSON({ timedOut: false, task });
+          for (const t of tasks) {
+            if (!t) continue;
+            if (targets.has(t.status)) {
+              printJSON({ timedOut: false, task: t });
               return;
             }
           }
@@ -573,8 +561,7 @@ export function registerTaskCommands(
           await new Promise((r) => setTimeout(r, pollMs));
         }
 
-        // Timeout — return current state
-        const allTasks = await deps.taskStore.list();
+        const allTasksList = await deps.taskStore.list();
         const counts = {
           queued: 0,
           running: 0,
@@ -584,11 +571,11 @@ export function registerTaskCommands(
           failed: 0,
           merged: 0,
         };
-        for (const t of allTasks) {
+        for (const t of allTasksList) {
           if (t.status in counts) counts[t.status as keyof typeof counts]++;
         }
         const watching = watchAny
-          ? allTasks
+          ? allTasksList
               .filter(
                 (t) => t.status !== 'merged' && t.status !== 'broken_down',
               )
@@ -652,70 +639,6 @@ export function registerTaskCommands(
       printJSON({ taskId: id, plan: content });
     });
 
-  planCmd
-    .command('generate')
-    .option('--goal <goal>', 'planning goal')
-    .option('-T, --tool <tool>', 'tool name')
-    .option('-M, --model <model>', 'model name')
-    .action(async (opts: { goal?: string; tool?: string; model?: string }) => {
-      let goal = (opts.goal ?? '').trim();
-      if (!goal) {
-        if (!canPrompt())
-          throw new Error('--goal is required in non-interactive mode');
-        goal = await textInput('Planning goal', { required: true });
-      }
-      const breakdown = await breakdownTask(
-        { goal },
-        { taskStore: deps.taskStore },
-      );
-      const interaction = await deps.interactionStore.begin({
-        taskId: null,
-        type: 'breakdown',
-        tool: (opts.tool ?? '').trim() || 'planner',
-      });
-      await deps.interactionStore.finish(interaction.id, {
-        status: 'completed',
-        model: (opts.model ?? '').trim() || '',
-        qualityJson: JSON.stringify({ goal, proposed: breakdown.proposed }),
-      });
-      printJSON({
-        status: 'breaking_down',
-        operationId: interaction.id,
-        proposed: breakdown.proposed,
-      });
-    });
-
-  planCmd
-    .command('accept')
-    .option('--operation <id>', 'operation interaction id')
-    .action(async (opts: { operation?: string }) => {
-      const operationID = (opts.operation ?? '').trim();
-      if (!operationID) throw new Error('--operation is required');
-      const proposed = await loadProposedTasksFromInteraction(operationID, {
-        interactions: deps.interactionStore,
-      });
-      const accepted = await acceptBreakdown(null, proposed, {
-        taskStore: deps.taskStore,
-      });
-      printJSON({
-        created: accepted.createdIds.length,
-        taskIds: accepted.createdIds,
-        operationId: operationID,
-      });
-    });
-
-  planCmd
-    .command('reject')
-    .option('--operation <id>', 'operation interaction id')
-    .action(async (opts: { operation?: string }) => {
-      const operationID = (opts.operation ?? '').trim();
-      if (!operationID) throw new Error('--operation is required');
-      await rejectBreakdown('', operationID, {
-        interactions: deps.interactionStore,
-      });
-      printJSON({ rejected: true, operationId: operationID });
-    });
-
   task
     .command('merge [id]')
     .alias('mg')
@@ -727,62 +650,11 @@ export function registerTaskCommands(
         title: 'Select task to merge',
         filter: (t) => t.status === 'approved' || t.status === 'review',
       });
-      const config = await deps.configStore.load();
-      const result = await mergeTaskWithGit(taskID, {
-        repoDir: deps.repoDir,
-        integrationBranch: config.project.integrationBranch,
+      const result = await enqueueMerge(taskID, {
         taskStore: deps.taskStore,
+        queue: deps.queue,
       });
-      if (result.status === 'merged') {
-        await deps.taskStore.updateStatus(taskID, 'merged');
-        triggerPostMergeHooks(taskID, {
-          repoDir: deps.repoDir,
-          taskStore: deps.taskStore,
-          interactions: deps.interactionStore,
-          memoryStore: deps.memoryStore,
-          configStore: deps.configStore,
-        });
-        if (deps.queue) {
-          await unblockDependents(taskID, {
-            configStore: deps.configStore,
-            taskStore: deps.taskStore,
-            queue: deps.queue,
-          });
-        }
-      } else {
-        await deps.taskStore.updateStatus(taskID, 'failed');
-      }
-      printJSON(result);
-    });
-
-  task
-    .command('request-plan-changes [id]')
-    .alias('rpc')
-    .description('Add plan feedback and regenerate plan')
-    .requiredOption('--feedback <feedback>', 'plan feedback')
-    .action(async (id: string | undefined, opts: { feedback: string }) => {
-      const taskID = await resolveTaskID({
-        id,
-        taskStore: deps.taskStore,
-        title: 'Select task for plan changes',
-        filter: pendingTasks,
-      });
-      const feedback = opts.feedback.trim();
-      if (!feedback) throw new Error('feedback is required');
-
-      const result = await requestPlanChanges(taskID, feedback, {
-        repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-        configStore: deps.configStore,
-        registry: deps.registry,
-        memory: deps.memoryStore,
-      });
-      printJSON({
-        taskId: taskID,
-        reviewId: result.reviewId,
-        plan: result.plan,
-      });
+      printJSON({ ...result, status: 'queued' });
     });
 
   task
@@ -802,17 +674,12 @@ export function registerTaskCommands(
           title: 'Select task for AI review',
           filter: reviewTasks,
         });
-        const result = await runAIReviewWorkflow(taskID, {
-          repoDir: deps.repoDir,
-          configStore: deps.configStore,
-          registry: deps.registry,
+        const result = await triggerReview(taskID, opts, {
           taskStore: deps.taskStore,
-          interactions: deps.interactionStore,
-          prompt: opts.prompt ?? '',
-          toolOverride: opts.tool ?? '',
-          modelOverride: opts.model ?? '',
+          interactionStore: deps.interactionStore,
+          queue: deps.queue,
         });
-        printJSON(result);
+        printJSON({ ...result, status: 'queued' });
       },
     );
 }

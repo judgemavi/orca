@@ -75,8 +75,6 @@ function taskGroup(deps: RouteDeps) {
         taskStore: deps.taskStore,
         interactionStore: deps.interactionStore,
         configStore: deps.configStore,
-        registry: deps.registry,
-        executor: deps.executor,
         sink: deps.eventSink,
         queue: deps.queue,
       }),

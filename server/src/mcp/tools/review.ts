@@ -1,16 +1,10 @@
 import { z } from 'zod';
-import type { Executor } from '../../executor/executor';
-import type { ToolPluginRegistry } from '../../plugin/registry';
-import { resumeChain } from '../../queue/chain';
 import type { JobQueue } from '../../queue/queue';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { TaskStore } from '../../store/tasks';
-import {
-  approveTask,
-  requestChanges,
-  runAIReviewWorkflow,
-} from '../../workflows/review';
+import { approveTask } from '../../workflows/review';
+import { requestChanges, triggerReview } from '../../workflows/tasks';
 import { defineTool } from '../define-tool';
 import type { Tool } from '../types';
 
@@ -50,13 +44,10 @@ const tasksReviewsSchema = z.object({
 });
 
 export function reviewTools(deps: {
-  repoDir: string;
   configStore: ConfigStore;
-  registry: ToolPluginRegistry;
   taskStore: TaskStore;
-  executor: Executor;
   interactions: InteractionStore;
-  queue?: JobQueue;
+  queue: JobQueue;
 }): Tool[] {
   const tools: Tool[] = [
     defineTool({
@@ -66,50 +57,47 @@ export function reviewTools(deps: {
       handler: async (input) => {
         const updated = await approveTask(input.taskId, {
           taskStore: deps.taskStore,
+          queue: deps.queue,
+          configStore: deps.configStore,
         });
-        if (deps.queue) {
-          await resumeChain(input.taskId, 'approved', {
-            configStore: deps.configStore,
-            taskStore: deps.taskStore,
-            queue: deps.queue,
-          });
-        }
         return { task: updated };
       },
     }),
     defineTool({
       name: 'tasks_request_changes',
-      description: 'Request changes and rerun task',
+      description: 'Request changes and enqueue code job',
       schema: tasksRequestChangesSchema,
       handler: async (input) => {
         const result = await requestChanges(input.taskId, input.feedback, {
           taskStore: deps.taskStore,
-          interactions: deps.interactions,
-          executor: deps.executor,
-          interactionId: input.interactionId ?? '',
-          opts: {
-            toolOverride: input.tool ?? '',
-            modelOverride: input.model ?? '',
-          },
+          interactionStore: deps.interactions,
+          queue: deps.queue,
+          interactionId: input.interactionId,
+          tool: input.tool,
+          model: input.model,
         });
-        return result;
+        return { ...result, status: 'queued' };
       },
     }),
     defineTool({
       name: 'ai_review',
-      description: 'Run LLM-backed AI review for task diff',
+      description: 'Enqueue AI review for task diff',
       schema: aiReviewSchema,
       handler: async (input) => {
-        return await runAIReviewWorkflow(input.taskId, {
-          repoDir: deps.repoDir,
-          configStore: deps.configStore,
-          registry: deps.registry,
-          taskStore: deps.taskStore,
-          interactions: deps.interactions,
-          prompt: input.prompt ?? '',
-          toolOverride: input.tool ?? '',
-          modelOverride: input.model ?? '',
-        });
+        const result = await triggerReview(
+          input.taskId,
+          {
+            prompt: input.prompt,
+            tool: input.tool,
+            model: input.model,
+          },
+          {
+            taskStore: deps.taskStore,
+            interactionStore: deps.interactions,
+            queue: deps.queue,
+          },
+        );
+        return { ...result, status: 'queued' };
       },
     }),
     defineTool({

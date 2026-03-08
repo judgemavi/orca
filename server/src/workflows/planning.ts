@@ -12,6 +12,7 @@ import {
 import { refreshMemoryEntries } from '../domain/memory-sync';
 import { generateGlobalPlan, runPlan } from '../domain/plan';
 import type { ToolPluginRegistry } from '../plugin/registry';
+import { resumeChain } from '../queue/chain';
 import type { JobQueue } from '../queue/queue';
 import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
@@ -291,6 +292,8 @@ export async function approvePlan(
   taskID: string,
   deps: {
     taskStore: TaskStore;
+    queue?: JobQueue;
+    configStore?: ConfigStore;
     requirePendingStatus?: boolean;
   },
 ): Promise<Task> {
@@ -303,7 +306,18 @@ export async function approvePlan(
     throw new Error('task plan is empty');
   }
 
-  return await deps.taskStore.updateStatus(taskID, TASK_STATUSES.planned);
+  const updated = await deps.taskStore.updateStatus(
+    taskID,
+    TASK_STATUSES.planned,
+  );
+  if (deps.queue && deps.configStore) {
+    await resumeChain(taskID, 'planned', {
+      configStore: deps.configStore,
+      taskStore: deps.taskStore,
+      queue: deps.queue,
+    });
+  }
+  return updated;
 }
 
 export async function requestPlanChanges(

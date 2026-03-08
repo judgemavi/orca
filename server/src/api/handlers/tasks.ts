@@ -1,25 +1,16 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
-import { resumeChain } from '../../queue/chain';
 import type { JobQueue } from '../../queue/queue';
 import { toErrorMessage } from '../../shared/errors';
 import type { ConfigStore } from '../../store/config';
 import type { InteractionStore } from '../../store/interactions';
 import type { TaskStore } from '../../store/tasks';
-import type { AutoRunOverrides, TaskStatus } from '../../types';
-import { JOB_PRIORITIES } from '../../types';
+import type { AutoRunOverrides } from '../../types';
 import { DeleteWorkflowError, deleteTask } from '../../workflows/delete';
+import { createTask, updateTask } from '../../workflows/tasks';
 import { createTaskSchema, patchTaskSchema } from '../schemas';
 import type { EventSink } from '../ws';
 import { broadcast } from './utils';
-
-const BLOCKED_MANUAL_STATUSES = new Set<TaskStatus>([
-  'planned',
-  'approved',
-  'running',
-  'merged',
-  'review',
-]);
 
 export function taskRoutes(deps: {
   taskStore: TaskStore;
@@ -44,75 +35,53 @@ export function taskRoutes(deps: {
 
     .post('/tasks', zValidator('json', createTaskSchema), async (c) => {
       const body = c.req.valid('json');
-      const task = await taskStore.create({
-        id: body.id,
-        title: body.title,
-        description: body.description ?? '',
-        parentId: body.parentId ?? null,
-        autoRunOverrides: body.autoRunOverrides as AutoRunOverrides,
-      });
-
-      const hasDeps =
-        Array.isArray(body.dependsOn) && body.dependsOn.length > 0;
-      if (hasDeps) {
-        await taskStore.updateDependencies(task.id, body.dependsOn!);
-      }
-
-      if (deps.queue && !hasDeps) {
-        await deps.queue.enqueue({
-          type: 'evaluate',
-          taskId: task.id,
-          priority: JOB_PRIORITIES.evaluate,
-        });
-      }
-
-      return c.json(hasDeps ? await taskStore.get(task.id) : task, 201);
+      const task = await createTask(
+        {
+          id: body.id ?? undefined,
+          title: body.title,
+          description: body.description ?? '',
+          parentId: body.parentId ?? null,
+          dependsOn: body.dependsOn,
+          autoRunOverrides: body.autoRunOverrides as AutoRunOverrides,
+        },
+        {
+          taskStore: deps.taskStore,
+          queue: deps.queue,
+        },
+      );
+      return c.json(task, 201);
     })
 
     .patch('/tasks/:id', zValidator('json', patchTaskSchema), async (c) => {
       const taskID = c.req.param('id');
       const body = c.req.valid('json');
-      const existing = await taskStore.get(taskID);
-      if (!existing) {
-        return c.json({ error: 'task not found' }, 404);
-      }
-      if (body.status !== undefined) {
-        const err = validateManualStatusTransition(
-          existing.status,
-          body.status as TaskStatus,
+
+      try {
+        const updated = await updateTask(
+          {
+            taskId: taskID,
+            title: body.title,
+            description: body.description,
+            plan: body.plan ?? undefined,
+            status: body.status,
+            sessionId: body.sessionId ?? undefined,
+            dependsOn: body.dependsOn,
+            autoRunOverrides: body.autoRunOverrides as
+              | AutoRunOverrides
+              | undefined,
+          },
+          {
+            taskStore: deps.taskStore,
+            queue: deps.queue,
+            configStore: deps.configStore,
+          },
         );
-        if (err) {
-          return c.json({ error: err }, 400);
-        }
+        return c.json(updated);
+      } catch (error) {
+        const msg = toErrorMessage(error);
+        if (msg.includes('not found')) return c.json({ error: msg }, 404);
+        return c.json({ error: msg }, 400);
       }
-
-      if (Array.isArray(body.dependsOn)) {
-        await taskStore.updateDependencies(taskID, body.dependsOn);
-      }
-
-      await taskStore.update(taskID, {
-        title: body.title,
-        description: body.description,
-        plan: body.plan,
-        status: body.status as TaskStatus | undefined,
-        sessionId: body.sessionId,
-        autoRunOverrides: body.autoRunOverrides as AutoRunOverrides | undefined,
-      });
-
-      const updated = await taskStore.get(taskID);
-      if (!updated) {
-        return c.json({ error: 'task not found' }, 404);
-      }
-
-      if (body.status && deps.queue) {
-        await resumeChain(taskID, body.status as TaskStatus, {
-          configStore: deps.configStore,
-          taskStore: deps.taskStore,
-          queue: deps.queue,
-        });
-      }
-
-      return c.json(updated);
     })
 
     .delete('/tasks/:id', async (c) => {
@@ -146,22 +115,4 @@ export function taskRoutes(deps: {
     .get('/tasks/:id/reviews', async (c) => {
       return c.json(await taskStore.listReviews(c.req.param('id')));
     });
-}
-
-function validateManualStatusTransition(
-  current: TaskStatus,
-  next: TaskStatus,
-): string | null {
-  const status = String(next).trim() as TaskStatus;
-  if (!status) return 'status must be a string';
-  if (status === 'pending' && current !== 'failed') {
-    return 'can only move failed tasks to pending';
-  }
-  if (status === 'stopped' || status === 'failed' || status === 'pending') {
-    return null;
-  }
-  if (BLOCKED_MANUAL_STATUSES.has(status)) {
-    return `cannot manually set status to ${status}`;
-  }
-  return `cannot manually set status to ${status}`;
 }

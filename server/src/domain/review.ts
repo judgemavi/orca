@@ -99,7 +99,7 @@ export async function runAIReview(
   };
 }
 
-function parseReviewPayload(output: string): {
+export function parseReviewPayload(output: string): {
   approved: boolean;
   feedback: string;
   checks: AIReviewCheck[];
@@ -149,7 +149,7 @@ function parseReviewPayload(output: string): {
   return { approved, feedback, checks, findings };
 }
 
-function parseChecks(raw: unknown[]): AIReviewCheck[] {
+export function parseChecks(raw: unknown[]): AIReviewCheck[] {
   const out: AIReviewCheck[] = [];
   for (const item of raw) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
@@ -162,7 +162,7 @@ function parseChecks(raw: unknown[]): AIReviewCheck[] {
   return out;
 }
 
-function parseFindings(raw: unknown[]): AIReviewFinding[] {
+export function parseFindings(raw: unknown[]): AIReviewFinding[] {
   const out: AIReviewFinding[] = [];
   for (let i = 0; i < raw.length; i++) {
     const item = raw[i];

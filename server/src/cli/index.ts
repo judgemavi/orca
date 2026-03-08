@@ -48,11 +48,8 @@ export async function runCLI(deps: {
     repoDir: deps.repoDir,
     taskStore: deps.taskStore,
     interactionStore: deps.interactionStore,
-    memoryStore: deps.memoryStore,
     configStore: deps.configStore,
-    registry: deps.registry,
-    executor: deps.executor,
-    queue: deps.queue,
+    queue: deps.queue!,
   });
 
   registerStatusCommand(program, {

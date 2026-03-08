@@ -265,7 +265,7 @@ async function collectRetroContext(
   };
 }
 
-function retroProvenanceHash(
+export function retroProvenanceHash(
   planDiffs: string,
   runDiffs: string,
   reviewFeedback: string,
@@ -317,7 +317,7 @@ async function loadRelatedMemory(
     .join('\n');
 }
 
-function normalizeRetroEntries(
+export function normalizeRetroEntries(
   entries: RetroMemoryEntry[],
 ): RetroMemoryEntry[] {
   const validCategories = new Set([

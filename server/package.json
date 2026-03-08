@@ -8,6 +8,10 @@
     "./types": "./src/types/index.ts"
   },
   "scripts": {
+    "test": "bun test __tests__/",
+    "test:unit": "bun test __tests__/unit/",
+    "test:integration": "bun test __tests__/integration/",
+    "test:e2e": "bun test __tests__/e2e/",
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",

@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/*.gen.ts"]
+    "includes": ["**", "!**/*.gen.ts", "!**/__tests__"]
   },
   "assist": {
     "actions": {

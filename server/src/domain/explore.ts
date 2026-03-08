@@ -217,7 +217,7 @@ function parseExtractedMemoryEntries(output: string): ExtractedMemoryEntry[] {
   return extractJSONArray<ExtractedMemoryEntry>(section) ?? [];
 }
 
-function stripMemoryExtractionSection(output: string): string {
+export function stripMemoryExtractionSection(output: string): string {
   const lower = output.toLowerCase();
   const marker = MEMORY_MARKER.toLowerCase();
   const idx = lower.lastIndexOf(marker);
@@ -336,7 +336,7 @@ function buildProjectSummary(contextContent: string): string {
 }
 
 /** Extract content between a section heading and the next heading of equal or higher level. */
-function extractSection(text: string, sectionName: string): string {
+export function extractSection(text: string, sectionName: string): string {
   const lines = text.split('\n');
   const target = sectionName.toLowerCase();
   let collecting = false;
