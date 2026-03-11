@@ -1,6 +1,7 @@
-import { JOB_PRIORITIES, type TaskStatus } from '@orca/types';
+import { SYSTEM_JOB_PRIORITIES, type TaskStatus } from '@orca/types';
 import type { TaskEntry } from '../db/schema';
 import { getTask, listTasks } from '../store/tasks';
+import { resolveStepMeta } from '../workflow/paths';
 import {
   dedupeTaskIDs,
   ensureIntegrationBranch,
@@ -46,10 +47,11 @@ export class Executor {
     await prepareBatch(this.deps, normalizedTaskIDs);
 
     for (const taskID of normalizedTaskIDs) {
+      const { type, priority } = await this.resolveStepJob(taskID);
       await this.deps.queue!.enqueue({
-        type: 'code',
+        type,
         taskId: taskID,
-        priority: JOB_PRIORITIES.code,
+        priority,
         payload: {
           tool: options.toolOverride ?? '',
           model: options.modelOverride ?? '',
@@ -64,17 +66,18 @@ export class Executor {
     options: RunOptions = {},
   ): Promise<TaskRunResult> {
     if (this.deps.queue) {
+      const { type, priority } = await this.resolveStepJob(taskID);
       await this.deps.queue.enqueue({
-        type: 'code',
+        type,
         taskId: taskID,
-        priority: JOB_PRIORITIES.code,
+        priority,
         payload: {
           tool: options.toolOverride ?? '',
           model: options.modelOverride ?? '',
           context: options.context ?? '',
         },
       });
-      return enqueuedResult(taskID, 'code');
+      return enqueuedResult(taskID, type);
     }
     return this.runTaskByIDInternal(taskID, options);
   }
@@ -107,10 +110,11 @@ export class Executor {
     }
 
     if (this.deps.queue) {
+      const { type, priority } = await this.resolveStepJob(taskID);
       await this.deps.queue.enqueue({
-        type: 'code',
+        type,
         taskId: taskID,
-        priority: JOB_PRIORITIES.code,
+        priority,
         payload: {
           tool: options.toolOverride ?? '',
           model: options.modelOverride ?? '',
@@ -118,7 +122,7 @@ export class Executor {
           feedback,
         },
       });
-      return enqueuedResult(taskID, 'revise');
+      return enqueuedResult(taskID, type);
     }
 
     return this.runTaskByIDInternal(taskID, {
@@ -162,6 +166,25 @@ export class Executor {
         },
       },
     });
+  }
+
+  private async resolveStepJob(
+    taskID: string,
+  ): Promise<{ type: string; priority: number }> {
+    const task = await getTask(this.deps.db, taskID).catch(() => null);
+    if (task?.currentStep) {
+      try {
+        const compiled = this.deps.workflowStore?.resolve(
+          task.workflow ?? undefined,
+        );
+        if (compiled) {
+          const meta = resolveStepMeta(compiled.machine, task.currentStep).meta;
+          return { type: task.currentStep, priority: meta.priority ?? 5 };
+        }
+      } catch {}
+      return { type: task.currentStep, priority: 5 };
+    }
+    return { type: 'evaluate', priority: SYSTEM_JOB_PRIORITIES.evaluate };
   }
 
   private consumeStop(taskID: string): boolean {

@@ -260,6 +260,29 @@ describe('resetToStep', () => {
     ).rejects.toThrow('cannot reset a running task');
   });
 
+  test('rejects reset while interaction is in progress', async () => {
+    const completed = await ctx.interactionStore.begin({
+      taskId,
+      type: 'plan',
+      tool: 'claude',
+    });
+    await ctx.interactionStore.finish(completed.id, {
+      status: 'completed',
+      output: 'plan',
+    });
+
+    // start a running interaction
+    await ctx.interactionStore.begin({
+      taskId,
+      type: 'code',
+      tool: 'claude',
+    });
+
+    await expect(
+      resetToStep({ taskId, interactionId: completed.id }, deps()),
+    ).rejects.toThrow('cannot reset while an interaction is in progress');
+  });
+
   test('rejects reset for wrong task interaction', async () => {
     const other = await ctx.taskStore.create({ title: 'Other' });
     const ix = await ctx.interactionStore.begin({

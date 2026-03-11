@@ -1,11 +1,14 @@
 import { zValidator } from '@hono/zod-validator';
-import { JOB_PRIORITIES } from '@orca/types';
+import { SYSTEM_JOB_PRIORITIES } from '@orca/types';
 import { type Context, Hono } from 'hono';
 import type { OrcaDrizzleDB } from '../../db/connection';
 import type { Executor } from '../../executor/executor';
 import type { JobQueue } from '../../queue/queue';
 import { resumeSchema, runRequestSchema } from '../../schemas/tasks';
 import type { InteractionStore } from '../../store/interactions';
+import * as taskStoreFns from '../../store/tasks';
+import { resolveStepMeta } from '../../workflow/paths';
+import type { WorkflowStore } from '../../workflow/store';
 import {
   isRunWorkflowError,
   type RunOpts,
@@ -21,6 +24,7 @@ export function runRoutes(deps: {
   sink: EventSink;
   interactionStore: InteractionStore;
   queue: JobQueue;
+  workflowStore: WorkflowStore;
 }) {
   const { executor, db, interactionStore, queue } = deps;
 
@@ -28,7 +32,13 @@ export function runRoutes(deps: {
     .post('/tasks/start', zValidator('json', runRequestSchema), async (c) => {
       const body = c.req.valid('json');
       const taskIDs = normalizeTaskIDs(body.taskIds);
-      const jobIds = await enqueueCodeJobs(queue, taskIDs, body);
+      const jobIds = await enqueueTaskSteps(
+        db,
+        queue,
+        deps.workflowStore,
+        taskIDs,
+        body,
+      );
 
       return c.json({ status: 'queued', taskIds: taskIDs, jobIds }, 202);
     })
@@ -39,7 +49,13 @@ export function runRoutes(deps: {
       async (c) => {
         const taskID = c.req.param('id');
         const body = c.req.valid('json');
-        const [jobId] = await enqueueCodeJobs(queue, [taskID], body);
+        const [jobId] = await enqueueTaskSteps(
+          db,
+          queue,
+          deps.workflowStore,
+          [taskID],
+          body,
+        );
         return c.json({ status: 'queued', taskId: taskID, jobId }, 202);
       },
     )
@@ -87,8 +103,10 @@ function normalizeTaskIDs(taskIDs: string[] | undefined): string[] {
   return taskIDs.map((value) => String(value ?? '').trim()).filter(Boolean);
 }
 
-async function enqueueCodeJobs(
+async function enqueueTaskSteps(
+  db: OrcaDrizzleDB,
   queue: JobQueue,
+  workflowStore: WorkflowStore,
   taskIDs: string[],
   body: {
     tool?: string;
@@ -98,10 +116,24 @@ async function enqueueCodeJobs(
 ): Promise<string[]> {
   const jobIds: string[] = [];
   for (const taskID of taskIDs) {
+    const task = await taskStoreFns.getTask(db, taskID).catch(() => null);
+    let jobType = 'evaluate';
+    let priority = SYSTEM_JOB_PRIORITIES.evaluate;
+    if (task?.currentStep) {
+      jobType = task.currentStep;
+      try {
+        const compiled = workflowStore.resolve(task.workflow ?? undefined);
+        priority =
+          resolveStepMeta(compiled.machine, task.currentStep).meta.priority ??
+          5;
+      } catch {
+        priority = 5;
+      }
+    }
     const { id } = await queue.enqueue({
-      type: 'code',
+      type: jobType,
       taskId: taskID,
-      priority: JOB_PRIORITIES.code,
+      priority,
       payload: {
         tool: body.tool ?? '',
         model: body.model ?? '',

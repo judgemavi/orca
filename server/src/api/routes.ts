@@ -58,6 +58,7 @@ function taskGroup(deps: RouteDeps) {
         sink: deps.eventSink,
         interactionStore: deps.interactionStore,
         queue: deps.queue,
+        workflowStore: deps.workflowStore,
       }),
     )
     .route(

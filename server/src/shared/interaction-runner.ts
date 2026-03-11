@@ -7,7 +7,7 @@ import {
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { loadPrompt, type PromptName } from '../prompts/loader';
 import type { InteractionStore } from '../store/interactions';
-import type { WorkerRunResult, runTool as RunToolFn } from '../worker/worker';
+import type { runTool as RunToolFn, WorkerRunResult } from '../worker/worker';
 import { toErrorMessage } from './errors';
 import { log } from './logger';
 

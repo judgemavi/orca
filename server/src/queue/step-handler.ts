@@ -5,6 +5,7 @@ import {
 } from '../domain/memory-retrieval';
 import { refreshMemoryEntries } from '../domain/memory-sync';
 import { findTaskWorktree } from '../domain/worktree';
+import type { PromptName } from '../prompts/loader';
 import { loadPrompt } from '../prompts/loader';
 import { createInteractionRunner } from '../shared/interaction-runner';
 import { log } from '../shared/logger';
@@ -23,10 +24,9 @@ import {
   resolveStepMeta,
   type WorkflowEngineDeps,
 } from '../workflow/engine';
-import { buildStepJsonSchema, getStateBranchNames } from '../workflow/schema';
-import type { StepMeta, CompiledWorkflow } from '../workflow/types';
 import type { AnyStateNode } from '../workflow/paths';
-import type { PromptName } from '../prompts/loader';
+import { buildStepJsonSchema, getStateBranchNames } from '../workflow/schema';
+import type { CompiledWorkflow, StepMeta } from '../workflow/types';
 import { mergeTask } from '../workflows/merge';
 
 type StepHandlerDeps = AppDeps & { sink: EventSink };
@@ -92,11 +92,15 @@ export function createGenericStepHandler(
     }
 
     // Dependency gate: block at the configured step until all deps are met
-    const dependencyGate = (compiled.machine.root as { meta?: { dependencyGate?: string } }).meta?.dependencyGate;
+    const dependencyGate = (
+      compiled.machine.root as { meta?: { dependencyGate?: string } }
+    ).meta?.dependencyGate;
     if (dependencyGate === stepName) {
       const depsMet = await taskStore.areDependenciesMet(deps.db, taskId);
       if (!depsMet) {
-        log.info(`${stepName} skipped: dependencies not met (gate)`, { taskId });
+        log.info(`${stepName} skipped: dependencies not met (gate)`, {
+          taskId,
+        });
         return { taskId, skipped: true, reason: 'dependencies_not_met' };
       }
     }
@@ -169,7 +173,9 @@ export function createGenericStepHandler(
       } else if (stepMeta.executor === 'shell') {
         result = await executeShellStep(taskId, stepName, stepMeta, deps);
       } else if (stepMeta.executor === 'none') {
-        deps.sink.broadcast(`${stepName}.gated` as KnownWSEventType, { taskId });
+        deps.sink.broadcast(`${stepName}.gated` as KnownWSEventType, {
+          taskId,
+        });
         return { taskId, gated: true };
       } else {
         throw new Error(
@@ -187,11 +193,16 @@ export function createGenericStepHandler(
       return { taskId, outcome: result.outcome, ...result.data };
     } catch (err) {
       if (isStoppedError(err)) {
-        deps.sink.broadcast(`${stepName}.stopped` as KnownWSEventType, { taskId });
+        deps.sink.broadcast(`${stepName}.stopped` as KnownWSEventType, {
+          taskId,
+        });
         return { taskId, stopped: true };
       }
       const error = err instanceof Error ? err.message : String(err);
-      deps.sink.broadcast(`${stepName}.failed` as KnownWSEventType, { taskId, error });
+      deps.sink.broadcast(`${stepName}.failed` as KnownWSEventType, {
+        taskId,
+        error,
+      });
       throw err;
     }
   };
@@ -277,7 +288,10 @@ async function executeLLMStep(
   const branchNames = getStateBranchNames(stepNode);
   const jsonSchema = buildStepJsonSchema(stepMeta, branchNames);
   const workflowName = task?.workflow ?? 'standard';
-  const pregenSchemaPath = deps.workflowStore.getSchemaPath(workflowName, stepName);
+  const pregenSchemaPath = deps.workflowStore.getSchemaPath(
+    workflowName,
+    stepName,
+  );
 
   const { result, interactionId } = await runInteraction(
     {
@@ -340,7 +354,10 @@ export function parseStepOutcome(
 ): { outcome: string; output: string } {
   const branchNames: string[] = Array.isArray(branchNamesOrStepDef)
     ? branchNamesOrStepDef
-    : Object.keys((branchNamesOrStepDef as { branches?: Record<string, unknown> }).branches ?? {});
+    : Object.keys(
+        (branchNamesOrStepDef as { branches?: Record<string, unknown> })
+          .branches ?? {},
+      );
 
   // Try JSON extraction from fenced block
   const jsonMatch = text.match(/```json\s*\n([\s\S]*?)\n\s*```/);
@@ -395,7 +412,12 @@ async function executeAgentStep(
   previousInteractionId?: string | null,
 ): Promise<StepResult> {
   const feedback = str(job.payload?.feedback);
-  const resumeSessionID = await resolveResumeSessionID(taskId, stepName, job, deps);
+  const resumeSessionID = await resolveResumeSessionID(
+    taskId,
+    stepName,
+    job,
+    deps,
+  );
 
   const result = await deps.executor.runTaskByIDInternal(taskId, {
     toolOverride,
@@ -435,13 +457,17 @@ async function resolveResumeSessionID(
   const feedback = str(job.payload?.feedback).trim();
   if (!feedback) return undefined;
 
-  const stepInteractions = await deps.interactionStore.listByStepName(taskId, stepName);
+  const stepInteractions = await deps.interactionStore.listByStepName(
+    taskId,
+    stepName,
+  );
   for (const interaction of stepInteractions) {
     const sessionId = interaction.sessionId?.trim();
     if (sessionId) return sessionId;
   }
 
-  const latestSessionId = await deps.interactionStore.getLatestSessionId(taskId);
+  const latestSessionId =
+    await deps.interactionStore.getLatestSessionId(taskId);
   return latestSessionId?.trim() || undefined;
 }
 

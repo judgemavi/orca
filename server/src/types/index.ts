@@ -9,6 +9,8 @@ export {
   JOB_PRIORITIES,
   JOB_STATUSES,
   JOB_TYPES,
+  SYSTEM_JOB_PRIORITIES,
+  SYSTEM_JOB_TYPES,
   TASK_STATUSES,
 } from '@orca/types';
 

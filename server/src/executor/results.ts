@@ -261,8 +261,12 @@ async function loadUsedMemoryIDs(
   taskID: string,
 ): Promise<string[]> {
   const seen = new Set<string>();
-  const planInteractions =
-    (await deps.interactionStore?.listByStepName(taskID, 'plan')) ?? [];
+  // Query all interactions for the task and filter for context-type steps
+  // that may contain usedMemoryIds in their output
+  const allInteractions = (await deps.interactionStore?.list(taskID)) ?? [];
+  const planInteractions = allInteractions.filter(
+    (ix) => ix.type === 'plan' || ix.type === 'context',
+  );
   for (const interaction of planInteractions) {
     if (!interaction.output?.trim()) continue;
     try {

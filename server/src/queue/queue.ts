@@ -1,8 +1,8 @@
 import {
-  JOB_PRIORITIES,
   JOB_STATUSES,
   type JobStatus,
   type JobType,
+  SYSTEM_JOB_PRIORITIES,
 } from '@orca/types';
 import { and, asc, count, eq, lt, ne, or, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -60,7 +60,10 @@ export class JobQueue {
     payload?: Record<string, unknown>;
   }): Promise<Job> {
     const id = nanoid();
-    const priority = opts.priority ?? JOB_PRIORITIES[opts.type as JobType] ?? 5;
+    const priority =
+      opts.priority ??
+      SYSTEM_JOB_PRIORITIES[opts.type as keyof typeof SYSTEM_JOB_PRIORITIES] ??
+      5;
 
     await this.db.insert(jobsTable).values({
       id,

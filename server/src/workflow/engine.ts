@@ -3,13 +3,13 @@ import type { OrcaDrizzleDB } from '../db/connection';
 import type { TaskEntry } from '../db/schema';
 import type { JobQueue } from '../queue/queue';
 import type { InteractionStore } from '../store/interactions';
-import type { WorkflowStore } from './store';
-import type { CompiledWorkflow, StepMeta } from './types';
 import {
   completeStepActor,
   initWorkflowActor,
   resumeUnblockedTaskActor,
 } from './actor-engine';
+import type { WorkflowStore } from './store';
+import type { CompiledWorkflow, StepMeta } from './types';
 
 export { joinPath, parsePath, resolveStepMeta } from './paths';
 

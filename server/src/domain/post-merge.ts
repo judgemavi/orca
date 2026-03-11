@@ -1,4 +1,4 @@
-import { JOB_PRIORITIES } from '@orca/types';
+import { SYSTEM_JOB_PRIORITIES } from '@orca/types';
 import type { OrcaDrizzleDB } from '../db/connection';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
@@ -39,7 +39,7 @@ export function triggerPostMergeHooks(
         await deps.queue.enqueue({
           type: 'retro',
           taskId: taskID,
-          priority: JOB_PRIORITIES.retro,
+          priority: SYSTEM_JOB_PRIORITIES.retro,
         });
       } else {
         try {

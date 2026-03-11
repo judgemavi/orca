@@ -1,4 +1,3 @@
-import { JOB_PRIORITIES } from '@orca/types';
 import { inArray } from 'drizzle-orm';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
@@ -8,6 +7,8 @@ import type { JobQueue } from '../queue/queue';
 import { gitRun } from '../shared/git';
 import type { InteractionStore } from '../store/interactions';
 import * as taskStore from '../store/tasks';
+import { resolveStepMeta } from '../workflow/paths';
+import type { WorkflowStore } from '../workflow/store';
 
 interface ResetOpts {
   taskId: string;
@@ -29,6 +30,7 @@ interface ResetDeps {
   interactionStore: InteractionStore;
   queue: JobQueue;
   repoDir: string;
+  workflowStore?: WorkflowStore;
 }
 
 export async function resetToStep(
@@ -41,6 +43,11 @@ export async function resetToStep(
     throw new Error('cannot reset a running task — stop it first');
   }
 
+  const all = await deps.interactionStore.list(opts.taskId);
+  if (all.some((ix) => ix.status === 'running')) {
+    throw new Error('cannot reset while an interaction is in progress');
+  }
+
   const interaction = await deps.interactionStore.get(opts.interactionId);
   if (!interaction) {
     throw new Error(`interaction not found: ${opts.interactionId}`);
@@ -50,7 +57,6 @@ export async function resetToStep(
   }
 
   // Build the keep-set by walking the previousInteractionId chain from target backward.
-  const all = await deps.interactionStore.list(opts.taskId);
   const byId = new Map(all.map((ix) => [ix.id, ix]));
 
   const keepIds = new Set<string>();
@@ -130,9 +136,14 @@ export async function resetToStep(
 
   let enqueued = false;
   if (opts.enqueue) {
-    const priority =
-      JOB_PRIORITIES[stepName as keyof typeof JOB_PRIORITIES] ??
-      JOB_PRIORITIES.plan;
+    let priority = 5;
+    if (deps.workflowStore) {
+      try {
+        const compiled = deps.workflowStore.resolve(task.workflow ?? undefined);
+        priority =
+          resolveStepMeta(compiled.machine, stepName).meta.priority ?? 5;
+      } catch {}
+    }
     await deps.queue.enqueue({
       type: stepName,
       taskId: opts.taskId,

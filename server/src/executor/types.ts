@@ -6,6 +6,7 @@ import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
+import type { WorkflowStore } from '../workflow/store';
 import type { Monitor } from './monitor';
 
 export interface ExecutorDeps {
@@ -15,6 +16,7 @@ export interface ExecutorDeps {
   sink?: EventSink;
   interactionStore?: InteractionStore;
   memoryStore?: MemoryStore;
+  workflowStore?: WorkflowStore;
   repoDir: string;
   logsDir: string;
   queue?: JobQueue;

@@ -1,12 +1,16 @@
+import type { AnyStateMachine } from 'xstate';
+import { createMachine } from 'xstate';
 import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { availableTools, toolModels } from '../plugin/registry';
 import { SYSTEM_INTERACTION_TYPES } from '../types/api';
-import type { AnyStateMachine } from 'xstate';
-import { createMachine } from 'xstate';
-import type { StepMeta, WorkflowMachineConfigInput, WorkflowValidationError } from './types';
-import { workflowMachineConfigSchema } from './types';
 import type { AnyStateNode } from './paths';
+import type {
+  StepMeta,
+  WorkflowMachineConfigInput,
+  WorkflowValidationError,
+} from './types';
+import { workflowMachineConfigSchema } from './types';
 
 // Raw parsed state node (from Zod schema)
 type RawStateNode = NonNullable<WorkflowMachineConfigInput['states'][string]>;
@@ -32,7 +36,9 @@ export function validateWorkflow(
   // 2. Try to compile with XState to catch structural errors
   let machine: AnyStateMachine;
   try {
-    machine = createMachine(machineConfig as Parameters<typeof createMachine>[0]);
+    machine = createMachine(
+      machineConfig as Parameters<typeof createMachine>[0],
+    );
   } catch (err) {
     errors.push({
       message: `XState compilation error: ${err instanceof Error ? err.message : String(err)}`,
@@ -131,7 +137,15 @@ function validateStateNodes(
     const isCompound = innerStates.length > 0;
 
     if (isCompound) {
-      validateCompoundState(name, fullPath, child, meta, errors, config, registry);
+      validateCompoundState(
+        name,
+        fullPath,
+        child,
+        meta,
+        errors,
+        config,
+        registry,
+      );
       continue;
     }
 
@@ -143,11 +157,17 @@ function validateStateNodes(
     if (meta.type === 'merge') {
       const events = getRawTransitionNames(child);
       if (events.length === 0) {
-        errors.push({ step: fullPath, message: 'merge step must have at least one transition' });
+        errors.push({
+          step: fullPath,
+          message: 'merge step must have at least one transition',
+        });
       }
     } else {
       if (!meta.executor) {
-        errors.push({ step: fullPath, message: 'executor is required for non-merge steps' });
+        errors.push({
+          step: fullPath,
+          message: 'executor is required for non-merge steps',
+        });
       }
 
       if (
@@ -180,22 +200,34 @@ function validateStateNodes(
       }
 
       if (meta.executor === 'tool' && !meta.prompt) {
-        errors.push({ step: fullPath, message: 'prompt required for tool executor' });
+        errors.push({
+          step: fullPath,
+          message: 'prompt required for tool executor',
+        });
       }
       if (meta.executor === 'shell' && !meta.command) {
-        errors.push({ step: fullPath, message: 'command required for shell executor' });
+        errors.push({
+          step: fullPath,
+          message: 'command required for shell executor',
+        });
       }
 
       const events = getRawTransitionNames(child);
       if (events.length === 0) {
-        errors.push({ step: fullPath, message: 'must define at least one branch' });
+        errors.push({
+          step: fullPath,
+          message: 'must define at least one branch',
+        });
       }
     }
 
     if (meta.executor === 'tool' && meta.tool) {
       const tools = availableTools(registry);
       if (!tools.includes(meta.tool)) {
-        errors.push({ step: fullPath, message: `tool "${meta.tool}" not available` });
+        errors.push({
+          step: fullPath,
+          message: `tool "${meta.tool}" not available`,
+        });
       } else if (meta.model) {
         const models = toolModels(registry, meta.tool);
         if (models.length > 0 && !models.includes(meta.model)) {
@@ -211,7 +243,8 @@ function validateStateNodes(
       errors.push({
         step: fullPath,
         severity: 'warning',
-        message: 'autoRun not set — defaults to true. Set explicitly to avoid unintended auto-execution',
+        message:
+          'autoRun not set — defaults to true. Set explicitly to avoid unintended auto-execution',
       });
     }
   }
@@ -227,25 +260,42 @@ function validateCompoundState(
   registry: ToolPluginRegistry,
 ): void {
   if (meta.executor) {
-    errors.push({ step: fullPath, message: 'compound state must not have "executor"' });
+    errors.push({
+      step: fullPath,
+      message: 'compound state must not have "executor"',
+    });
   }
   if (meta.prompt) {
-    errors.push({ step: fullPath, message: 'compound state must not have "prompt"' });
+    errors.push({
+      step: fullPath,
+      message: 'compound state must not have "prompt"',
+    });
   }
   if (meta.command) {
-    errors.push({ step: fullPath, message: 'compound state must not have "command"' });
+    errors.push({
+      step: fullPath,
+      message: 'compound state must not have "command"',
+    });
   }
 
   if (!node.initial) {
     errors.push({ step: fullPath, message: 'loop step must define "entry"' });
   }
 
-  const innerStates = Object.entries(node.states ?? {}).filter(([, s]) => s?.type !== 'final');
+  const innerStates = Object.entries(node.states ?? {}).filter(
+    ([, s]) => s?.type !== 'final',
+  );
   if (innerStates.length === 0) {
-    errors.push({ step: fullPath, message: 'loop step must define non-empty "steps"' });
+    errors.push({
+      step: fullPath,
+      message: 'loop step must define non-empty "steps"',
+    });
   }
   if (!meta.maxIterations) {
-    errors.push({ step: fullPath, message: 'loop step must define "maxIterations"' });
+    errors.push({
+      step: fullPath,
+      message: 'loop step must define "maxIterations"',
+    });
   }
 
   // Exit transitions can be on the compound state itself OR on inner states via #id.state refs
@@ -262,7 +312,14 @@ function validateCompoundState(
   }
 
   const innerNames = new Set(innerStates.map(([k]) => k));
-  validateStateNodes(node.states ?? {}, fullPath.split('.'), innerNames, errors, config, registry);
+  validateStateNodes(
+    node.states ?? {},
+    fullPath.split('.'),
+    innerNames,
+    errors,
+    config,
+    registry,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +363,10 @@ function hasMergeRawNode(states: Record<string, RawStateNode>): boolean {
   return false;
 }
 
-function topLevelFromStateNode(stateNode: { id?: string; key?: string }, root: AnyStateNode): string | null {
+function topLevelFromStateNode(
+  stateNode: { id?: string; key?: string },
+  root: AnyStateNode,
+): string | null {
   if (stateNode.id) {
     const parts = stateNode.id.split('.');
     const topLevel = parts[1];
@@ -414,7 +474,10 @@ function checkReachability(
 
   for (const name of adjacency.keys()) {
     if (name !== 'finish' && !reaches.has(name)) {
-      errors.push({ step: name, message: 'step cannot reach "finish" via any path' });
+      errors.push({
+        step: name,
+        message: 'step cannot reach "finish" via any path',
+      });
     }
   }
 
@@ -473,7 +536,10 @@ function checkNoCodeAfterMerge(
   let mergeName: string | null = null;
   for (const [name, child] of Object.entries(root.states ?? {})) {
     const meta = (child.meta ?? {}) as StepMeta;
-    if (meta.type === 'merge' || (meta.type === 'command' && meta.command === 'merge')) {
+    if (
+      meta.type === 'merge' ||
+      (meta.type === 'command' && meta.command === 'merge')
+    ) {
       mergeName = name;
       break;
     }
@@ -566,7 +632,9 @@ function checkConsumeOrdering(
   }
 
   const topNames = new Set(
-    Object.keys(root.states ?? {}).filter((k) => root.states![k]?.type !== 'final'),
+    Object.keys(root.states ?? {}).filter(
+      (k) => root.states![k]?.type !== 'final',
+    ),
   );
 
   for (const [name, child] of Object.entries(root.states ?? {})) {
@@ -576,9 +644,14 @@ function checkConsumeOrdering(
     const myOrder = order.get(name) ?? Infinity;
 
     for (const consumed of meta.consumes) {
-      const bareName = consumed.includes('.') ? consumed.split('.')[0]! : consumed;
+      const bareName = consumed.includes('.')
+        ? consumed.split('.')[0]!
+        : consumed;
       if (!topNames.has(bareName)) {
-        errors.push({ step: name, message: `consumes unknown step "${consumed}"` });
+        errors.push({
+          step: name,
+          message: `consumes unknown step "${consumed}"`,
+        });
         continue;
       }
       const consumedOrder = order.get(bareName) ?? Infinity;

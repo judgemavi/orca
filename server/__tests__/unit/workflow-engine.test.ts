@@ -41,7 +41,12 @@ const simpleMachine = createWorkflowMachine('test-simple', {
       entry: { type: 'incrementIteration', params: { stepPath: 'step_a' } },
       on: {
         success: 'step_b',
-        fail: { target: 'step_a', reenter: true, meta: { includeOutput: false } as TransitionMeta },
+        fail: {
+          target: 'step_a',
+          reenter: true,
+          guard: { type: 'withinIterationLimit', params: { stepPath: 'step_a', max: 3 } },
+          meta: { includeOutput: false } as TransitionMeta,
+        },
       },
     },
     step_b: {
@@ -73,7 +78,11 @@ const loopMachine = createWorkflowMachine('test-loop', {
           entry: { type: 'incrementIteration', params: { stepPath: 'implement.code' } },
           on: {
             success: 'review',
-            fail: { target: 'code', reenter: true },
+            fail: {
+              target: 'code',
+              reenter: true,
+              guard: { type: 'withinIterationLimit', params: { stepPath: 'implement.code', max: 3 } },
+            },
           },
         },
         review: {
@@ -81,7 +90,11 @@ const loopMachine = createWorkflowMachine('test-loop', {
           entry: { type: 'incrementIteration', params: { stepPath: 'implement.review' } },
           on: {
             approved: '#test-loop.merge',
-            request_changes: { target: 'code', meta: { includeOutput: true } as TransitionMeta },
+            request_changes: {
+              target: 'code',
+              guard: { type: 'withinIterationLimit', params: { stepPath: 'implement.code', max: 3 } },
+              meta: { includeOutput: true } as TransitionMeta,
+            },
           },
         },
       },
@@ -108,7 +121,11 @@ const exhaustedGateMachine = createWorkflowMachine('test-exhausted-gate', {
           entry: { type: 'incrementIteration', params: { stepPath: 'loop.step' } },
           on: {
             ok: '#test-exhausted-gate.finish',
-            retry: { target: 'step', reenter: true },
+            retry: {
+              target: 'step',
+              reenter: true,
+              guard: { type: 'withinIterationLimit', params: { stepPath: 'loop.step', max: 2 } },
+            },
           },
         },
       },

@@ -1,14 +1,16 @@
-import { JOB_PRIORITIES } from '@orca/types';
-import { createActor, pathToStateValue } from 'xstate';
+import { SYSTEM_JOB_PRIORITIES } from '@orca/types';
 import type { AnyMachineSnapshot } from 'xstate';
+import { createActor, pathToStateValue } from 'xstate';
 import type { TaskEntry } from '../db/schema';
+import { log } from '../shared/logger';
 import * as questionStore from '../store/questions';
 import * as taskStore from '../store/tasks';
-import { log } from '../shared/logger';
-import type { CompiledWorkflow, StepMeta, WorkflowContext } from './types';
-import { extractInitialName, joinPath, parsePath, resolveStepMeta } from './paths';
 import { shouldAutoRun } from './auto-run';
 import type { StepCompletionResult, WorkflowEngineDeps } from './engine';
+import { parsePath, resolveStepMeta } from './paths';
+import type { CompiledWorkflow, StepMeta } from './types';
+
+const DEFAULT_STEP_PRIORITY = 5;
 
 // ---------------------------------------------------------------------------
 // Snapshot navigation helpers
@@ -114,7 +116,9 @@ export async function completeStepActor(
       value: stateValue,
       context: { iterations: {} },
     });
-    const tempActor = createActor(compiled.machine, { snapshot: syntheticSnapshot });
+    const tempActor = createActor(compiled.machine, {
+      snapshot: syntheticSnapshot,
+    });
     tempActor.start();
     persistedSnapshot = tempActor.getPersistedSnapshot();
     tempActor.stop();
@@ -125,9 +129,14 @@ export async function completeStepActor(
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const actor = createActor(compiled.machine, { snapshot: persistedSnapshot as any });
+  const actor = createActor(compiled.machine, {
+    snapshot: persistedSnapshot as any,
+  });
   actor.start();
 
+  const beforeSnapshot = actor.getSnapshot();
+  const beforeStep = stepPathFromSnapshot(beforeSnapshot);
+  const beforeContext = beforeSnapshot.context;
   actor.send({ type: outcome });
 
   const afterSnapshot = actor.getSnapshot();
@@ -136,71 +145,36 @@ export async function completeStepActor(
   const isFinished = afterSnapshot.status === 'done' || newCurrentStep == null;
   actor.stop();
 
-  // Extract iteration context from updated snapshot (may be undefined for machines without setup())
-  const rawContext = afterSnapshot.context as WorkflowContext | undefined;
-  const context: WorkflowContext = rawContext?.iterations != null
-    ? (rawContext as WorkflowContext)
-    : { iterations: {} };
-
-  // Check step-level iteration limits on the destination step
-  if (!isFinished && newCurrentStep) {
-    const newMeta = resolveStepMeta(compiled.machine, newCurrentStep).meta;
-    if (newMeta.maxIterations) {
-      const count = context.iterations[newCurrentStep] ?? 0;
-      if (count > newMeta.maxIterations) {
-        log.warn('max iterations reached, forcing gate', {
-          taskId,
-          step: newCurrentStep,
-          iterations: count,
-          max: newMeta.maxIterations,
-        });
-        await taskStore.updateTask(deps.db, undefined, taskId, {
-          status: 'stopped',
-          currentStep: newCurrentStep,
-          workflowSnapshot: JSON.stringify(newPersistedSnapshot),
-        });
-        await questionStore.createQuestion(deps.db, {
-          taskId,
-          question: `Step "${newCurrentStep}" reached max iterations (${newMeta.maxIterations}). Please provide guidance.`,
-        });
-        return { maxIterationsReached: true, gated: true };
-      }
-    }
-
-    // Check compound (loop) iteration limits
-    const newResolved = resolveStepMeta(compiled.machine, newCurrentStep);
-    if (newResolved.compoundMeta?.maxIterations && newResolved.compoundPath) {
-      const compoundPrefix = joinPath(newResolved.compoundPath);
-      const compoundResolved = resolveStepMeta(compiled.machine, compoundPrefix);
-      const initialName = extractInitialName(compoundResolved.stateNode.initial);
-      if (initialName) {
-        const entryPath = joinPath([...newResolved.compoundPath, initialName]);
-        const loopCount = context.iterations[entryPath] ?? 0;
-        if (loopCount > newResolved.compoundMeta.maxIterations) {
-          log.warn('loop max iterations reached, forcing gate', {
-            taskId,
-            loop: compoundPrefix,
-            iterations: loopCount,
-            max: newResolved.compoundMeta.maxIterations,
-          });
-          await taskStore.updateTask(deps.db, undefined, taskId, {
-            status: 'stopped',
-            currentStep: newCurrentStep,
-            workflowSnapshot: JSON.stringify(newPersistedSnapshot),
-          });
-          await questionStore.createQuestion(deps.db, {
-            taskId,
-            question: `Loop "${compoundPrefix}" reached max iterations (${newResolved.compoundMeta.maxIterations}). Please provide guidance.`,
-          });
-          return { maxIterationsReached: true, gated: true };
-        }
-      }
-    }
+  // Guard-blocked detection: when XState guard blocks a transition, both
+  // state value AND context remain unchanged (event silently ignored).
+  // A successful reenter self-transition keeps the same state value but
+  // mutates context (incrementIteration fires), so we check both.
+  const guardBlocked =
+    !isFinished &&
+    newCurrentStep === beforeStep &&
+    afterSnapshot.context === beforeContext;
+  if (guardBlocked) {
+    log.warn('transition blocked by guard (iteration limit)', {
+      taskId,
+      step: newCurrentStep,
+      outcome,
+    });
+    await taskStore.updateTask(deps.db, undefined, taskId, {
+      status: 'stopped',
+      currentStep: newCurrentStep,
+      workflowSnapshot: JSON.stringify(newPersistedSnapshot),
+    });
+    await questionStore.createQuestion(deps.db, {
+      taskId,
+      question: `Step "${newCurrentStep}" reached max iterations on "${outcome}". Please provide guidance.`,
+    });
+    return { maxIterationsReached: true, gated: true };
   }
 
   // Build job payload from transition metadata
   const jobPayload: Record<string, unknown> = {};
-  const includeOutput = compiled.transitionMeta[`${currentStepName}:${outcome}`]?.includeOutput;
+  const includeOutput =
+    compiled.transitionMeta[`${currentStepName}:${outcome}`]?.includeOutput;
   if (includeOutput && payload?.output) {
     jobPayload.feedback = payload.output;
   }
@@ -228,10 +202,13 @@ export async function completeStepActor(
     return { gated: true };
   }
 
+  const stepPriority =
+    resolveStepMeta(compiled.machine, newCurrentStep!).meta.priority ??
+    DEFAULT_STEP_PRIORITY;
   await deps.queue.enqueue({
     type: newCurrentStep!,
     taskId,
-    priority: JOB_PRIORITIES[newCurrentStep! as keyof typeof JOB_PRIORITIES] ?? 5,
+    priority: stepPriority,
     payload: Object.keys(jobPayload).length > 0 ? jobPayload : undefined,
   });
 
@@ -255,11 +232,16 @@ export async function resumeUnblockedTaskActor(
     const auto = await shouldAutoRun(deps, task.id, stepName);
     if (!auto) return;
 
+    const compiled = deps.workflowStore.resolve(task.workflow ?? undefined);
+    const priority =
+      resolveStepMeta(compiled.machine, stepName).meta.priority ??
+      DEFAULT_STEP_PRIORITY;
+
     log.info('resuming unblocked task', { taskId: task.id, step: stepName });
     await deps.queue.enqueue({
       type: stepName,
       taskId: task.id,
-      priority: JOB_PRIORITIES[stepName as keyof typeof JOB_PRIORITIES] ?? 5,
+      priority,
     });
     return;
   }
@@ -268,6 +250,6 @@ export async function resumeUnblockedTaskActor(
   await deps.queue.enqueue({
     type: 'evaluate',
     taskId: task.id,
-    priority: JOB_PRIORITIES.evaluate,
+    priority: SYSTEM_JOB_PRIORITIES.evaluate,
   });
 }

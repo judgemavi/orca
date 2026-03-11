@@ -44,7 +44,12 @@ const customMachine = createWorkflowMachine('custom-test', {
       entry: { type: 'incrementIteration', params: { stepPath: 'implement' } },
       on: {
         success: 'verify',
-        fail: { target: 'implement', reenter: true, meta: { includeOutput: true } as TransitionMeta },
+        fail: {
+          target: 'implement',
+          reenter: true,
+          guard: { type: 'withinIterationLimit', params: { stepPath: 'implement', max: 2 } },
+          meta: { includeOutput: true } as TransitionMeta,
+        },
       },
     },
     verify: {
@@ -73,7 +78,12 @@ const loopMachine = createWorkflowMachine('loop-test', {
           entry: { type: 'incrementIteration', params: { stepPath: 'implement.code' } },
           on: {
             success: 'review',
-            fail: { target: 'code', reenter: true, meta: { includeOutput: true } as TransitionMeta },
+            fail: {
+              target: 'code',
+              reenter: true,
+              guard: { type: 'withinIterationLimit', params: { stepPath: 'implement.code', max: 3 } },
+              meta: { includeOutput: true } as TransitionMeta,
+            },
           },
         },
         review: {
@@ -81,7 +91,11 @@ const loopMachine = createWorkflowMachine('loop-test', {
           entry: { type: 'incrementIteration', params: { stepPath: 'implement.review' } },
           on: {
             approved: '#loop-test.merge',
-            request_changes: { target: 'code', meta: { includeOutput: true } as TransitionMeta },
+            request_changes: {
+              target: 'code',
+              guard: { type: 'withinIterationLimit', params: { stepPath: 'implement.code', max: 3 } },
+              meta: { includeOutput: true } as TransitionMeta,
+            },
           },
         },
       },

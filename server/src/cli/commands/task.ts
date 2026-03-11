@@ -9,13 +9,13 @@ import type { AutoRunOverrides } from '../../types/api';
 import type { AppDeps } from '../../types/deps';
 import { getStepOutput, hasStepOutput } from '../../workflow/context';
 import { completeStep, resolveStepMeta } from '../../workflow/engine';
-import { getTransitionEvents } from '../../workflow/paths';
 import type { AnyStateNode } from '../../workflow/paths';
-import type { StepMeta } from '../../workflow/types';
+import { getTransitionEvents } from '../../workflow/paths';
 import {
   createSyntheticStepInteraction,
   loadCurrentTaskStep,
 } from '../../workflow/step-actions';
+import type { StepMeta } from '../../workflow/types';
 import { deleteTask } from '../../workflows/delete';
 import {
   acceptBreakdown,
@@ -534,7 +534,9 @@ export function registerTaskCommands(task: Command, deps: AppDeps) {
     .option('--output <text>', 'output text to forward as feedback')
     .action(async (id: string, opts: { outcome: string; output?: string }) => {
       if (await deps.interactionStore.hasRunningForTask(id)) {
-        throw new Error('a step is currently running — wait for it to complete');
+        throw new Error(
+          'a step is currently running — wait for it to complete',
+        );
       }
       const t = await taskStore.getTask(deps.db, id).catch(() => null);
       if (!t) throw new Error(`task not found: ${id}`);
@@ -606,7 +608,9 @@ export function registerTaskCommands(task: Command, deps: AppDeps) {
     .option('-o, --outcome <outcome>', 'outcome/branch name')
     .action(async (id: string, opts: { output: string; outcome?: string }) => {
       if (await deps.interactionStore.hasRunningForTask(id)) {
-        throw new Error('a step is currently running — wait for it to complete');
+        throw new Error(
+          'a step is currently running — wait for it to complete',
+        );
       }
       const { currentStep, step, stateNode } = await loadCurrentTaskStep(id, {
         db: deps.db,
@@ -663,7 +667,10 @@ export function registerTaskCommands(task: Command, deps: AppDeps) {
       for (const [name, child] of Object.entries(rootNode.states ?? {})) {
         if (child.type === 'final') continue;
         const meta = (child.meta ?? {}) as StepMeta;
-        steps[name] = { type: meta.type ?? 'unknown', executor: meta.executor ?? null };
+        steps[name] = {
+          type: meta.type ?? 'unknown',
+          executor: meta.executor ?? null,
+        };
       }
       printJSON({
         taskId: id,
@@ -680,7 +687,10 @@ export function registerTaskCommands(task: Command, deps: AppDeps) {
     .option('-T, --tool <tool>', 'tool override')
     .option('-M, --model <model>', 'model override')
     .option('--prompt <prompt>', 'additional instructions')
-    .option('-f, --feedback <feedback>', 'feedback when resuming a stopped task')
+    .option(
+      '-f, --feedback <feedback>',
+      'feedback when resuming a stopped task',
+    )
     .action(
       async (
         id: string,

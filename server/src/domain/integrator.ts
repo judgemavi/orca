@@ -315,7 +315,7 @@ async function cleanupTaskWorktree(
   repoDir: string,
   worktreePath: string,
   branch: string,
-  taskID: string,
+  _taskID: string,
 ) {
   if (worktreePath) {
     await gitRun(
@@ -324,10 +324,10 @@ async function cleanupTaskWorktree(
       true,
     );
   }
-  if (branch && branch !== `orca/task-${taskID}`) {
-    await gitRun(repoDir, ['branch', '-d', branch], true);
-  } else if (branch) {
-    await gitRun(repoDir, ['branch', '-d', branch], true);
+  // Force-delete (-D) because squash merge doesn't create a merge commit,
+  // so git won't consider the branch "fully merged" for safe -d delete.
+  if (branch) {
+    await gitRun(repoDir, ['branch', '-D', branch], true);
   }
 }
 

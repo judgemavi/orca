@@ -1,4 +1,4 @@
-import { JOB_PRIORITIES } from '@orca/types';
+import { SYSTEM_JOB_PRIORITIES } from '@orca/types';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import {
@@ -10,6 +10,8 @@ import { toErrorMessage } from '../shared/errors';
 import { log } from '../shared/logger';
 import type { InteractionStore } from '../store/interactions';
 import * as taskStore from '../store/tasks';
+import { resolveStepMeta } from '../workflow/paths';
+import type { WorkflowStore } from '../workflow/store';
 
 interface DeleteTaskResult {
   taskId: string;
@@ -44,6 +46,7 @@ export async function deleteTask(
     interactions: InteractionStore;
     repoDir: string;
     queue?: JobQueue;
+    workflowStore?: WorkflowStore;
   },
 ): Promise<DeleteTaskResult> {
   const normalizedTaskID = taskID.trim();
@@ -88,9 +91,17 @@ export async function deleteTask(
 
       // If task has a currentStep, it already ran evaluate and is waiting at the gate
       const jobType = depTask.currentStep ?? 'evaluate';
-      const priority =
-        JOB_PRIORITIES[jobType as keyof typeof JOB_PRIORITIES] ??
-        JOB_PRIORITIES.evaluate;
+      let priority = SYSTEM_JOB_PRIORITIES.evaluate;
+      if (depTask.currentStep && deps.workflowStore) {
+        try {
+          const compiled = deps.workflowStore.resolve(
+            depTask.workflow ?? undefined,
+          );
+          priority =
+            resolveStepMeta(compiled.machine, depTask.currentStep).meta
+              .priority ?? 5;
+        } catch {}
+      }
 
       log.info('unblocked task after dependency deleted', {
         taskId: depTaskId,

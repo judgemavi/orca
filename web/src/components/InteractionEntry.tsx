@@ -2,10 +2,10 @@ import { INTERACTION_STATUSES } from '@orca/server/types';
 import * as Accordion from '@radix-ui/react-accordion';
 import { Brain, Check, Dot, Hammer, X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { formatDuration } from '../lib/format';
 import type { InteractionStub } from '../types';
 import { Button } from './Button';
 import { InteractionLogPanel } from './InteractionLogPanel';
-import { formatDuration } from '../lib/format';
 
 interface Props {
   taskId: string;

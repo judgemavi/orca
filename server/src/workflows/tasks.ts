@@ -1,4 +1,8 @@
-import { JOB_PRIORITIES, TASK_STATUSES, type TaskStatus } from '@orca/types';
+import {
+  SYSTEM_JOB_PRIORITIES,
+  TASK_STATUSES,
+  type TaskStatus,
+} from '@orca/types';
 import { nanoid } from 'nanoid';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
@@ -11,6 +15,7 @@ import type { JobQueue } from '../queue/queue';
 import type { InteractionStore } from '../store/interactions';
 import * as questionStore from '../store/questions';
 import * as taskStore from '../store/tasks';
+import { resolveStepMeta } from '../workflow/paths';
 import type { WorkflowStore } from '../workflow/store';
 
 // ---------------------------------------------------------------------------
@@ -58,6 +63,7 @@ interface EnqueueDeps {
   db: OrcaDrizzleDB;
   sink?: EventSink;
   queue: JobQueue;
+  workflowStore?: WorkflowStore;
 }
 
 interface ToolModelOpts {
@@ -108,7 +114,7 @@ export async function createTask(
     await deps.queue.enqueue({
       type: 'evaluate',
       taskId: created.id,
-      priority: JOB_PRIORITIES.evaluate,
+      priority: SYSTEM_JOB_PRIORITIES.evaluate,
     });
   }
 
@@ -213,7 +219,7 @@ export async function provideInput(
     const job = await deps.queue.enqueue({
       type: 'evaluate',
       taskId,
-      priority: JOB_PRIORITIES.evaluate,
+      priority: SYSTEM_JOB_PRIORITIES.evaluate,
       payload: {
         feedback: trimmed,
         ...(resumeSessionID ? { resumeSessionID } : {}),
@@ -239,11 +245,18 @@ export async function enqueueCurrentStep(
   });
   if (!task.currentStep) throw new Error('task has no current step');
 
+  let stepPriority = 5;
+  if (deps.workflowStore) {
+    try {
+      const compiled = deps.workflowStore.resolve(task.workflow ?? undefined);
+      stepPriority =
+        resolveStepMeta(compiled.machine, task.currentStep).meta.priority ?? 5;
+    } catch {}
+  }
   const { id: jobId } = await deps.queue.enqueue({
     type: task.currentStep,
     taskId,
-    priority:
-      JOB_PRIORITIES[task.currentStep as keyof typeof JOB_PRIORITIES] ?? 5,
+    priority: stepPriority,
     payload,
   });
 
@@ -262,7 +275,7 @@ export async function enqueueEvaluate(
   const { id: jobId } = await deps.queue.enqueue({
     type: 'evaluate',
     taskId,
-    priority: JOB_PRIORITIES.evaluate,
+    priority: SYSTEM_JOB_PRIORITIES.evaluate,
     payload: { tool: opts.tool ?? '', model: opts.model ?? '' },
   });
   return { taskId, jobId };
@@ -284,7 +297,7 @@ export async function enqueueBreakdown(
   const { id: jobId } = await deps.queue.enqueue({
     type: 'breakdown',
     taskId,
-    priority: JOB_PRIORITIES.breakdown,
+    priority: SYSTEM_JOB_PRIORITIES.breakdown,
     payload: { tool: opts.tool ?? '', model: opts.model ?? '' },
   });
   return { taskId, jobId };
@@ -312,4 +325,3 @@ export async function stopTask(
 
   return { taskId, status: 'stopped' };
 }
-

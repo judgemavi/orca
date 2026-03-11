@@ -144,9 +144,7 @@ export function interactionRoutes(deps: InteractionRouteDeps) {
         .filter((item) => (requestedType ? item.type === requestedType : true));
 
       return c.json(mapped);
-    })
-
-    ;
+    });
 }
 
 function stripAnsi(value: string): string {

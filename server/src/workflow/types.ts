@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import type { AnyStateMachine } from 'xstate';
+import { z } from 'zod';
 
 /** XState machine context for workflow state tracking */
 export interface WorkflowContext {
@@ -17,6 +17,7 @@ export interface StepMeta {
   consumes?: string[];
   maxIterations?: number;
   autoRun?: boolean;
+  priority?: number;
 }
 
 /** Domain metadata on the root machine */
@@ -49,7 +50,9 @@ export interface CompiledWorkflow {
 // ---------------------------------------------------------------------------
 
 const stepMetaSchema = z.object({
-  type: z.enum(['context', 'decision', 'code', 'command', 'gate', 'merge']).optional(),
+  type: z
+    .enum(['context', 'decision', 'code', 'command', 'gate', 'merge'])
+    .optional(),
   executor: z.enum(['tool', 'shell', 'none']).optional(),
   prompt: z.string().optional(),
   command: z.string().optional(),
@@ -58,6 +61,7 @@ const stepMetaSchema = z.object({
   consumes: z.array(z.string()).optional(),
   maxIterations: z.number().int().positive().optional(),
   autoRun: z.boolean().optional(),
+  priority: z.number().int().min(0).optional(),
 });
 
 const workflowMetaSchema = z.object({
@@ -97,4 +101,6 @@ export const workflowMachineConfigSchema = z.object({
   states: z.record(z.string(), stateNodeSchema),
 });
 
-export type WorkflowMachineConfigInput = z.infer<typeof workflowMachineConfigSchema>;
+export type WorkflowMachineConfigInput = z.infer<
+  typeof workflowMachineConfigSchema
+>;

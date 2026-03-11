@@ -18,10 +18,10 @@ import { loadConfig, saveConfig } from './store/config';
 import { InteractionStore } from './store/interactions';
 import { MemoryStore } from './store/memory';
 import type { AppDeps } from './types/deps';
-import type { CompiledWorkflow } from './workflow/types';
 import { buildTransitionMeta } from './workflow/paths';
 import { createWorkflowMachine } from './workflow/presets';
 import { WorkflowStore } from './workflow/store';
+import type { CompiledWorkflow } from './workflow/types';
 import { validateWorkflow } from './workflow/validator';
 
 interface BootstrapOptions {
@@ -128,6 +128,7 @@ export async function bootstrap(
     sink: eventSink,
     interactionStore,
     memoryStore,
+    workflowStore,
     repoDir,
     logsDir: `${repoDir}/.orca/logs`,
     queue,

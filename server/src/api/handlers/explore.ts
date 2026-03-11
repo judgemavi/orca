@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import { JOB_PRIORITIES } from '@orca/types';
+import { SYSTEM_JOB_PRIORITIES } from '@orca/types';
 import { Hono } from 'hono';
 import type { OrcaDrizzleDB } from '../../db/connection';
 import {
@@ -37,7 +37,7 @@ export function exploreRoutes(
 
       const { id: jobId } = await queue.enqueue({
         type: 'explore',
-        priority: JOB_PRIORITIES.explore,
+        priority: SYSTEM_JOB_PRIORITIES.explore,
         payload: {
           query: body.query ?? '',
           tool: body.tool ?? '',

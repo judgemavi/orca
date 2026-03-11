@@ -155,6 +155,7 @@ async function buildPrompt(
     | 'feedback'
     | 'resumeSessionID'
     | 'repoDir'
+    | 'cwd'
   >,
 ): Promise<string> {
   const repoDir = input.repoDir ?? '';
@@ -170,6 +171,14 @@ async function buildPrompt(
     .filter(Boolean)
     .join('\n\n');
   if (taskCore) parts.push(`## Task\n\n${taskCore}`);
+
+  if (input.repoDir && input.cwd && input.cwd !== input.repoDir) {
+    parts.push(
+      `## Working Directory\n\nYour repo root is \`${input.cwd}\` (a git worktree). ` +
+        `Use relative paths or paths under this directory. ` +
+        `Do NOT reference \`${input.repoDir}\` directly.`,
+    );
+  }
 
   if (!input.resumeSessionID?.trim() && input.feedback?.trim()) {
     parts.push(`## Reviewer Feedback\n\n${input.feedback.trim()}`);

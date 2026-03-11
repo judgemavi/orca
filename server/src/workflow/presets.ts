@@ -1,6 +1,12 @@
 import { assign, setup } from 'xstate';
 import { buildTransitionMeta } from './paths';
-import type { CompiledWorkflow, StepMeta, TransitionMeta, WorkflowContext, WorkflowMeta } from './types';
+import type {
+  CompiledWorkflow,
+  StepMeta,
+  TransitionMeta,
+  WorkflowContext,
+  WorkflowMeta,
+} from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createWorkflowMachine(id: string, config: Record<string, any>) {
@@ -19,6 +25,12 @@ export function createWorkflowMachine(id: string, config: Record<string, any>) {
           [params.stepPath]: (context.iterations[params.stepPath] ?? 0) + 1,
         }),
       }),
+    },
+    guards: {
+      withinIterationLimit: (
+        { context }: { context: WorkflowContext },
+        params: { stepPath: string; max: number },
+      ) => (context.iterations[params.stepPath] ?? 0) < params.max,
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).createMachine({
@@ -39,6 +51,7 @@ const standardMachine = createWorkflowMachine('standard', {
         prompt: 'plan',
         consumes: [],
         autoRun: true,
+        priority: 4,
       } as StepMeta,
       entry: { type: 'incrementIteration', params: { stepPath: 'plan' } },
       on: { done: 'implement' },
@@ -55,13 +68,21 @@ const standardMachine = createWorkflowMachine('standard', {
             consumes: ['plan'],
             autoRun: true,
             maxIterations: 3,
+            priority: 0,
           } as StepMeta,
-          entry: { type: 'incrementIteration', params: { stepPath: 'implement.code' } },
+          entry: {
+            type: 'incrementIteration',
+            params: { stepPath: 'implement.code' },
+          },
           on: {
             success: 'review',
             fail: {
               target: 'code',
               reenter: true,
+              guard: {
+                type: 'withinIterationLimit',
+                params: { stepPath: 'implement.code', max: 3 },
+              },
               meta: { includeOutput: true } as TransitionMeta,
             },
           },
@@ -74,8 +95,12 @@ const standardMachine = createWorkflowMachine('standard', {
             consumes: ['plan', 'code'],
             autoRun: true,
             maxIterations: 3,
+            priority: 1,
           } as StepMeta,
-          entry: { type: 'incrementIteration', params: { stepPath: 'implement.review' } },
+          entry: {
+            type: 'incrementIteration',
+            params: { stepPath: 'implement.review' },
+          },
           on: {
             approved: {
               target: '#standard.merge',
@@ -83,6 +108,10 @@ const standardMachine = createWorkflowMachine('standard', {
             },
             request_changes: {
               target: 'code',
+              guard: {
+                type: 'withinIterationLimit',
+                params: { stepPath: 'implement.code', max: 3 },
+              },
               meta: { includeOutput: true } as TransitionMeta,
             },
           },
@@ -90,7 +119,7 @@ const standardMachine = createWorkflowMachine('standard', {
       },
     },
     merge: {
-      meta: { type: 'merge', autoRun: true } as StepMeta,
+      meta: { type: 'merge', autoRun: true, priority: 2 } as StepMeta,
       entry: { type: 'incrementIteration', params: { stepPath: 'merge' } },
       on: { success: 'finish' },
     },
@@ -110,6 +139,7 @@ const directMachine = createWorkflowMachine('direct', {
         consumes: [],
         autoRun: true,
         maxIterations: 3,
+        priority: 0,
       } as StepMeta,
       entry: { type: 'incrementIteration', params: { stepPath: 'code' } },
       on: {
@@ -117,6 +147,10 @@ const directMachine = createWorkflowMachine('direct', {
         fail: {
           target: 'code',
           reenter: true,
+          guard: {
+            type: 'withinIterationLimit',
+            params: { stepPath: 'code', max: 3 },
+          },
           meta: { includeOutput: true } as TransitionMeta,
         },
       },
@@ -129,18 +163,23 @@ const directMachine = createWorkflowMachine('direct', {
         consumes: ['code'],
         autoRun: true,
         maxIterations: 3,
+        priority: 1,
       } as StepMeta,
       entry: { type: 'incrementIteration', params: { stepPath: 'review' } },
       on: {
         approved: 'merge',
         rejected: {
           target: 'code',
+          guard: {
+            type: 'withinIterationLimit',
+            params: { stepPath: 'code', max: 3 },
+          },
           meta: { includeOutput: true } as TransitionMeta,
         },
       },
     },
     merge: {
-      meta: { type: 'merge', autoRun: true } as StepMeta,
+      meta: { type: 'merge', autoRun: true, priority: 2 } as StepMeta,
       entry: { type: 'incrementIteration', params: { stepPath: 'merge' } },
       on: { success: 'finish' },
     },

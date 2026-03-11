@@ -1,8 +1,8 @@
 import { rmSync } from 'node:fs';
 import { log } from '../shared/logger';
-import type { CompiledWorkflow, StepMeta } from './types';
 import type { AnyStateNode } from './paths';
 import { getTransitionEvents } from './paths';
+import type { CompiledWorkflow, StepMeta } from './types';
 
 /**
  * Recursively collect all LLM-executor steps (tool executor, non-code)
@@ -20,7 +20,11 @@ function collectLLMSteps(
     if (child.states && Object.keys(child.states).length > 0) {
       // Compound state — recurse
       result.push(...collectLLMSteps(child, fullName));
-    } else if (meta.executor === 'tool' && meta.type !== 'code' && meta.type !== undefined) {
+    } else if (
+      meta.executor === 'tool' &&
+      meta.type !== 'code' &&
+      meta.type !== undefined
+    ) {
       result.push({ path: fullName, meta });
     }
   }
@@ -182,7 +186,10 @@ export async function generateSchemas(
   log.info(`generated ${count} schema(s)`, { dir: schemasDir });
 }
 
-function resolveStateNode(root: AnyStateNode, dottedPath: string): AnyStateNode | null {
+function resolveStateNode(
+  root: AnyStateNode,
+  dottedPath: string,
+): AnyStateNode | null {
   const segments = dottedPath.split('.');
   let node: AnyStateNode = root;
   for (const seg of segments) {

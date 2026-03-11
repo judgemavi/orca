@@ -167,6 +167,7 @@ export async function createE2EEnv(): Promise<E2EEnv> {
     registry,
     interactionStore,
     memoryStore,
+    workflowStore,
     sink,
     repoDir,
     logsDir,

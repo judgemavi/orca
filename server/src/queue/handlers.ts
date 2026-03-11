@@ -1,4 +1,3 @@
-import { JOB_PRIORITIES } from '@orca/types';
 import type { EventSink } from '../api/ws';
 import { isAutoRun } from '../config/config';
 import { runExplore } from '../domain/explore';
@@ -160,12 +159,18 @@ export function registerJobHandlers(
       const firstStep = updated?.currentStep ?? 'plan';
       const auto = await shouldAutoRun(deps, taskId, firstStep);
       if (auto) {
+        const compiled = deps.workflowStore.resolve(
+          updated?.workflow ?? undefined,
+        );
+        let stepPriority = 5;
+        try {
+          stepPriority =
+            resolveStepMeta(compiled.machine, firstStep).meta.priority ?? 5;
+        } catch {}
         await deps.queue.enqueue({
           type: firstStep,
           taskId,
-          priority:
-            JOB_PRIORITIES[firstStep as keyof typeof JOB_PRIORITIES] ??
-            JOB_PRIORITIES.plan,
+          priority: stepPriority,
         });
       }
 

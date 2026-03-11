@@ -61,9 +61,19 @@ export function StepActions() {
     return latest?.stepName === task.currentStep;
   }, [task.currentStep, interactionsQuery.data]);
 
+  const hasRunningInteraction = useMemo(() => {
+    if (!task.currentStep || !interactionsQuery.data) return false;
+    return interactionsQuery.data.some(
+      (ix) =>
+        ix.stepName === task.currentStep &&
+        ix.status === INTERACTION_STATUSES.running,
+    );
+  }, [task.currentStep, interactionsQuery.data]);
+
   const stepBusy =
     isOperationRunning(task.currentStep ?? '', task.id) ||
-    task.status === 'running';
+    task.status === 'running' ||
+    hasRunningInteraction;
 
   const handleBranchClick = (branch: { name: string; fields: string[] }) => {
     if (branch.fields.length > 0) {
@@ -187,14 +197,6 @@ export function StepActions() {
       </div>
     );
   } else if (hasOutput || isDecisionStep) {
-    feedbackNode = (
-      <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-[13px]">
-        <span className="font-medium">
-          {hasOutput ? 'Completed:' : 'Next step:'}
-        </span>{' '}
-        <span className="font-mono text-accent">{task.currentStep}</span>
-      </div>
-    );
     actionButtons = (
       <div className="flex gap-2">
         {branches.map((branch, i) => (
@@ -221,12 +223,6 @@ export function StepActions() {
       </div>
     );
   } else {
-    feedbackNode = (
-      <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-[13px]">
-        <span className="font-medium">Next step:</span>{' '}
-        <span className="font-mono text-accent">{task.currentStep}</span>
-      </div>
-    );
     actionButtons = (
       <div className="flex gap-2">
         <Button

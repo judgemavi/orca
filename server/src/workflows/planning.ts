@@ -1,6 +1,6 @@
 import {
   INTERACTION_STATUSES,
-  JOB_PRIORITIES,
+  SYSTEM_JOB_PRIORITIES,
   TASK_STATUSES,
 } from '@orca/types';
 import { nanoid } from 'nanoid';
@@ -196,7 +196,7 @@ export async function acceptBreakdown(
         await deps.queue.enqueue({
           type: 'evaluate',
           taskId,
-          priority: JOB_PRIORITIES.evaluate,
+          priority: SYSTEM_JOB_PRIORITIES.evaluate,
         });
       }
     }

@@ -1,9 +1,9 @@
 import { isAutoRun } from '../config/config';
 import type { OrcaDrizzleDB } from '../db/connection';
-import type { WorkflowStore } from './store';
 import * as configStore from '../store/config';
 import * as taskStore from '../store/tasks';
 import { resolveStepMeta } from './paths';
+import type { WorkflowStore } from './store';
 
 export async function shouldAutoRun(
   deps: {

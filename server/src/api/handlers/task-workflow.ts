@@ -25,14 +25,14 @@ import {
   parseWorkflowOutput,
   stringifyWorkflowOutput,
 } from '../../workflow/output';
+import type { AnyStateNode } from '../../workflow/paths';
+import { getTransitionEvents } from '../../workflow/paths';
 import {
   createSyntheticStepInteraction,
   loadCurrentTaskStep,
 } from '../../workflow/step-actions';
 import type { WorkflowStore } from '../../workflow/store';
-import type { AnyStateNode } from '../../workflow/paths';
 import type { StepMeta } from '../../workflow/types';
-import { getTransitionEvents } from '../../workflow/paths';
 import {
   acceptBreakdown,
   breakdownTask,
@@ -81,7 +81,10 @@ export function taskWorkflowRoutes(deps: {
           if (child.type === 'final') continue;
           const meta = (child.meta ?? {}) as StepMeta;
           const hasChildren =
-            child.states && Object.keys(child.states).filter((k) => child.states![k]?.type !== 'final').length > 0;
+            child.states &&
+            Object.keys(child.states).filter(
+              (k) => child.states![k]?.type !== 'final',
+            ).length > 0;
           out[name] = {
             type: meta.type ?? 'unknown',
             executor: meta.executor ?? null,
@@ -158,9 +161,7 @@ export function taskWorkflowRoutes(deps: {
           deps.interactionStore,
         );
         if (!has) {
-          throw new Error(
-            `no completed output for step "${task.currentStep}"`,
-          );
+          throw new Error(`no completed output for step "${task.currentStep}"`);
         }
 
         const compiled = await deps.workflowStore.resolve(
@@ -258,10 +259,13 @@ export function taskWorkflowRoutes(deps: {
 
         try {
           await assertNoRunningInteraction(taskID, deps.interactionStore);
-          const { currentStep, step, stateNode } = await loadCurrentTaskStep(taskID, {
-            db,
-            workflowStore: deps.workflowStore,
-          });
+          const { currentStep, step, stateNode } = await loadCurrentTaskStep(
+            taskID,
+            {
+              db,
+              workflowStore: deps.workflowStore,
+            },
+          );
           if (step.type !== 'context' && step.type !== 'decision') {
             return c.json(
               {
@@ -616,9 +620,14 @@ export function taskWorkflowRoutes(deps: {
     });
 }
 
-async function assertNoRunningInteraction(taskID: string, interactionStore: InteractionStore) {
+async function assertNoRunningInteraction(
+  taskID: string,
+  interactionStore: InteractionStore,
+) {
   if (await interactionStore.hasRunningForTask(taskID)) {
-    throw new Error('a step is currently running for this task — wait for it to complete before taking action');
+    throw new Error(
+      'a step is currently running for this task — wait for it to complete before taking action',
+    );
   }
 }
 

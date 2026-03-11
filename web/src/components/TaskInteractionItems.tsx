@@ -85,6 +85,10 @@ export function TaskInteractionItems({
       .reverse()
       .find((item) => item.status === INTERACTION_STATUSES.running)?.id ?? null;
 
+  const hasRunningInteraction = stubs.some(
+    (item) => item.status === INTERACTION_STATUSES.running,
+  );
+
   const taskId = task.id;
 
   // Group consecutive stubs that share a dotted parent (e.g. "implement.code" → "implement")
@@ -115,6 +119,7 @@ export function TaskInteractionItems({
       showDiffSummary={item.type === 'code'}
       canReset={
         task.status !== TASK_STATUSES.running &&
+        !hasRunningInteraction &&
         item.status === INTERACTION_STATUSES.completed
       }
       onReset={(id) => actions.handleReset(id)}

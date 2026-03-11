@@ -39,8 +39,8 @@ describe('JobQueue.enqueue', () => {
   });
 
   test('assigns default priority from type', async () => {
-    const job = await ctx.queue.enqueue({ type: 'code' });
-    expect(job.priority).toBe(0); // code = 0 (highest)
+    const job = await ctx.queue.enqueue({ type: 'evaluate' });
+    expect(job.priority).toBe(3); // evaluate = 3 (system job)
   });
 
   test('accepts custom priority', async () => {
@@ -64,8 +64,8 @@ describe('JobQueue.claim', () => {
   test('claims queued jobs by priority then createdAt', async () => {
     await createTask('low-pri');
     await createTask('high-pri');
-    await ctx.queue.enqueue({ type: 'evaluate', taskId: 'low-pri' }); // pri 3
-    await ctx.queue.enqueue({ type: 'code', taskId: 'high-pri' }); // pri 0
+    await ctx.queue.enqueue({ type: 'retro', taskId: 'low-pri' }); // pri 6
+    await ctx.queue.enqueue({ type: 'evaluate', taskId: 'high-pri' }); // pri 3
 
     const claimed = await ctx.queue.claim(2);
     expect(claimed).toHaveLength(2);

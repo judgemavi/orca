@@ -12,7 +12,9 @@ export function extractInitialName(initial: unknown): string | null {
     // XState v5 InitialTransitionDefinition: { target: StateNode[] }
     const asObj = initial as { target?: unknown };
     if (Array.isArray(asObj.target) && asObj.target.length > 0) {
-      const first = asObj.target[0] as { id?: string; key?: string } | undefined;
+      const first = asObj.target[0] as
+        | { id?: string; key?: string }
+        | undefined;
       return first?.key ?? first?.id?.split(':').pop() ?? null;
     }
     // Fallback: { target: string }
@@ -68,7 +70,9 @@ export function resolveStepMeta(
     const seg = segments[i]!;
     const child = stateNode.states?.[seg];
     if (!child) {
-      throw new Error(`step "${dottedPath}" not found in workflow "${machine.id}"`);
+      throw new Error(
+        `step "${dottedPath}" not found in workflow "${machine.id}"`,
+      );
     }
 
     if (i < segments.length - 1) {

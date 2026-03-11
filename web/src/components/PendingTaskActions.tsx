@@ -151,24 +151,16 @@ export function PendingTaskActions() {
       }
       actionError={stepError ?? actions.actionError}
       feedback={
-        hasCurrentStep ? (
-          <div className="space-y-2">
-            <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-[13px]">
-              <span className="font-medium">Next step:</span>{' '}
-              <span className="font-mono text-accent">{task.currentStep}</span>
-            </div>
-            {manualMode && (
-              <textarea
-                className="w-full rounded-md border border-border-subtle bg-surface-alt px-3 py-2 font-mono text-sm"
-                rows={10}
-                placeholder={`Enter ${task.currentStep} output manually…`}
-                value={manualOutput}
-                onChange={(e) => setManualOutput(e.target.value)}
-                // biome-ignore lint/a11y/noAutofocus: manual editor needs focus
-                autoFocus
-              />
-            )}
-          </div>
+        hasCurrentStep && manualMode ? (
+          <textarea
+            className="w-full rounded-md border border-border-subtle bg-surface-alt px-3 py-2 font-mono text-sm"
+            rows={10}
+            placeholder={`Enter ${task.currentStep} output manually…`}
+            value={manualOutput}
+            onChange={(e) => setManualOutput(e.target.value)}
+            // biome-ignore lint/a11y/noAutofocus: manual editor needs focus
+            autoFocus
+          />
         ) : null
       }
       actions={actionButtons}

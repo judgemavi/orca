@@ -31,26 +31,35 @@ export const JOB_STATUSES = {
 
 export type JobStatus = (typeof JOB_STATUSES)[keyof typeof JOB_STATUSES];
 
-export const JOB_TYPES = {
-  code: 'code',
+export const SYSTEM_JOB_TYPES = {
   evaluate: 'evaluate',
-  plan: 'plan',
   breakdown: 'breakdown',
-  review: 'review',
   explore: 'explore',
-  merge: 'merge',
   retro: 'retro',
 } as const;
 
-export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
+export type SystemJobType =
+  (typeof SYSTEM_JOB_TYPES)[keyof typeof SYSTEM_JOB_TYPES];
 
-export const JOB_PRIORITIES: Record<JobType, number> = {
-  code: 0,
-  review: 1,
-  merge: 2,
+export const SYSTEM_JOB_PRIORITIES: Record<SystemJobType, number> = {
   evaluate: 3,
-  plan: 4,
   breakdown: 4,
   explore: 5,
   retro: 6,
 };
+
+/** @deprecated Use SYSTEM_JOB_PRIORITIES for system jobs; workflow step priorities are in StepMeta.priority */
+export const JOB_PRIORITIES: Record<string, number> = {
+  ...SYSTEM_JOB_PRIORITIES,
+};
+
+/** @deprecated Use SYSTEM_JOB_TYPES; workflow steps are dynamic */
+export const JOB_TYPES = {
+  ...SYSTEM_JOB_TYPES,
+  code: 'code',
+  plan: 'plan',
+  review: 'review',
+  merge: 'merge',
+} as const;
+
+export type JobType = string;
