@@ -1,8 +1,4 @@
-import {
-  SYSTEM_JOB_PRIORITIES,
-  TASK_STATUSES,
-  type TaskStatus,
-} from '@orca/types';
+import { SYSTEM_JOB_PRIORITIES, type TaskStatus } from '@orca/types';
 import { nanoid } from 'nanoid';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
@@ -15,6 +11,7 @@ import type { JobQueue } from '../queue/queue';
 import type { InteractionStore } from '../store/interactions';
 import * as questionStore from '../store/questions';
 import * as taskStore from '../store/tasks';
+import type { JobPayload } from '../types/models';
 import { resolveStepMeta } from '../workflow/paths';
 import type { WorkflowStore } from '../workflow/store';
 
@@ -237,7 +234,7 @@ export async function provideInput(
 
 export async function enqueueCurrentStep(
   taskId: string,
-  payload: Record<string, unknown> | undefined,
+  payload: JobPayload | undefined,
   deps: EnqueueDeps,
 ): Promise<EnqueueResult> {
   const task = await taskStore.getTask(deps.db, taskId).catch(() => {
@@ -320,7 +317,7 @@ export async function stopTask(
   await deps.queue.cancelForTask(taskId);
 
   if (task.status === 'running') {
-    await taskStore.updateTaskStatus(db, sink, taskId, TASK_STATUSES.stopped);
+    await taskStore.updateTask(db, sink, taskId, { status: 'stopped' });
   }
 
   return { taskId, status: 'stopped' };

@@ -704,7 +704,6 @@ export function registerTaskCommands(task: Command, deps: AppDeps) {
         const result = await enqueueCurrentStep(
           id,
           {
-            prompt: opts.prompt ?? '',
             tool: opts.tool ?? '',
             model: opts.model ?? '',
             ...(opts.feedback ? { feedback: opts.feedback } : {}),

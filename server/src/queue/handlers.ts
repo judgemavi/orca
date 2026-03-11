@@ -23,10 +23,6 @@ import { createGenericStepHandler } from './step-handler';
 
 type HandlerDeps = AppDeps & { sink: EventSink };
 
-function str(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
 function engineDeps(deps: HandlerDeps): WorkflowEngineDeps {
   return {
     db: deps.db,
@@ -58,16 +54,18 @@ export function registerJobHandlers(
         interactions: deps.interactionStore,
         registry: deps.registry,
         workflowStore: deps.workflowStore,
-        toolOverride: str(job.payload?.tool),
-        modelOverride: str(job.payload?.model),
-        resumeSessionID: str(job.payload?.resumeSessionID) || undefined,
-        feedback: str(job.payload?.feedback) || undefined,
+        toolOverride: job.payload?.tool ?? '',
+        modelOverride: job.payload?.model ?? '',
+        resumeSessionID: job.payload?.resumeSessionID || undefined,
+        feedback: job.payload?.feedback || undefined,
       });
 
       deps.sink.broadcast('evaluate.completed', { taskId, evaluation });
 
       if (evaluation.needsUserInput && evaluation.userInputQuestion) {
-        await taskStore.updateTaskStatus(deps.db, deps.sink, taskId, 'stopped');
+        await taskStore.updateTask(deps.db, deps.sink, taskId, {
+          status: 'stopped',
+        });
         await questionStore.createQuestion(deps.db, {
           taskId,
           question: evaluation.userInputQuestion,
@@ -85,8 +83,8 @@ export function registerJobHandlers(
           const result = await breakdownTask(
             {
               taskId,
-              toolOverride: str(job.payload?.tool),
-              modelOverride: str(job.payload?.model),
+              toolOverride: job.payload?.tool ?? '',
+              modelOverride: job.payload?.model ?? '',
             },
             {
               repoDir: deps.repoDir,
@@ -191,9 +189,9 @@ export function registerJobHandlers(
       const result = await breakdownTask(
         {
           taskId: taskId,
-          goal: str(job.payload?.goal),
-          toolOverride: str(job.payload?.tool),
-          modelOverride: str(job.payload?.model),
+          goal: job.payload?.goal ?? '',
+          toolOverride: job.payload?.tool ?? '',
+          modelOverride: job.payload?.model ?? '',
         },
         {
           repoDir: deps.repoDir,
@@ -275,9 +273,9 @@ export function registerJobHandlers(
         memory: deps.memoryStore,
         config,
         registry: deps.registry,
-        query: str(job.payload?.query),
-        toolOverride: str(job.payload?.tool),
-        modelOverride: str(job.payload?.model),
+        query: job.payload?.query ?? '',
+        toolOverride: job.payload?.tool ?? '',
+        modelOverride: job.payload?.model ?? '',
       });
 
       deps.sink.broadcast('explore.completed', { path: result.path });

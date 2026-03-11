@@ -4,7 +4,7 @@ import type { OrcaDrizzleDB } from '../db/connection';
 import type { ToolPluginEvent } from '../plugin/types';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
-import { updateTaskStatus } from '../store/tasks';
+import * as taskStore from '../store/tasks';
 
 interface OutcomeInput {
   exitCode: number;
@@ -177,7 +177,7 @@ export async function persistSuccess(
   deps: ResultCoordinatorDeps,
   input: PersistSuccessfulTaskResultInput,
 ): Promise<void> {
-  await updateTaskStatus(deps.db, deps.sink, input.taskID, input.result.status);
+  await persistResultStatus(deps, input.taskID, input.result.status);
   reinforceMemoryConfidence(deps, input.taskID, input.result.exitCode);
 
   finishInteraction(
@@ -193,8 +193,26 @@ export async function persistFailure(
   deps: ResultCoordinatorDeps,
   input: PersistTaskResultInput,
 ): Promise<void> {
-  await updateTaskStatus(deps.db, deps.sink, input.taskID, input.result.status);
+  await persistResultStatus(deps, input.taskID, input.result.status);
   finishInteraction(deps, input.interactionID, input.result, input.model);
+}
+
+async function persistResultStatus(
+  deps: ResultCoordinatorDeps,
+  taskID: string,
+  resultStatus: TaskStatus,
+): Promise<void> {
+  if (resultStatus === 'stopped' || resultStatus === 'failed') {
+    await taskStore.updateTask(deps.db, deps.sink, taskID, {
+      status: resultStatus,
+    });
+  } else if (resultStatus === 'review') {
+    await taskStore.updateTask(deps.db, deps.sink, taskID, {
+      status: 'review',
+    });
+  }
+  // For other statuses (merged, planned), let the workflow engine handle it
+  // via completeStepActor after the machine transitions.
 }
 
 function finishInteraction(

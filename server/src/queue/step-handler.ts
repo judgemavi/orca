@@ -44,10 +44,6 @@ function isStoppedError(err: unknown): err is StoppedError {
   return err instanceof Error && err.name === 'StoppedError';
 }
 
-function str(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
 function engineDeps(deps: StepHandlerDeps): WorkflowEngineDeps {
   return {
     db: deps.db,
@@ -127,15 +123,14 @@ export function createGenericStepHandler(
         })
       : '';
 
-    const payloadContext = str(job.payload?.context);
+    const payloadContext = job.payload?.context ?? '';
     const mergedContext = [consumedContext, payloadContext]
       .filter(Boolean)
       .join('\n\n---\n\n');
 
-    const toolOverride = str(job.payload?.tool) || stepMeta.tool || '';
-    const modelOverride = str(job.payload?.model) || stepMeta.model || '';
-    const previousInteractionId =
-      str(job.payload?.previousInteractionId) || null;
+    const toolOverride = job.payload?.tool || stepMeta.tool || '';
+    const modelOverride = job.payload?.model || stepMeta.model || '';
+    const previousInteractionId = job.payload?.previousInteractionId || null;
 
     deps.sink.broadcast(`${stepName}.started` as KnownWSEventType, { taskId });
 
@@ -268,7 +263,7 @@ async function executeLLMStep(
   const worktreePath = await findTaskWorktree(deps.repoDir, taskId);
   const memoryContext = await retrieveMemoryContext(taskId, deps);
 
-  const feedback = str(job.payload?.feedback);
+  const feedback = job.payload?.feedback ?? '';
   const extraParts: string[] = [];
 
   if (stepMeta.type === 'context' || stepMeta.type === 'decision') {
@@ -411,7 +406,7 @@ async function executeAgentStep(
   deps: StepHandlerDeps,
   previousInteractionId?: string | null,
 ): Promise<StepResult> {
-  const feedback = str(job.payload?.feedback);
+  const feedback = job.payload?.feedback ?? '';
   const resumeSessionID = await resolveResumeSessionID(
     taskId,
     stepName,
@@ -451,10 +446,10 @@ async function resolveResumeSessionID(
   job: Job,
   deps: StepHandlerDeps,
 ): Promise<string | undefined> {
-  const explicitResumeSessionID = str(job.payload?.resumeSessionID).trim();
+  const explicitResumeSessionID = (job.payload?.resumeSessionID ?? '').trim();
   if (explicitResumeSessionID) return explicitResumeSessionID;
 
-  const feedback = str(job.payload?.feedback).trim();
+  const feedback = (job.payload?.feedback ?? '').trim();
   if (!feedback) return undefined;
 
   const stepInteractions = await deps.interactionStore.listByStepName(

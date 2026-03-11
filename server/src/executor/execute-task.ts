@@ -2,7 +2,7 @@ import type { TaskStatus } from '@orca/types';
 import type { TaskEntry } from '../db/schema';
 import { ORCHESTRATOR_ALLOWED_TOOLS } from '../orchestrator/bootstrap';
 import { toErrorMessage } from '../shared/errors';
-import { getTask, updateTaskStatus } from '../store/tasks';
+import { getTask, updateTask } from '../store/tasks';
 import { ensureTaskWorktree } from './batch';
 import { buildTaskContextSection } from './context';
 import {
@@ -72,7 +72,7 @@ export async function executeTaskRun(input: {
     interactionLogPath = interaction.logPath;
   }
 
-  await updateTaskStatus(deps.db, deps.sink, task.id, 'running');
+  await updateTask(deps.db, deps.sink, task.id, { status: 'running' });
 
   const controller = new AbortController();
   runtime.registerController(task.id, controller);

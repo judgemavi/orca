@@ -6,7 +6,7 @@ import {
 } from '../domain/worktree';
 import { toErrorMessage } from '../shared/errors';
 import { gitRun } from '../shared/git';
-import { getTask, updateTaskStatus } from '../store/tasks';
+import { getTask, updateTask } from '../store/tasks';
 import type { ExecutorDeps } from './types';
 import { RUNNABLE_STATUSES } from './types';
 
@@ -96,7 +96,7 @@ async function rollbackPreparation(
   for (const taskID of taskIDs) {
     await removeTaskWorktree(deps, taskID).catch(() => {});
     try {
-      await updateTaskStatus(deps.db, deps.sink, taskID, 'planned');
+      await updateTask(deps.db, deps.sink, taskID, { status: 'planned' });
     } catch {
       // Ignore reset failures during rollback.
     }

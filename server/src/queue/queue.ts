@@ -9,7 +9,7 @@ import { nanoid } from 'nanoid';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import { jobs as jobsTable } from '../db/schema';
-import type { Job } from '../types/models';
+import type { Job, JobPayload } from '../types/models';
 
 type JobRow = typeof jobsTable.$inferSelect;
 
@@ -28,9 +28,7 @@ function mapJob(row: JobRow): Job {
     taskId: row.taskId,
     status: row.status as JobStatus,
     priority: row.priority,
-    payload: row.payload
-      ? (JSON.parse(row.payload) as Record<string, unknown>)
-      : null,
+    payload: row.payload ? (JSON.parse(row.payload) as JobPayload) : null,
     error: row.error,
     result: row.result
       ? (JSON.parse(row.result) as Record<string, unknown>)
@@ -57,7 +55,7 @@ export class JobQueue {
     type: string;
     taskId?: string;
     priority?: number;
-    payload?: Record<string, unknown>;
+    payload?: JobPayload;
   }): Promise<Job> {
     const id = nanoid();
     const priority =

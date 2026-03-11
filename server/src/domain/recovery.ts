@@ -33,7 +33,7 @@ export async function failInFlightForShutdown(
       const task = await taskStore.getTask(db, item.taskId);
       if (task && task.status === TASK_STATUSES.running) {
         const sessionId = await interactions.getLatestSessionId(task.id);
-        const next = sessionId ? TASK_STATUSES.stopped : TASK_STATUSES.failed;
+        const next = sessionId ? 'stopped' : 'failed';
         await taskStore.updateTask(db, undefined, task.id, { status: next });
         if (next === TASK_STATUSES.stopped) tasksStopped += 1;
         else tasksFailed += 1;
@@ -107,7 +107,7 @@ export async function runStartupRecovery(
     const runningTasks = await taskStore.listTasks(db, TASK_STATUSES.running);
     for (const task of runningTasks) {
       const sessionId = await interactions.getLatestSessionId(task.id);
-      const next = sessionId ? TASK_STATUSES.stopped : TASK_STATUSES.failed;
+      const next = sessionId ? 'stopped' : 'failed';
       await taskStore.updateTask(db, undefined, task.id, { status: next });
 
       if (next === TASK_STATUSES.stopped) tasksStopped += 1;

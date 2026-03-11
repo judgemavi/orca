@@ -160,9 +160,11 @@ export async function completeStepActor(
       outcome,
     });
     await taskStore.updateTask(deps.db, undefined, taskId, {
-      status: 'stopped',
       currentStep: newCurrentStep,
       workflowSnapshot: JSON.stringify(newPersistedSnapshot),
+    });
+    await taskStore.updateTask(deps.db, deps.sink, taskId, {
+      status: 'stopped',
     });
     await questionStore.createQuestion(deps.db, {
       taskId,
@@ -180,14 +182,15 @@ export async function completeStepActor(
   }
 
   if (isFinished) {
-    await taskStore.updateTask(deps.db, undefined, taskId, {
+    await taskStore.updateTask(deps.db, deps.sink, taskId, {
       currentStep: null,
       workflowSnapshot: JSON.stringify(newPersistedSnapshot),
+      status: 'merged',
     });
     return { finished: true };
   }
 
-  await taskStore.updateTask(deps.db, undefined, taskId, {
+  await taskStore.updateTask(deps.db, deps.sink, taskId, {
     currentStep: newCurrentStep,
     workflowSnapshot: JSON.stringify(newPersistedSnapshot),
   });

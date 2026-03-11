@@ -57,13 +57,24 @@ export interface InteractionWithContent extends Interaction {
   rawContent?: string;
 }
 
+export interface JobPayload {
+  tool?: string;
+  model?: string;
+  context?: string;
+  feedback?: string;
+  resumeSessionID?: string;
+  previousInteractionId?: string;
+  goal?: string;
+  query?: string;
+}
+
 export type Job = Omit<
   JobEntry,
   'type' | 'status' | 'payload' | 'result' | 'startedAt' | 'completedAt'
 > & {
   type: JobType;
   status: JobStatus;
-  payload: Record<string, unknown> | null;
+  payload: JobPayload | null;
   result: Record<string, unknown> | null;
   startedAt: string | null;
   completedAt: string | null;

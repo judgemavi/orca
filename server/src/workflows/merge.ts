@@ -56,21 +56,14 @@ export async function mergeTask(
     : await mergeTaskWithGit(taskID, baseDeps);
 
   if (result.status !== TASK_STATUSES.merged) {
-    await taskStore.updateTaskStatus(
-      deps.db,
-      deps.sink,
-      taskID,
-      TASK_STATUSES.failed,
-    );
+    await taskStore.updateTask(deps.db, deps.sink, taskID, {
+      status: 'failed',
+    });
     return result;
   }
 
-  await taskStore.updateTaskStatus(
-    deps.db,
-    deps.sink,
-    taskID,
-    TASK_STATUSES.merged,
-  );
+  // Don't syncTaskStatus here — the workflow engine will do it after
+  // completeStepActor transitions the machine to its finish state.
   triggerPostMergeHooks(taskID, {
     repoDir: deps.repoDir,
     db: deps.db,

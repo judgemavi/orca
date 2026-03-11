@@ -1,28 +1,6 @@
 import type { AnyStateMachine } from 'xstate';
 import type { StepMeta, TransitionMeta } from './types';
 
-/**
- * Extract the initial state name from XState's `initial` field.
- * In compiled machines it's an `InitialTransitionDefinition` with a `target` array.
- * In raw config it's a plain string.
- */
-export function extractInitialName(initial: unknown): string | null {
-  if (typeof initial === 'string') return initial || null;
-  if (initial && typeof initial === 'object') {
-    // XState v5 InitialTransitionDefinition: { target: StateNode[] }
-    const asObj = initial as { target?: unknown };
-    if (Array.isArray(asObj.target) && asObj.target.length > 0) {
-      const first = asObj.target[0] as
-        | { id?: string; key?: string }
-        | undefined;
-      return first?.key ?? first?.id?.split(':').pop() ?? null;
-    }
-    // Fallback: { target: string }
-    if (typeof asObj.target === 'string') return asObj.target || null;
-  }
-  return null;
-}
-
 export function parsePath(step: string): string[] {
   return step.split('.');
 }

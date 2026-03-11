@@ -237,7 +237,6 @@ export function taskWorkflowRoutes(deps: {
           const result = await enqueueCurrentStep(
             taskID,
             {
-              prompt: body.prompt ?? '',
               tool: body.tool ?? '',
               model: body.model ?? '',
             },
@@ -551,11 +550,6 @@ export function taskWorkflowRoutes(deps: {
             queue: deps.queue,
             workflowStore: deps.workflowStore,
             interactionStore: deps.interactionStore,
-          });
-
-          broadcast(sink, 'task.updated', {
-            id: taskID,
-            status: 'pending',
           });
 
           return c.json(

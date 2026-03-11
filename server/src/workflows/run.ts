@@ -89,7 +89,7 @@ export async function stopTask(
 
   try {
     await taskStore.updateTask(db, sink, normalizedTaskID, {
-      status: TASK_STATUSES.stopped,
+      status: 'stopped',
     });
   } catch (error) {
     const message = String(error);

@@ -8,6 +8,7 @@ import { gitRun } from '../shared/git';
 import type { InteractionStore } from '../store/interactions';
 import * as taskStore from '../store/tasks';
 import { resolveStepMeta } from '../workflow/paths';
+
 import type { WorkflowStore } from '../workflow/store';
 
 interface ResetOpts {

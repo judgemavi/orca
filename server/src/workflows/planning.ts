@@ -1,8 +1,4 @@
-import {
-  INTERACTION_STATUSES,
-  SYSTEM_JOB_PRIORITIES,
-  TASK_STATUSES,
-} from '@orca/types';
+import { INTERACTION_STATUSES, SYSTEM_JOB_PRIORITIES } from '@orca/types';
 import { nanoid } from 'nanoid';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
@@ -203,12 +199,9 @@ export async function acceptBreakdown(
   }
 
   if (normalizedParentID) {
-    await taskStore.updateTaskStatus(
-      deps.db,
-      deps.sink,
-      normalizedParentID,
-      TASK_STATUSES.broken_down,
-    );
+    await taskStore.updateTask(deps.db, deps.sink, normalizedParentID, {
+      status: 'broken_down',
+    });
   }
 
   return {
