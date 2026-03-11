@@ -1,12 +1,10 @@
 import { TASK_STATUSES } from '@orca/server/types';
 import { useTaskDetailContext } from '../context/TaskDetailContext';
-import { ApprovedTaskActions } from './ApprovedTaskActions';
 import { Button } from './Button';
 import { FailedTaskActions } from './FailedTaskActions';
 import { MergedTaskActions } from './MergedTaskActions';
 import { PendingTaskActions } from './PendingTaskActions';
-import { ReviewTaskActions } from './ReviewTaskActions';
-import { RunningTaskActions } from './RunningTaskActions';
+import { StepActions } from './StepActions';
 import { TaskActionsLayout } from './TaskActionsLayout';
 
 interface Props {
@@ -16,32 +14,7 @@ interface Props {
 export function TaskActionsBar({ onClose }: Props) {
   const { task } = useTaskDetailContext();
 
-  if (
-    task.status === TASK_STATUSES.pending ||
-    task.status === TASK_STATUSES.planned
-  ) {
-    return <PendingTaskActions />;
-  }
-
-  if (task.status === TASK_STATUSES.running) {
-    return <RunningTaskActions />;
-  }
-
-  if (task.status === TASK_STATUSES.review) {
-    return <ReviewTaskActions />;
-  }
-
-  if (task.status === TASK_STATUSES.approved) {
-    return <ApprovedTaskActions />;
-  }
-
-  if (
-    task.status === TASK_STATUSES.failed ||
-    task.status === TASK_STATUSES.stopped
-  ) {
-    return <FailedTaskActions />;
-  }
-
+  // Terminal states
   if (task.status === TASK_STATUSES.merged) {
     return <MergedTaskActions onClose={onClose} />;
   }
@@ -65,5 +38,19 @@ export function TaskActionsBar({ onClose }: Props) {
     );
   }
 
-  return null;
+  // Failed/stopped — special handling for resume, pending questions
+  if (
+    task.status === TASK_STATUSES.failed ||
+    task.status === TASK_STATUSES.stopped
+  ) {
+    return <FailedTaskActions />;
+  }
+
+  // Has a workflow step → dynamic step actions
+  if (task.currentStep) {
+    return <StepActions />;
+  }
+
+  // Pre-workflow (no currentStep) → evaluate/breakdown
+  return <PendingTaskActions />;
 }

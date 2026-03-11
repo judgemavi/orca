@@ -2,7 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { api } from '../api';
 import { queryKeys } from '../lib/queryKeys';
-import type { ListMemoryParams, UpdateMemoryInput } from '../types';
+import type {
+  ListMemoryParams,
+  MemoryEntry,
+  MemoryEntryDetail,
+  MemoryQueryResult,
+  UpdateMemoryInput,
+} from '../types';
 
 // ── Tasks ───────────────────────────────────────────────────────────────
 
@@ -28,6 +34,18 @@ export function useConfigQuery() {
 
 export function useStatusQuery() {
   return useQuery({ queryKey: queryKeys.status, queryFn: api.getStatus });
+}
+
+export function useCurrentStepQuery(
+  taskId: string,
+  stepName?: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.currentStep(taskId, stepName),
+    queryFn: () => api.getCurrentStep(taskId),
+    enabled,
+  });
 }
 
 export function useEmbeddingProvidersQuery() {
@@ -83,47 +101,10 @@ export function useRunningOperations() {
   return { operations, isRunning };
 }
 
-// ── Reviews ─────────────────────────────────────────────────────────────
-
-export function useTaskReviewsQuery(taskId: string) {
-  return useQuery({
-    queryKey: queryKeys.taskReviews(taskId),
-    queryFn: () => api.getTaskReviews(taskId),
-    enabled: Boolean(taskId),
-  });
-}
-
-// ── Plan ────────────────────────────────────────────────────────────────
-
-export function useTaskPlanQuery(taskId: string) {
-  return useQuery({
-    queryKey: queryKeys.taskPlan(taskId),
-    queryFn: () => api.getTaskPlan(taskId),
-    enabled: Boolean(taskId),
-  });
-}
-
-export function useSavePlanMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ taskId, plan }: { taskId: string; plan: string }) =>
-      api.saveTaskPlan(taskId, plan),
-    onSuccess: async (_data, variables) => {
-      queryClient.setQueryData(
-        queryKeys.taskPlan(variables.taskId),
-        variables.plan,
-      );
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.taskPlan(variables.taskId),
-      });
-    },
-  });
-}
-
 // ── Memory ───────────────────────────────────────────────────────────
 
 export function useMemoryQuery(params?: ListMemoryParams) {
-  return useQuery({
+  return useQuery<MemoryEntry[]>({
     queryKey: queryKeys.memoryList(params),
     queryFn: () => api.listMemory(params),
   });
@@ -182,7 +163,7 @@ export function useRefreshMemoryMutation() {
 }
 
 export function useMemoryEntryQuery(id?: string) {
-  return useQuery({
+  return useQuery<MemoryEntryDetail>({
     queryKey: queryKeys.memoryEntry(id ?? ''),
     queryFn: () => api.getMemory(id ?? ''),
     enabled: Boolean(id),
@@ -190,7 +171,7 @@ export function useMemoryEntryQuery(id?: string) {
 }
 
 export function useMemorySemanticQuery(q: string, limit?: number) {
-  return useQuery({
+  return useQuery<MemoryQueryResult[]>({
     queryKey: queryKeys.memoryQuery(q, limit),
     queryFn: () => api.queryMemory(q, limit),
     enabled: q.trim().length > 0,

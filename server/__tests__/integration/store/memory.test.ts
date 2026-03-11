@@ -106,7 +106,7 @@ describe('MemoryStore', () => {
 
     const filtered = await store.list({ category: 'architecture' });
     expect(filtered).toHaveLength(1);
-    expect(filtered[0].category).toBe('architecture');
+    expect(filtered[0]!.category).toBe('architecture');
   });
 
   // 6. list with tag filter
@@ -116,7 +116,7 @@ describe('MemoryStore', () => {
 
     const filtered = await store.list({ tag: 'db' });
     expect(filtered).toHaveLength(1);
-    expect(filtered[0].tags).toContain('db');
+    expect(filtered[0]!.tags).toContain('db');
   });
 
   // 7. list with sourceType filter
@@ -126,7 +126,7 @@ describe('MemoryStore', () => {
 
     const filtered = await store.list({ sourceType: 'explore' });
     expect(filtered).toHaveLength(1);
-    expect(filtered[0].sourceType).toBe('explore');
+    expect(filtered[0]!.sourceType).toBe('explore');
   });
 
   // 8. list with filePath filter
@@ -136,7 +136,7 @@ describe('MemoryStore', () => {
 
     const filtered = await store.list({ filePath: 'src/a.ts' });
     expect(filtered).toHaveLength(1);
-    expect(filtered[0].filePaths).toContain('src/a.ts');
+    expect(filtered[0]!.filePaths).toContain('src/a.ts');
   });
 
   // 9. list with staleOnly filter
@@ -147,7 +147,7 @@ describe('MemoryStore', () => {
 
     const filtered = await store.list({ staleOnly: true });
     expect(filtered).toHaveLength(1);
-    expect(filtered[0].id).toBe(e1.id);
+    expect(filtered[0]!.id).toBe(e1.id);
   });
 
   // 10. update
@@ -283,7 +283,7 @@ describe('MemoryStore', () => {
 
     const found = await store.findByFilePaths(['src/x.ts']);
     expect(found).toHaveLength(1);
-    expect(found[0].filePaths).toContain('src/x.ts');
+    expect(found[0]!.filePaths).toContain('src/x.ts');
   });
 
   // 25. findByInteractionId
@@ -314,7 +314,7 @@ describe('MemoryStore', () => {
 
     const found = await store.findByInteractionId('int-99');
     expect(found).toHaveLength(1);
-    expect(found[0].sourceInteractionId).toBe('int-99');
+    expect(found[0]!.sourceInteractionId).toBe('int-99');
   });
 
   // 26. findStaleEntries
@@ -328,7 +328,7 @@ describe('MemoryStore', () => {
 
     const stale = await store.findStaleEntries();
     expect(stale).toHaveLength(1);
-    expect(stale[0].id).toBe(e1.id);
+    expect(stale[0]!.id).toBe(e1.id);
   });
 
   // 27. findSupersededIDs

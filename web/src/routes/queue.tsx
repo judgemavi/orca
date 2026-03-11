@@ -73,7 +73,7 @@ function JobRow({
             params={{ taskId: job.taskId }}
             className="font-mono text-accent hover:underline"
           >
-            {job.taskId.slice(0, 8)}
+            {job.taskId}
           </Link>
         ) : (
           <span className="text-muted">—</span>

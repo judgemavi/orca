@@ -1,4 +1,6 @@
+import type { TaskStatus } from '@orca/types';
 import { resolveModel, resolveTool } from '../config/config';
+import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { toolDefinition } from '../plugin/registry';
 import type {
@@ -8,7 +10,6 @@ import type {
 } from '../plugin/types';
 import { loadPrompt } from '../prompts/loader';
 import { gitRun } from '../shared/git';
-import type { Config, TaskStatus } from '../types';
 import { runTool, type WorkerOutputLine } from '../worker/worker';
 import { evaluateTaskOutcome } from './results';
 
@@ -23,7 +24,6 @@ interface TaskRunInput {
   interactionType: string;
   title: string;
   description: string;
-  plan?: string | null;
   context?: string;
   cwd: string;
   worktreePath: string;
@@ -51,9 +51,6 @@ export interface TaskRunResult {
   exitCode: number;
   signalCode: string | number | null;
   sessionID: string;
-  inputTokens: number;
-  outputTokens: number;
-  estimatedCost: number;
   events: ToolPluginEvent[];
   logPath: string;
   durationMS: number;
@@ -61,6 +58,7 @@ export interface TaskRunResult {
   aborted: boolean;
   diff: string;
   filesChanged: string[];
+  commitSha?: string;
   error?: string;
 }
 
@@ -69,21 +67,14 @@ export function resolveTaskExecution(
   registry: ToolPluginRegistry,
   toolOverride: string,
   modelOverride: string,
-  interactionType?: string,
 ): ResolvedTaskExecution {
-  const toolName = resolveTool(config, toolOverride, interactionType);
+  const toolName = resolveTool(config, toolOverride);
   const plugin = toolDefinition(registry, toolName);
   if (!plugin) {
     throw new Error(`tool not available: ${toolName}`);
   }
 
-  const model = resolveModel(
-    config,
-    registry,
-    toolName,
-    modelOverride,
-    interactionType,
-  );
+  const model = resolveModel(config, registry, toolName, modelOverride);
   if (!model.trim()) {
     throw new Error(
       `model could not be resolved for tool ${JSON.stringify(toolName)}`,
@@ -143,9 +134,6 @@ export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
     exitCode: result.exitCode,
     signalCode: result.signalCode,
     sessionID: result.sessionID,
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
-    estimatedCost: result.estimatedCost,
     events: result.events,
     logPath: result.logPath,
     durationMS: result.durationMS,
@@ -153,6 +141,7 @@ export async function runTask(input: TaskRunInput): Promise<TaskRunResult> {
     aborted: result.aborted,
     diff,
     filesChanged: normalizeList(filesChangedRaw.split('\n')),
+    commitSha: result.commitSha || undefined,
     error: outcome.error,
   };
 }
@@ -162,7 +151,6 @@ async function buildPrompt(
     TaskRunInput,
     | 'title'
     | 'description'
-    | 'plan'
     | 'context'
     | 'feedback'
     | 'resumeSessionID'
@@ -171,18 +159,12 @@ async function buildPrompt(
 ): Promise<string> {
   const repoDir = input.repoDir ?? '';
   if (!repoDir) throw new Error('repoDir is required for prompt loading');
-  const [outputStyle, executorStyle] = await Promise.all([
-    loadPrompt(repoDir, 'outputStyle'),
-    loadPrompt(repoDir, 'executorStyle'),
-  ]);
+  const executorStyle = await loadPrompt(repoDir, 'executorStyle');
 
   const parts: string[] = [];
 
-  if (outputStyle.trim()) parts.push(outputStyle.trim());
   if (executorStyle.trim()) parts.push(executorStyle.trim());
   if (input.context?.trim()) parts.push(input.context.trim());
-  if (input.plan?.trim())
-    parts.push(`## Implementation Plan\n\n${input.plan.trim()}`);
 
   const taskCore = [input.title.trim(), input.description.trim()]
     .filter(Boolean)

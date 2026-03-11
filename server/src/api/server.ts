@@ -1,6 +1,6 @@
 import type { Hono } from 'hono';
+import type { OrcaDrizzleDB } from '../db/connection';
 import type { ToolPluginRegistry } from '../plugin/registry';
-import type { ConfigStore } from '../store/config';
 import {
   handleOrchestratorUpgrade,
   type OrchestratorWebSocket,
@@ -14,7 +14,7 @@ export function startHTTPServer(
   app: Hono,
   port: number,
   opts?: {
-    configStore: ConfigStore;
+    db: OrcaDrizzleDB;
     repoDir: string;
     registry: ToolPluginRegistry;
   },
@@ -33,7 +33,7 @@ export function startHTTPServer(
         handleOrchestratorUpgrade(
           request,
           serverRef,
-          opts.configStore,
+          opts.db,
           opts.repoDir,
           opts.registry,
         )

@@ -1,14 +1,17 @@
+import type { JobStatus } from '@orca/types';
 import type { Command } from 'commander';
+import type { OrcaDrizzleDB } from '../../db/connection';
+import type { TaskEntry } from '../../db/schema';
 import type { JobQueue } from '../../queue/queue';
-import type { TaskStore } from '../../store/tasks';
-import type { Job, JobStatus, Task } from '../../types';
+import * as taskStore from '../../store/tasks';
+import type { Job } from '../../types/models';
 import { isJSONMode, printJSON, printTable } from '../format';
 
 export function registerQueueCommands(
   program: Command,
-  deps: { queue: JobQueue; taskStore: TaskStore },
+  deps: { queue: JobQueue; db: OrcaDrizzleDB },
 ) {
-  const { queue, taskStore } = deps;
+  const { queue, db } = deps;
 
   const cmd = program
     .command('queue')
@@ -28,7 +31,7 @@ export function registerQueueCommands(
         json?: boolean;
       }) => {
         if (opts.watch) {
-          await runWatch(queue, taskStore, opts.interval);
+          await runWatch(queue, db, opts.interval);
           return;
         }
 
@@ -124,7 +127,7 @@ export function registerQueueCommands(
 
 async function runWatch(
   queue: JobQueue,
-  taskStore: TaskStore,
+  db: OrcaDrizzleDB,
   intervalStr: string,
 ): Promise<void> {
   const intervalMs = Math.max(500, Number.parseInt(intervalStr, 10) || 2000);
@@ -132,7 +135,7 @@ async function runWatch(
   const render = async () => {
     const [jobs, tasks, counts] = await Promise.all([
       queue.list({ limit: 50 }),
-      taskStore.list(),
+      taskStore.listTasks(db),
       queue.counts(),
     ]);
 
@@ -155,7 +158,7 @@ async function runWatch(
     );
     lines.push('');
 
-    const tasksByStatus = new Map<string, Task[]>();
+    const tasksByStatus = new Map<string, TaskEntry[]>();
     for (const task of tasks) {
       const list = tasksByStatus.get(task.status) ?? [];
       list.push(task);
@@ -180,11 +183,7 @@ async function runWatch(
         const title =
           task.title.length > 50 ? `${task.title.slice(0, 47)}...` : task.title;
         const badge = statusBadge(task.status);
-        const extra =
-          task.status === 'stopped' && task.pendingQuestion
-            ? ' [needs input]'
-            : '';
-        lines.push(` ${badge}  ${id}  ${title}${extra}`);
+        lines.push(` ${badge}  ${id}  ${title}`);
       }
     }
 

@@ -1,3 +1,4 @@
+import type { Config } from '../db/schema';
 import {
   collectAssistantText,
   formatTemplate,
@@ -6,8 +7,7 @@ import {
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { loadPrompt, type PromptName } from '../prompts/loader';
 import type { InteractionStore } from '../store/interactions';
-import type { Config } from '../types';
-import type { WorkerRunResult } from '../worker/worker';
+import type { WorkerRunResult, runTool as RunToolFn } from '../worker/worker';
 import { toErrorMessage } from './errors';
 import { log } from './logger';
 
@@ -18,12 +18,13 @@ interface RunnerDeps {
   registry?: ToolPluginRegistry;
   repoDir: string;
   interactions?: InteractionStore;
-  runTool: typeof import('../worker/worker').runTool;
+  runTool: typeof RunToolFn;
 }
 
 interface RunnerOpts {
   taskId: string | null;
   type: string;
+  stepName?: string;
   promptName?: PromptName;
   promptArgs?: string[];
   prompt?: string;
@@ -32,23 +33,23 @@ interface RunnerOpts {
   timeoutMs?: number;
   toolOverride?: string;
   modelOverride?: string;
-  taskRunId?: string;
   resolveErrorMessage?: string;
   exitErrorLabel?: string;
+  jsonSchema?: Record<string, unknown>;
+  schemaPath?: string;
+  previousInteractionId?: string | null;
+  resumeSessionID?: string;
+  feedback?: string;
 }
 
 interface InteractionFinishFields {
   status: string;
   error?: string | null;
-  diff?: string | null;
+  output?: string | null;
   exitCode?: number;
   durationMs?: number;
-  qualityJson?: string | null;
-  inputTokens?: number;
-  outputTokens?: number;
-  estimatedCost?: number;
-  runId?: string | null;
   model?: string | null;
+  commitSha?: string | null;
 }
 
 interface RunContext {
@@ -62,6 +63,7 @@ interface RunContext {
 interface RunResult<T> {
   result: T;
   interactionId: string;
+  sessionId: string;
   tool: string;
   model: string;
   output: string;
@@ -79,14 +81,13 @@ export async function createInteractionRunner(deps: RunnerDeps) {
     const type = opts.type.trim();
     const interactionTaskId = normalizeTaskID(opts.taskId);
     const worktreePath = opts.worktreePath?.trim() || deps.repoDir;
-    const taskRunID = opts.taskRunId?.trim() || interactionTaskId || type;
+    const taskRunID = interactionTaskId ? `${type}-${interactionTaskId}` : type;
 
     const execution = resolveExecution({
       config: deps.config,
       registry: deps.registry,
       toolOverride: opts.toolOverride ?? '',
       modelOverride: opts.modelOverride ?? '',
-      interactionType: type,
     });
     if (!execution) {
       throw new Error(
@@ -109,7 +110,9 @@ export async function createInteractionRunner(deps: RunnerDeps) {
       const interaction = await deps.interactions.begin({
         taskId: interactionTaskId,
         type,
+        stepName: opts.stepName,
         tool: execution.toolName,
+        previousInteractionId: opts.previousInteractionId ?? null,
       });
       interactionID = interaction.id;
       interactionLogPath = interaction.logPath;
@@ -134,6 +137,12 @@ export async function createInteractionRunner(deps: RunnerDeps) {
         logsDir: `${deps.repoDir}/.orca/logs`,
         logPath: interactionLogPath || undefined,
         timeoutMS: opts.timeoutMs,
+        resumeSessionID: opts.resumeSessionID,
+        feedback: opts.feedback,
+        headlessOpts:
+          opts.jsonSchema || opts.schemaPath
+            ? { jsonSchema: opts.jsonSchema, schemaPath: opts.schemaPath }
+            : undefined,
       });
 
       const output = collectAssistantText(runResult.events);
@@ -158,9 +167,6 @@ export async function createInteractionRunner(deps: RunnerDeps) {
       await finishInteraction({
         status: 'completed',
         model: execution.model,
-        inputTokens: runResult.inputTokens,
-        outputTokens: runResult.outputTokens,
-        estimatedCost: runResult.estimatedCost,
         exitCode: runResult.exitCode,
         durationMs: runResult.durationMS,
         ...successFields,
@@ -169,6 +175,7 @@ export async function createInteractionRunner(deps: RunnerDeps) {
       return {
         result: parsed,
         interactionId: interactionID,
+        sessionId: runResult.sessionID,
         tool: execution.toolName,
         model: execution.model,
         output,

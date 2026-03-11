@@ -1,17 +1,24 @@
 import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/server/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  createElement,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api } from '../api';
 import { useTaskDetailContext } from '../context/TaskDetailContext';
+import {
+  parseInteractionOutputData,
+  parseInteractionOutputResult,
+} from '../lib/interactionOutput';
 import { queryKeys } from '../lib/queryKeys';
 import { getErrorMessage } from '../lib/utils';
-import {
-  type AIReviewResult,
-  isKnownWSEvent,
-  type ProposedTask,
-  type Task,
-} from '../types';
-import { useTaskPlanQuery } from './queries';
+import { isKnownWSEvent, type ProposedTask, type Task } from '../types';
 import {
   selectByRunLike,
   selectByType,
@@ -28,62 +35,35 @@ async function sha256Hex(value: string): Promise<string> {
     .join('');
 }
 
-function parseEvaluationDescriptionHash(qualityJSON?: string): string | null {
-  if (!qualityJSON) return null;
-  try {
-    const parsed = JSON.parse(qualityJSON) as { descriptionHash?: unknown };
-    if (typeof parsed.descriptionHash !== 'string') return null;
-    const hash = parsed.descriptionHash.trim();
-    return hash || null;
-  } catch {
-    return null;
-  }
+function parseEvaluationDescriptionHash(output?: string | null): string | null {
+  const data = parseInteractionOutputData(output);
+  if (!data) return null;
+  if (typeof data.descriptionHash !== 'string') return null;
+  const hash = data.descriptionHash.trim();
+  return hash || null;
 }
 
-function parseAIReviewResult(qualityJSON?: string): AIReviewResult | null {
-  if (!qualityJSON) return null;
-  try {
-    const parsed = JSON.parse(qualityJSON) as {
-      taskId?: unknown;
-      approved?: unknown;
-      feedback?: unknown;
-      tool?: unknown;
-      prompt?: unknown;
-    };
-    if (typeof parsed.taskId !== 'string') return null;
-    if (typeof parsed.approved !== 'boolean') return null;
-    if (typeof parsed.feedback !== 'string') return null;
-    if (typeof parsed.tool !== 'string') return null;
-    if (parsed.prompt != null && typeof parsed.prompt !== 'string') return null;
-    return {
-      taskId: parsed.taskId,
-      approved: parsed.approved,
-      feedback: parsed.feedback,
-      tool: parsed.tool,
-      prompt: typeof parsed.prompt === 'string' ? parsed.prompt : undefined,
-    };
-  } catch {
-    return null;
-  }
+function parseAIReviewResult(
+  output?: string | null,
+): { approved: boolean; feedback: string } | null {
+  const data = parseInteractionOutputData(output);
+  if (!data || typeof data.feedback !== 'string') return null;
+  return {
+    approved: parseInteractionOutputResult(output) === 'approved',
+    feedback: data.feedback,
+  };
 }
 
-function parseEvaluationNeedsBreakdown(qualityJSON?: string): boolean | null {
-  if (!qualityJSON) return null;
-  try {
-    const parsed = JSON.parse(qualityJSON) as { needsBreakdown?: unknown };
-    if (typeof parsed.needsBreakdown === 'boolean') {
-      return parsed.needsBreakdown;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+function parseEvaluationNeedsBreakdown(output?: string | null): boolean | null {
+  const data = parseInteractionOutputData(output);
+  if (!data) return null;
+  if (typeof data.needsBreakdown === 'boolean') return data.needsBreakdown;
+  return null;
 }
 
-export function useTaskActions(task: Task) {
+function useTaskActionsState(task: Task) {
   const queryClient = useQueryClient();
   const { tools, isOperationRunning } = useTaskDetailContext();
-  const taskPlanQuery = useTaskPlanQuery(task.id);
   const planInteractionsQuery = useInteractionsQuery(task.id, {
     select: selectByType('plan'),
   });
@@ -129,50 +109,14 @@ export function useTaskActions(task: Task) {
         args.model,
       ),
   });
-  const aiReviewMutation = useMutation({
-    mutationFn: (args: {
-      taskId: string;
-      tool?: string;
-      model?: string;
-      prompt?: string;
-    }) => api.aiReview(args.taskId, args.tool, args.model, args.prompt),
-  });
   const mergeTaskMutation = useMutation({
     mutationFn: (args: { taskId: string }) => api.mergeTask(args.taskId),
   });
   const resumeTaskMutation = useMutation({
-    mutationFn: (args: {
-      taskId: string;
-      sessionId?: string;
-      feedback?: string;
-    }) =>
+    mutationFn: (args: { taskId: string; feedback?: string }) =>
       api.resumeTask(args.taskId, {
-        sessionId: args.sessionId,
         feedback: args.feedback,
       }),
-  });
-  const generateTaskPlanMutation = useMutation({
-    mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
-      api.generateTaskPlan(args.taskId, { tool: args.tool, model: args.model }),
-  });
-  const approvePlanMutation = useMutation({
-    mutationFn: (taskId: string) => api.approvePlan(taskId),
-  });
-  const requestPlanChangesMutation = useMutation({
-    mutationFn: (args: {
-      id: string;
-      feedback: string;
-      interactionId?: string;
-      tool?: string;
-      model?: string;
-    }) =>
-      api.requestPlanChanges(
-        args.id,
-        args.feedback,
-        args.interactionId,
-        args.tool,
-        args.model,
-      ),
   });
   const evaluateTaskMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
@@ -193,12 +137,25 @@ export function useTaskActions(task: Task) {
     mutationFn: (args: { taskId: string; interactionId: string }) =>
       api.rejectBreakdown(args.taskId, args.interactionId),
   });
+  const resetMutation = useMutation({
+    mutationFn: (args: {
+      taskId: string;
+      interactionId: string;
+      enqueue?: boolean;
+    }) => api.resetTask(args.taskId, args.interactionId, args.enqueue),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.task(task.id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.taskInteractions(task.id),
+        }),
+      ]);
+    },
+  });
 
   const [requestChangesExpanded, setRequestChangesExpanded] = useState(false);
   const [requestFeedback, setRequestFeedback] = useState('');
-  const [requestPlanChangesExpanded, setRequestPlanChangesExpanded] =
-    useState(false);
-  const [requestPlanFeedback, setRequestPlanFeedback] = useState('');
   const [aiReviewExpanded, setAIReviewExpanded] = useState(false);
   const [aiReviewPrompt, setAIReviewPrompt] = useState('');
   const [resumeFeedback, setResumeFeedback] = useState('');
@@ -226,14 +183,13 @@ export function useTaskActions(task: Task) {
   const breakdownInteractions = breakdownInteractionsQuery.data ?? [];
   const mergeInteractions = mergeInteractionsQuery.data ?? [];
 
-  const planLoading = taskPlanQuery.isLoading;
-  const planGenerating = isOperationRunning('plan_generate', task.id);
-  const hasPlanInteraction = planInteractions.length > 0;
   const hideEvaluateAction =
-    hasPlanInteraction || planGenerating || generateTaskPlanMutation.isPending;
-  const hasPlan =
-    typeof taskPlanQuery.data === 'string' &&
-    taskPlanQuery.data.trim().length > 0;
+    evaluateInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.running,
+    ) ||
+    evaluateInteractions.some(
+      (item) => item.status === INTERACTION_STATUSES.completed,
+    );
   const evaluating =
     evaluateStarted ||
     evaluateInteractions.some(
@@ -271,12 +227,12 @@ export function useTaskActions(task: Task) {
     [evaluateInteractions],
   );
   const latestEvaluationDescriptionHash = useMemo(
-    () => parseEvaluationDescriptionHash(latestCompletedEvaluate?.qualityJson),
-    [latestCompletedEvaluate?.qualityJson],
+    () => parseEvaluationDescriptionHash(latestCompletedEvaluate?.output),
+    [latestCompletedEvaluate?.output],
   );
   const latestEvaluateNeedsBreakdown = useMemo(
-    () => parseEvaluationNeedsBreakdown(latestCompletedEvaluate?.qualityJson),
-    [latestCompletedEvaluate?.qualityJson],
+    () => parseEvaluationNeedsBreakdown(latestCompletedEvaluate?.output),
+    [latestCompletedEvaluate?.output],
   );
   const hideBreakdownAction = latestEvaluateNeedsBreakdown !== true;
   const descriptionUnchangedSinceLastEvaluation =
@@ -295,45 +251,31 @@ export function useTaskActions(task: Task) {
     [runInteractions],
   );
   const latestCompletedRunStartedAtMS = useMemo(() => {
-    const latestCompletedRun = runInteractions.find(
-      (item) => item.status === INTERACTION_STATUSES.completed,
-    );
+    const latestCompletedRun = [...runInteractions]
+      .reverse()
+      .find((item) => item.status === INTERACTION_STATUSES.completed);
     if (!latestCompletedRun) return NaN;
     return Date.parse(latestCompletedRun.startedAt);
   }, [runInteractions]);
-  const latestCompletedPlanId = useMemo(
-    () =>
-      [...planInteractions]
-        .reverse()
-        .find((item) => item.status === INTERACTION_STATUSES.completed)?.id,
-    [planInteractions],
-  );
   const latestBreakdownProposals = useMemo(() => {
     const latest = [...breakdownInteractions]
       .reverse()
       .find((item) => item.status === INTERACTION_STATUSES.completed);
-    if (!latest?.qualityJson) return null;
-    try {
-      const parsed = JSON.parse(latest.qualityJson) as {
-        accepted?: unknown;
-        rejected?: unknown;
-        proposed?: ProposedTask[];
-      };
-      if (
-        parsed.accepted ||
-        parsed.rejected ||
-        !Array.isArray(parsed.proposed) ||
-        parsed.proposed.length === 0
-      ) {
-        return null;
-      }
-      return {
-        interactionId: latest.id,
-        proposed: parsed.proposed,
-      };
-    } catch {
+    if (!latest?.output) return null;
+    const data = parseInteractionOutputData(latest.output);
+    if (!data) return null;
+    if (
+      data.accepted ||
+      data.rejected ||
+      !Array.isArray(data.proposed) ||
+      data.proposed.length === 0
+    ) {
       return null;
     }
+    return {
+      interactionId: latest.id,
+      proposed: data.proposed as ProposedTask[],
+    };
   }, [breakdownInteractions]);
 
   const runningInProgress =
@@ -350,8 +292,6 @@ export function useTaskActions(task: Task) {
     breakdownInteractions.some(
       (item) => item.status === INTERACTION_STATUSES.running,
     ) ||
-    planGenerating ||
-    generateTaskPlanMutation.isPending ||
     isOperationRunning('evaluate', task.id) ||
     evaluateTaskMutation.isPending ||
     isOperationRunning('breakdown', task.id) ||
@@ -360,9 +300,7 @@ export function useTaskActions(task: Task) {
   const reviewBusy =
     reviewInteractions.some(
       (item) => item.status === INTERACTION_STATUSES.running,
-    ) ||
-    isOperationRunning('review', task.id) ||
-    aiReviewMutation.isPending;
+    ) || isOperationRunning('review', task.id);
   const mergeBusy =
     mergeInteractions.some(
       (item) => item.status === INTERACTION_STATUSES.running,
@@ -383,8 +321,6 @@ export function useTaskActions(task: Task) {
   useEffect(() => {
     setRequestChangesExpanded(false);
     setRequestFeedback('');
-    setRequestPlanChangesExpanded(false);
-    setRequestPlanFeedback('');
     setAIReviewExpanded(false);
     setAIReviewPrompt('');
     setResumeFeedback('');
@@ -519,13 +455,8 @@ export function useTaskActions(task: Task) {
     ) {
       return;
     }
-    const reviewResult = parseAIReviewResult(latestCompletedReview.qualityJson);
-    if (
-      reviewResult &&
-      reviewResult.taskId === task.id &&
-      !reviewResult.approved &&
-      reviewResult.feedback
-    ) {
+    const reviewResult = parseAIReviewResult(latestCompletedReview.output);
+    if (reviewResult && !reviewResult.approved && reviewResult.feedback) {
       applyAIReviewFeedback(reviewResult.feedback);
     }
     lastProcessedReviewInteractionIdRef.current = latestCompletedReview.id;
@@ -574,17 +505,10 @@ export function useTaskActions(task: Task) {
   };
 
   const handleResume = async () => {
-    const sessionId = task.sessionId?.trim() ?? '';
-    if (!sessionId) {
-      setActionError('Task has no session ID to resume');
-      return;
-    }
-
     setActionError(null);
     try {
       await resumeTaskMutation.mutateAsync({
         taskId: task.id,
-        sessionId,
         feedback: resumeFeedback.trim() || undefined,
       });
       setResumeFeedback('');
@@ -614,57 +538,6 @@ export function useTaskActions(task: Task) {
       setRequestFeedback('');
     } catch (err: unknown) {
       setActionError(getErrorMessage(err, 'Request changes failed'));
-    }
-  };
-
-  const handleGeneratePlan = async () => {
-    setActionError(null);
-    try {
-      await generateTaskPlanMutation.mutateAsync({
-        taskId: task.id,
-        tool: actionTool || undefined,
-        model: actionModel || undefined,
-      });
-    } catch (err: unknown) {
-      setActionError(getErrorMessage(err, 'Failed to generate plan'));
-    }
-  };
-
-  const handleApprovePlan = async () => {
-    setActionError(null);
-    try {
-      await approvePlanMutation.mutateAsync(task.id);
-      setRequestPlanChangesExpanded(false);
-      setRequestPlanFeedback('');
-    } catch (err: unknown) {
-      setActionError(getErrorMessage(err, 'Approve plan failed'));
-    }
-  };
-
-  const handleRequestPlanChanges = async () => {
-    const trimmedFeedback = requestPlanFeedback.trim();
-    if (!trimmedFeedback) {
-      setActionError('Feedback is required');
-      return;
-    }
-    if (!latestCompletedPlanId) {
-      setActionError('Interaction ID is required');
-      return;
-    }
-
-    setActionError(null);
-    try {
-      await requestPlanChangesMutation.mutateAsync({
-        id: task.id,
-        feedback: trimmedFeedback,
-        interactionId: latestCompletedPlanId,
-        tool: actionTool || undefined,
-        model: actionModel || undefined,
-      });
-      setRequestPlanChangesExpanded(false);
-      setRequestPlanFeedback('');
-    } catch (err: unknown) {
-      setActionError(getErrorMessage(err, 'Request plan changes failed'));
     }
   };
 
@@ -741,19 +614,28 @@ export function useTaskActions(task: Task) {
     }
   };
 
-  const handleAIReview = async () => {
+  const handleReset = async (interactionId: string) => {
     setActionError(null);
     try {
-      await aiReviewMutation.mutateAsync({
+      await resetMutation.mutateAsync({
         taskId: task.id,
-        tool: actionTool || undefined,
-        model: actionModel || undefined,
-        prompt: aiReviewPrompt.trim() || undefined,
+        interactionId,
       });
-      setAIReviewExpanded(false);
-      setAIReviewPrompt('');
     } catch (err: unknown) {
-      setActionError(getErrorMessage(err, 'AI review failed'));
+      setActionError(getErrorMessage(err, 'Reset failed'));
+    }
+  };
+
+  const handleResetAndRun = async (interactionId: string) => {
+    setActionError(null);
+    try {
+      await resetMutation.mutateAsync({
+        taskId: task.id,
+        interactionId,
+        enqueue: true,
+      });
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'Reset & run failed'));
     }
   };
 
@@ -778,9 +660,6 @@ export function useTaskActions(task: Task) {
     handleActionToolChange,
     actionError,
     setActionError,
-    hasPlan,
-    planLoading,
-    planGenerating,
     hideEvaluateAction,
     hideBreakdownAction,
     evaluateDisabledReason,
@@ -794,10 +673,6 @@ export function useTaskActions(task: Task) {
     setRequestChangesExpanded,
     requestFeedback,
     setRequestFeedback,
-    requestPlanChangesExpanded,
-    setRequestPlanChangesExpanded,
-    requestPlanFeedback,
-    setRequestPlanFeedback,
     aiReviewExpanded,
     setAIReviewExpanded,
     aiReviewPrompt,
@@ -810,13 +685,9 @@ export function useTaskActions(task: Task) {
     approvePending: approveMutation.isPending,
     stopPending: stopTaskMutation.isPending,
     requestChangesPending: requestChangesMutation.isPending,
-    aiReviewPending: aiReviewMutation.isPending,
     mergePending: mergeTaskMutation.isPending,
     mergeInProgress: mergeBusy,
     resumePending: resumeTaskMutation.isPending,
-    generatePlanPending: generateTaskPlanMutation.isPending,
-    approvePlanPending: approvePlanMutation.isPending,
-    requestPlanChangesPending: requestPlanChangesMutation.isPending,
     evaluatePending: evaluateTaskMutation.isPending,
     breakdownPending: breakdownTaskMutation.isPending,
     acceptBreakdownPending: acceptBreakdownMutation.isPending,
@@ -826,14 +697,32 @@ export function useTaskActions(task: Task) {
     handleStop,
     handleResume,
     handleRequestChanges,
-    handleGeneratePlan,
-    handleApprovePlan,
-    handleRequestPlanChanges,
     handleEvaluateTask,
     handleBreakdownTask,
     handleAcceptBreakdown,
     handleRejectBreakdown,
-    handleAIReview,
     handleMerge,
+    handleReset,
+    handleResetAndRun,
+    resetPending: resetMutation.isPending,
   };
+}
+
+type TaskActionsValue = ReturnType<typeof useTaskActionsState>;
+
+const TaskActionsContext = createContext<TaskActionsValue | null>(null);
+
+export function TaskActionsProvider({ children }: { children: ReactNode }) {
+  const { task } = useTaskDetailContext();
+  const value = useTaskActionsState(task);
+
+  return createElement(TaskActionsContext.Provider, { value }, children);
+}
+
+export function useTaskActions() {
+  const context = useContext(TaskActionsContext);
+  if (!context) {
+    throw new Error('useTaskActions must be used within TaskActionsProvider');
+  }
+  return context;
 }

@@ -24,6 +24,7 @@ import {
   TableRow,
 } from '../components/table';
 import {
+  useConfigQuery,
   useDeleteMemoryMutation,
   useMemoryEntryQuery,
   useMemoryMutation,
@@ -103,6 +104,7 @@ function MemoryPage() {
   const memoryQuery = useMemoryQuery(listParams);
   const semanticQuery = useMemorySemanticQuery(queryText.trim(), 20);
   const statusQuery = useStatusQuery();
+  const configQuery = useConfigQuery();
   const updateMutation = useMemoryMutation();
   const deleteMutation = useDeleteMemoryMutation();
   const syncMutation = useSyncMemoryMutation();
@@ -484,7 +486,7 @@ function MemoryPage() {
               params={{ taskId: sourceTaskId }}
               className="text-xs font-medium"
             >
-              {sourceTaskId.slice(0, 8)}
+              {sourceTaskId}
             </Link>
           );
         },
@@ -648,6 +650,16 @@ function MemoryPage() {
           ) : null}
         </div>
       </div>
+
+      {configQuery.data?.memory?.enabled === false && (
+        <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+          Memory is disabled. Run{' '}
+          <code className="rounded bg-amber-500/20 px-1 py-0.5 font-mono text-xs">
+            orca init
+          </code>{' '}
+          to enable the memory system.
+        </div>
+      )}
 
       {status && (
         <div className="mb-3 space-y-2">
@@ -831,7 +843,7 @@ function MemoryPage() {
                     params={{ taskId: detailQuery.data.entry.sourceTaskId }}
                     className="underline"
                   >
-                    {detailQuery.data.entry.sourceTaskId.slice(0, 8)}
+                    {detailQuery.data.entry.sourceTaskId}
                   </Link>
                 ) : (
                   '—'

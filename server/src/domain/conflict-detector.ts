@@ -1,4 +1,10 @@
 import { gitRun } from '../shared/git';
+import type { MonitorContext } from './runtime-monitor';
+import {
+  dedupeNormalizedStrings,
+  PollingMonitor,
+  type RuntimeMonitor,
+} from './runtime-monitor';
 import { findTaskWorktree } from './worktree';
 
 interface ConflictDetectionResult {
@@ -13,74 +19,45 @@ interface ConflictDetectorOptions {
   onConflict?: (taskIDs: string[], files: string[]) => void;
 }
 
-export interface MonitorContext {
-  signal?: AbortSignal;
-}
-
-interface RuntimeMonitor {
-  start(ctx?: MonitorContext): void;
-  stop(): void;
-}
-
 export class ConflictDetector implements RuntimeMonitor {
   private readonly fired = new Set<string>();
-  private timer: ReturnType<typeof setInterval> | null = null;
-  private tickInFlight = false;
-  private abortListener: (() => void) | null = null;
+  private readonly runtime: PollingMonitor;
 
-  constructor(private readonly options: ConflictDetectorOptions) {}
+  constructor(private readonly options: ConflictDetectorOptions) {
+    this.runtime = new PollingMonitor({
+      intervalMS: this.options.intervalMS ?? 30_000,
+      onStop: () => this.fired.clear(),
+      tick: () => this.tick(),
+    });
+  }
 
   start(ctx: MonitorContext = {}): void {
-    if (this.timer) return;
-    const interval = Math.max(1_000, this.options.intervalMS ?? 30_000);
-    this.timer = setInterval(() => {
-      void this.tick();
-    }, interval);
-    if (ctx.signal) {
-      const onAbort = () => this.stop();
-      ctx.signal.addEventListener('abort', onAbort, { once: true });
-      this.abortListener = () =>
-        ctx.signal?.removeEventListener('abort', onAbort);
-    }
+    this.runtime.start(ctx);
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-    if (this.abortListener) {
-      this.abortListener();
-      this.abortListener = null;
-    }
-    this.fired.clear();
+    this.runtime.stop();
   }
 
   private async tick(): Promise<void> {
-    if (this.tickInFlight) return;
-    this.tickInFlight = true;
-    try {
-      const fileOwners = new Map<string, Set<string>>();
-      const taskIDs = dedupe(this.options.getTaskIDs());
-      for (const taskID of taskIDs) {
-        const files = await changedFiles(this.options.repoDir, taskID).catch(
-          () => [],
-        );
-        if (files.length === 0) continue;
-        for (const file of files) {
-          if (!fileOwners.has(file)) fileOwners.set(file, new Set());
-          fileOwners.get(file)?.add(taskID);
-        }
+    const fileOwners = new Map<string, Set<string>>();
+    const taskIDs = dedupeNormalizedStrings(this.options.getTaskIDs());
+    for (const taskID of taskIDs) {
+      const files = await changedFiles(this.options.repoDir, taskID).catch(
+        () => [],
+      );
+      if (files.length === 0) continue;
+      for (const file of files) {
+        if (!fileOwners.has(file)) fileOwners.set(file, new Set());
+        fileOwners.get(file)?.add(taskID);
       }
+    }
 
-      for (const group of buildConflictGroups(fileOwners)) {
-        const key = `${group.taskIds.join(',')}::${group.files.join(',')}`;
-        if (this.fired.has(key)) continue;
-        this.fired.add(key);
-        this.options.onConflict?.(group.taskIds, group.files);
-      }
-    } finally {
-      this.tickInFlight = false;
+    for (const group of buildConflictGroups(fileOwners)) {
+      const key = `${group.taskIds.join(',')}::${group.files.join(',')}`;
+      if (this.fired.has(key)) continue;
+      this.fired.add(key);
+      this.options.onConflict?.(group.taskIds, group.files);
     }
   }
 }
@@ -119,16 +96,4 @@ async function changedFiles(
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
-}
-
-function dedupe(values: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const value of values) {
-    const normalized = value.trim();
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    out.push(normalized);
-  }
-  return out;
 }

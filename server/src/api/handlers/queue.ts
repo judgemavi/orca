@@ -1,6 +1,6 @@
+import type { JobStatus } from '@orca/types';
 import { Hono } from 'hono';
 import type { JobQueue } from '../../queue/queue';
-import type { JobStatus } from '../../types';
 
 export function queueRoutes(deps: { queue: JobQueue }) {
   const { queue } = deps;

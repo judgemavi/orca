@@ -15,7 +15,7 @@ Orca wraps existing AI CLI tools as workers (no direct LLM API coupling).
 7. `retro + sync` — post-merge automation extracts memory and syncs staleness
 
 Task flow: `pending → planned → running → review → approved → merged`.
-Post-completion: `approved/merged → retro → memory sync` (automatic after merge, also available via CLI/MCP/API).
+Post-completion: `approved/merged → retro → memory sync` (automatic after merge, also available via CLI/API).
 Breakdown branch: `pending → broken_down` (when a parent task is split into child tasks).
 Stop path: `running → stopped` (via `tasks_stop`); `stopped → running` (resume via `tasks_resume`).
 Failure path: `running → failed`.
@@ -27,7 +27,7 @@ Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cance
 - Tool-agnostic worker execution via pluggable drivers
 - Git worktree isolation per task branch (`orca/task-{id}`)
 - Plan review loop (`tasks approve-plan` / `tasks request-plan-changes`)
-- Quality gates + review loop (`review request-changes` re-runs task, `review ai` runs automated AI review)
+- Review loop (`review request-changes` re-runs task, `review ai` runs automated AI review)
 - Interaction-based tracking: tokens, cost, diffs, and quality per LLM invocation
 - Web UI with live status/events via WebSocket
 - Task table, interaction timeline, diff viewer, inline review, terminal console
@@ -38,8 +38,7 @@ Orca handles crashes gracefully: SIGINT/SIGTERM triggers orderly shutdown (cance
 - Post-merge automation: retro per merged task, then memory sync
 - Git-aware memory sync with commit-walking + diff magnitude classification (`minor|medium|major|deleted|renamed`)
 - Lazy stale-memory refresh during retrieval (only queried stale entries are refreshed)
-- Sync health surfaces in API/UI/MCP (`/status`, memory page banner, `memory_status`)
-- MCP server for agentic orchestration (task, planning, review, memory, and ops tools)
+- Sync health surfaces in API/UI (`/status`, memory page banner)
 - Bun/TypeScript backend + React frontend monorepo
 
 ## Requirements
@@ -124,7 +123,6 @@ orca review
 
 orca merge                   [--dry-run]
 orca serve                   [-p/--port] [--orchestrator]
-orca mcp
 orca memory
   ├── list                   [--category] [--tag] [--source-type] [--file] [--stale] [--covered-before] [--json]
   ├── show <id>
@@ -139,21 +137,40 @@ orca status
 orca logs                    [--level] [--task] [--since] [--tail] [-f] [--json]
 orca models [tool]
 orca config show | set <key> <value>
-orca costs                   [--run]
 orca ops                     [--all]
 orca cleanup                 [--dry-run]
 ```
 
-### Auto-Run Overrides
+### Auto-Run
 
-Per-task overrides control which chain steps auto-run, without changing global config.
+Auto-run is resolved in 3 levels: global `config.autoRun` → per-task `autoRunOverrides` → workflow step `autoRun` def → default `true`.
 
-- `--disable-autorun review,merge` — pause chain at review and merge for this task
-- `--enable-autorun review` — force auto-run review even if config disables it
-- `--reset-autorun all` — clear all overrides, inherit from config
-- `--reset-autorun review,merge` — clear specific overrides
+- **Global kill switch**: `orca config set autoRun false` disables all auto-run chaining
+- **Per-task overrides**: control which steps auto-run for individual tasks
+  - `--disable-autorun review,merge` — pause chain at review and merge for this task
+  - `--enable-autorun review` — force auto-run review even if workflow def disables it
+  - `--reset-autorun all` — clear all overrides, inherit from workflow/global
+  - `--reset-autorun review,merge` — clear specific overrides
+- **Workflow step defs**: custom workflows can set `autoRun: false` on individual steps
 
-Comma-separated interaction types: `evaluate`, `plan`, `breakdown`, `code`, `review`, `merge`, `retro`.
+Comma-separated step names: `evaluate`, `plan`, `breakdown`, `code`, `review`, `merge`.
+
+Note: `retro` and `explore` are system-controlled (gated by `memory.enabled`), not auto-run steps.
+
+### Memory Config
+
+```
+memory:
+  enabled: true    # global kill switch for retro, explore, and memory sync
+  retro: true      # auto-run retro after merge
+  sync: true       # auto-run memory sync after merge
+```
+
+When `memory.enabled` is `false`, explore/retro are blocked across all entrypoints (CLI and HTTP API).
+
+### Schema Versioning
+
+Config includes `schemaVersion` for safe migration. Orca errors on future versions (upgrade required) and auto-migrates old versions (e.g., v1 `postMerge.retro` → v2 `memory.retro`).
 
 ## Memory Lifecycle
 
@@ -167,7 +184,7 @@ Comma-separated interaction types: `evaluate`, `plan`, `breakdown`, `code`, `rev
   - Task merges run retro automatically per merged task.
   - One sync runs after merge to walk commits since `last_synced_commit`.
 - Retrieval is budgeted in 4 layers: `project-summary`, file-path matches, FTS semantic matches, and sibling active tasks.
-- Git sync uses commit-walking + diff magnitude classification (`orca memory sync`, `POST /api/v1/memory/sync`, MCP `memory_sync`).
+- Git sync uses commit-walking + diff magnitude classification (`orca memory sync`, `POST /api/v1/memory/sync`).
 - Sync effects by change magnitude:
   - `minor` (<20 lines): decay confidence (`×0.95`) and bump `covered_at_commit`
   - `medium` (20-100 lines): decay confidence (`×0.85`) and bump `covered_at_commit`
@@ -190,22 +207,6 @@ Comma-separated interaction types: `evaluate`, `plan`, `breakdown`, `code`, `rev
 - `POST /api/v1/memory/refresh` (optional body: `{"entry_id":"..."}`)
 - `GET /api/v1/status` (includes `last_synced_commit`, `current_commit`, `sync_needed`, `commits_behind`)
 
-## MCP
-
-`orca mcp` exposes MCP tools for task orchestration:
-
-- **Task lifecycle:** `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_add_dependency`
-- **Planning:** `breakdown`, `tasks_plan_generate`, `tasks_plan_evaluate`, `tasks_approve_plan`, `tasks_request_plan_changes`
-- **Execution:** `tasks_start`, `tasks_stop`, `tasks_resume`
-- **Review/integration:** `tasks_approve`, `tasks_request_changes`, `ai_review`, `tasks_reviews`, `merge`, `tasks_merge`
-- **Retro:** `tasks_retro`
-- **Memory:** `memory_list`, `memory_get`, `memory_search`, `memory_query`, `memory_update`, `memory_delete`, `memory_sync`, `memory_refresh`, `memory_status`
-- **Interactions:** `interactions_list`, `interaction_get`
-- **Project/config:** `project_status`, `config_get`, `config_update`, `models_list`
-- **Context:** `explore`, `explore_status`
-- **Worktree:** `worktree_cleanup`, `worktree_status`
-- **Monitoring:** `cost_status`, `quality_results`, `log_event`, `log_query`
-
 ## Project Structure
 
 ```text
@@ -214,11 +215,9 @@ server/                      Bun + TypeScript backend
     bootstrap.ts             Shared foundation (DB, stores, config, registry, queue, executor)
     entrypoints/
       cli.ts                 Short-lived CLI entrypoint
-      mcp.ts                 Long-lived MCP entrypoint (blocks until client disconnects)
       serve.ts               Full stack: processor, recovery, HTTP/WS, shutdown
     api/                     HTTP routes + WebSocket
     cli/                     Commander subcommands
-    mcp/                     MCP server + tools
     store/                   SQLite stores (tasks, config, interactions, memory)
     executor/                Task execution engine
     domain/                  Business logic (review, plan, merge, recovery, etc.)

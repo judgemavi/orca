@@ -17,13 +17,10 @@ export const queryKeys = {
   tasks: ['tasks'] as const,
   task: (id: string) => ['task', id] as const,
   config: ['config'] as const,
-  sessions: ['sessions'] as const,
   status: ['status'] as const,
   operations: (filters?: { targetId?: string; type?: string }) =>
     ['operations', filters ?? {}] as const,
   models: (tool?: string) => ['models', tool ?? null] as const,
-  taskPlan: (taskId: string) => ['taskPlan', taskId] as const,
-  taskReviews: (taskId: string) => ['task-reviews', taskId] as const,
   taskInteractions: (taskId: string) => ['task-interactions', taskId] as const,
   taskInteraction: (taskId: string, logId: string) =>
     ['task-interaction', taskId, logId] as const,
@@ -39,6 +36,9 @@ export const queryKeys = {
   memoriesByInteraction: (interactionId: string) =>
     ['memory', 'by-interaction', interactionId] as const,
   embeddingProviders: ['embedding-providers'] as const,
+  workflowSteps: (taskId: string) => ['workflow-steps', taskId] as const,
+  currentStep: (taskId: string, stepName?: string) =>
+    ['current-step', taskId, stepName ?? null] as const,
   queue: ['queue'] as const,
   queueCounts: ['queue', 'counts'] as const,
   queueJob: (id: string) => ['queue', id] as const,

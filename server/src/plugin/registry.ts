@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { ClaudePlugin } from './claude';
-import { CodexPlugin } from './codex';
+import { codexPlugin } from './codex';
 import type { ToolPlugin } from './types';
 
 export class ToolPluginRegistry {
@@ -11,7 +11,7 @@ export class ToolPluginRegistry {
   constructor(withBuiltins = true) {
     if (withBuiltins) {
       this.register('claude', new ClaudePlugin());
-      this.register('codex', new CodexPlugin());
+      this.register('codex', codexPlugin);
     }
   }
 

@@ -1,3 +1,6 @@
+import { TASK_STATUSES } from '@orca/types';
+import type { OrcaDrizzleDB } from '../db/connection';
+import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import {
   formatRefLockContentionError,
@@ -6,9 +9,7 @@ import {
   gitRun as sharedGitRun,
 } from '../shared/git';
 import type { InteractionStore } from '../store/interactions';
-import type { TaskStore } from '../store/tasks';
-import type { Config } from '../types';
-import { TASK_STATUSES } from '../types';
+import * as taskStore from '../store/tasks';
 import {
   mergeWithConflictResolutionUnlocked,
   readConflictFiles,
@@ -23,19 +24,20 @@ export interface MergeResult {
   rebaseAttempted: boolean;
   conflicts: string[];
   error?: string;
+  commitSha?: string;
 }
 
 export interface IntegratorDeps {
   repoDir: string;
   integrationBranch: string;
-  taskStore: TaskStore;
+  db: OrcaDrizzleDB;
 }
 
 async function assertTaskMergeable(
   taskID: string,
-  taskStore: TaskStore,
+  db: OrcaDrizzleDB,
 ): Promise<void> {
-  const task = await taskStore.get(taskID);
+  const task = await taskStore.getTask(db, taskID);
   if (!task) throw new Error(`task ${taskID} not found`);
 
   if (
@@ -47,8 +49,8 @@ async function assertTaskMergeable(
     );
   }
 
-  for (const depID of task.dependsOn) {
-    const dep = await taskStore.get(depID);
+  for (const depID of task.dependsOn ?? []) {
+    const dep = await taskStore.getTask(db, depID);
     if (!dep) {
       throw new Error(`dependency task ${depID} not found`);
     }
@@ -89,9 +91,9 @@ async function mergeTaskWithGitUnlocked(
   taskID: string,
   deps: IntegratorDeps,
 ): Promise<MergeResult> {
-  await assertTaskMergeable(taskID, deps.taskStore);
+  await assertTaskMergeable(taskID, deps.db);
 
-  const task = await deps.taskStore.get(taskID);
+  const task = await taskStore.getTask(deps.db, taskID);
   if (!task) throw new Error(`task ${taskID} not found`);
 
   const worktreePath = await findTaskWorktree(deps.repoDir, taskID);
@@ -128,13 +130,7 @@ async function mergeTaskWithGitUnlocked(
   let rebaseAttempted = false;
   let conflicts: string[] = [];
 
-  let merged = await gitRunWithRefLockRetry(deps.repoDir, [
-    'merge',
-    branch,
-    '--no-ff',
-    '-m',
-    mergeMessage,
-  ]);
+  let merged = await squashMerge(deps.repoDir, branch, mergeMessage);
   if (merged.code !== 0) {
     if (isRefLockErrorResult(merged)) {
       return failed(formatRefLockContentionError(merged.stderr));
@@ -156,13 +152,11 @@ async function mergeTaskWithGitUnlocked(
       });
     }
 
-    merged = await gitRunWithRefLockRetry(deps.repoDir, [
-      'merge',
+    merged = await squashMerge(
+      deps.repoDir,
       branch,
-      '--no-ff',
-      '-m',
       `${mergeMessage} (after rebase)`,
-    ]);
+    );
     if (merged.code !== 0) {
       if (isRefLockErrorResult(merged)) {
         return failed(formatRefLockContentionError(merged.stderr), {
@@ -182,6 +176,13 @@ async function mergeTaskWithGitUnlocked(
     }
   }
 
+  // Capture squash merge commit SHA before cleanup
+  const mergeHead = await gitRunWithRefLockRetry(deps.repoDir, [
+    'rev-parse',
+    'HEAD',
+  ]);
+  const commitSha = mergeHead.code === 0 ? mergeHead.stdout.trim() : undefined;
+
   await cleanupTaskWorktree(deps.repoDir, worktreePath, branch, taskID);
 
   return {
@@ -191,7 +192,28 @@ async function mergeTaskWithGitUnlocked(
     worktreePath: worktreePath,
     rebaseAttempted: rebaseAttempted,
     conflicts,
+    commitSha,
   };
+}
+
+async function squashMerge(
+  repoDir: string,
+  branch: string,
+  message: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const squash = await gitRunWithRefLockRetry(repoDir, [
+    'merge',
+    '--squash',
+    branch,
+  ]);
+  if (squash.code !== 0) return squash;
+
+  const commit = await gitRunWithRefLockRetry(repoDir, [
+    'commit',
+    '-m',
+    message,
+  ]);
+  return commit;
 }
 
 async function resolveTaskBranch(

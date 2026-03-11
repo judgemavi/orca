@@ -1,12 +1,10 @@
-import { createContext, type ReactNode, useContext, useState } from 'react';
+import { createContext, type ReactNode, useContext } from 'react';
 import type { Config, Task } from '../types';
 
 type TaskDetailContextValue = {
   task: Task;
   config: Config;
   tools: string[];
-  activeLogId: string | null;
-  setActiveLogId: (id: string | null) => void;
   isOperationRunning: (type: string, targetId?: string) => boolean;
 };
 
@@ -27,16 +25,12 @@ export function TaskDetailProvider({
   tools,
   isOperationRunning,
 }: TaskDetailProviderProps) {
-  const [activeLogId, setActiveLogId] = useState<string | null>(null);
-
   return (
     <TaskDetailContext.Provider
       value={{
         task,
         config,
         tools,
-        activeLogId,
-        setActiveLogId,
         isOperationRunning,
       }}
     >

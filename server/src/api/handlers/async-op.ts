@@ -75,5 +75,5 @@ function emitEvent<TContext>(
         ? event.payload(context)
         : event.payload;
 
-  broadcast(sink, name, payload);
+  broadcast(sink, name as any, payload);
 }

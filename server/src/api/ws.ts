@@ -1,14 +1,15 @@
 import { log } from '../shared/logger';
+import type { KnownWSEventType } from '../types/events';
 
 export interface BroadcastEvent {
   id: number;
-  type: string;
+  type: KnownWSEventType;
   timestamp: string;
   data: unknown;
 }
 
 export type EventSink = {
-  broadcast: (type: string, data: unknown) => void;
+  broadcast: (type: KnownWSEventType, data: unknown) => void;
   list: (limit?: number) => BroadcastEvent[];
   alerts: (limit?: number) => BroadcastEvent[];
   since: (lastId: number, limit?: number) => BroadcastEvent[];
@@ -28,7 +29,7 @@ export function createEventSink(): EventSink {
   };
 
   return {
-    broadcast(type: string, data: unknown) {
+    broadcast(type: KnownWSEventType, data: unknown) {
       const event: BroadcastEvent = {
         id: nextId++,
         type,

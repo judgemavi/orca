@@ -1,15 +1,13 @@
 import { createHash } from 'node:crypto';
+import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { loadPrompt } from '../prompts/loader';
 import { gitOutput, gitRun } from '../shared/git';
 import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
-import {
-  type Config,
-  type MemoryCategory,
-  STRUCTURAL_CATEGORIES,
-} from '../types';
+import { type MemoryCategory, STRUCTURAL_CATEGORIES } from '../types/constants';
+import type { MemoryEntry } from '../types/models';
 import { runTool } from '../worker/worker';
 import { extractJSONArray } from './llm';
 
@@ -102,7 +100,6 @@ export async function runExplore(
   const { result, interactionId, tool, model } = await runInteraction(
     {
       taskId: null,
-      taskRunId: 'explore',
       type: 'explore',
       prompt,
       toolOverride: input.toolOverride ?? '',
@@ -126,10 +123,13 @@ export async function runExplore(
       return { context, path, seeded };
     },
     (parsed) => ({
-      qualityJson: JSON.stringify({
-        files: trackedFiles.length,
-        seeded: parsed.seeded,
-        context_path: parsed.path,
+      output: JSON.stringify({
+        result: 'completed',
+        data: {
+          files: trackedFiles.length,
+          seeded: parsed.seeded,
+          context_path: parsed.path,
+        },
       }),
     }),
   );
@@ -202,7 +202,7 @@ function buildExistingMemorySection(
   const max = Math.min(entries.length, 40);
   const lines: string[] = [];
   for (let i = 0; i < max; i += 1) {
-    const entry = entries[i];
+    const entry = entries[i] as MemoryEntry | undefined;
     lines.push(`- [${entry?.category}] ${entry?.content.trim()}`);
     if (entry?.filePaths?.length) {
       lines.push(`  files: ${entry?.filePaths.join(', ')}`);
@@ -217,7 +217,7 @@ function parseExtractedMemoryEntries(output: string): ExtractedMemoryEntry[] {
   return extractJSONArray<ExtractedMemoryEntry>(section) ?? [];
 }
 
-export function stripMemoryExtractionSection(output: string): string {
+function stripMemoryExtractionSection(output: string): string {
   const lower = output.toLowerCase();
   const marker = MEMORY_MARKER.toLowerCase();
   const idx = lower.lastIndexOf(marker);
@@ -336,7 +336,7 @@ function buildProjectSummary(contextContent: string): string {
 }
 
 /** Extract content between a section heading and the next heading of equal or higher level. */
-export function extractSection(text: string, sectionName: string): string {
+function extractSection(text: string, sectionName: string): string {
   const lines = text.split('\n');
   const target = sectionName.toLowerCase();
   let collecting = false;

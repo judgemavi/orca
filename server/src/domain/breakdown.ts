@@ -1,7 +1,8 @@
+import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
-import type { Config, ProposedTask } from '../types';
+import type { ProposedTask } from '../types/api';
 import { runTool } from '../worker/worker';
 import { extractJSONArray } from './llm';
 
@@ -27,36 +28,6 @@ interface RunBreakdownResult {
   model: string;
 }
 
-export function generateProposedSubtasks(
-  title: string,
-  description: string,
-): ProposedTask[] {
-  const base = title.trim() || 'Task';
-  const context = description.trim();
-
-  return [
-    {
-      title: `${base}: analysis`,
-      description:
-        `Analyze existing code paths and constraints.\n\n${context}`.trim(),
-      dependsOnIndices: [],
-      suggestedTool: 'claude',
-    },
-    {
-      title: `${base}: implementation`,
-      description: 'Implement focused code changes based on the analysis.',
-      dependsOnIndices: [0],
-      suggestedTool: 'claude',
-    },
-    {
-      title: `${base}: validation`,
-      description: 'Run targeted verification and prepare for review.',
-      dependsOnIndices: [1],
-      suggestedTool: 'claude',
-    },
-  ];
-}
-
 export async function runBreakdown(
   input: RunBreakdownInput,
 ): Promise<RunBreakdownResult> {
@@ -80,7 +51,6 @@ export async function runBreakdown(
   } = await runInteraction(
     {
       taskId: input.taskID?.trim() || null,
-      taskRunId: input.taskID?.trim() || 'breakdown',
       type: 'breakdown',
       promptName: 'breakdown',
       promptArgs: [contextSection, input.goal.trim()],
@@ -97,7 +67,10 @@ export async function runBreakdown(
       return parsed;
     },
     (parsed) => ({
-      qualityJson: JSON.stringify({ goal: input.goal, proposed: parsed }),
+      output: JSON.stringify({
+        result: 'proposed',
+        data: { goal: input.goal, proposed: parsed },
+      }),
     }),
   );
 

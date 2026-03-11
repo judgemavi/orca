@@ -1,6 +1,7 @@
+import type { JobType } from '@orca/types';
 import type { EventSink } from '../api/ws';
 import { log } from '../shared/logger';
-import type { Job, JobType } from '../types';
+import type { Job } from '../types/models';
 import type { JobQueue } from './queue';
 
 type JobHandler = (job: Job) => Promise<Record<string, unknown> | void>;
@@ -13,22 +14,32 @@ interface ProcessorDeps {
 
 export class JobProcessor {
   private readonly handlers = new Map<string, JobHandler>();
+  private fallbackHandler:
+    | ((job: Job) => Promise<Record<string, unknown> | void>)
+    | null = null;
   private running = 0;
-  private stopped = false;
+  private mergeRunning = 0;
+  private stopped = true;
+  private ticking = false;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private kickScheduled = false;
 
   constructor(private readonly deps: ProcessorDeps) {}
 
-  register(type: JobType, handler: JobHandler): void {
+  register(type: JobType | string, handler: JobHandler): void {
     this.handlers.set(type, handler);
+  }
+
+  setFallback(
+    handler: (job: Job) => Promise<Record<string, unknown> | void>,
+  ): void {
+    this.fallbackHandler = handler;
   }
 
   start(): void {
     this.stopped = false;
-    this.deps.queue.setOnEnqueue(() => this.kick());
-    this.pollTimer = setInterval(() => this.tick(), 1_000);
-    this.kick();
+    this.deps.queue.setOnEnqueue(() => this.scheduleTick());
+    this.pollTimer = setInterval(() => this.scheduleTick(), 2_000);
+    this.scheduleTick();
   }
 
   async stop(): Promise<void> {
@@ -49,40 +60,47 @@ export class JobProcessor {
     }
   }
 
-  kick(): void {
-    if (this.kickScheduled) return;
-    this.kickScheduled = true;
-    queueMicrotask(() => {
-      this.kickScheduled = false;
-      this.tick();
-    });
+  private scheduleTick(): void {
+    queueMicrotask(() => this.tick());
   }
 
   private async tick(): Promise<void> {
-    if (this.stopped) return;
+    if (this.stopped || this.ticking) return;
+    this.ticking = true;
 
-    const slots = this.deps.maxParallel - this.running;
-    if (slots <= 0) return;
-
-    let jobs: Job[];
     try {
-      jobs = await this.deps.queue.claim(this.deps.maxParallel);
-    } catch (err) {
-      log.error('queue claim error', { error: String(err) });
-      return;
-    }
+      while (!this.stopped) {
+        const slots = this.deps.maxParallel - this.running;
+        if (slots <= 0) break;
 
-    for (const job of jobs) {
-      this.running++;
-      this.dispatch(job).finally(() => {
-        this.running--;
-        this.kick();
-      });
+        const exclude = this.mergeRunning > 0 ? ['merge'] : undefined;
+        const jobs = await this.deps.queue.claimNext(slots, exclude);
+        if (jobs.length === 0) break;
+
+        for (const job of jobs) {
+          this.running++;
+          const isMerge = this.isMergeType(job.type);
+          if (isMerge) this.mergeRunning++;
+          this.dispatch(job).finally(() => {
+            this.running--;
+            if (isMerge) this.mergeRunning--;
+            this.scheduleTick();
+          });
+        }
+      }
+    } catch (err) {
+      log.error('tick error', { error: String(err) });
+    } finally {
+      this.ticking = false;
     }
   }
 
+  private isMergeType(type: string): boolean {
+    return type === 'merge';
+  }
+
   private async dispatch(job: Job): Promise<void> {
-    const handler = this.handlers.get(job.type);
+    const handler = this.handlers.get(job.type) ?? this.fallbackHandler;
 
     if (!handler) {
       await this.deps.queue

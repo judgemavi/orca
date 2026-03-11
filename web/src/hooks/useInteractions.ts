@@ -37,16 +37,6 @@ export function useInteractionsQuery<TSelected = Interaction[]>(
   });
 }
 
-export function useInteractionStubsQuery(taskId: string) {
-  return useQuery({
-    queryKey: queryKeys.interactionStubs(taskId),
-    queryFn: () => api.listInteractionStubs(taskId),
-    enabled: Boolean(taskId),
-    staleTime: 0,
-    refetchOnMount: 'always',
-  });
-}
-
 export function useInteractionMetaQuery(
   taskId: string,
   id: string,

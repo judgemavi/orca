@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import pino from 'pino';
 
-type EntryName = 'server' | 'cli' | 'mcp';
+type EntryName = 'server' | 'cli';
 
 let logger: pino.Logger = pino({ level: 'silent' });
 

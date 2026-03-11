@@ -1,10 +1,12 @@
+import { TASK_STATUSES } from '@orca/types';
+import type { EventSink } from '../api/ws';
+import type { OrcaDrizzleDB } from '../db/connection';
 import type { Executor, RunOptions } from '../executor/executor';
 import type { TaskRunResult } from '../executor/task-runner';
-import type { TaskStore } from '../store/tasks';
-import { TASK_STATUSES } from '../types';
+import type { InteractionStore } from '../store/interactions';
+import * as taskStore from '../store/tasks';
 
 export interface RunOpts {
-  taskIds?: string[];
   toolOverride?: string;
   modelOverride?: string;
   context?: string;
@@ -12,64 +14,51 @@ export interface RunOpts {
 
 type TaskResult = TaskRunResult;
 
-export class RunWorkflowError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 404,
-  ) {
-    super(message);
-    this.name = 'RunWorkflowError';
-  }
+type RunWorkflowError = Error & { status: 400 | 404 };
+
+function runWorkflowError(
+  message: string,
+  status: 400 | 404,
+): RunWorkflowError {
+  const err = new Error(message) as RunWorkflowError;
+  err.name = 'RunWorkflowError';
+  err.status = status;
+  return err;
 }
 
-export async function startTasks(
-  executor: Executor,
-  opts: RunOpts = {},
-): Promise<void> {
-  const taskIDs = normalizeTaskIDs(opts.taskIds);
-  if (taskIDs.length > 0) {
-    await executor.runBatch(taskIDs, toRunOptions(opts));
-  } else {
-    await executor.runPendingTasks();
-  }
-}
-
-export async function startTask(
-  executor: Executor,
-  taskID: string,
-  opts: RunOpts = {},
-): Promise<TaskResult> {
-  const normalizedTaskID = taskID.trim();
-  if (!normalizedTaskID) {
-    throw new RunWorkflowError('task id required', 400);
-  }
-  return await executor.runTaskByID(normalizedTaskID, toRunOptions(opts));
+export function isRunWorkflowError(err: unknown): err is RunWorkflowError {
+  return err instanceof Error && err.name === 'RunWorkflowError';
 }
 
 export async function resumeTask(
   executor: Executor,
-  taskStore: TaskStore,
+  db: OrcaDrizzleDB,
   taskID: string,
   feedback = '',
   opts: RunOpts = {},
+  interactionStore?: InteractionStore,
 ): Promise<TaskResult> {
   const normalizedTaskID = taskID.trim();
   if (!normalizedTaskID) {
-    throw new RunWorkflowError('task id required', 400);
+    throw runWorkflowError('task id required', 400);
   }
 
-  const task = await taskStore.get(normalizedTaskID);
-  if (!task) {
-    throw new RunWorkflowError('task not found', 404);
+  let task: Awaited<ReturnType<typeof taskStore.getTask>> | null = null;
+  try {
+    task = await taskStore.getTask(db, normalizedTaskID);
+  } catch {
+    throw runWorkflowError('task not found', 404);
   }
   if (task.status !== TASK_STATUSES.stopped) {
-    throw new RunWorkflowError(
+    throw runWorkflowError(
       `task ${normalizedTaskID} is "${task.status}", not "stopped"`,
       400,
     );
   }
-  if (!task.sessionId?.trim()) {
-    throw new RunWorkflowError(
+  const sessionId =
+    await interactionStore?.getLatestSessionId(normalizedTaskID);
+  if (!sessionId?.trim()) {
+    throw runWorkflowError(
       `task ${normalizedTaskID} cannot resume without sessionId`,
       400,
     );
@@ -84,41 +73,31 @@ export async function resumeTask(
 
 export async function stopTask(
   executor: Executor,
-  taskStore: TaskStore,
+  db: OrcaDrizzleDB,
+  sink: EventSink | undefined,
   taskID: string,
 ): Promise<void> {
   const normalizedTaskID = taskID.trim();
   if (!normalizedTaskID) {
-    throw new RunWorkflowError('task id required', 400);
+    throw runWorkflowError('task id required', 400);
   }
 
   const stopped = executor.stopTask(normalizedTaskID);
   if (!stopped) {
-    throw new RunWorkflowError('task not running', 404);
+    throw runWorkflowError('task not running', 404);
   }
 
   try {
-    await taskStore.updateStatus(normalizedTaskID, TASK_STATUSES.stopped);
+    await taskStore.updateTask(db, sink, normalizedTaskID, {
+      status: TASK_STATUSES.stopped,
+    });
   } catch (error) {
     const message = String(error);
     if (message.includes('not found')) {
-      throw new RunWorkflowError('task not found', 404);
+      throw runWorkflowError('task not found', 404);
     }
     throw error;
   }
-}
-
-function normalizeTaskIDs(taskIDs: string[] | undefined): string[] {
-  if (!Array.isArray(taskIDs) || taskIDs.length === 0) return [];
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-  for (const taskID of taskIDs) {
-    const value = String(taskID ?? '').trim();
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    normalized.push(value);
-  }
-  return normalized;
 }
 
 function toRunOptions(opts: RunOpts): RunOptions {

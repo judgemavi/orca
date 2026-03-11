@@ -23,7 +23,7 @@ emit_text() {
 }
 
 emit_result() {
-  echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"result\",\"session_id\":\"$SESSION_ID\",\"usage\":{\"input_tokens\":100,\"output_tokens\":50},\"total_cost_usd\":0.001}}"
+  echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"result\",\"session_id\":\"$SESSION_ID\"}}"
 }
 
 # Detect mode from env or prompt content
@@ -41,6 +41,7 @@ if [[ -z "$MODE" ]]; then
     MODE="code"
   fi
 fi
+
 
 case "$MODE" in
   evaluate)
@@ -60,11 +61,11 @@ case "$MODE" in
     emit_result
     ;;
   review)
-    emit_text '```json\n{"approved": true, "feedback": "Code looks good. Clean implementation.", "checks": [{"key": "correctness", "label": "Correctness", "passed": true}], "findings": [{"id": "f1", "summary": "All changes look correct", "passed": true}]}\n```'
+    emit_text '```json\n{"outcome": "approved", "output": "Code looks good. Clean implementation.", "checks": [{"key": "correctness", "label": "Correctness", "passed": true}], "findings": [{"id": "f1", "summary": "All changes look correct", "passed": true}]}\n```'
     emit_result
     ;;
   review_reject)
-    emit_text '```json\n{"approved": false, "feedback": "Missing error handling in the main function.", "checks": [{"key": "correctness", "label": "Correctness", "passed": false}], "findings": [{"id": "f1", "summary": "No error handling", "passed": false}]}\n```'
+    emit_text '```json\n{"outcome": "request_changes", "output": "Missing error handling in the main function.", "checks": [{"key": "correctness", "label": "Correctness", "passed": false}], "findings": [{"id": "f1", "summary": "No error handling", "passed": false}]}\n```'
     emit_result
     ;;
   breakdown)

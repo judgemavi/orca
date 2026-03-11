@@ -1,9 +1,9 @@
+import { stat } from 'node:fs/promises';
 import { type RunInitOptions, runInitCommand } from './cli/commands/init';
 
-type Mode = 'mcp' | 'serve' | 'cli';
+type Mode = 'serve' | 'cli';
 
 function detectMode(): Mode {
-  if (Bun.argv.some((arg) => arg === 'mcp')) return 'mcp';
   if (Bun.argv.some((arg) => arg === 'serve' || arg === '--server-only'))
     return 'serve';
   return 'cli';
@@ -60,16 +60,21 @@ function parseInitOptions(): RunInitOptions {
   if (opts.tools.length === 0) opts.tools = undefined;
   opts.orchestratorTool = str('--orchestrator-tool');
   opts.orchestratorModel = str('--orchestrator-model');
-  opts.costBudget = num('--cost-budget');
-  opts.interaction = multi('--interaction');
-  if (opts.interaction.length === 0) opts.interaction = undefined;
 
   return opts;
 }
 
 async function isInitialized(repoDir: string): Promise<boolean> {
   if (await Bun.file(`${repoDir}/.orca/.initialized`).exists()) return true;
-  return Bun.file(`${repoDir}/.orca/state.db`).exists();
+  const dbPath = `${repoDir}/.orca/state.db`;
+  if (!(await Bun.file(dbPath).exists())) return false;
+
+  try {
+    const info = await stat(dbPath);
+    return info.size > 0;
+  } catch {
+    return false;
+  }
 }
 
 async function detectRepoDir(startDir: string): Promise<string> {
@@ -112,11 +117,6 @@ async function main() {
   const mode = detectMode();
 
   switch (mode) {
-    case 'mcp': {
-      const { runMCPEntrypoint } = await import('./entrypoints/mcp');
-      await runMCPEntrypoint(repoDir);
-      break;
-    }
     case 'serve': {
       const { runServeEntrypoint } = await import('./entrypoints/serve');
       await runServeEntrypoint(repoDir, parsePort());

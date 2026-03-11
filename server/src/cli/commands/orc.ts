@@ -1,18 +1,18 @@
 import type { Command } from 'commander';
+import type { OrcaDrizzleDB } from '../../db/connection';
 import {
-  buildMCPServerDef,
   loadOrchestratorPrompt,
   ORCHESTRATOR_ALLOWED_TOOLS,
   resolveSupervisor,
 } from '../../orchestrator/bootstrap';
 import { type ToolPluginRegistry, toolDefinition } from '../../plugin/registry';
-import type { ConfigStore } from '../../store/config';
+import * as configStore from '../../store/config';
 
 export function registerOrcCommand(
   program: Command,
   deps: {
     repoDir: string;
-    configStore: ConfigStore;
+    db: OrcaDrizzleDB;
     registry: ToolPluginRegistry;
   },
 ) {
@@ -29,36 +29,30 @@ export function registerOrcCommand(
 async function runOrcInteractive(
   deps: {
     repoDir: string;
-    configStore: ConfigStore;
+    db: OrcaDrizzleDB;
     registry: ToolPluginRegistry;
   },
   opts: { tool?: string; model?: string },
 ): Promise<void> {
-  const resolved = await resolveSupervisor(deps.configStore, deps.registry);
+  const resolved = await resolveSupervisor(deps.db, deps.registry);
   const toolName = (opts.tool ?? '').trim() || resolved.toolName;
   const tool = toolDefinition(deps.registry, toolName);
   if (!tool) {
     throw new Error(`supervisor tool not available: ${toolName}`);
   }
   const model = await resolveSupervisorModel({
-    configStore: deps.configStore,
+    db: deps.db,
     toolName,
     toolModels: tool.models(),
     fallbackModel: resolved.model,
     override: (opts.model ?? '').trim(),
   });
 
-  const config = await deps.configStore.load();
-  const mcpServer = buildMCPServerDef(deps.repoDir);
-  const systemPrompt = await loadOrchestratorPrompt(
-    deps.repoDir,
-    config.orchestrator.mode,
-  );
+  const systemPrompt = await loadOrchestratorPrompt(deps.repoDir);
   const args = await tool.interactiveArgs({
     model,
     systemPrompt,
     allowedTools: [...ORCHESTRATOR_ALLOWED_TOOLS],
-    mcpServers: { orca: mcpServer },
     repoDir: deps.repoDir,
   });
 
@@ -88,7 +82,7 @@ async function runOrcInteractive(
 }
 
 async function resolveSupervisorModel(input: {
-  configStore: ConfigStore;
+  db: OrcaDrizzleDB;
   toolName: string;
   toolModels: string[];
   fallbackModel: string;
@@ -99,7 +93,7 @@ async function resolveSupervisorModel(input: {
     return input.fallbackModel;
   }
 
-  const config = await input.configStore.load();
+  const config = await configStore.loadConfig(input.db);
   const candidates = [
     input.toolName === config.orchestrator.tool
       ? config.orchestrator.model

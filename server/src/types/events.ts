@@ -1,10 +1,5 @@
-import type {
-  AIReviewResult,
-  Config,
-  ProposedTask,
-  TaskEvaluation,
-} from './api';
-import type { Interaction, Task } from './models';
+import type { Config, InteractionEntry, TaskEntry } from '../db/schema';
+import type { AIReviewResult, ProposedTask, TaskEvaluation } from './api';
 
 interface WSEventBase<TType extends string, TData> {
   type: TType;
@@ -36,8 +31,8 @@ export interface MergeProgressEventData {
 }
 
 export type KnownWSEvent =
-  | WSEventBase<'task.created', Task>
-  | WSEventBase<'task.updated', Task | { id: string }>
+  | WSEventBase<'task.created', TaskEntry>
+  | WSEventBase<'task.updated', TaskEntry | { id: string }>
   | WSEventBase<'task.deleted', { id: string }>
   | WSEventBase<'config.updated', Config>
   | WSEventBase<'plan.generating', { taskId: string }>
@@ -54,12 +49,12 @@ export type KnownWSEvent =
   | WSEventBase<'merge.failed', MergeFailedEventData>
   | WSEventBase<
       'merge.completed',
-      Task | { merged: string[]; failed: string[] }
+      TaskEntry | { merged: string[]; failed: string[] }
     >
-  | WSEventBase<'interaction.started', Interaction | { id: string }>
-  | WSEventBase<'interaction.updated', Interaction | { id: string }>
-  | WSEventBase<'interaction.completed', Interaction | { id: string }>
-  | WSEventBase<'interaction.failed', Interaction | { id: string }>
+  | WSEventBase<'interaction.started', InteractionEntry | { id: string }>
+  | WSEventBase<'interaction.updated', InteractionEntry | { id: string }>
+  | WSEventBase<'interaction.completed', InteractionEntry | { id: string }>
+  | WSEventBase<'interaction.failed', InteractionEntry | { id: string }>
   | WSEventBase<'session.created', SessionEventData>
   | WSEventBase<'session.exited', SessionEventData>
   | WSEventBase<
@@ -129,9 +124,18 @@ export type KnownWSEvent =
   | WSEventBase<
       'queue.job.cancelled',
       { jobId: string; type: string; taskId?: string }
-    >;
+    >
+  | WSEventBase<'explore.started', Record<string, never>>
+  | WSEventBase<'retro.started', { taskId: string }>
+  | WSEventBase<
+      'retro.completed',
+      { taskId: string; interactionId?: string; entriesCreated?: number }
+    >
+  | WSEventBase<'retro.failed', { taskId: string; error: string }>
+  | WSEventBase<'task.awaiting_input', { taskId: string; question: string }>
+  | WSEventBase<'memory.sync', { id: string; op: string }>;
 
-type KnownWSEventType = KnownWSEvent['type'];
+export type KnownWSEventType = KnownWSEvent['type'];
 
 export type UnknownWSEvent = WSEventBase<string, Record<string, unknown>>;
 
@@ -180,6 +184,12 @@ const KNOWN_WS_EVENT_TYPES = new Set<KnownWSEventType>([
   'queue.job.completed',
   'queue.job.failed',
   'queue.job.cancelled',
+  'explore.started',
+  'retro.started',
+  'retro.completed',
+  'retro.failed',
+  'task.awaiting_input',
+  'memory.sync',
 ]);
 
 function isKnownWSEventType(type: string): type is KnownWSEventType {

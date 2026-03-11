@@ -8,5 +8,6 @@
   "workspaces": {
     ".": {}
   },
-  "ignore": ["**/*.gen.*"]
+  "ignore": ["**/__tests__/**/*"],
+  "ignoreDependencies": ["pino-pretty"]
 }

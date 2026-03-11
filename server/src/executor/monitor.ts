@@ -1,7 +1,5 @@
-import {
-  ConflictDetector,
-  type MonitorContext as ConflictMonitorContext,
-} from '../domain/conflict-detector';
+import { ConflictDetector } from '../domain/conflict-detector';
+import type { MonitorContext } from '../domain/runtime-monitor';
 import { StuckDetector } from '../domain/stuck-detector';
 
 interface MonitorOptions {
@@ -35,7 +33,7 @@ export class Monitor {
     });
   }
 
-  start(taskIDs: string[], ctx: ConflictMonitorContext = {}): void {
+  start(taskIDs: string[], ctx: MonitorContext = {}): void {
     for (const taskID of taskIDs) {
       const normalized = taskID.trim();
       if (!normalized) continue;

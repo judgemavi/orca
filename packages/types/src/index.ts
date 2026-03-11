@@ -21,14 +21,6 @@ export const TASK_STATUSES = {
 
 export type TaskStatus = (typeof TASK_STATUSES)[keyof typeof TASK_STATUSES];
 
-export const REVIEW_STATUSES = {
-  pending: 'pending',
-  addressed: 'addressed',
-} as const;
-
-export type ReviewStatus =
-  (typeof REVIEW_STATUSES)[keyof typeof REVIEW_STATUSES];
-
 export const JOB_STATUSES = {
   queued: 'queued',
   running: 'running',

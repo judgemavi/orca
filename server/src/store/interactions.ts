@@ -1,4 +1,5 @@
 import { appendFile } from 'node:fs/promises';
+import { INTERACTION_STATUSES } from '@orca/types';
 import {
   and,
   desc,
@@ -6,21 +7,18 @@ import {
   gte,
   isNotNull,
   isNull,
-  like,
   ne,
   or,
   type SQL,
   sql,
 } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import { taskInteractions } from '../db/schema';
-import { genId } from '../shared/id';
-import type { InteractionStatus, InteractionStub } from '../types';
-import { INTERACTION_STATUSES } from '../types';
-import type { StoredInteraction, ToolSummary } from './types';
-
-type InteractionRow = typeof taskInteractions.$inferSelect;
+import type { InteractionStub } from '../types/models';
+import { mapInteractionRow, mapInteractionStub } from './interaction-mappers';
+import type { StoredInteraction } from './types';
 
 interface BeginResult {
   id: string;
@@ -28,49 +26,54 @@ interface BeginResult {
   logPath: string;
 }
 
-interface RunCostSummary {
-  runId: string;
-  interactions: number;
-  inputTokens: number;
-  outputTokens: number;
-  cost: number;
-  startedAt: string;
-  finishedAt: string;
-}
-
 export class InteractionStore {
   constructor(
     private readonly db: OrcaDrizzleDB,
-    private readonly baseDir = '.orca/interactions',
+    private readonly baseDir = '.orca/logs/interactions',
     private readonly sink?: EventSink,
   ) {}
 
   async begin(input: {
     taskId?: string | null;
     type: string;
+    stepName?: string;
     tool: string;
+    previousInteractionId?: string | null;
   }): Promise<BeginResult> {
     const type = input.type.trim();
     const tool = input.tool.trim();
     if (!type) throw new Error('type required');
     if (!tool) throw new Error('tool required');
 
-    const id = genId();
+    const id = nanoid();
     const attempt = await this.nextAttempt(input.taskId ?? null, type);
     const logPath = this.logPath(input.taskId ?? null, type, attempt, id);
 
     await Bun.$`mkdir -p ${this.dirName(logPath)}`;
     await Bun.write(logPath, '');
 
+    let previousId: string | null = input.previousInteractionId ?? null;
+    if (!previousId && input.taskId) {
+      const latest = await this.db
+        .select({ id: taskInteractions.id })
+        .from(taskInteractions)
+        .where(eq(taskInteractions.taskId, input.taskId))
+        .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id))
+        .limit(1);
+      previousId = latest[0]?.id ?? null;
+    }
+
     await this.db.insert(taskInteractions).values({
       id,
       taskId: input.taskId ?? null,
       type,
+      stepName: input.stepName ?? null,
       attempt,
       tool,
       logPath,
       status: INTERACTION_STATUSES.running,
       startedAt: sql`(CURRENT_TIMESTAMP)`,
+      previousInteractionId: previousId,
     });
 
     if (this.sink) {
@@ -99,49 +102,36 @@ export class InteractionStore {
     fields: {
       status: string;
       error?: string | null;
-      diff?: string | null;
+      output?: string | null;
       exitCode?: number;
       durationMs?: number;
-      qualityJson?: string | null;
-      inputTokens?: number;
-      outputTokens?: number;
-      estimatedCost?: number;
-      runId?: string | null;
       model?: string | null;
+      commitSha?: string | null;
+      sessionId?: string | null;
     },
   ): Promise<void> {
     const updates: {
       status: string;
       finishedAt: SQL;
       error?: string | null;
-      diff?: string | null;
+      output?: string | null;
       exitCode?: number;
       durationMs?: number;
-      qualityJson?: string | null;
-      inputTokens?: number;
-      outputTokens?: number;
-      estimatedCost?: number;
-      runId?: string | null;
       model?: string | null;
+      commitSha?: string | null;
+      sessionId?: string | null;
     } = {
       status: fields.status,
       finishedAt: sql`(CURRENT_TIMESTAMP)`,
     };
 
     if (fields.error !== undefined) updates.error = fields.error;
-    if (fields.diff !== undefined) updates.diff = fields.diff;
+    if (fields.output !== undefined) updates.output = fields.output;
     if (fields.exitCode !== undefined) updates.exitCode = fields.exitCode;
     if (fields.durationMs !== undefined) updates.durationMs = fields.durationMs;
-    if (fields.qualityJson !== undefined)
-      updates.qualityJson = fields.qualityJson;
-    if (fields.inputTokens !== undefined)
-      updates.inputTokens = fields.inputTokens;
-    if (fields.outputTokens !== undefined)
-      updates.outputTokens = fields.outputTokens;
-    if (fields.estimatedCost !== undefined)
-      updates.estimatedCost = fields.estimatedCost;
-    if (fields.runId !== undefined) updates.runId = fields.runId;
     if (fields.model !== undefined) updates.model = fields.model;
+    if (fields.commitSha !== undefined) updates.commitSha = fields.commitSha;
+    if (fields.sessionId !== undefined) updates.sessionId = fields.sessionId;
 
     const result = await this.db
       .update(taskInteractions)
@@ -166,6 +156,23 @@ export class InteractionStore {
     }
   }
 
+  async updateOutput(id: string, output: string): Promise<void> {
+    const result = await this.db
+      .update(taskInteractions)
+      .set({ output })
+      .where(eq(taskInteractions.id, id))
+      .returning({ id: taskInteractions.id });
+    if (result.length === 0) {
+      throw new Error(`interaction ${id} not found`);
+    }
+    if (this.sink) {
+      const interaction = await this.get(id);
+      if (interaction) {
+        this.sink.broadcast('interaction.updated', interaction);
+      }
+    }
+  }
+
   async get(id: string): Promise<StoredInteraction | null> {
     const rows = await this.db
       .select()
@@ -173,7 +180,7 @@ export class InteractionStore {
       .where(eq(taskInteractions.id, id))
       .limit(1);
     const row = rows[0] ?? null;
-    return row ? this.mapInteraction(row) : null;
+    return row ? mapInteractionRow(row) : null;
   }
 
   async list(taskID: string): Promise<StoredInteraction[]> {
@@ -181,8 +188,8 @@ export class InteractionStore {
       .select()
       .from(taskInteractions)
       .where(eq(taskInteractions.taskId, taskID))
-      .orderBy(desc(taskInteractions.startedAt));
-    return rows.map((row) => this.mapInteraction(row));
+      .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id));
+    return rows.map(mapInteractionRow);
   }
 
   async listStubs(taskID: string): Promise<InteractionStub[]> {
@@ -190,22 +197,38 @@ export class InteractionStore {
       .select()
       .from(taskInteractions)
       .where(eq(taskInteractions.taskId, taskID))
-      .orderBy(desc(taskInteractions.startedAt));
-    return rows.map((row) => this.mapStub(row));
+      .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id));
+    return rows.map(mapInteractionStub);
   }
 
   async listByType(taskID: string, type: string): Promise<StoredInteraction[]> {
+    const conditions = [
+      eq(taskInteractions.taskId, taskID),
+      eq(taskInteractions.type, type),
+    ];
+    const rows = await this.db
+      .select()
+      .from(taskInteractions)
+      .where(and(...conditions))
+      .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id));
+    return rows.map(mapInteractionRow);
+  }
+
+  async listByStepName(
+    taskID: string,
+    stepName: string,
+  ): Promise<StoredInteraction[]> {
     const rows = await this.db
       .select()
       .from(taskInteractions)
       .where(
         and(
           eq(taskInteractions.taskId, taskID),
-          eq(taskInteractions.type, type),
+          eq(taskInteractions.stepName, stepName),
         ),
       )
-      .orderBy(desc(taskInteractions.startedAt));
-    return rows.map((row) => this.mapInteraction(row));
+      .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id));
+    return rows.map(mapInteractionRow);
   }
 
   async listByStatus(status: string): Promise<StoredInteraction[]> {
@@ -213,8 +236,8 @@ export class InteractionStore {
       .select()
       .from(taskInteractions)
       .where(eq(taskInteractions.status, status))
-      .orderBy(desc(taskInteractions.startedAt));
-    return rows.map((row) => this.mapInteraction(row));
+      .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id));
+    return rows.map(mapInteractionRow);
   }
 
   async listProjectByType(type: string): Promise<StoredInteraction[]> {
@@ -222,8 +245,8 @@ export class InteractionStore {
       .select()
       .from(taskInteractions)
       .where(eq(taskInteractions.type, type))
-      .orderBy(desc(taskInteractions.startedAt));
-    return rows.map((row) => this.mapInteraction(row));
+      .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id));
+    return rows.map(mapInteractionRow);
   }
 
   async isRunning(taskID: string | null, type: string): Promise<boolean> {
@@ -244,6 +267,20 @@ export class InteractionStore {
     return rows.length > 0;
   }
 
+  async hasRunningForTask(taskID: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ one: sql<number>`1`.as('one') })
+      .from(taskInteractions)
+      .where(
+        and(
+          eq(taskInteractions.taskId, taskID),
+          eq(taskInteractions.status, INTERACTION_STATUSES.running),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
   async readLog(id: string): Promise<string> {
     const rows = await this.db
       .select({ logPath: taskInteractions.logPath })
@@ -255,136 +292,6 @@ export class InteractionStore {
     return Bun.file(row.logPath).text();
   }
 
-  async projectTotal(): Promise<number> {
-    const rows = await this.db
-      .select({
-        total: sql<number | null>`sum(${taskInteractions.estimatedCost})`.as(
-          'total',
-        ),
-      })
-      .from(taskInteractions);
-    return Number(rows[0]?.total ?? 0);
-  }
-
-  async runTotal(runID: string): Promise<number> {
-    const rows = await this.db
-      .select({
-        total: sql<number | null>`sum(${taskInteractions.estimatedCost})`.as(
-          'total',
-        ),
-      })
-      .from(taskInteractions)
-      .where(eq(taskInteractions.runId, runID));
-    return Number(rows[0]?.total ?? 0);
-  }
-
-  async runSummary(runID: string): Promise<ToolSummary[]> {
-    const rows = await this.db
-      .select({
-        tool: taskInteractions.tool,
-        inputTokens: sql<
-          number | null
-        >`sum(${taskInteractions.inputTokens})`.as('inputTokens'),
-        outputTokens: sql<
-          number | null
-        >`sum(${taskInteractions.outputTokens})`.as('outputTokens'),
-        cost: sql<number | null>`sum(${taskInteractions.estimatedCost})`.as(
-          'cost',
-        ),
-      })
-      .from(taskInteractions)
-      .where(eq(taskInteractions.runId, runID))
-      .groupBy(taskInteractions.tool);
-
-    return rows.map((row) => ({
-      tool: row.tool,
-      inputTokens: Number(row.inputTokens ?? 0),
-      outputTokens: Number(row.outputTokens ?? 0),
-      cost: Number(row.cost ?? 0),
-    }));
-  }
-
-  async projectSummary(): Promise<ToolSummary[]> {
-    const rows = await this.db
-      .select({
-        tool: taskInteractions.tool,
-        inputTokens: sql<
-          number | null
-        >`sum(${taskInteractions.inputTokens})`.as('inputTokens'),
-        outputTokens: sql<
-          number | null
-        >`sum(${taskInteractions.outputTokens})`.as('outputTokens'),
-        cost: sql<number | null>`sum(${taskInteractions.estimatedCost})`.as(
-          'cost',
-        ),
-      })
-      .from(taskInteractions)
-      .groupBy(taskInteractions.tool);
-
-    return rows.map((row) => ({
-      tool: row.tool,
-      inputTokens: Number(row.inputTokens ?? 0),
-      outputTokens: Number(row.outputTokens ?? 0),
-      cost: Number(row.cost ?? 0),
-    }));
-  }
-
-  async listRuns(limit = 20): Promise<RunCostSummary[]> {
-    const finishedAtExpr = sql<string>`max(coalesce(${taskInteractions.finishedAt}, ${taskInteractions.startedAt}))`;
-
-    const rows = await this.db
-      .select({
-        runId: taskInteractions.runId,
-        interactions: sql<number>`count(*)`.as('interactions'),
-        inputTokens: sql<
-          number | null
-        >`sum(${taskInteractions.inputTokens})`.as('inputTokens'),
-        outputTokens: sql<
-          number | null
-        >`sum(${taskInteractions.outputTokens})`.as('outputTokens'),
-        cost: sql<number | null>`sum(${taskInteractions.estimatedCost})`.as(
-          'cost',
-        ),
-        startedAt: sql<string>`min(${taskInteractions.startedAt})`.as(
-          'startedAt',
-        ),
-        finishedAt: finishedAtExpr.as('finishedAt'),
-      })
-      .from(taskInteractions)
-      .where(
-        and(
-          isNotNull(taskInteractions.runId),
-          ne(sql<string>`trim(${taskInteractions.runId})`, ''),
-        ),
-      )
-      .groupBy(taskInteractions.runId)
-      .orderBy(desc(finishedAtExpr))
-      .limit(limit);
-
-    return rows.map((row) => ({
-      runId: String(row.runId ?? ''),
-      interactions: Number(row.interactions ?? 0),
-      inputTokens: Number(row.inputTokens ?? 0),
-      outputTokens: Number(row.outputTokens ?? 0),
-      cost: Number(row.cost ?? 0),
-      startedAt: String(row.startedAt ?? ''),
-      finishedAt: String(row.finishedAt ?? ''),
-    }));
-  }
-
-  async findRunIDsByPrefix(prefix: string, limit = 25): Promise<string[]> {
-    const normalized = prefix.trim();
-    if (!normalized) return [];
-    const rows = await this.db
-      .selectDistinct({ runId: taskInteractions.runId })
-      .from(taskInteractions)
-      .where(like(taskInteractions.runId, `${normalized}%`))
-      .orderBy(desc(taskInteractions.runId))
-      .limit(limit);
-
-    return rows.map((row) => String(row.runId ?? '').trim()).filter(Boolean);
-  }
-
   async listOperations(
     opts: { all?: boolean; sinceISO?: string; limit?: number } = {},
   ): Promise<StoredInteraction[]> {
@@ -393,9 +300,9 @@ export class InteractionStore {
       const rows = await this.db
         .select()
         .from(taskInteractions)
-        .orderBy(desc(taskInteractions.startedAt))
+        .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id))
         .limit(limit);
-      return rows.map((row) => this.mapInteraction(row));
+      return rows.map(mapInteractionRow);
     }
 
     const sinceISO = opts.sinceISO?.trim() ?? '';
@@ -404,9 +311,9 @@ export class InteractionStore {
         .select()
         .from(taskInteractions)
         .where(eq(taskInteractions.status, INTERACTION_STATUSES.running))
-        .orderBy(desc(taskInteractions.startedAt))
+        .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id))
         .limit(limit);
-      return rows.map((row) => this.mapInteraction(row));
+      return rows.map(mapInteractionRow);
     }
 
     const rows = await this.db
@@ -420,7 +327,7 @@ export class InteractionStore {
       )
       .orderBy(desc(taskInteractions.startedAt))
       .limit(limit);
-    return rows.map((row) => this.mapInteraction(row));
+    return rows.map(mapInteractionRow);
   }
 
   async markStaleAsFailed(): Promise<void> {
@@ -509,72 +416,18 @@ export class InteractionStore {
     return path.slice(0, idx);
   }
 
-  private computeDiffSummary(diff: string | null | undefined): string | null {
-    if (!diff) return null;
-    let added = 0;
-    let removed = 0;
-    for (const line of diff.split('\n')) {
-      if (line.startsWith('+++') || line.startsWith('---')) continue;
-      if (line.startsWith('+')) {
-        added++;
-        continue;
-      }
-      if (line.startsWith('-')) removed++;
-    }
-    if (added === 0 && removed === 0) return null;
-    return `+${added}/-${removed}`;
+  async getLatestSessionId(taskID: string): Promise<string | null> {
+    const rows = await this.db
+      .select({ sessionId: taskInteractions.sessionId })
+      .from(taskInteractions)
+      .where(
+        and(
+          eq(taskInteractions.taskId, taskID),
+          isNotNull(taskInteractions.sessionId),
+        ),
+      )
+      .orderBy(desc(taskInteractions.startedAt), desc(taskInteractions.id))
+      .limit(1);
+    return rows[0]?.sessionId ?? null;
   }
-
-  private mapStub(row: InteractionRow): InteractionStub {
-    return {
-      id: row.id,
-      taskId: row.taskId,
-      type: row.type,
-      attempt: row.attempt,
-      tool: row.tool,
-      status: row.status as InteractionStatus,
-      durationMs: row.durationMs ?? undefined,
-      estimatedCost: Number(row.estimatedCost ?? 0),
-      diffSummary: this.computeDiffSummary(row.diff),
-      memoryCount: parseMemoryCount(row.qualityJson),
-      startedAt: row.startedAt,
-      finishedAt: row.finishedAt,
-    };
-  }
-
-  private mapInteraction(row: InteractionRow): StoredInteraction {
-    return {
-      id: row.id,
-      taskId: row.taskId,
-      type: row.type,
-      attempt: row.attempt,
-      runId: row.runId,
-      tool: row.tool,
-      model: row.model,
-      logPath: row.logPath,
-      status: row.status as InteractionStatus,
-      error: row.error ?? undefined,
-      diff: row.diff ?? undefined,
-      exitCode: row.exitCode ?? undefined,
-      durationMs: row.durationMs ?? undefined,
-      inputTokens: Number(row.inputTokens ?? 0),
-      outputTokens: Number(row.outputTokens ?? 0),
-      estimatedCost: Number(row.estimatedCost ?? 0),
-      qualityJson: row.qualityJson ?? undefined,
-      startedAt: row.startedAt,
-      finishedAt: row.finishedAt,
-    };
-  }
-}
-
-function parseMemoryCount(raw: string | null | undefined): number | undefined {
-  if (!raw?.trim()) return undefined;
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const ids = parsed.usedMemoryIds ?? parsed.used_memory_ids;
-    if (Array.isArray(ids) && ids.length > 0) return ids.length;
-  } catch {
-    /* ignore */
-  }
-  return undefined;
 }

@@ -1,14 +1,15 @@
-import { and, asc, count, eq, lt, or, sql } from 'drizzle-orm';
+import {
+  JOB_PRIORITIES,
+  JOB_STATUSES,
+  type JobStatus,
+  type JobType,
+} from '@orca/types';
+import { and, asc, count, eq, lt, ne, or, sql } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import { jobs as jobsTable } from '../db/schema';
-import { genId } from '../shared/id';
-import type {
-  Job,
-  JobStatus as JobStatusType,
-  JobType as JobTypeType,
-} from '../types';
-import { JOB_PRIORITIES, JOB_STATUSES } from '../types';
+import type { Job } from '../types/models';
 
 type JobRow = typeof jobsTable.$inferSelect;
 
@@ -23,9 +24,9 @@ function ensureUTC(ts: string | null): string | null {
 function mapJob(row: JobRow): Job {
   return {
     id: row.id,
-    type: row.type as JobTypeType,
+    type: row.type as JobType,
     taskId: row.taskId,
-    status: row.status as JobStatusType,
+    status: row.status as JobStatus,
     priority: row.priority,
     payload: row.payload
       ? (JSON.parse(row.payload) as Record<string, unknown>)
@@ -53,13 +54,13 @@ export class JobQueue {
   }
 
   async enqueue(opts: {
-    type: JobTypeType;
+    type: string;
     taskId?: string;
     priority?: number;
     payload?: Record<string, unknown>;
   }): Promise<Job> {
-    const id = genId();
-    const priority = opts.priority ?? JOB_PRIORITIES[opts.type] ?? 5;
+    const id = nanoid();
+    const priority = opts.priority ?? JOB_PRIORITIES[opts.type as JobType] ?? 5;
 
     await this.db.insert(jobsTable).values({
       id,
@@ -85,60 +86,71 @@ export class JobQueue {
     return job;
   }
 
-  async claim(maxParallel: number): Promise<Job[]> {
-    return this.db.transaction(async (tx) => {
-      // BEGIN IMMEDIATE via drizzle transaction
-      const runningRows = await tx
-        .select({ count: count() })
-        .from(jobsTable)
-        .where(eq(jobsTable.status, JOB_STATUSES.running));
-      const runningCount = runningRows[0]?.count ?? 0;
-      const available = maxParallel - runningCount;
-      if (available <= 0) return [];
+  /**
+   * @deprecated Use claimNext instead. Kept for test compatibility.
+   */
+  async claim(limit: number): Promise<Job[]> {
+    return this.claimNext(limit);
+  }
 
-      const candidates = await tx
+  /**
+   * Claim up to `limit` queued jobs, marking them as running.
+   * Concurrency control is handled by the processor (p-queue), not here.
+   */
+  async claimNext(limit: number, excludeTypes?: string[]): Promise<Job[]> {
+    const updated = this.db.transaction((tx) => {
+      const conditions = [eq(jobsTable.status, JOB_STATUSES.queued)];
+      if (excludeTypes?.length) {
+        for (const t of excludeTypes) {
+          conditions.push(ne(jobsTable.type, t));
+        }
+      }
+      const candidates = tx
         .select()
         .from(jobsTable)
-        .where(eq(jobsTable.status, JOB_STATUSES.queued))
+        .where(and(...conditions))
         .orderBy(asc(jobsTable.priority), asc(jobsTable.createdAt))
-        .limit(available);
+        .limit(limit)
+        .all();
 
       if (candidates.length === 0) return [];
 
-      const ids = candidates.map((r) => r.id);
       const now = new Date().toISOString();
+      const result: Job[] = [];
 
-      const updated: Job[] = [];
-      for (const jobId of ids) {
-        await tx
-          .update(jobsTable)
+      for (const row of candidates) {
+        tx.update(jobsTable)
           .set({ status: JOB_STATUSES.running, startedAt: now })
           .where(
             and(
-              eq(jobsTable.id, jobId),
+              eq(jobsTable.id, row.id),
               eq(jobsTable.status, JOB_STATUSES.queued),
             ),
-          );
-        const rows = await tx
+          )
+          .run();
+        const rows = tx
           .select()
           .from(jobsTable)
-          .where(eq(jobsTable.id, jobId))
-          .limit(1);
+          .where(eq(jobsTable.id, row.id))
+          .limit(1)
+          .all();
         if (rows[0] && rows[0].status === JOB_STATUSES.running) {
-          updated.push(mapJob(rows[0]));
+          result.push(mapJob(rows[0]));
         }
       }
 
-      for (const job of updated) {
-        this.sink?.broadcast('queue.job.started', {
-          jobId: job.id,
-          type: job.type,
-          ...(job.taskId ? { taskId: job.taskId } : {}),
-        });
-      }
-
-      return updated;
+      return result;
     });
+
+    for (const job of updated) {
+      this.sink?.broadcast('queue.job.started', {
+        jobId: job.id,
+        type: job.type,
+        ...(job.taskId ? { taskId: job.taskId } : {}),
+      });
+    }
+
+    return updated;
   }
 
   async complete(
@@ -242,7 +254,7 @@ export class JobQueue {
   }
 
   async list(filter?: {
-    status?: JobStatusType;
+    status?: JobStatus;
     taskId?: string;
     limit?: number;
   }): Promise<Job[]> {
@@ -279,8 +291,33 @@ export class JobQueue {
       .update(jobsTable)
       .set({ status: JOB_STATUSES.cancelled })
       .where(eq(jobsTable.status, JOB_STATUSES.queued))
-      .returning({ id: jobsTable.id });
+      .returning({
+        id: jobsTable.id,
+        type: jobsTable.type,
+        taskId: jobsTable.taskId,
+      });
+
+    for (const row of result) {
+      this.sink?.broadcast('queue.job.cancelled', {
+        jobId: row.id,
+        type: row.type,
+        ...(row.taskId ? { taskId: row.taskId } : {}),
+      });
+    }
+
     return result.length;
+  }
+
+  async requeue(jobId: string): Promise<void> {
+    await this.db
+      .update(jobsTable)
+      .set({ status: JOB_STATUSES.queued, startedAt: null })
+      .where(
+        and(
+          eq(jobsTable.id, jobId),
+          eq(jobsTable.status, JOB_STATUSES.running),
+        ),
+      );
   }
 
   async requeueRunning(): Promise<number> {

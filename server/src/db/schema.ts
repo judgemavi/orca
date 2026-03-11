@@ -9,19 +9,123 @@ import {
   sqliteTable,
   text,
 } from 'drizzle-orm/sqlite-core';
+import {
+  createInsertSchema,
+  createSelectSchema,
+  createUpdateSchema,
+} from 'drizzle-orm/zod';
+import { nanoid } from 'nanoid';
+import z from 'zod';
+import { workflowMachineConfigSchema } from '../workflow/types';
+
+export const configSchema = z.object({
+  project: z.object({
+    name: z.string(),
+    integrationBranch: z.string().trim().min(1),
+    worktreeDir: z.string().trim().min(1),
+  }),
+  tools: z.array(z.string().trim().min(1)).min(1),
+  orchestrator: z.object({
+    tool: z.string().trim().min(1),
+    model: z.string(),
+  }),
+  workers: z.object({
+    maxParallel: z.number().int().min(1),
+  }),
+  monitor: z.object({
+    stuckCheckIntervalMs: z.number().int().positive(),
+    maxStuckCycles: z.number().int().min(0),
+    conflictCheckIntervalMs: z.number().int().positive(),
+  }),
+  memory: z.object({
+    enabled: z.boolean().optional(),
+    retro: z.boolean().optional(),
+    sync: z.boolean().optional(),
+  }),
+  postMerge: z.object({
+    enabled: z.boolean().optional(),
+  }),
+  schemaVersion: z.number().int().positive().optional(),
+  embeddings: z
+    .object({
+      provider: z.string().trim().min(1),
+    })
+    .catchall(z.unknown())
+    .optional(),
+  autoRun: z.boolean().optional(),
+  workflows: z.record(z.string(), workflowMachineConfigSchema).optional(),
+  logging: z.object({
+    level: z.string(),
+    file: z.string(),
+    maxSize: z.string(),
+  }),
+});
+export type Config = z.infer<typeof configSchema>;
+
+export const CURRENT_SCHEMA_VERSION = 3;
+export const CONFIG_KEY = 'config';
+export const DEFAULT_CONFIG: Config = {
+  project: {
+    name: '',
+    integrationBranch: 'orca/integration',
+    worktreeDir: '.orca/worktrees',
+  },
+  tools: ['claude'],
+  orchestrator: {
+    tool: 'claude',
+    model: '',
+  },
+  workers: { maxParallel: 3 },
+  monitor: {
+    stuckCheckIntervalMs: 60_000,
+    maxStuckCycles: 10,
+    conflictCheckIntervalMs: 30_000,
+  },
+  memory: {
+    enabled: true,
+    retro: true,
+    sync: true,
+  },
+  postMerge: {
+    enabled: true,
+  },
+  schemaVersion: CURRENT_SCHEMA_VERSION,
+  logging: {
+    level: 'info',
+    file: '.orca/orca.log',
+    maxSize: '50mb',
+  },
+};
+
+export const config = sqliteTable('config', {
+  key: text('key').primaryKey().default(CONFIG_KEY),
+  value: text('value', { mode: 'json' })
+    .$type<Config>()
+    .default(DEFAULT_CONFIG)
+    .notNull(),
+});
+
+type AutoRunOverrides = Record<string, boolean>;
 
 export const tasks = sqliteTable(
   'tasks',
   {
-    id: text('id').primaryKey(),
+    id: text('id')
+      .primaryKey()
+      .$default(() => nanoid()),
     title: text('title').notNull(),
     description: text('description').notNull().default(''),
-    plan: text('plan'),
-    sessionId: text('session_id'),
     parentId: text('parent_id'),
     status: text('status').notNull().default('pending'),
-    autoRunOverrides: text('auto_run_overrides'),
-    pendingQuestion: text('pending_question'),
+    workflow: text('workflow'),
+    currentStep: text('current_step'),
+    autoRunOverrides: text('auto_run_overrides', {
+      mode: 'json',
+    })
+      .$type<AutoRunOverrides>()
+      .notNull()
+      .default({}),
+    workflowSnapshot: text('workflow_snapshot'),
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
     updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },
@@ -32,6 +136,24 @@ export const tasks = sqliteTable(
   ],
 );
 
+export const taskSelectDbSchema = createSelectSchema(tasks);
+export const taskInsertDbSchema = createInsertSchema(tasks);
+export const taskUpdateDbSchema = createUpdateSchema(tasks);
+export type TaskEntry = z.infer<typeof taskSelectDbSchema> & {
+  autoRunOverrides: AutoRunOverrides;
+  workflowSnapshot: string | null;
+  dependsOn?: string[];
+};
+export type CreateTaskInput = z.infer<typeof taskInsertDbSchema> & {
+  autoRunOverrides?: AutoRunOverrides;
+  workflowSnapshot?: string | null;
+  dependsOn?: string[];
+};
+export type UpdateTaskInput = z.infer<typeof taskUpdateDbSchema> & {
+  autoRunOverrides: AutoRunOverrides;
+  workflowSnapshot?: string | null;
+};
+
 export const taskDeps = sqliteTable(
   'task_deps',
   {
@@ -40,7 +162,7 @@ export const taskDeps = sqliteTable(
       .references(() => tasks.id, { onDelete: 'cascade' }),
     dependsOn: text('depends_on')
       .notNull()
-      .references(() => tasks.id),
+      .references(() => tasks.id, { onDelete: 'cascade' }),
   },
   (table) => [
     primaryKey({ columns: [table.taskId, table.dependsOn] }),
@@ -48,40 +170,58 @@ export const taskDeps = sqliteTable(
   ],
 );
 
+export const taskDepsSelectDbSchema = createSelectSchema(taskDeps);
+export const taskDepsInsertDbSchema = createInsertSchema(taskDeps);
+export const taskDepsUpdateDbSchema = createUpdateSchema(taskDeps);
+export type TaskDepsEntry = z.infer<typeof taskDepsSelectDbSchema>;
+export type CreateTaskDepsInput = z.infer<typeof taskDepsInsertDbSchema>;
+export type UpdateTaskDepsInput = z.infer<typeof taskDepsUpdateDbSchema>;
+
 export const taskInteractions = sqliteTable(
   'task_interactions',
   {
-    id: text('id').primaryKey(),
+    id: text('id')
+      .primaryKey()
+      .$default(() => nanoid()),
     taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
     type: text('type').notNull(),
     attempt: integer('attempt').notNull().default(1),
-    runId: text('run_id'),
+    stepName: text('step_name'),
     tool: text('tool').notNull(),
     model: text('model'),
     logPath: text('log_path').notNull(),
     status: text('status').notNull().default('running'),
     error: text('error'),
-    diff: text('diff'),
+    output: text('output'),
     exitCode: integer('exit_code'),
     durationMs: integer('duration_ms'),
-    qualityJson: text('quality_json'),
-    inputTokens: integer('input_tokens').notNull().default(0),
-    outputTokens: integer('output_tokens').notNull().default(0),
-    estimatedCost: real('estimated_cost').notNull().default(0),
     startedAt: text('started_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
     finishedAt: text('finished_at'),
+    previousInteractionId: text('previous_interaction_id'),
+    commitSha: text('commit_sha'),
+    sessionId: text('session_id'),
+    chainId: text('chain_id'),
   },
   (table) => [
     index('idx_interactions_task_type').on(table.taskId, table.type),
     index('idx_interactions_status').on(table.status),
-    index('idx_interactions_run_id').on(table.runId),
+    index('idx_interactions_chain').on(table.chainId),
   ],
 );
 
-export const taskReviews = sqliteTable(
-  'task_reviews',
+export const interactionSelectDbSchema = createSelectSchema(taskInteractions);
+export const interactionInsertDbSchema = createInsertSchema(taskInteractions);
+export const interactionUpdateDbSchema = createUpdateSchema(taskInteractions);
+export type InteractionEntry = z.infer<typeof interactionSelectDbSchema>;
+export type CreateInteractionInput = z.infer<typeof interactionInsertDbSchema>;
+export type UpdateInteractionInput = z.infer<typeof interactionUpdateDbSchema>;
+
+export const taskQuestions = sqliteTable(
+  'task_questions',
   {
-    id: text('id').primaryKey(),
+    id: text('id')
+      .primaryKey()
+      .$default(() => nanoid()),
     taskId: text('task_id')
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
@@ -91,72 +231,28 @@ export const taskReviews = sqliteTable(
         onDelete: 'set null',
       },
     ),
-    feedback: text('feedback').notNull(),
+    question: text('question').notNull(),
+    answer: text('answer'),
     status: text('status').notNull().default('pending'),
     createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
-    addressedAt: text('addressed_at'),
+    answeredAt: text('answered_at'),
   },
   (table) => [
-    index('idx_task_reviews_task_created').on(table.taskId, table.createdAt),
+    index('idx_task_questions_task_id').on(table.taskId),
+    index('idx_task_questions_status').on(table.status),
   ],
 );
 
-export const taskFileAssociations = sqliteTable(
-  'task_file_associations',
-  {
-    taskId: text('task_id')
-      .notNull()
-      .references(() => tasks.id, { onDelete: 'cascade' }),
-    filePath: text('file_path').notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.taskId, table.filePath] }),
-    index('idx_tfa_file_path').on(table.filePath),
-  ],
-);
-
-export const sessions = sqliteTable(
-  'sessions',
-  {
-    id: text('id').primaryKey(),
-    type: text('type').notNull(),
-    tool: text('tool').notNull(),
-    taskId: text('task_id'),
-    pid: integer('pid').notNull(),
-    workingDir: text('working_dir'),
-    cols: integer('cols').notNull().default(80),
-    rows: integer('rows').notNull().default(24),
-    status: text('status').notNull().default('running'),
-    exitCode: integer('exit_code').notNull().default(-1),
-    createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
-    exitedAt: text('exited_at'),
-  },
-  (table) => [
-    index('idx_sessions_status_created').on(table.status, table.createdAt),
-  ],
-);
-
-export const interactions = sqliteTable(
-  'interactions',
-  {
-    id: text('id').primaryKey(),
-    type: text('type').notNull(),
-    targetId: text('target_id').notNull(),
-    status: text('status').notNull().default('running'),
-    result: text('result'),
-    error: text('error'),
-    createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
-    updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
-  },
-  (table) => [
-    index('idx_interactions_target').on(table.targetId, table.updatedAt),
-  ],
-);
-
-export const config = sqliteTable('config', {
-  key: text('key').primaryKey(),
-  value: text('value').notNull(),
-});
+export const taskQuestionSelectDbSchema = createSelectSchema(taskQuestions);
+export const taskQuestionInsertDbSchema = createInsertSchema(taskQuestions);
+export const taskQuestionUpdateDbSchema = createUpdateSchema(taskQuestions);
+export type TaskQuestionEntry = z.infer<typeof taskQuestionSelectDbSchema>;
+export type CreateTaskQuestionInput = z.infer<
+  typeof taskQuestionInsertDbSchema
+>;
+export type UpdateTaskQuestionInput = z.infer<
+  typeof taskQuestionUpdateDbSchema
+>;
 
 export const meta = sqliteTable('meta', {
   key: text('key').primaryKey(),
@@ -166,7 +262,9 @@ export const meta = sqliteTable('meta', {
 export const memoryEntries = sqliteTable(
   'memory_entries',
   {
-    id: text('id').primaryKey(),
+    id: text('id')
+      .primaryKey()
+      .$default(() => nanoid()),
     content: text('content').notNull(),
     category: text('category').notNull(),
     tags: text('tags').notNull().default('[]'),
@@ -209,6 +307,13 @@ export const memoryEntries = sqliteTable(
   ],
 );
 
+export const memoryEntrySelectDbSchema = createSelectSchema(memoryEntries);
+export const memoryEntryInsertDbSchema = createInsertSchema(memoryEntries);
+export const memoryEntryUpdateDbSchema = createUpdateSchema(memoryEntries);
+export type MemoryEntry = z.infer<typeof memoryEntrySelectDbSchema>;
+export type CreateMemoryEntryInput = z.infer<typeof memoryEntryInsertDbSchema>;
+export type UpdateMemoryEntryInput = z.infer<typeof memoryEntryUpdateDbSchema>;
+
 export const memoryFileAssociations = sqliteTable(
   'memory_file_associations',
   {
@@ -223,35 +328,14 @@ export const memoryFileAssociations = sqliteTable(
   ],
 );
 
-export const exploreContext = sqliteTable(
-  'explore_context',
-  {
-    id: integer('id').primaryKey(),
-    content: text('content').notNull(),
-    hash: text('hash').notNull(),
-    updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
-  },
-  (table) => [check('explore_context_singleton', sql`${table.id} = 1`)],
-);
-
-export const changelog = sqliteTable(
-  '_changelog',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    tableName: text('table_name').notNull(),
-    rowId: text('row_id').notNull(),
-    action: text('action').notNull(),
-    createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
-  },
-  (table) => [index('idx_changelog_id').on(table.id)],
-);
-
 export const jobs = sqliteTable(
   'jobs',
   {
-    id: text('id').primaryKey(),
+    id: text('id')
+      .primaryKey()
+      .$default(() => nanoid()),
     type: text('type').notNull(),
-    taskId: text('task_id'),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
     status: text('status').notNull().default('queued'),
     priority: integer('priority').notNull().default(5),
     payload: text('payload'),
@@ -267,3 +351,10 @@ export const jobs = sqliteTable(
     index('idx_jobs_priority_created').on(table.priority, table.createdAt),
   ],
 );
+
+export const jobSelectDbSchema = createSelectSchema(jobs);
+export const jobInsertDbSchema = createInsertSchema(jobs);
+export const jobUpdateDbSchema = createUpdateSchema(jobs);
+export type JobEntry = z.infer<typeof jobSelectDbSchema>;
+export type CreateJobInput = z.infer<typeof jobInsertDbSchema>;
+export type UpdateJobInput = z.infer<typeof jobUpdateDbSchema>;

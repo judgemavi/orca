@@ -1,15 +1,12 @@
 import { createHash } from 'node:crypto';
+import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { gitOutput } from '../shared/git';
 import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
-import type {
-  Config,
-  MemoryEntry,
-  MemoryRefreshResult,
-  MemorySyncResult,
-} from '../types';
+import type { MemoryRefreshResult, MemorySyncResult } from '../types/api';
+import type { MemoryEntry } from '../types/models';
 import { runTool } from '../worker/worker';
 import {
   classifyDiffFromGit,
@@ -324,7 +321,6 @@ async function tryPatchExploreContext(
     const { result: updatedContext } = await runInteraction(
       {
         taskId: null,
-        taskRunId: 'sync-context',
         type: 'explore',
         promptName: 'syncContext',
         promptArgs: [
@@ -407,7 +403,6 @@ async function refreshOne(
     registry: options.registry,
     toolOverride: options.toolOverride ?? '',
     modelOverride: options.modelOverride ?? '',
-    interactionType: 'explore',
   });
   if (!execution) {
     return false;
@@ -489,7 +484,6 @@ async function refreshEntryWithLLM(
   const { result: llmResult } = await runInteraction(
     {
       taskId: entry.sourceTaskId ?? null,
-      taskRunId: `memory-refresh-${entry.id.slice(0, 8)}`,
       type: 'explore',
       prompt,
       toolOverride: options.toolOverride ?? '',
@@ -508,10 +502,13 @@ async function refreshEntryWithLLM(
       };
     },
     (parsed) => ({
-      qualityJson: JSON.stringify({
-        memoryEntryId: entry.id,
-        valid: parsed.valid,
-        updatedFilePaths: parsed.updatedFilePaths,
+      output: JSON.stringify({
+        result: 'completed',
+        data: {
+          memoryEntryId: entry.id,
+          valid: parsed.valid,
+          updatedFilePaths: parsed.updatedFilePaths,
+        },
       }),
     }),
   );

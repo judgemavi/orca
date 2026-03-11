@@ -1,20 +1,43 @@
 import { TASK_STATUSES } from '@orca/server/types';
+import { useState } from 'react';
 import { useTaskDetailContext } from '../context/TaskDetailContext';
+import { useCurrentStepQuery } from '../hooks/queries';
+import { useStepExecution } from '../hooks/useStepExecution';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { Button } from './Button';
-import { TaskActionsLayout, TaskFeedbackBox } from './TaskActionsLayout';
+import { TaskActionsLayout } from './TaskActionsLayout';
 
 export function PendingTaskActions() {
-  const { task } = useTaskDetailContext();
-  const actions = useTaskActions(task);
+  const { task, isOperationRunning } = useTaskDetailContext();
+  const actions = useTaskActions();
+  const [manualMode, setManualMode] = useState(false);
+  const [manualOutput, setManualOutput] = useState('');
+  const {
+    error: stepError,
+    setError: setStepError,
+    runStepMutation,
+    manualStepMutation,
+  } = useStepExecution({
+    taskId: task.id,
+    currentStep: task.currentStep,
+    tool: actions.actionTool,
+    model: actions.actionModel,
+  });
 
   const showStart = task.status === TASK_STATUSES.planned;
-  const showFeedback =
-    task.status === TASK_STATUSES.pending && actions.requestPlanChangesExpanded;
-  const showSelector =
-    showStart ||
-    (task.status === TASK_STATUSES.pending &&
-      (!actions.hasPlan || showFeedback));
+  const hasCurrentStep =
+    task.status === TASK_STATUSES.pending && !!task.currentStep;
+  const stepBusy =
+    hasCurrentStep &&
+    (isOperationRunning(task.currentStep ?? '', task.id) ||
+      task.status === TASK_STATUSES.running);
+
+  const { data: stepInfo } = useCurrentStepQuery(
+    task.id,
+    task.currentStep ?? undefined,
+    hasCurrentStep,
+  );
+  const isContextStep = stepInfo?.step?.type === 'context';
 
   let actionButtons = null;
   if (showStart) {
@@ -27,29 +50,65 @@ export function PendingTaskActions() {
         {actions.runningBusy ? 'Starting…' : 'Start'}
       </Button>
     );
-  } else if (!actions.hasPlan) {
-    actionButtons = (
-      <>
+  } else if (hasCurrentStep) {
+    actionButtons = manualMode ? (
+      <div className="flex gap-2">
         <Button
           variant="primary"
-          onClick={actions.handleGeneratePlan}
-          disabled={
-            actions.planLoading ||
-            actions.operationInProgress ||
-            actions.evaluating
+          onClick={() =>
+            manualStepMutation.mutate(manualOutput, {
+              onSuccess: () => {
+                setManualMode(false);
+                setManualOutput('');
+              },
+            })
           }
+          disabled={manualStepMutation.isPending || !manualOutput.trim()}
         >
-          {actions.planGenerating || actions.generatePlanPending
-            ? 'Generating…'
-            : 'Generate Plan'}
+          {manualStepMutation.isPending ? 'Saving…' : 'Save'}
         </Button>
+        <Button
+          variant="default"
+          onClick={() => {
+            setManualMode(false);
+            setStepError(null);
+          }}
+          disabled={manualStepMutation.isPending}
+        >
+          Cancel
+        </Button>
+      </div>
+    ) : (
+      <div className="flex gap-2">
+        <Button
+          variant="primary"
+          onClick={() => runStepMutation.mutate()}
+          disabled={runStepMutation.isPending || stepBusy}
+        >
+          {runStepMutation.isPending || stepBusy
+            ? 'Running…'
+            : `Run ${task.currentStep}`}
+        </Button>
+        {isContextStep && (
+          <Button
+            variant="default"
+            onClick={() => setManualMode(true)}
+            disabled={stepBusy}
+          >
+            Manual
+          </Button>
+        )}
+      </div>
+    );
+  } else {
+    actionButtons = (
+      <>
         {!actions.hideEvaluateAction && (
           <span title={actions.evaluateDisabledReason}>
             <Button
               variant="default"
               onClick={actions.handleEvaluateTask}
               disabled={
-                actions.planLoading ||
                 actions.operationInProgress ||
                 actions.evaluating ||
                 actions.descriptionUnchangedSinceLastEvaluation
@@ -66,78 +125,11 @@ export function PendingTaskActions() {
             <Button
               variant="default"
               onClick={actions.handleBreakdownTask}
-              disabled={
-                actions.planLoading ||
-                actions.operationInProgress ||
-                actions.breakingDown
-              }
+              disabled={actions.operationInProgress || actions.breakingDown}
             >
               {actions.breakingDown ? 'Breaking down…' : 'Breakdown'}
             </Button>
           )}
-      </>
-    );
-  } else if (actions.requestPlanChangesExpanded) {
-    actionButtons = (
-      <>
-        <Button
-          variant="default"
-          onClick={() => {
-            actions.setRequestPlanChangesExpanded(false);
-            actions.setRequestPlanFeedback('');
-            actions.setActionError(null);
-          }}
-          disabled={
-            actions.operationInProgress || actions.requestPlanChangesPending
-          }
-        >
-          Cancel
-        </Button>
-        <Button
-          variant="primary"
-          onClick={actions.handleRequestPlanChanges}
-          disabled={
-            actions.operationInProgress ||
-            actions.requestPlanChangesPending ||
-            actions.approvePlanPending
-          }
-        >
-          {actions.requestPlanChangesPending
-            ? 'Submitting…'
-            : 'Submit Plan Changes'}
-        </Button>
-      </>
-    );
-  } else {
-    actionButtons = (
-      <>
-        <Button
-          variant="primary"
-          onClick={actions.handleApprovePlan}
-          disabled={
-            actions.operationInProgress ||
-            actions.approvePlanPending ||
-            actions.requestPlanChangesPending
-          }
-        >
-          {actions.approvePlanPending ? 'Approving…' : 'Approve Plan'}
-        </Button>
-        <Button
-          variant="default"
-          onClick={() => {
-            actions.setRequestPlanChangesExpanded(true);
-            actions.setAIReviewExpanded(false);
-            actions.setAIFeedbackAppliedNotice(false);
-            actions.setActionError(null);
-          }}
-          disabled={
-            actions.operationInProgress ||
-            actions.approvePlanPending ||
-            actions.requestPlanChangesPending
-          }
-        >
-          Request Plan Changes
-        </Button>
       </>
     );
   }
@@ -151,14 +143,32 @@ export function PendingTaskActions() {
       actionModelsFetching={actions.actionModelsFetching}
       onToolChange={actions.handleActionToolChange}
       onModelChange={actions.setActionModel}
-      showToolModelSelector={showSelector}
-      actionError={actions.actionError}
+      showToolModelSelector={
+        !actions.operationInProgress &&
+        (showStart ||
+          (hasCurrentStep && !manualMode && !stepBusy) ||
+          task.status === TASK_STATUSES.pending)
+      }
+      actionError={stepError ?? actions.actionError}
       feedback={
-        showFeedback ? (
-          <TaskFeedbackBox
-            value={actions.requestPlanFeedback}
-            onChange={actions.setRequestPlanFeedback}
-          />
+        hasCurrentStep ? (
+          <div className="space-y-2">
+            <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-[13px]">
+              <span className="font-medium">Next step:</span>{' '}
+              <span className="font-mono text-accent">{task.currentStep}</span>
+            </div>
+            {manualMode && (
+              <textarea
+                className="w-full rounded-md border border-border-subtle bg-surface-alt px-3 py-2 font-mono text-sm"
+                rows={10}
+                placeholder={`Enter ${task.currentStep} output manually…`}
+                value={manualOutput}
+                onChange={(e) => setManualOutput(e.target.value)}
+                // biome-ignore lint/a11y/noAutofocus: manual editor needs focus
+                autoFocus
+              />
+            )}
+          </div>
         ) : null
       }
       actions={actionButtons}

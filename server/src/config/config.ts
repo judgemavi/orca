@@ -1,80 +1,7 @@
-import deepmerge from 'deepmerge';
+import { type Config, CURRENT_SCHEMA_VERSION } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { availableTools, toolModels } from '../plugin/registry';
-import type { Config, InteractionConfig, InteractionType } from '../types';
-import { INTERACTION_TYPES } from '../types';
-
-function defaultInteraction(autoRun = true): InteractionConfig {
-  return { tool: 'claude', model: 'claude-sonnet-4-6', autoRun };
-}
-
-export function defaultConfig(): Config {
-  const interactions = {} as Record<InteractionType, InteractionConfig>;
-  for (const type of INTERACTION_TYPES) {
-    interactions[type] = defaultInteraction();
-  }
-
-  return {
-    project: {
-      name: '',
-      integrationBranch: 'orca/integration',
-      worktreeDir: '.orca/worktrees',
-    },
-    tools: ['claude'],
-    interactions,
-    orchestrator: {
-      tool: 'claude',
-      model: '',
-      mode: 'cli',
-    },
-    workers: { maxParallel: 3 },
-    monitor: {
-      stuckCheckIntervalMs: 60_000,
-      maxStuckCycles: 10,
-      conflictCheckIntervalMs: 30_000,
-    },
-    postMerge: {
-      enabled: true,
-      retro: true,
-      memorySync: true,
-    },
-    cost: {
-      budgetUsd: 0,
-    },
-    logging: {
-      level: 'info',
-      file: '.orca/orca.log',
-      maxSize: '50mb',
-    },
-  };
-}
-
-export function mergePatchConfig(current: Config, patch: unknown): Config {
-  if (!patch || typeof patch !== 'object') return current;
-  return deepmerge(current, patch as Partial<Config>, {
-    arrayMerge: (_target, source) => source,
-  });
-}
-
-export function validateConfig(config: Config): Config {
-  if (config.workers.maxParallel < 1) {
-    throw new Error(
-      `workers.maxParallel must be >= 1, got ${config.workers.maxParallel}`,
-    );
-  }
-  if (config.monitor.maxStuckCycles < 0) {
-    throw new Error(
-      `monitor.maxStuckCycles must be >= 0, got ${config.monitor.maxStuckCycles}`,
-    );
-  }
-  if (config.monitor.stuckCheckIntervalMs <= 0) {
-    throw new Error('monitor.stuckCheckIntervalMs must be > 0');
-  }
-  if (config.monitor.conflictCheckIntervalMs <= 0) {
-    throw new Error('monitor.conflictCheckIntervalMs must be > 0');
-  }
-  return config;
-}
+import type { AutoRunOverrides } from '../types/api';
 
 export function sanitizeConfig(
   config: Config,
@@ -89,28 +16,43 @@ export function sanitizeConfig(
   }
 
   const fallbackTool = tools[0] as string;
+  const version = config.schemaVersion ?? 1;
 
-  // Migrate legacy config shape
-  const legacy = config as unknown as Record<string, unknown>;
-  if ('defaultTool' in legacy || 'defaultModel' in legacy) {
-    const legacyTool = String(legacy.defaultTool ?? fallbackTool);
-    const legacyModel = String(legacy.defaultModel ?? '');
-    if (!config.interactions) {
-      config.interactions = {} as Record<InteractionType, InteractionConfig>;
-    }
-    for (const type of INTERACTION_TYPES) {
-      if (!config.interactions[type]) {
-        config.interactions[type] = {
-          tool: legacyTool,
-          model: legacyModel,
-          autoRun: true,
-        };
+  if (version > CURRENT_SCHEMA_VERSION) {
+    throw new Error(
+      `config schemaVersion ${version} is newer than supported ${CURRENT_SCHEMA_VERSION} — upgrade orca`,
+    );
+  }
+
+  // v1 → v2: migrate postMerge.retro/memorySync → memory config
+  if (version < 2) {
+    const legacy = config as unknown as Record<string, unknown>;
+    const legacyPostMerge = legacy.postMerge as
+      | Record<string, unknown>
+      | undefined;
+    if (legacyPostMerge) {
+      if (!config.memory) {
+        config.memory = { enabled: true, retro: true, sync: true };
+      }
+      if ('retro' in legacyPostMerge) {
+        config.memory.retro = legacyPostMerge.retro !== false;
+        delete legacyPostMerge.retro;
+        changes.push('migrated postMerge.retro → memory.retro');
+      }
+      if ('memorySync' in legacyPostMerge) {
+        config.memory.sync = legacyPostMerge.memorySync !== false;
+        delete legacyPostMerge.memorySync;
+        changes.push('migrated postMerge.memorySync → memory.sync');
       }
     }
-    delete legacy.defaultTool;
-    delete legacy.defaultModel;
-    changes.push('migrated defaultTool/defaultModel to interactions');
   }
+
+  // v2 → v3: strip legacy interactions/defaultTool/defaultModel
+  const legacy = config as unknown as Record<string, unknown>;
+  delete legacy.defaultTool;
+  delete legacy.defaultModel;
+  delete legacy.interactions;
+
   if (legacy.orchestrator && typeof legacy.orchestrator === 'object') {
     const legacyOrch = legacy.orchestrator as Record<string, unknown>;
     if ('supervisorTool' in legacyOrch) {
@@ -125,48 +67,14 @@ export function sanitizeConfig(
         'migrated orchestrator.supervisorTool/Model to orchestrator.tool/model',
       );
     }
-  }
-
-  // Ensure all interaction types exist
-  if (!config.interactions) {
-    config.interactions = {} as Record<InteractionType, InteractionConfig>;
-  }
-  for (const type of INTERACTION_TYPES) {
-    if (!config.interactions[type]) {
-      config.interactions[type] = {
-        tool: fallbackTool,
-        model: '',
-        autoRun: true,
-      };
-      changes.push(`interactions.${type} added with fallback`);
-    }
-    if (config.interactions[type].autoRun === undefined) {
-      config.interactions[type].autoRun = true;
+    if ('mode' in legacyOrch) {
+      delete legacyOrch.mode;
+      changes.push('removed orchestrator.mode; CLI is now the only mode');
     }
   }
 
-  // Sanitize each interaction type
-  for (const type of INTERACTION_TYPES) {
-    const entry = config.interactions[type];
-    if (!tools.includes(entry.tool)) {
-      changes.push(
-        `interactions.${type}.tool ${entry.tool} -> ${fallbackTool}`,
-      );
-      entry.tool = fallbackTool;
-    }
-    const models = toolModels(registry, entry.tool);
-    if (models.length > 0 && !models.includes(entry.model)) {
-      const newModel = models[0] ?? '';
-      changes.push(`interactions.${type}.model ${entry.model} -> ${newModel}`);
-      entry.model = newModel;
-    }
-  }
+  config.schemaVersion = CURRENT_SCHEMA_VERSION;
 
-  // Sanitize orchestrator
-  if (!config.orchestrator.mode) {
-    config.orchestrator.mode = 'cli';
-    changes.push('orchestrator.mode defaulted to cli');
-  }
   if (!tools.includes(config.orchestrator.tool)) {
     changes.push(
       `orchestrator.tool ${config.orchestrator.tool} -> ${fallbackTool}`,
@@ -200,17 +108,6 @@ export function validateDefaults(
   registry: ToolPluginRegistry,
 ): void {
   const tools = availableTools(registry);
-  for (const type of INTERACTION_TYPES) {
-    const entry = config.interactions[type];
-    if (!entry) {
-      throw new Error(`interactions.${type} is not configured`);
-    }
-    if (!tools.includes(entry.tool)) {
-      throw new Error(
-        `interactions.${type}.tool ${JSON.stringify(entry.tool)} not found`,
-      );
-    }
-  }
   if (!tools.includes(config.orchestrator.tool)) {
     throw new Error(
       `orchestrator.tool ${JSON.stringify(config.orchestrator.tool)} not found`,
@@ -218,42 +115,49 @@ export function validateDefaults(
   }
 }
 
-export function resolveTool(
-  config: Config,
-  override: string,
-  interactionType?: string,
-): string {
+export function resolveTool(config: Config, override: string): string {
   const explicit = override.trim();
   if (explicit) return explicit;
-  if (interactionType) {
-    const entry = config.interactions[interactionType as InteractionType];
-    if (entry?.tool?.trim()) return entry.tool;
-  }
-  return config.interactions.code?.tool ?? config.tools[0] ?? '';
+  return config.tools[0] ?? '';
 }
 
 export function resolveModel(
-  config: Config,
+  _config: Config,
   registry: ToolPluginRegistry,
   toolName: string,
   override: string,
-  interactionType?: string,
 ): string {
   if (override.trim()) return override;
-  if (interactionType) {
-    const entry = config.interactions[interactionType as InteractionType];
-    if (entry?.model?.trim()) return entry.model;
-  }
   return toolModels(registry, toolName)[0] ?? '';
 }
 
-export function isAutoRun(
-  config: Config,
-  interactionType: InteractionType,
-  taskOverrides?: import('../types').AutoRunOverrides,
-): boolean {
-  if (taskOverrides && interactionType in taskOverrides) {
-    return Boolean(taskOverrides[interactionType]);
+/**
+ * Resolution order:
+ * 1. Global config.autoRun — if false, nothing auto-runs
+ * 2. Per-task overrides — task.autoRunOverrides[stepName]
+ * 3. Workflow step def — step.autoRun
+ * 4. Default: true
+ */
+interface AutoRunCheck {
+  config: Config;
+  stepName: string;
+  stepAutoRun?: boolean;
+  taskOverrides?: AutoRunOverrides;
+}
+
+export function isAutoRun(opts: AutoRunCheck): boolean {
+  if (opts.config.autoRun === false) return false;
+  if (opts.taskOverrides) {
+    // Check full dotted path first (e.g., "implement.code"), then leaf name (e.g., "code")
+    if (opts.stepName in opts.taskOverrides) {
+      return Boolean(opts.taskOverrides[opts.stepName]);
+    }
+    const leaf = opts.stepName.includes('.')
+      ? opts.stepName.slice(opts.stepName.lastIndexOf('.') + 1)
+      : '';
+    if (leaf && leaf in opts.taskOverrides) {
+      return Boolean(opts.taskOverrides[leaf]);
+    }
   }
-  return config.interactions[interactionType]?.autoRun ?? true;
+  return opts.stepAutoRun ?? true;
 }

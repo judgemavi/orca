@@ -5,17 +5,7 @@ import {
   select,
   text,
 } from '@clack/prompts';
-import type { TaskStore } from '../store/tasks';
-import type { Task, TaskStatus } from '../types';
-
-type TaskFilter = (task: Task) => boolean;
-
-export const allTasks: TaskFilter = () => true;
-export const pendingTasks: TaskFilter = (task) =>
-  task.status === 'pending' || task.status === 'planned';
-export const reviewTasks: TaskFilter = (task) => task.status === 'review';
-export const runningTasks: TaskFilter = (task) => task.status === 'running';
-export const stoppedTasks: TaskFilter = (task) => task.status === 'stopped';
+import type { TaskStatus } from '@orca/types';
 
 export function statusIcon(status: TaskStatus | string): string {
   switch (status) {
@@ -33,40 +23,6 @@ export function statusIcon(status: TaskStatus | string): string {
   }
 }
 
-export function short(id: string): string {
-  return id.slice(0, 8);
-}
-
-function formatTaskOption(task: Task): string {
-  return `${statusIcon(task.status)} ${short(task.id)}  ${task.title} (${task.status})`;
-}
-
-export async function pickTask(
-  store: TaskStore,
-  title: string,
-  filter: TaskFilter = allTasks,
-): Promise<Task> {
-  const tasks = (await store.list()).filter(filter);
-  if (tasks.length === 0) {
-    throw new Error('no matching tasks found');
-  }
-
-  const selected = await select<string>({
-    message: title,
-    options: tasks.map((task) => ({
-      value: task.id,
-      label: formatTaskOption(task),
-    })),
-  });
-
-  const selectedID = ensureNotCancelled<string>(selected);
-  const task = await store.get(selectedID);
-  if (!task) {
-    throw new Error(`task not found: ${selectedID}`);
-  }
-  return task;
-}
-
 export async function confirm(
   message: string,
   initialValue = false,
@@ -81,7 +37,7 @@ export async function textInput(
     placeholder?: string;
     defaultValue?: string;
     required?: boolean;
-    validate?: (value: string) => string | Error;
+    validate?: (value: string) => string | Error | undefined;
   },
 ): Promise<string> {
   const value = await text({

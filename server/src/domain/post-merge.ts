@@ -1,11 +1,11 @@
+import { JOB_PRIORITIES } from '@orca/types';
+import type { OrcaDrizzleDB } from '../db/connection';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import type { JobQueue } from '../queue/queue';
 import { toErrorMessage } from '../shared/errors';
-import type { ConfigStore } from '../store/config';
+import * as configStore from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
-import type { TaskStore } from '../store/tasks';
-import { JOB_PRIORITIES } from '../types';
 import { syncMemoryWithGit } from './memory-sync';
 import { runRetro } from './retro';
 
@@ -15,10 +15,9 @@ export interface PostMergeEventSink {
 
 interface PostMergeDeps {
   repoDir: string;
-  taskStore: TaskStore;
+  db: OrcaDrizzleDB;
   interactions: InteractionStore;
   memoryStore: MemoryStore;
-  configStore: ConfigStore;
   registry?: ToolPluginRegistry;
   sink?: PostMergeEventSink;
   queue?: JobQueue;
@@ -29,13 +28,13 @@ export function triggerPostMergeHooks(
   deps: PostMergeDeps,
 ): void {
   queueMicrotask(async () => {
-    const config = await deps.configStore.load();
-    const hooks = config.postMerge ?? {};
-    if (hooks.enabled === false) {
+    const config = await configStore.loadConfig(deps.db);
+    if (config.postMerge?.enabled === false) {
       return;
     }
 
-    if (hooks.retro !== false) {
+    const mem = config.memory ?? {};
+    if (mem.enabled !== false && mem.retro !== false) {
       if (deps.queue) {
         await deps.queue.enqueue({
           type: 'retro',
@@ -46,7 +45,7 @@ export function triggerPostMergeHooks(
         try {
           const result = await runRetro(taskID, {
             repoDir: deps.repoDir,
-            taskStore: deps.taskStore,
+            db: deps.db,
             interactionStore: deps.interactions,
             memoryStore: deps.memoryStore,
             config,
@@ -67,7 +66,7 @@ export function triggerPostMergeHooks(
       }
     }
 
-    if (hooks.memorySync !== false) {
+    if (mem.enabled !== false && mem.sync !== false) {
       try {
         const contextDeps = deps.registry
           ? { config, registry: deps.registry, interactions: deps.interactions }

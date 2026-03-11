@@ -1,8 +1,9 @@
 import { TASK_STATUSES } from '@orca/server/types';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../api';
 import { useTaskDetailContext } from '../context/TaskDetailContext';
+import { useStepExecution } from '../hooks/useStepExecution';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { queryKeys } from '../lib/queryKeys';
 import { getErrorMessage } from '../lib/utils';
@@ -70,17 +71,71 @@ function PendingQuestionActions({ question }: { question: string }) {
   );
 }
 
+function GatedStepActions() {
+  const { task } = useTaskDetailContext();
+  const actions = useTaskActions();
+  const { error, runStepMutation } = useStepExecution({
+    taskId: task.id,
+    currentStep: task.currentStep,
+    tool: actions.actionTool,
+    model: actions.actionModel,
+  });
+
+  return (
+    <TaskActionsLayout
+      tools={actions.tools}
+      actionTool={actions.actionTool}
+      actionModel={actions.actionModel}
+      actionModels={actions.actionModels}
+      actionModelsFetching={actions.actionModelsFetching}
+      onToolChange={actions.handleActionToolChange}
+      onModelChange={actions.setActionModel}
+      showToolModelSelector
+      actionError={error ?? actions.actionError}
+      feedback={
+        <div className="mb-3 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-[13px]">
+          <span className="font-medium">Gated step:</span>{' '}
+          <span className="font-mono text-accent">{task.currentStep}</span>
+        </div>
+      }
+      actions={
+        <Button
+          variant="primary"
+          onClick={() => runStepMutation.mutate()}
+          disabled={runStepMutation.isPending}
+        >
+          {runStepMutation.isPending ? 'Running…' : `Run ${task.currentStep}`}
+        </Button>
+      }
+    />
+  );
+}
+
 export function FailedTaskActions() {
   const { task } = useTaskDetailContext();
-  const actions = useTaskActions(task);
-
-  if (task.pendingQuestion) {
-    return <PendingQuestionActions question={task.pendingQuestion} />;
-  }
+  const actions = useTaskActions();
 
   const isStopped = task.status === TASK_STATUSES.stopped;
-  const hasSession = Boolean(task.sessionId?.trim());
-  const showResume = isStopped && hasSession;
+
+  const pendingQuestionQuery = useQuery({
+    queryKey: ['pending-question', task.id],
+    queryFn: () => api.getPendingQuestion(task.id),
+    enabled: isStopped,
+  });
+
+  if (pendingQuestionQuery.data?.question) {
+    return (
+      <PendingQuestionActions question={pendingQuestionQuery.data.question} />
+    );
+  }
+
+  const hasGatedStep = isStopped && !!task.currentStep;
+
+  if (hasGatedStep) {
+    return <GatedStepActions />;
+  }
+
+  const showResume = isStopped;
   const busy =
     actions.runningBusy || (showResume ? actions.resumePending : false);
 
@@ -100,7 +155,7 @@ export function FailedTaskActions() {
           <TaskFeedbackBox
             value={actions.resumeFeedback}
             onChange={actions.setResumeFeedback}
-            placeholder={`Resume feedback for session ${task.sessionId} (optional)`}
+            placeholder="Resume feedback (optional)"
           />
         ) : null
       }
@@ -108,17 +163,15 @@ export function FailedTaskActions() {
         <Button
           variant="primary"
           onClick={showResume ? actions.handleResume : actions.handleStart}
-          disabled={busy || (isStopped && !showResume)}
+          disabled={busy}
         >
           {showResume
             ? busy
               ? 'Resuming…'
               : 'Resume'
-            : isStopped
-              ? 'Resume unavailable'
-              : actions.runningBusy
-                ? 'Re-running…'
-                : 'Re-run'}
+            : actions.runningBusy
+              ? 'Re-running…'
+              : 'Re-run'}
         </Button>
       }
     />

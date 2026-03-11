@@ -1,63 +1,192 @@
 import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import type { OrcaDrizzleDB } from '../../db/connection';
 import type { JobQueue } from '../../queue/queue';
-import type { ConfigStore } from '../../store/config';
+import { provideInputSchema } from '../../schemas/tasks';
+import {
+  breakdownAcceptSchema,
+  breakdownRejectSchema,
+  completeStepSchema,
+  enqueueStepSchema,
+  manualStepSchema,
+  requestChangesSchema,
+  resetSchema,
+  toolModelSchema,
+  updateInteractionOutputSchema,
+} from '../../schemas/workflow';
 import type { InteractionStore } from '../../store/interactions';
-import type { TaskStore } from '../../store/tasks';
-import type { ProposedTask } from '../../types';
+import * as questionStore from '../../store/questions';
+import * as taskStore from '../../store/tasks';
+import type { ProposedTask } from '../../types/api';
+import { getStepOutput, hasStepOutput } from '../../workflow/context';
+import { completeStep, resolveStepMeta } from '../../workflow/engine';
+import {
+  parseWorkflowOutput,
+  stringifyWorkflowOutput,
+} from '../../workflow/output';
+import {
+  createSyntheticStepInteraction,
+  loadCurrentTaskStep,
+} from '../../workflow/step-actions';
+import type { WorkflowStore } from '../../workflow/store';
+import type { AnyStateNode } from '../../workflow/paths';
+import type { StepMeta } from '../../workflow/types';
+import { getTransitionEvents } from '../../workflow/paths';
 import {
   acceptBreakdown,
   breakdownTask,
   loadProposedTasksFromInteraction,
   rejectBreakdown,
 } from '../../workflows/planning';
-import { approveTask } from '../../workflows/review';
+import { resetToStep } from '../../workflows/rewind';
 import {
   enqueueBreakdown,
+  enqueueCurrentStep,
   enqueueEvaluate,
   provideInput,
-  requestChanges,
-  triggerReview,
 } from '../../workflows/tasks';
-import {
-  aiReviewSchema,
-  breakdownAcceptSchema,
-  breakdownRejectSchema,
-  provideInputSchema,
-  requestChangesSchema,
-  toolModelSchema,
-} from '../schemas';
 import type { EventSink } from '../ws';
 import { broadcast, safeErrorMessage } from './utils';
 
 export function taskWorkflowRoutes(deps: {
   repoDir: string;
-  taskStore: TaskStore;
+  db: OrcaDrizzleDB;
   interactionStore: InteractionStore;
-  configStore: ConfigStore;
   sink: EventSink;
   queue: JobQueue;
+  workflowStore: WorkflowStore;
 }) {
+  const { db, sink } = deps;
+
   return new Hono()
+    .get('/tasks/:id/workflow/steps', async (c) => {
+      const taskID = c.req.param('id');
+      const task = await taskStore.getTask(db, taskID).catch(() => null);
+      if (!task) return c.json({ error: 'task not found' }, 404);
+
+      const compiled = await deps.workflowStore.resolve(
+        task.workflow ?? undefined,
+      );
+
+      type StepInfo = {
+        type: string;
+        executor: string | null;
+        steps?: Record<string, StepInfo>;
+      };
+
+      function mapNode(node: AnyStateNode): Record<string, StepInfo> {
+        const out: Record<string, StepInfo> = {};
+        for (const [name, child] of Object.entries(node.states ?? {})) {
+          if (child.type === 'final') continue;
+          const meta = (child.meta ?? {}) as StepMeta;
+          const hasChildren =
+            child.states && Object.keys(child.states).filter((k) => child.states![k]?.type !== 'final').length > 0;
+          out[name] = {
+            type: meta.type ?? 'unknown',
+            executor: meta.executor ?? null,
+            ...(hasChildren ? { steps: mapNode(child) } : {}),
+          };
+        }
+        return out;
+      }
+
+      return c.json({
+        workflow: compiled.name,
+        steps: mapNode(compiled.machine.root as unknown as AnyStateNode),
+      });
+    })
+
+    .get('/tasks/:id/step/current', async (c) => {
+      const taskID = c.req.param('id');
+      const task = await taskStore.getTask(db, taskID).catch(() => null);
+      if (!task) return c.json({ error: 'task not found' }, 404);
+      if (!task.currentStep) return c.json({ step: null });
+
+      const compiled = await deps.workflowStore.resolve(
+        task.workflow ?? undefined,
+      );
+      let stepMeta: StepMeta;
+      let stateNode: AnyStateNode;
+      try {
+        const resolved = resolveStepMeta(compiled.machine, task.currentStep);
+        stepMeta = resolved.meta;
+        stateNode = resolved.stateNode;
+      } catch {
+        return c.json({ step: null });
+      }
+
+      const branchNames = getTransitionEvents(stateNode);
+      return c.json({
+        step: {
+          name: task.currentStep,
+          type: stepMeta.type,
+          executor: stepMeta.executor ?? null,
+          branches: branchNames.map((name) => ({
+            name,
+            includeOutput:
+              compiled.transitionMeta[`${task.currentStep}:${name}`]
+                ?.includeOutput ?? false,
+          })),
+        },
+      });
+    })
+
+    .get('/tasks/:id/step/:step/output', async (c) => {
+      const taskID = c.req.param('id');
+      const stepName = c.req.param('step');
+      const output = await getStepOutput(
+        taskID,
+        stepName,
+        deps.interactionStore,
+      );
+      return c.json({ taskId: taskID, stepName, output });
+    })
+
     .post('/tasks/:id/approve', async (c) => {
       const taskID = c.req.param('id');
-      let updated: Awaited<ReturnType<typeof approveTask>>;
       try {
-        updated = await approveTask(taskID, {
-          taskStore: deps.taskStore,
-          queue: deps.queue,
-          configStore: deps.configStore,
+        await assertNoRunningInteraction(taskID, deps.interactionStore);
+        const task = await taskStore.getTask(db, taskID).catch(() => {
+          throw new Error(`task not found: ${taskID}`);
         });
+        if (!task.currentStep) throw new Error('task has no current step');
+
+        const has = await hasStepOutput(
+          taskID,
+          task.currentStep,
+          deps.interactionStore,
+        );
+        if (!has) {
+          throw new Error(
+            `no completed output for step "${task.currentStep}"`,
+          );
+        }
+
+        const compiled = await deps.workflowStore.resolve(
+          task.workflow ?? undefined,
+        );
+        let branchNames: string[] = [];
+        try {
+          const resolved = resolveStepMeta(compiled.machine, task.currentStep);
+          branchNames = getTransitionEvents(resolved.stateNode);
+        } catch {
+          branchNames = [];
+        }
+        const outcome = branchNames.includes('approved')
+          ? 'approved'
+          : (branchNames[0] ?? 'done');
+
+        const result = await completeStep(taskID, outcome, {
+          db,
+          queue: deps.queue,
+          workflowStore: deps.workflowStore,
+        });
+        broadcast(sink, 'task.updated', { id: taskID });
+        return c.json({ taskId: taskID, ...result });
       } catch (error) {
         return errorResponse(c, error);
       }
-      broadcast(
-        deps.sink,
-        'task.updated',
-        updated as unknown as Record<string, unknown>,
-      );
-      return c.json(updated);
     })
 
     .post(
@@ -68,18 +197,28 @@ export function taskWorkflowRoutes(deps: {
         const body = c.req.valid('json');
 
         try {
-          const result = await requestChanges(taskID, body.feedback ?? '', {
-            taskStore: deps.taskStore,
-            interactionStore: deps.interactionStore,
-            queue: deps.queue,
-            interactionId: body.interactionId,
-            tool: body.tool,
-            model: body.model,
+          await assertNoRunningInteraction(taskID, deps.interactionStore);
+          const feedback = (body.feedback ?? '').trim();
+          if (!feedback) throw new Error('feedback is required');
+
+          const task = await taskStore.getTask(db, taskID).catch(() => {
+            throw new Error(`task not found: ${taskID}`);
           });
-          return c.json(
-            { status: 'queued', taskId: result.taskId, jobId: result.jobId },
-            202,
+          if (!task.currentStep) throw new Error('task has no no current step');
+
+          await deps.interactionStore.supersedeReviewInteractions(taskID);
+
+          const result = await completeStep(
+            taskID,
+            'request_changes',
+            { db, queue: deps.queue, workflowStore: deps.workflowStore },
+            {
+              output: feedback,
+              tool: body.tool ?? '',
+              model: body.model ?? '',
+            },
           );
+          return c.json({ taskId: taskID, ...result }, 202);
         } catch (error) {
           return errorResponse(c, error);
         }
@@ -87,30 +226,200 @@ export function taskWorkflowRoutes(deps: {
     )
 
     .post(
-      '/tasks/:id/ai-review',
-      zValidator('json', aiReviewSchema),
+      '/tasks/:id/step/run',
+      zValidator('json', enqueueStepSchema),
       async (c) => {
         const taskID = c.req.param('id');
         const body = c.req.valid('json');
 
         try {
-          const result = await triggerReview(
+          const result = await enqueueCurrentStep(
             taskID,
             {
-              prompt: body.prompt,
-              tool: body.tool,
-              model: body.model,
+              prompt: body.prompt ?? '',
+              tool: body.tool ?? '',
+              model: body.model ?? '',
             },
+            { db, sink, queue: deps.queue },
+          );
+          return c.json({ ...result, status: 'queued' }, 202);
+        } catch (error) {
+          return errorResponse(c, error);
+        }
+      },
+    )
+
+    .post(
+      '/tasks/:id/step/manual',
+      zValidator('json', manualStepSchema),
+      async (c) => {
+        const taskID = c.req.param('id');
+        const body = c.req.valid('json');
+
+        try {
+          await assertNoRunningInteraction(taskID, deps.interactionStore);
+          const { currentStep, step, stateNode } = await loadCurrentTaskStep(taskID, {
+            db,
+            workflowStore: deps.workflowStore,
+          });
+          if (step.type !== 'context' && step.type !== 'decision') {
+            return c.json(
+              {
+                error: `step "${currentStep}" does not support manual entry`,
+              },
+              400,
+            );
+          }
+
+          const ix = await deps.interactionStore.begin({
+            taskId: taskID,
+            type: currentStep,
+            tool: 'manual',
+          });
+
+          const branchNames = stateNode ? getTransitionEvents(stateNode) : [];
+          const outcome = body.outcome ?? branchNames[0] ?? 'done';
+          await deps.interactionStore.finish(ix.id, {
+            status: 'completed',
+            output: stringifyWorkflowOutput({
+              result: outcome,
+              output: body.output,
+            }),
+            durationMs: 0,
+          });
+          const result = await completeStep(taskID, outcome, {
+            db,
+            queue: deps.queue,
+            workflowStore: deps.workflowStore,
+          });
+
+          broadcast(sink, 'task.updated', { id: taskID });
+          return c.json({
+            taskId: taskID,
+            interactionId: ix.id,
+            step: currentStep,
+            outcome,
+            ...result,
+          });
+        } catch (error) {
+          return errorResponse(c, error);
+        }
+      },
+    )
+
+    .patch(
+      '/tasks/:id/interactions/:interactionId/output',
+      zValidator('json', updateInteractionOutputSchema),
+      async (c) => {
+        const taskID = c.req.param('id');
+        const interactionID = c.req.param('interactionId');
+        const body = c.req.valid('json');
+
+        try {
+          const interaction = await deps.interactionStore.get(interactionID);
+          if (!interaction)
+            return c.json({ error: 'interaction not found' }, 404);
+          if (interaction.taskId !== taskID) {
+            return c.json(
+              { error: 'interaction does not belong to task' },
+              400,
+            );
+          }
+
+          const parsed =
+            parseWorkflowOutput(interaction.output) ??
+            ({ result: 'done', output: '', data: {} } as const);
+          const output = body.output.trim();
+          const nextData = { ...parsed.data, output };
+
+          await deps.interactionStore.updateOutput(
+            interactionID,
+            stringifyWorkflowOutput({
+              result: parsed.result ?? 'done',
+              output,
+              data: nextData,
+            }),
+          );
+
+          broadcast(sink, 'interaction.updated', {
+            id: interactionID,
+            taskId: taskID,
+          });
+          return c.json({
+            taskId: taskID,
+            interactionId: interactionID,
+            updated: true,
+          });
+        } catch (error) {
+          return errorResponse(c, error);
+        }
+      },
+    )
+
+    .post(
+      '/tasks/:id/step/complete',
+      zValidator('json', completeStepSchema),
+      async (c) => {
+        const taskID = c.req.param('id');
+        const body = c.req.valid('json');
+
+        try {
+          await assertNoRunningInteraction(taskID, deps.interactionStore);
+          const { currentStep, step: stepMeta } = await loadCurrentTaskStep(
+            taskID,
             {
-              taskStore: deps.taskStore,
-              interactionStore: deps.interactionStore,
-              queue: deps.queue,
+              db,
+              workflowStore: deps.workflowStore,
             },
           );
-          return c.json(
-            { status: 'queued', taskId: result.taskId, jobId: result.jobId },
-            202,
+          if (stepMeta?.type !== 'decision') {
+            const has = await hasStepOutput(
+              taskID,
+              currentStep,
+              deps.interactionStore,
+            );
+            if (!has) {
+              return c.json(
+                { error: `no completed output for step "${currentStep}"` },
+                400,
+              );
+            }
+          }
+
+          if (stepMeta?.type === 'decision') {
+            const has = await hasStepOutput(
+              taskID,
+              currentStep,
+              deps.interactionStore,
+            );
+            if (!has) {
+              await createSyntheticStepInteraction(deps.interactionStore, {
+                taskId: taskID,
+                stepName: currentStep,
+                outcome: body.outcome,
+                output: body.output ?? '',
+                data: body.data,
+              });
+            }
+          }
+
+          const result = await completeStep(
+            taskID,
+            body.outcome,
+            {
+              db,
+              queue: deps.queue,
+              workflowStore: deps.workflowStore,
+            },
+            body.output ? { output: body.output } : undefined,
           );
+
+          broadcast(sink, 'task.updated', { id: taskID });
+          return c.json({
+            taskId: taskID,
+            outcome: body.outcome,
+            ...result,
+          });
         } catch (error) {
           return errorResponse(c, error);
         }
@@ -127,10 +436,10 @@ export function taskWorkflowRoutes(deps: {
         const result = await enqueueEvaluate(
           taskID,
           { tool: body.tool, model: body.model },
-          { taskStore: deps.taskStore, queue: deps.queue },
+          { db, sink, queue: deps.queue },
         );
 
-        broadcast(deps.sink, 'evaluate.started', { taskId: taskID });
+        broadcast(sink, 'evaluate.started', { taskId: taskID });
         return c.json({ ...result, status: 'queued' }, 202);
       },
     )
@@ -146,7 +455,7 @@ export function taskWorkflowRoutes(deps: {
           const result = await enqueueBreakdown(
             taskID,
             { tool: body.tool, model: body.model },
-            { taskStore: deps.taskStore, queue: deps.queue },
+            { db, sink, queue: deps.queue },
           );
           return c.json({ ...result, status: 'queued' }, 202);
         } catch (error) {
@@ -176,15 +485,13 @@ export function taskWorkflowRoutes(deps: {
         let accepted: Awaited<ReturnType<typeof acceptBreakdown>>;
         try {
           if (proposed.length === 0) {
-            const breakdown = await breakdownTask(
-              { taskId: parentID },
-              { taskStore: deps.taskStore },
-            );
+            const breakdown = await breakdownTask({ taskId: parentID }, { db });
             proposed = breakdown.proposed;
           }
 
           accepted = await acceptBreakdown(parentID, proposed, {
-            taskStore: deps.taskStore,
+            db,
+            sink,
             queue: deps.queue,
           });
         } catch (error) {
@@ -196,12 +503,15 @@ export function taskWorkflowRoutes(deps: {
           if (interaction) {
             await deps.interactionStore.finish(interactionID, {
               status: 'completed',
-              qualityJson: JSON.stringify({ proposed, accepted: true }),
+              output: JSON.stringify({
+                result: 'accepted',
+                data: { proposed, accepted: true },
+              }),
             });
           }
         }
 
-        broadcast(deps.sink, 'task.updated', {
+        broadcast(sink, 'task.updated', {
           id: parentID,
           status: 'broken_down',
         });
@@ -216,6 +526,13 @@ export function taskWorkflowRoutes(deps: {
       },
     )
 
+    .get('/tasks/:id/questions/pending', async (c) => {
+      const taskID = c.req.param('id');
+      const question = await questionStore.getPendingForTask(db, taskID);
+      if (!question) return c.json(null, 200);
+      return c.json(question, 200);
+    })
+
     .post(
       '/tasks/:id/input',
       zValidator('json', provideInputSchema),
@@ -225,11 +542,14 @@ export function taskWorkflowRoutes(deps: {
 
         try {
           const result = await provideInput(taskID, body.answer, {
-            taskStore: deps.taskStore,
+            db,
+            sink,
             queue: deps.queue,
+            workflowStore: deps.workflowStore,
+            interactionStore: deps.interactionStore,
           });
 
-          broadcast(deps.sink, 'task.updated', {
+          broadcast(sink, 'task.updated', {
             id: taskID,
             status: 'pending',
           });
@@ -256,7 +576,7 @@ export function taskWorkflowRoutes(deps: {
           interactions: deps.interactionStore,
         });
 
-        broadcast(deps.sink, 'breakdown.rejected', {
+        broadcast(sink, 'breakdown.rejected', {
           taskId: taskID,
           interactionId: interactionID,
           rejected: true,
@@ -268,7 +588,38 @@ export function taskWorkflowRoutes(deps: {
           rejected: true,
         });
       },
-    );
+    )
+
+    .post('/tasks/:id/reset', zValidator('json', resetSchema), async (c) => {
+      const taskID = c.req.param('id');
+      const body = c.req.valid('json');
+
+      try {
+        const result = await resetToStep(
+          {
+            taskId: taskID,
+            interactionId: body.interactionId,
+            enqueue: body.enqueue,
+          },
+          {
+            interactionStore: deps.interactionStore,
+            queue: deps.queue,
+            repoDir: deps.repoDir,
+            db,
+          },
+        );
+        broadcast(sink, 'task.updated', { id: taskID });
+        return c.json(result);
+      } catch (error) {
+        return errorResponse(c, error);
+      }
+    });
+}
+
+async function assertNoRunningInteraction(taskID: string, interactionStore: InteractionStore) {
+  if (await interactionStore.hasRunningForTask(taskID)) {
+    throw new Error('a step is currently running for this task — wait for it to complete before taking action');
+  }
 }
 
 function errorResponse(c: Context, error: unknown) {

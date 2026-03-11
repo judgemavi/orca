@@ -1,113 +1,77 @@
+import { JOB_PRIORITIES } from '@orca/types';
 import type { EventSink } from '../api/ws';
 import { isAutoRun } from '../config/config';
 import { runExplore } from '../domain/explore';
 import { runRetro } from '../domain/retro';
-import type { Executor } from '../executor/executor';
-import type { ToolPluginRegistry } from '../plugin/registry';
-import { genId } from '../shared/id';
 import { log } from '../shared/logger';
-import type { ConfigStore } from '../store/config';
-import type { InteractionStore } from '../store/interactions';
-import type { MemoryStore } from '../store/memory';
-import type { TaskStore } from '../store/tasks';
-import type { Job } from '../types';
-import { JOB_PRIORITIES } from '../types';
-import { mergeTask } from '../workflows/merge';
+import * as configStore from '../store/config';
+import * as questionStore from '../store/questions';
+import * as taskStore from '../store/tasks';
+import type { AppDeps } from '../types/deps';
+import type { Job } from '../types/models';
+import {
+  initWorkflow,
+  resolveStepMeta,
+  type WorkflowEngineDeps,
+} from '../workflow/engine';
 import {
   acceptBreakdown,
-  approvePlan,
   breakdownTask,
   evaluateTaskWorkflow,
-  generatePlan,
 } from '../workflows/planning';
-import { approveTask, runAIReviewWorkflow } from '../workflows/review';
-import { resumeChain } from './chain';
 import type { JobProcessor } from './processor';
-import type { JobQueue } from './queue';
+import { createGenericStepHandler } from './step-handler';
 
-interface HandlerDeps {
-  repoDir: string;
-  configStore: ConfigStore;
-  registry: ToolPluginRegistry;
-  taskStore: TaskStore;
-  interactionStore: InteractionStore;
-  memoryStore: MemoryStore;
-  executor: Executor;
-  sink: EventSink;
-  queue: JobQueue;
-}
+type HandlerDeps = AppDeps & { sink: EventSink };
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-async function shouldAutoRun(
-  deps: { configStore: ConfigStore; taskStore: TaskStore },
-  taskId: string,
-  interactionType: Parameters<typeof isAutoRun>[1],
-): Promise<boolean> {
-  try {
-    const [config, task] = await Promise.all([
-      deps.configStore.load(),
-      deps.taskStore.get(taskId),
-    ]);
-    return isAutoRun(config, interactionType, task?.autoRunOverrides);
-  } catch {
-    return false;
-  }
-}
-
-async function enqueueNext(
-  deps: HandlerDeps,
-  taskId: string,
-  type: Parameters<typeof isAutoRun>[1],
-  payload?: Record<string, unknown>,
-): Promise<void> {
-  const auto = await shouldAutoRun(deps, taskId, type);
-  if (!auto) return;
-  log.info('auto-chaining', { taskId, next: type });
-  await deps.queue.enqueue({
-    type,
-    taskId,
-    priority: JOB_PRIORITIES[type],
-    payload,
-  });
+function engineDeps(deps: HandlerDeps): WorkflowEngineDeps {
+  return {
+    db: deps.db,
+    sink: deps.sink,
+    queue: deps.queue,
+    workflowStore: deps.workflowStore,
+  };
 }
 
 export function registerJobHandlers(
   processor: JobProcessor,
   deps: HandlerDeps,
 ): void {
-  // evaluate
+  // -------------------------------------------------------------------------
+  // System-controlled handlers (not workflow steps)
+  // -------------------------------------------------------------------------
+
+  // evaluate — runs before workflow starts, determines task path
   processor.register('evaluate', async (job: Job) => {
     const taskId = job.taskId!;
-
-    const depsMet = await deps.taskStore.areDependenciesMet(taskId);
-    if (!depsMet) {
-      log.info('evaluate skipped: dependencies not met', { taskId });
-      return { taskId, skipped: true, reason: 'dependencies_not_met' };
-    }
 
     deps.sink.broadcast('evaluate.started', { taskId });
 
     try {
-      const evaluation = await evaluateTaskWorkflow(taskId, {
+      const { evaluation, sessionId } = await evaluateTaskWorkflow(taskId, {
         repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
+        db: deps.db,
+        sink: deps.sink,
         interactions: deps.interactionStore,
-        configStore: deps.configStore,
         registry: deps.registry,
+        workflowStore: deps.workflowStore,
         toolOverride: str(job.payload?.tool),
         modelOverride: str(job.payload?.model),
+        resumeSessionID: str(job.payload?.resumeSessionID) || undefined,
+        feedback: str(job.payload?.feedback) || undefined,
       });
 
       deps.sink.broadcast('evaluate.completed', { taskId, evaluation });
 
-      // If user input is needed, pause the task and store the question
       if (evaluation.needsUserInput && evaluation.userInputQuestion) {
-        await deps.taskStore.update(taskId, {
-          status: 'stopped',
-          pendingQuestion: evaluation.userInputQuestion,
+        await taskStore.updateTaskStatus(deps.db, deps.sink, taskId, 'stopped');
+        await questionStore.createQuestion(deps.db, {
+          taskId,
+          question: evaluation.userInputQuestion,
         });
         deps.sink.broadcast('task.awaiting_input', {
           taskId,
@@ -116,11 +80,93 @@ export function registerJobHandlers(
         return { evaluation, awaitingInput: true };
       }
 
-      // Chain: evaluate → breakdown or plan
       if (evaluation.needsBreakdown) {
-        await enqueueNext(deps, taskId, 'breakdown');
-      } else {
-        await enqueueNext(deps, taskId, 'plan');
+        deps.sink.broadcast('breakdown.started', { taskId });
+        try {
+          const result = await breakdownTask(
+            {
+              taskId,
+              toolOverride: str(job.payload?.tool),
+              modelOverride: str(job.payload?.model),
+            },
+            {
+              repoDir: deps.repoDir,
+              db: deps.db,
+              sink: deps.sink,
+              interactions: deps.interactionStore,
+              registry: deps.registry,
+              memory: deps.memoryStore,
+            },
+          );
+
+          const accepted = await acceptBreakdown(taskId, result.proposed, {
+            db: deps.db,
+            sink: deps.sink,
+            queue: deps.queue,
+          });
+
+          if (result.interactionId) {
+            await deps.interactionStore.finish(result.interactionId, {
+              status: 'completed',
+              output: JSON.stringify({
+                result: 'success',
+                data: { proposed: result.proposed, accepted: true },
+              }),
+            });
+          }
+
+          deps.sink.broadcast('breakdown.completed', {
+            taskId,
+            proposed: result.proposed,
+            createdIds: accepted.createdIds,
+            interactionId: result.interactionId,
+          });
+          deps.sink.broadcast('task.updated', {
+            id: taskId,
+            status: 'broken_down',
+          });
+
+          log.info('evaluate triggered breakdown', {
+            taskId,
+            created: accepted.createdIds.length,
+          });
+          return {
+            evaluation,
+            brokenDown: true,
+            createdIds: accepted.createdIds,
+          };
+        } catch (breakdownErr) {
+          const error =
+            breakdownErr instanceof Error
+              ? breakdownErr.message
+              : String(breakdownErr);
+          deps.sink.broadcast('breakdown.failed', { taskId, error });
+          throw breakdownErr;
+        }
+      }
+
+      // Ready → init workflow and enqueue first step (only if not already initialized)
+      const task = await taskStore.getTask(deps.db, taskId);
+      if (task?.currentStep) {
+        log.info('evaluate: workflow already initialized, skipping re-init', {
+          taskId,
+          currentStep: task.currentStep,
+        });
+        return { evaluation, alreadyInitialized: true };
+      }
+
+      await initWorkflow(taskId, undefined, engineDeps(deps));
+      const updated = await taskStore.getTask(deps.db, taskId);
+      const firstStep = updated?.currentStep ?? 'plan';
+      const auto = await shouldAutoRun(deps, taskId, firstStep);
+      if (auto) {
+        await deps.queue.enqueue({
+          type: firstStep,
+          taskId,
+          priority:
+            JOB_PRIORITIES[firstStep as keyof typeof JOB_PRIORITIES] ??
+            JOB_PRIORITIES.plan,
+        });
       }
 
       return { evaluation };
@@ -131,51 +177,7 @@ export function registerJobHandlers(
     }
   });
 
-  // plan
-  processor.register('plan', async (job: Job) => {
-    const taskId = job.taskId!;
-    deps.sink.broadcast('plan.generating', { taskId });
-
-    try {
-      const result = await generatePlan(taskId, {
-        repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-        configStore: deps.configStore,
-        registry: deps.registry,
-        memory: deps.memoryStore,
-        toolOverride: str(job.payload?.tool),
-        modelOverride: str(job.payload?.model),
-        feedback: str(job.payload?.feedback),
-      });
-
-      await deps.taskStore.setPlan(taskId, result.plan);
-      deps.sink.broadcast('plan.completed', { taskId, plan: result.plan });
-
-      // Chain: plan → auto-approve → code (via resumeChain)
-      const auto = await shouldAutoRun(deps, taskId, 'code');
-      if (auto) {
-        try {
-          await approvePlan(taskId, { taskStore: deps.taskStore });
-          deps.sink.broadcast('plan.approved', { taskId, automated: true });
-          await resumeChain(taskId, 'planned', deps);
-        } catch (approveErr) {
-          log.warn('auto-approve plan failed', {
-            taskId,
-            error: String(approveErr),
-          });
-        }
-      }
-
-      return { plan: result.plan, interactionId: result.interactionId };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      deps.sink.broadcast('plan.failed', { taskId, error });
-      throw err;
-    }
-  });
-
-  // breakdown
+  // breakdown — manual trigger
   processor.register('breakdown', async (job: Job) => {
     const taskId = job.taskId ?? undefined;
     deps.sink.broadcast('breakdown.started', { taskId: taskId ?? '' });
@@ -190,53 +192,57 @@ export function registerJobHandlers(
         },
         {
           repoDir: deps.repoDir,
-          taskStore: deps.taskStore,
+          db: deps.db,
+          sink: deps.sink,
           interactions: deps.interactionStore,
-          configStore: deps.configStore,
           registry: deps.registry,
           memory: deps.memoryStore,
         },
       );
 
-      deps.sink.broadcast('breakdown.completed', {
-        taskId: result.taskId ?? taskId ?? '',
-        proposed: result.proposed,
-        interactionId: result.interactionId,
-      });
-
-      // Auto-accept breakdown if auto-run is enabled
       if (taskId) {
-        const auto = await shouldAutoRun(deps, taskId, 'breakdown');
-        if (auto) {
-          try {
-            const accepted = await acceptBreakdown(taskId, result.proposed, {
-              taskStore: deps.taskStore,
-              queue: deps.queue,
-            });
-            if (result.interactionId) {
-              await deps.interactionStore.finish(result.interactionId, {
-                status: 'completed',
-                qualityJson: JSON.stringify({
-                  proposed: result.proposed,
-                  accepted: true,
-                }),
-              });
-            }
-            deps.sink.broadcast('task.updated', {
-              id: taskId,
-              status: 'broken_down',
-            });
-            log.info('auto-accepted breakdown', {
-              taskId,
-              created: accepted.createdIds.length,
-            });
-          } catch (acceptErr) {
-            log.warn('auto-accept breakdown failed', {
-              taskId,
-              error: String(acceptErr),
+        try {
+          const accepted = await acceptBreakdown(taskId, result.proposed, {
+            db: deps.db,
+            sink: deps.sink,
+            queue: deps.queue,
+          });
+          if (result.interactionId) {
+            await deps.interactionStore.finish(result.interactionId, {
+              status: 'completed',
+              output: JSON.stringify({
+                result: 'success',
+                data: { proposed: result.proposed, accepted: true },
+              }),
             });
           }
+          deps.sink.broadcast('breakdown.completed', {
+            taskId,
+            proposed: result.proposed,
+            createdIds: accepted.createdIds,
+            interactionId: result.interactionId,
+          });
+          deps.sink.broadcast('task.updated', {
+            id: taskId,
+            status: 'broken_down',
+          });
+          log.info('breakdown completed', {
+            taskId,
+            created: accepted.createdIds.length,
+          });
+        } catch (acceptErr) {
+          log.warn('breakdown accept failed', {
+            taskId,
+            error: String(acceptErr),
+          });
+          throw acceptErr;
         }
+      } else {
+        deps.sink.broadcast('breakdown.completed', {
+          taskId: '',
+          proposed: result.proposed,
+          interactionId: result.interactionId,
+        });
       }
 
       return { proposed: result.proposed, interactionId: result.interactionId };
@@ -247,123 +253,17 @@ export function registerJobHandlers(
     }
   });
 
-  // review (AI review)
-  processor.register('review', async (job: Job) => {
-    const taskId = job.taskId!;
-    deps.sink.broadcast('ai_review.started' as string, { taskId });
-
-    try {
-      const result = await runAIReviewWorkflow(taskId, {
-        repoDir: deps.repoDir,
-        configStore: deps.configStore,
-        registry: deps.registry,
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-        prompt: str(job.payload?.prompt),
-        toolOverride: str(job.payload?.tool),
-        modelOverride: str(job.payload?.model),
-      });
-
-      deps.sink.broadcast('ai_review.completed', {
-        taskId: result.taskId,
-        approved: result.approved,
-        feedback: result.feedback,
-        tool: result.tool,
-      });
-
-      // Chain: review → if approved → merge (via resumeChain); if rejected → re-run
-      if (result.approved) {
-        try {
-          await approveTask(taskId, { taskStore: deps.taskStore });
-          deps.sink.broadcast('task.approved', { taskId, automated: true });
-          await resumeChain(taskId, 'approved', deps);
-        } catch (approveErr) {
-          log.warn('auto-approve task failed', {
-            taskId,
-            error: String(approveErr),
-          });
-        }
-      } else {
-        // Auto change-request loop: re-run with feedback, then review again
-        const auto = await shouldAutoRun(deps, taskId, 'review');
-        if (auto) {
-          log.info('auto-requesting changes', {
-            taskId,
-            reviewId: result.reviewId,
-          });
-          await deps.queue.enqueue({
-            type: 'code',
-            taskId,
-            priority: JOB_PRIORITIES.code,
-            payload: { feedback: result.feedback, _autoReviewAfter: true },
-          });
-        }
-      }
-
-      return {
-        approved: result.approved,
-        feedback: result.feedback,
-        reviewId: result.reviewId,
-      };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      deps.sink.broadcast('ai_review.failed', { taskId, error });
-      throw err;
-    }
-  });
-
-  // code — execute task implementation
-  processor.register('code', async (job: Job) => {
-    const taskId = job.taskId!;
-
-    const depsMet = await deps.taskStore.areDependenciesMet(taskId);
-    if (!depsMet) {
-      log.info('code skipped: dependencies not met', { taskId });
-      return { taskId, skipped: true, reason: 'dependencies_not_met' };
-    }
-
-    const feedback = str(job.payload?.feedback);
-    const autoReviewAfter = Boolean(job.payload?._autoReviewAfter);
-
-    let resumeSessionID: string | undefined;
-    if (feedback) {
-      const task = await deps.taskStore.get(taskId);
-      resumeSessionID = task?.sessionId ?? undefined;
-    }
-
-    const result = await deps.executor.runTaskByIDInternal(taskId, {
-      runID: genId(),
-      toolOverride: str(job.payload?.tool),
-      modelOverride: str(job.payload?.model),
-      context: str(job.payload?.context),
-      resumeSessionID,
-      feedback,
-    });
-
-    // Chain: run → review (if task landed in 'review' status)
-    if (result.status === 'review') {
-      if (autoReviewAfter) {
-        // Part of auto change-request loop — always review again
-        log.info('auto-review after change request', { taskId });
-        await deps.queue.enqueue({
-          type: 'review',
-          taskId,
-          priority: JOB_PRIORITIES.review,
-        });
-      } else {
-        await enqueueNext(deps, taskId, 'review');
-      }
-    }
-
-    return { taskId: result.taskID, status: result.status };
-  });
-
-  // explore
+  // explore — manual trigger, gated by memory.enabled
   processor.register('explore', async (job: Job) => {
-    deps.sink.broadcast('explore.started' as string, {});
+    const config = await configStore.loadConfig(deps.db);
+    if (config.memory?.enabled === false) {
+      log.info('explore skipped — memory disabled');
+      return { skipped: true };
+    }
+
+    deps.sink.broadcast('explore.started', {});
 
     try {
-      const config = await deps.configStore.load();
       const result = await runExplore({
         repoDir: deps.repoDir,
         interactions: deps.interactionStore,
@@ -384,60 +284,26 @@ export function registerJobHandlers(
     }
   });
 
-  // merge
-  processor.register('merge', async (job: Job) => {
-    const taskId = job.taskId!;
-    deps.sink.broadcast('merge.started', { taskId, mode: 'single' });
-
-    let failBroadcast = true;
-    try {
-      const result = await mergeTask(taskId, {
-        repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
-        configStore: deps.configStore,
-        interactions: deps.interactionStore,
-        memoryStore: deps.memoryStore,
-        registry: deps.registry,
-        sink: deps.sink,
-        queue: deps.queue,
-      });
-
-      if (result.status !== 'merged') {
-        failBroadcast = false;
-        deps.sink.broadcast('merge.failed', {
-          taskId,
-          error: result.error || 'merge failed',
-        });
-        throw new Error(result.error || 'merge failed');
-      }
-
-      failBroadcast = false;
-      deps.sink.broadcast('merge.completed', { taskId, result });
-      // unblockDependents + retro already triggered inside mergeTask
-      return { taskId, status: result.status };
-    } catch (err) {
-      if (failBroadcast) {
-        const error = err instanceof Error ? err.message : String(err);
-        deps.sink.broadcast('merge.failed', { taskId, error });
-      }
-      throw err;
-    }
-  });
-
-  // retro
+  // retro — system-controlled, gated by memory.enabled
   processor.register('retro', async (job: Job) => {
     const taskId = job.taskId!;
+    const config = await configStore.loadConfig(deps.db);
+    if (config.memory?.enabled === false) {
+      log.info('retro skipped — memory disabled', { taskId });
+      return { taskId, skipped: true };
+    }
+
     deps.sink.broadcast('retro.started', { taskId });
 
     try {
-      const config = await deps.configStore.load();
       const result = await runRetro(taskId, {
         repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
+        db: deps.db,
         interactionStore: deps.interactionStore,
         memoryStore: deps.memoryStore,
         config,
         registry: deps.registry,
+        workflowStore: deps.workflowStore,
       });
 
       deps.sink.broadcast('retro.completed', {
@@ -452,4 +318,42 @@ export function registerJobHandlers(
       throw err;
     }
   });
+
+  // -------------------------------------------------------------------------
+  // Generic fallback for ALL workflow steps (plan, code, review, merge, custom)
+  // -------------------------------------------------------------------------
+  processor.setFallback(async (job: Job) => {
+    const stepName = job.type;
+    log.info('routing to step handler', { stepName, taskId: job.taskId });
+    const handler = createGenericStepHandler(stepName, deps);
+    return handler(job);
+  });
+}
+
+async function shouldAutoRun(
+  deps: HandlerDeps,
+  taskId: string,
+  stepName: string,
+): Promise<boolean> {
+  try {
+    const [config, task] = await Promise.all([
+      configStore.loadConfig(deps.db),
+      taskStore.getTask(deps.db, taskId),
+    ]);
+    const compiled = deps.workflowStore.resolve(task?.workflow ?? undefined);
+    let stepAutoRun: boolean | undefined;
+    try {
+      stepAutoRun = resolveStepMeta(compiled.machine, stepName).meta.autoRun;
+    } catch {
+      stepAutoRun = undefined;
+    }
+    return isAutoRun({
+      config,
+      stepName,
+      stepAutoRun,
+      taskOverrides: task?.autoRunOverrides,
+    });
+  } catch {
+    return false;
+  }
 }

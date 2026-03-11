@@ -1,37 +1,25 @@
-import type {
-  AutoRunOverrides,
-  Interaction,
-  MemoryCategory,
-  MemorySourceType,
-  TaskStatus,
-} from '../types';
+import type { MemoryCategory, MemorySourceType } from '../types/constants';
+import type { Interaction } from '../types/models';
 
-export interface TaskCreateInput {
+export interface MemoryEntryInput {
   id?: string;
-  title: string;
-  description?: string;
-  parentId?: string | null;
-  autoRunOverrides?: AutoRunOverrides;
-}
-
-export interface TaskUpdateFields {
-  title?: string;
-  description?: string;
-  plan?: string | null;
-  status?: TaskStatus;
-  sessionId?: string | null;
-  autoRunOverrides?: AutoRunOverrides;
-  pendingQuestion?: string | null;
+  content: string;
+  category: MemoryCategory;
+  provenanceHash: string;
+  tags?: string[];
+  sourceType?: MemorySourceType;
+  confidence?: number;
+  coveredAtCommit?: string;
+  stale?: boolean;
+  decayExempt?: boolean;
+  filePaths?: string[];
+  sourceTaskId?: string;
+  sourceInteractionId?: string;
+  supersededBy?: string;
 }
 
 export type StoredInteraction = Interaction;
 
-export interface ToolSummary {
-  tool: string;
-  inputTokens: number;
-  outputTokens: number;
-  cost: number;
-}
 export interface MemoryHealthSummary {
   totalEntries: number;
   bySource: Record<MemorySourceType, number>;
@@ -46,32 +34,4 @@ export interface MemoryListOptions {
   filePath?: string;
   staleOnly?: boolean;
   coveredBefore?: string;
-}
-
-export interface MemoryUpdateFields {
-  content?: string;
-  category?: MemoryCategory;
-  confidence?: number;
-  sourceType?: MemorySourceType;
-  stale?: boolean;
-  coveredAtCommit?: string;
-  tags?: string[];
-  decayExempt?: boolean;
-}
-
-export interface MemoryEntryInput {
-  id?: string;
-  content: string;
-  category: MemoryCategory;
-  tags?: string[];
-  sourceTaskId?: string;
-  sourceInteractionId?: string;
-  sourceType?: MemorySourceType;
-  filePaths?: string[];
-  coveredAtCommit?: string;
-  stale?: boolean;
-  confidence?: number;
-  decayExempt?: boolean;
-  provenanceHash: string;
-  supersededBy?: string;
 }

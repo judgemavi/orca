@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
+import type { OrcaDrizzleDB } from '../../db/connection';
 import {
-  buildMCPServerDef,
   loadOrchestratorPrompt,
   ORCHESTRATOR_ALLOWED_TOOLS,
   resolveSupervisor,
@@ -8,13 +8,12 @@ import {
 import type { ToolPluginRegistry } from '../../plugin/registry';
 import { log } from '../../shared/logger';
 import { trackProcess, untrackProcess } from '../../shared/process-registry';
-import type { ConfigStore } from '../../store/config';
 import type { EventSink } from '../ws';
 
 const SCROLLBACK_LIMIT = 100_000;
 
 export interface OrchestratorWSData {
-  configStore: ConfigStore;
+  db: OrcaDrizzleDB;
   repoDir: string;
   registry: ToolPluginRegistry;
   cols: number;
@@ -67,7 +66,7 @@ export function orchestratorRoutes(_sink: EventSink) {
 export function handleOrchestratorUpgrade(
   request: Request,
   serverRef: { upgrade: (req: Request, opts?: any) => boolean },
-  configStore: ConfigStore,
+  db: OrcaDrizzleDB,
   repoDir: string,
   registry: ToolPluginRegistry,
 ): boolean {
@@ -78,12 +77,12 @@ export function handleOrchestratorUpgrade(
   const rows = parseInt(url.searchParams.get('rows') || '24', 10);
 
   return serverRef.upgrade(request, {
-    data: { configStore, repoDir, registry, cols, rows },
+    data: { db, repoDir, registry, cols, rows },
   });
 }
 
 export async function onOrchestratorWSOpen(ws: OrchestratorWebSocket) {
-  const { configStore, repoDir, registry, cols, rows } = ws.data;
+  const { db, repoDir, registry, cols, rows } = ws.data;
 
   // Reattach to existing PTY if alive
   if (activePTY && !activePTY.dead) {
@@ -108,19 +107,13 @@ export async function onOrchestratorWSOpen(ws: OrchestratorWebSocket) {
   }
 
   try {
-    const resolved = await resolveSupervisor(configStore, registry);
-    const config = await configStore.load();
-    const systemPrompt = await loadOrchestratorPrompt(
-      repoDir,
-      config.orchestrator.mode,
-    );
-    const mcpServer = buildMCPServerDef(repoDir);
+    const resolved = await resolveSupervisor(db, registry);
+    const systemPrompt = await loadOrchestratorPrompt(repoDir);
 
     const args = await resolved.plugin.interactiveArgs({
       model: resolved.model,
       systemPrompt,
       allowedTools: ORCHESTRATOR_ALLOWED_TOOLS,
-      mcpServers: { orca: mcpServer },
       repoDir,
     });
 
@@ -164,7 +157,7 @@ export async function onOrchestratorWSOpen(ws: OrchestratorWebSocket) {
             pty.scrollbackBytes > SCROLLBACK_LIMIT &&
             pty.scrollback.length > 1
           ) {
-            pty.scrollbackBytes -= pty.scrollback[0].length;
+            pty.scrollbackBytes -= pty.scrollback[0]?.length ?? 0;
             pty.scrollback.shift();
           }
 

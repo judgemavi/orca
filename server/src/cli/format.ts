@@ -1,6 +1,6 @@
 import type { StoredInteraction } from '../store/types';
-import type { MemoryEntry, Task } from '../types';
-import { short, statusIcon } from './helpers';
+import type { MemoryEntry, Task } from '../types/models';
+import { statusIcon } from './helpers';
 
 let jsonMode = false;
 
@@ -88,7 +88,7 @@ function formatHuman(data: unknown): string {
 function formatTaskList(tasks: Task[]): string {
   const rows = tasks.map((task) => ({
     status: statusIcon(task.status),
-    id: short(task.id),
+    id: task.id,
     title: task.title,
     state: task.status,
   }));
@@ -96,27 +96,24 @@ function formatTaskList(tasks: Task[]): string {
 }
 
 function formatTaskDetail(task: Task): string {
-  const deps =
-    task.dependsOn.length > 0 ? task.dependsOn.map(short).join(', ') : 'none';
+  const deps = task.dependsOn.length > 0 ? task.dependsOn.join(', ') : 'none';
   return [
-    `Task: ${short(task.id)} — ${task.title}`,
+    `Task: ${task.id} — ${task.title}`,
     `Status: ${task.status}`,
     `Dependencies: ${deps}`,
     `Created: ${task.createdAt}`,
     `Updated: ${task.updatedAt}`,
     `Description:`,
     indentBlock(task.description || '(empty)'),
-    'Plan:',
-    indentBlock((task.plan ?? '').trim() || '(empty)'),
+    'Plan: (see interactions)',
   ].join('\n');
 }
 
 function formatInteractionList(interactions: StoredInteraction[]): string {
   const rows = interactions.map((interaction) => ({
-    id: short(interaction.id),
+    id: interaction.id,
     type: interaction.type,
     tool: [interaction.tool, interaction.model].filter(Boolean).join('/'),
-    cost: `$${interaction.estimatedCost.toFixed(2)}`,
     status: interaction.status,
   }));
   return printTable(rows);
@@ -126,13 +123,12 @@ function formatStatusSummary(summary: {
   totalTasks: number;
   byStatus: Record<string, number>;
   runningInteractions: number;
-  totalCost: number;
   memory: { totalEntries: number; staleCount: number };
 }): string {
   const s = summary.byStatus;
   return [
     `Tasks:  ${s.pending ?? 0} pending · ${s.running ?? 0} running · ${s.approved ?? 0} approved · ${s.failed ?? 0} failed`,
-    `Cost:   $${summary.totalCost.toFixed(2)} (${summary.runningInteractions} running interactions)`,
+    `Ops:    ${summary.runningInteractions} running interactions`,
     `Memory: ${summary.memory.totalEntries} entries (${summary.memory.staleCount} stale)`,
   ].join('\n');
 }
@@ -142,7 +138,7 @@ function formatMemoryList(
 ): string {
   const hasScores = entries.some((e) => typeof e.score === 'number');
   const rows = entries.map((entry) => ({
-    id: short(entry.id),
+    id: entry.id,
     ...(hasScores ? { score: `${Math.round((entry.score ?? 0) * 100)}%` } : {}),
     category: entry.category,
     source: entry.sourceType,
@@ -188,8 +184,7 @@ function isInteraction(value: unknown): value is StoredInteraction {
     typeof value.id === 'string' &&
     typeof value.type === 'string' &&
     typeof value.tool === 'string' &&
-    typeof value.status === 'string' &&
-    typeof value.estimatedCost === 'number'
+    typeof value.status === 'string'
   );
 }
 
@@ -201,14 +196,12 @@ function isStatusSummary(value: unknown): value is {
   totalTasks: number;
   byStatus: Record<string, number>;
   runningInteractions: number;
-  totalCost: number;
   memory: { totalEntries: number; staleCount: number };
 } {
   if (!isRecord(value)) return false;
   if (typeof value.totalTasks !== 'number') return false;
   if (!isRecord(value.byStatus)) return false;
   if (typeof value.runningInteractions !== 'number') return false;
-  if (typeof value.totalCost !== 'number') return false;
   const mem = value.memory;
   if (!isRecord(mem)) return false;
   return (

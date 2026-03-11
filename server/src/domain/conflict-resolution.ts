@@ -1,3 +1,4 @@
+import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/types';
 import { resolveModel, resolveTool } from '../config/config';
 import { toolDefinition } from '../plugin/registry';
 import { loadPrompt } from '../prompts/loader';
@@ -7,7 +8,6 @@ import {
   gitRunWithRefLockRetry,
   isRefLockErrorResult,
 } from '../shared/git';
-import { INTERACTION_STATUSES, TASK_STATUSES } from '../types';
 import { runTool } from '../worker/worker';
 import type {
   ConflictResolutionDeps,
@@ -80,12 +80,12 @@ export async function mergeWithConflictResolutionUnlocked(
     return failed('no worktree found for conflict resolution');
   }
 
-  const toolName = resolveTool(deps.config, '', 'merge');
+  const toolName = resolveTool(deps.config, '');
   const plugin = toolDefinition(deps.registry, toolName);
   if (!plugin) {
     return failed(`merge tool not available: ${toolName}`);
   }
-  const model = resolveModel(deps.config, deps.registry, toolName, '', 'merge');
+  const model = resolveModel(deps.config, deps.registry, toolName, '');
 
   const interaction = await deps.interactionStore.begin({
     taskId: taskID,
@@ -120,29 +120,48 @@ export async function mergeWithConflictResolutionUnlocked(
         });
         return failed('checkout integration branch failed after rebase');
       }
-      const finalMerge = await gitRunWithRefLockRetry(deps.repoDir, [
+      const squashResult = await gitRunWithRefLockRetry(deps.repoDir, [
         'merge',
+        '--squash',
         branch,
-        '--no-ff',
-        '-m',
-        `orca: merge task-${taskID} (after rebase)`,
       ]);
-      if (finalMerge.code !== 0) {
-        await runtime.gitRun(deps.repoDir, ['merge', '--abort'], true);
-        if (isRefLockErrorResult(finalMerge)) {
+      if (squashResult.code !== 0) {
+        if (isRefLockErrorResult(squashResult)) {
           await deps.interactionStore.finish(interaction.id, {
             status: INTERACTION_STATUSES.failed,
-            error: formatRefLockContentionError(finalMerge.stderr),
+            error: formatRefLockContentionError(squashResult.stderr),
             model,
           });
-          return failed(formatRefLockContentionError(finalMerge.stderr));
+          return failed(formatRefLockContentionError(squashResult.stderr));
         }
         await deps.interactionStore.finish(interaction.id, {
           status: INTERACTION_STATUSES.failed,
-          error: 'merge failed after clean rebase',
+          error: 'squash merge failed after clean rebase',
           model,
         });
-        return failed('merge failed after clean rebase');
+        return failed('squash merge failed after clean rebase');
+      }
+      const finalCommit = await gitRunWithRefLockRetry(deps.repoDir, [
+        'commit',
+        '-m',
+        `orca: merge task-${taskID} (after rebase)`,
+      ]);
+      if (finalCommit.code !== 0) {
+        await runtime.gitRun(deps.repoDir, ['merge', '--abort'], true);
+        if (isRefLockErrorResult(finalCommit)) {
+          await deps.interactionStore.finish(interaction.id, {
+            status: INTERACTION_STATUSES.failed,
+            error: formatRefLockContentionError(finalCommit.stderr),
+            model,
+          });
+          return failed(formatRefLockContentionError(finalCommit.stderr));
+        }
+        await deps.interactionStore.finish(interaction.id, {
+          status: INTERACTION_STATUSES.failed,
+          error: 'commit failed after clean rebase squash',
+          model,
+        });
+        return failed('commit failed after clean rebase squash');
       }
 
       await runtime.cleanupTaskWorktree(
@@ -255,30 +274,57 @@ export async function mergeWithConflictResolutionUnlocked(
       );
     }
 
-    const finalMerge = await gitRunWithRefLockRetry(deps.repoDir, [
+    const squashMerge = await gitRunWithRefLockRetry(deps.repoDir, [
       'merge',
+      '--squash',
       branch,
-      '--no-ff',
-      '-m',
-      `orca: merge task-${taskID} (conflict-resolved)`,
     ]);
-    if (finalMerge.code !== 0) {
+    if (squashMerge.code !== 0) {
       await runtime.gitRun(deps.repoDir, ['merge', '--abort'], true);
-      if (isRefLockErrorResult(finalMerge)) {
+      if (isRefLockErrorResult(squashMerge)) {
         await deps.interactionStore.finish(interaction.id, {
           status: INTERACTION_STATUSES.failed,
-          error: formatRefLockContentionError(finalMerge.stderr),
+          error: formatRefLockContentionError(squashMerge.stderr),
           model,
         });
-        return failed(formatRefLockContentionError(finalMerge.stderr));
+        return failed(formatRefLockContentionError(squashMerge.stderr));
       }
       await deps.interactionStore.finish(interaction.id, {
         status: INTERACTION_STATUSES.failed,
-        error: 'merge failed after conflict resolution',
+        error: 'squash merge failed after conflict resolution',
         model,
       });
-      return failed('merge failed after conflict resolution');
+      return failed('squash merge failed after conflict resolution');
     }
+    const finalCommit = await gitRunWithRefLockRetry(deps.repoDir, [
+      'commit',
+      '-m',
+      `orca: merge task-${taskID} (conflict-resolved)`,
+    ]);
+    if (finalCommit.code !== 0) {
+      if (isRefLockErrorResult(finalCommit)) {
+        await deps.interactionStore.finish(interaction.id, {
+          status: INTERACTION_STATUSES.failed,
+          error: formatRefLockContentionError(finalCommit.stderr),
+          model,
+        });
+        return failed(formatRefLockContentionError(finalCommit.stderr));
+      }
+      await deps.interactionStore.finish(interaction.id, {
+        status: INTERACTION_STATUSES.failed,
+        error: 'commit failed after conflict resolution squash',
+        model,
+      });
+      return failed('commit failed after conflict resolution squash');
+    }
+
+    // Capture squash merge commit SHA before cleanup
+    const mergeHead = await gitRunWithRefLockRetry(deps.repoDir, [
+      'rev-parse',
+      'HEAD',
+    ]);
+    const commitSha =
+      mergeHead.code === 0 ? mergeHead.stdout.trim() : undefined;
 
     await runtime.cleanupTaskWorktree(
       deps.repoDir,
@@ -289,6 +335,7 @@ export async function mergeWithConflictResolutionUnlocked(
     await deps.interactionStore.finish(interaction.id, {
       status: INTERACTION_STATUSES.completed,
       model,
+      commitSha: commitSha ?? null,
     });
 
     return {
@@ -298,6 +345,7 @@ export async function mergeWithConflictResolutionUnlocked(
       worktreePath: worktreePath,
       rebaseAttempted: true,
       conflicts: basicResult.conflicts,
+      commitSha,
     };
   } catch (error) {
     await runtime

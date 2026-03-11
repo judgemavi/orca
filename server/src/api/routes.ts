@@ -2,13 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { OrcaDrizzleDB } from '../db/connection';
 import type { EmbeddingRegistry } from '../embedding/registry';
-import type { Executor } from '../executor/executor';
-import type { ToolPluginRegistry } from '../plugin/registry';
-import type { JobQueue } from '../queue/queue';
-import type { ConfigStore } from '../store/config';
-import type { InteractionStore } from '../store/interactions';
-import type { MemoryStore } from '../store/memory';
-import type { TaskStore } from '../store/tasks';
+import type { AppDeps } from '../types/deps';
 import { cleanupRoutes } from './handlers/cleanup';
 import { configRoutes } from './handlers/config';
 import { eventRoutes } from './handlers/events';
@@ -21,74 +15,58 @@ import { monitorRoutes } from './handlers/monitor';
 import { orchestratorRoutes } from './handlers/orchestrator';
 import { queueRoutes } from './handlers/queue';
 import { runRoutes } from './handlers/run';
-import { sessionRoutes } from './handlers/sessions';
 import { statusRoutes } from './handlers/status';
-import { taskPlanRoutes } from './handlers/task-plan';
 import { taskWorkflowRoutes } from './handlers/task-workflow';
 import { taskRoutes } from './handlers/tasks';
 import type { EventSink } from './ws';
 
-interface RouteDeps {
+type RouteDeps = AppDeps & {
   db: OrcaDrizzleDB;
-  repoDir: string;
-  taskStore: TaskStore;
-  configStore: ConfigStore;
-  interactionStore: InteractionStore;
-  memoryStore: MemoryStore;
-  registry: ToolPluginRegistry;
   embeddingRegistry: EmbeddingRegistry;
-  executor: Executor;
   eventSink: EventSink;
-  queue: JobQueue;
-}
+};
 
 function taskGroup(deps: RouteDeps) {
   return new Hono()
     .route(
       '/',
       taskRoutes({
-        taskStore: deps.taskStore,
+        db: deps.db,
+        sink: deps.eventSink,
         interactionStore: deps.interactionStore,
-        configStore: deps.configStore,
-        sink: deps.eventSink,
         repoDir: deps.repoDir,
         queue: deps.queue,
-      }),
-    )
-    .route(
-      '/',
-      taskPlanRoutes({
-        repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-        memory: deps.memoryStore,
-        configStore: deps.configStore,
-        registry: deps.registry,
-        sink: deps.eventSink,
-        queue: deps.queue,
+        workflowStore: deps.workflowStore,
       }),
     )
     .route(
       '/',
       taskWorkflowRoutes({
         repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
+        db: deps.db,
         interactionStore: deps.interactionStore,
-        configStore: deps.configStore,
         sink: deps.eventSink,
         queue: deps.queue,
+        workflowStore: deps.workflowStore,
       }),
     )
     .route(
       '/',
       runRoutes({
         executor: deps.executor,
-        taskStore: deps.taskStore,
+        db: deps.db,
         sink: deps.eventSink,
+        interactionStore: deps.interactionStore,
         queue: deps.queue,
       }),
     )
-    .route('/', interactionRoutes(deps.interactionStore));
+    .route(
+      '/',
+      interactionRoutes({
+        interactions: deps.interactionStore,
+        repoDir: deps.repoDir,
+      }),
+    );
 }
 
 function dataGroup(deps: RouteDeps) {
@@ -96,17 +74,18 @@ function dataGroup(deps: RouteDeps) {
     .route(
       '/',
       mergeRoutes({
-        taskStore: deps.taskStore,
+        db: deps.db,
+        sink: deps.eventSink,
         queue: deps.queue,
       }),
     )
     .route('/', memoryRoutes(deps.repoDir, deps.memoryStore))
-    .route('/', exploreRoutes(deps.repoDir, deps.queue))
+    .route('/', exploreRoutes(deps.repoDir, deps.queue, deps.db))
     .route(
       '/',
       cleanupRoutes({
         repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
+        db: deps.db,
         sink: deps.eventSink,
       }),
     );
@@ -114,22 +93,21 @@ function dataGroup(deps: RouteDeps) {
 
 function infraGroup(deps: RouteDeps) {
   return new Hono()
-    .route('/', sessionRoutes(deps.db))
     .route('/', orchestratorRoutes(deps.eventSink))
     .route(
       '/',
       configRoutes(
-        deps.configStore,
+        deps.db,
         deps.embeddingRegistry,
         deps.memoryStore,
-        deps.db,
+        deps.eventSink,
       ),
     )
     .route('/', modelRoutes(deps.registry))
     .route(
       '/',
       statusRoutes({
-        taskStore: deps.taskStore,
+        db: deps.db,
         interactions: deps.interactionStore,
         memory: deps.memoryStore,
         repoDir: deps.repoDir,

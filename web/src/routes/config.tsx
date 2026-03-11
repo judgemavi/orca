@@ -7,13 +7,12 @@ import {
   useEmbeddingProvidersQuery,
   useModelsQuery,
 } from '../hooks/queries';
-import { type Config, INTERACTION_TYPES } from '../types';
+import type { Config } from '../types';
 
 type SectionId =
   | 'project'
   | 'tools'
   | 'workers'
-  | 'interactions'
   | 'orchestrator'
   | 'monitor'
   | 'quality'
@@ -153,17 +152,15 @@ function ConfigPage() {
           worktreeDir: '',
         },
         tools: data.tools ?? [],
-        interactions: data.interactions ?? ({} as Config['interactions']),
         orchestrator: data.orchestrator ?? {
           tool: '',
           model: '',
-          mode: 'cli' as const,
         },
         workers: data.workers ?? { maxParallel: 3 },
         monitor: data.monitor ?? {
-          stuckCheckInterval: '5m',
+          stuckCheckIntervalMs: 300_000,
           maxStuckCycles: 3,
-          conflictCheckInterval: '10m',
+          conflictCheckIntervalMs: 600_000,
         },
         logging: data.logging ?? {
           level: 'info',
@@ -312,7 +309,6 @@ function ConfigPage() {
                   updateSection('orchestrator', {
                     tool: e.target.value,
                     model: modelsByTool[e.target.value]?.[0]?.id ?? '',
-                    mode: draft.orchestrator.mode,
                   })
                 }
               >
@@ -345,104 +341,6 @@ function ConfigPage() {
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-xs">
-              Mode
-              <select
-                className={inputClass}
-                value={draft.orchestrator.mode ?? 'cli'}
-                onChange={(e) =>
-                  updateSection('orchestrator', {
-                    ...draft.orchestrator,
-                    mode: e.target.value as 'cli' | 'mcp',
-                  })
-                }
-              >
-                <option value="cli">CLI (lower token usage)</option>
-                <option value="mcp">MCP (structured tool calls)</option>
-              </select>
-            </label>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Interaction Defaults"
-          id="interactions"
-          saving={saving.interactions}
-          error={errors.interactions}
-          onSave={() =>
-            savePatch('interactions', { interactions: draft.interactions })
-          }
-        >
-          <div className="space-y-2">
-            {INTERACTION_TYPES.map((type) => {
-              const entry = draft.interactions?.[type] ?? {
-                tool: '',
-                model: '',
-                autoRun: true,
-              };
-              const typeModels = entry.tool
-                ? (modelsByTool[entry.tool] ?? [])
-                : [];
-              return (
-                <div
-                  key={type}
-                  className="grid items-center gap-3 rounded-md border p-3 sm:grid-cols-[120px_1fr_1fr_auto]"
-                >
-                  <div className="text-[13px] font-medium">{type}</div>
-                  <select
-                    className={inputClass}
-                    value={entry.tool}
-                    onChange={(e) =>
-                      updateSection('interactions', {
-                        ...draft.interactions,
-                        [type]: {
-                          ...entry,
-                          tool: e.target.value,
-                          model: modelsByTool[e.target.value]?.[0]?.id ?? '',
-                        },
-                      })
-                    }
-                  >
-                    <option value="">Select tool</option>
-                    {toolOptions.map((tool) => (
-                      <option key={tool} value={tool}>
-                        {tool}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className={inputClass}
-                    value={entry.model}
-                    onChange={(e) =>
-                      updateSection('interactions', {
-                        ...draft.interactions,
-                        [type]: { ...entry, model: e.target.value },
-                      })
-                    }
-                  >
-                    <option value="">Select model</option>
-                    {typeModels.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.id}
-                      </option>
-                    ))}
-                  </select>
-                  <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={entry.autoRun ?? true}
-                      onChange={(e) =>
-                        updateSection('interactions', {
-                          ...draft.interactions,
-                          [type]: { ...entry, autoRun: e.target.checked },
-                        })
-                      }
-                    />
-                    Auto
-                  </label>
-                </div>
-              );
-            })}
           </div>
         </SectionCard>
 

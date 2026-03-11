@@ -3,8 +3,11 @@ import { useMutation } from '@tanstack/react-query';
 import { type FormEvent, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useCreateTaskForm } from '../hooks/forms/useCreateTaskForm';
-import { useConfigQuery, useTasksQuery } from '../hooks/queries';
-import { type AutoRunOverrides, INTERACTION_TYPES, type Task } from '../types';
+import { useTasksQuery } from '../hooks/queries';
+import type { AutoRunOverrides, Task } from '../types';
+
+const WORKFLOW_STEP_NAMES = ['plan', 'code', 'review', 'merge'] as const;
+
 import { Button } from './Button';
 
 const controlClass =
@@ -17,7 +20,6 @@ export function CreateTaskModal() {
       api.createTask(data),
   });
   const tasksQuery = useTasksQuery();
-  const { data: config } = useConfigQuery();
   const [error, setError] = useState('');
 
   const dependencyTasks = useMemo(
@@ -131,9 +133,7 @@ export function CreateTaskModal() {
                             <span className="flex-1 truncate text-xs">
                               {task.title}
                             </span>
-                            <span className="font-mono text-xs">
-                              {task.id.slice(0, 8)}
-                            </span>
+                            <span className="font-mono text-xs">{task.id}</span>
                           </label>
                         ))}
                       </div>
@@ -154,9 +154,8 @@ export function CreateTaskModal() {
                       )}
                     </summary>
                     <div className="mt-2 grid gap-1 rounded-md border px-3 py-2 sm:grid-cols-2">
-                      {INTERACTION_TYPES.map((type) => {
-                        const configDefault =
-                          config?.interactions?.[type]?.autoRun ?? true;
+                      {WORKFLOW_STEP_NAMES.map((type) => {
+                        const configDefault = true;
                         const overridden = type in field.state.value;
                         const checked = overridden
                           ? Boolean(field.state.value[type])

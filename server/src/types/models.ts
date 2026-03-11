@@ -1,52 +1,35 @@
 import type {
-  interactions,
-  jobs,
-  memoryEntries,
-  taskInteractions,
-  taskReviews,
-  tasks,
-} from '../db/schema';
-import type { AutoRunOverrides } from './api';
-import type {
   InteractionStatus,
   JobStatus,
   JobType,
-  MemoryCategory,
-  MemorySourceType,
-  ReviewStatus,
   TaskStatus,
-} from './constants';
-
-// -- Drizzle row types (private, not exported) --
-type TaskRow = typeof tasks.$inferSelect;
-type InteractionRow = typeof taskInteractions.$inferSelect;
-type ReviewRow = typeof taskReviews.$inferSelect;
-type JobRow = typeof jobs.$inferSelect;
-type MemoryRow = typeof memoryEntries.$inferSelect;
-type OperationRow = typeof interactions.$inferSelect;
-
-// -- API types (row + narrowed enums + computed fields) --
+} from '@orca/types';
+import type {
+  MemoryEntry as DBMemoryEntry,
+  InteractionEntry,
+  JobEntry,
+  TaskEntry,
+} from '../db/schema';
+import type { AutoRunOverrides } from './api';
+import type { MemoryCategory, MemorySourceType } from './constants';
 
 export type Task = Omit<
-  TaskRow,
-  'status' | 'autoRunOverrides' | 'pendingQuestion'
+  TaskEntry,
+  'status' | 'autoRunOverrides' | 'dependsOn'
 > & {
   status: TaskStatus;
   dependsOn: string[];
   autoRunOverrides?: AutoRunOverrides;
-  pendingQuestion?: string;
 };
 
 export type Interaction = Omit<
-  InteractionRow,
-  'status' | 'error' | 'diff' | 'exitCode' | 'durationMs' | 'qualityJson'
+  InteractionEntry,
+  'status' | 'error' | 'exitCode' | 'durationMs'
 > & {
   status: InteractionStatus;
   error?: string;
-  diff?: string;
   exitCode?: number;
   durationMs?: number;
-  qualityJson?: string;
 };
 
 export type InteractionStub = Pick<
@@ -58,12 +41,15 @@ export type InteractionStub = Pick<
   | 'tool'
   | 'status'
   | 'durationMs'
-  | 'estimatedCost'
   | 'startedAt'
   | 'finishedAt'
 > & {
+  stepName?: string;
   diffSummary?: string | null;
   memoryCount?: number;
+  previousInteractionId?: string;
+  commitSha?: string;
+  sessionId?: string;
 };
 
 export interface InteractionWithContent extends Interaction {
@@ -71,17 +57,8 @@ export interface InteractionWithContent extends Interaction {
   rawContent?: string;
 }
 
-export type TaskReview = Omit<
-  ReviewRow,
-  'status' | 'interactionId' | 'addressedAt'
-> & {
-  status: ReviewStatus;
-  interactionId?: string;
-  addressedAt?: string;
-};
-
 export type Job = Omit<
-  JobRow,
+  JobEntry,
   'type' | 'status' | 'payload' | 'result' | 'startedAt' | 'completedAt'
 > & {
   type: JobType;
@@ -93,7 +70,7 @@ export type Job = Omit<
 };
 
 export type MemoryEntry = Omit<
-  MemoryRow,
+  DBMemoryEntry,
   | 'category'
   | 'tags'
   | 'sourceType'
@@ -119,10 +96,4 @@ export type MemoryEntry = Omit<
   sourceInteractionId?: string;
   supersededBy?: string;
   coveredAtCommit?: string;
-};
-
-export type Operation = Omit<OperationRow, 'status' | 'result' | 'error'> & {
-  status: InteractionStatus;
-  result?: string;
-  error?: string;
 };

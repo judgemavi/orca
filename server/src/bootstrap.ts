@@ -1,10 +1,7 @@
 import type { EventSink } from './api/ws';
-import {
-  sanitizeConfig,
-  validateConfig,
-  validateDefaults,
-} from './config/config';
+import { sanitizeConfig, validateDefaults } from './config/config';
 import { type DatabaseConnection, openDatabase } from './db/connection';
+import type { Config } from './db/schema';
 import {
   type EmbeddingRegistry,
   loadEmbeddingRegistry,
@@ -14,33 +11,28 @@ import { Executor } from './executor/executor';
 import {
   fallbackToolPluginRegistry,
   loadToolPluginRegistry,
-  type ToolPluginRegistry,
 } from './plugin/registry';
 import { JobQueue } from './queue/queue';
 import { log } from './shared/logger';
-import { ConfigStore } from './store/config';
+import { loadConfig, saveConfig } from './store/config';
 import { InteractionStore } from './store/interactions';
 import { MemoryStore } from './store/memory';
-import { TaskStore } from './store/tasks';
-import type { Config } from './types';
+import type { AppDeps } from './types/deps';
+import type { CompiledWorkflow } from './workflow/types';
+import { buildTransitionMeta } from './workflow/paths';
+import { createWorkflowMachine } from './workflow/presets';
+import { WorkflowStore } from './workflow/store';
+import { validateWorkflow } from './workflow/validator';
 
 interface BootstrapOptions {
   repoDir: string;
   eventSink?: EventSink;
 }
 
-interface BootstrapResult {
+interface BootstrapResult extends AppDeps {
   database: DatabaseConnection;
   config: Config;
-  registry: ToolPluginRegistry;
   embeddingRegistry: EmbeddingRegistry;
-  configStore: ConfigStore;
-  taskStore: TaskStore;
-  interactionStore: InteractionStore;
-  memoryStore: MemoryStore;
-  queue: JobQueue;
-  executor: Executor;
-  repoDir: string;
 }
 
 export async function bootstrap(
@@ -60,22 +52,47 @@ export async function bootstrap(
     );
   }
 
-  const configStore = new ConfigStore(db, eventSink);
-  const taskStore = new TaskStore(db, eventSink);
   const interactionStore = new InteractionStore(db, undefined, eventSink);
   const memoryStore = new MemoryStore(db, eventSink);
   const queue = new JobQueue(db, eventSink);
 
-  const config = await configStore.load();
-  validateConfig(config);
+  const config = await loadConfig(db);
   const changes = sanitizeConfig(config, registry);
   validateDefaults(config, registry);
   if (changes.length > 0) {
     for (const change of changes) {
       log.warn('config sanitized', { change });
     }
-    await configStore.save(config);
+    await saveConfig(db, eventSink, config);
   }
+
+  // Validate and compile custom workflows from config
+  const compiledCustomWorkflows: Record<string, CompiledWorkflow> = {};
+  if (config.workflows) {
+    for (const [name, workflowConfig] of Object.entries(config.workflows)) {
+      const results = validateWorkflow(workflowConfig, config, registry);
+      const errors = results.filter((e) => e.severity !== 'warning');
+      const warnings = results.filter((e) => e.severity === 'warning');
+      if (errors.length > 0) {
+        const msgs = errors.map((e) => e.message).join('; ');
+        throw new Error(`invalid workflow "${name}": ${msgs}`);
+      }
+      if (warnings.length > 0) {
+        for (const w of warnings) {
+          log.warn(
+            `workflow "${name}"${w.step ? ` step "${w.step}"` : ''}: ${w.message}`,
+          );
+        }
+      }
+      const machine = createWorkflowMachine(workflowConfig.id, workflowConfig);
+      compiledCustomWorkflows[name] = {
+        machine,
+        name,
+        transitionMeta: buildTransitionMeta(machine),
+      };
+    }
+  }
+  const workflowStore = new WorkflowStore(compiledCustomWorkflows);
 
   // Initialize embedding registry and provider (non-blocking, graceful fallback)
   const embeddingRegistry = await loadEmbeddingRegistry(repoDir);
@@ -87,7 +104,6 @@ export async function bootstrap(
       if (embeddingPlugin) {
         const vectorStore = new VectorStore(database.db, embeddingPlugin);
         memoryStore.setVectorStore(vectorStore);
-        // Backfill existing entries in background
         queueMicrotask(async () => {
           try {
             await memoryStore.backfillEmbeddings();
@@ -108,10 +124,10 @@ export async function bootstrap(
   const executor = new Executor({
     config,
     registry,
-    taskStore,
+    db,
+    sink: eventSink,
     interactionStore,
     memoryStore,
-    eventSink,
     repoDir,
     logsDir: `${repoDir}/.orca/logs`,
     queue,
@@ -119,15 +135,16 @@ export async function bootstrap(
 
   return {
     database,
+    db,
+    sink: eventSink,
     config,
     registry,
     embeddingRegistry,
-    configStore,
-    taskStore,
     interactionStore,
     memoryStore,
     queue,
     executor,
+    workflowStore,
     repoDir,
   };
 }

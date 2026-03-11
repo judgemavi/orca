@@ -1,65 +1,42 @@
-import { INTERACTION_STATUSES } from '@orca/server/types';
+import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/server/types';
 import { useMemo } from 'react';
 import { useInteractionMetaQuery } from '../hooks/useInteractions';
 import type { useMergeHandler } from '../hooks/useMergeHandler';
-import type { usePlanEditor } from '../hooks/usePlanEditor';
 import { useTaskActions } from '../hooks/useTaskActions';
-import type { InteractionStub, Task, TaskReview } from '../types';
-import { BreakdownSection } from './BreakdownSection';
-import { EvaluateSection } from './EvaluateSection';
+import type { InteractionStub, Task } from '../types';
 import { InteractionEntry } from './InteractionEntry';
-import { MergeSection } from './MergeSection';
-import { PlanSection } from './PlanSection';
-import { RetroSection } from './RetroSection';
-import { ReviewSection } from './ReviewSection';
-import { RunSection } from './RunSection';
+import { StepContentCard } from './StepContentCard';
 
 type Props = {
   stubs: InteractionStub[];
-  reviews: TaskReview[];
   task: Task;
   tools: string[];
   readOnly: boolean;
-  expandedInteractions: Set<string>;
-  onToggleInteraction: (id: string) => void;
-  planEditor: ReturnType<typeof usePlanEditor>;
   merge: ReturnType<typeof useMergeHandler>;
 };
 
 function InteractionContent({
   taskId,
   stub,
-  expanded,
   task,
   tools,
   readOnly,
-  planEditor,
   merge,
-  planReviews,
-  runReviews,
-  latestCompletedRunStartedAt,
   isLatestRunningMerge,
   isLatestFailedMerge,
-  actions,
 }: {
   taskId: string;
   stub: InteractionStub;
-  expanded: boolean;
   task: Task;
   tools: string[];
   readOnly: boolean;
-  planEditor: ReturnType<typeof usePlanEditor>;
   merge: ReturnType<typeof useMergeHandler>;
-  planReviews: TaskReview[];
-  runReviews: TaskReview[];
-  latestCompletedRunStartedAt?: string;
   isLatestRunningMerge: boolean;
   isLatestFailedMerge: boolean;
-  actions: ReturnType<typeof useTaskActions>;
 }) {
-  const metaQuery = useInteractionMetaQuery(taskId, stub.id, expanded);
+  const actions = useTaskActions();
+  const metaQuery = useInteractionMetaQuery(taskId, stub.id, true);
 
-  if (!expanded) return null;
   if (metaQuery.isLoading) {
     return (
       <div className="flex items-center gap-2 py-2 text-xs text-muted">
@@ -73,97 +50,30 @@ function InteractionContent({
   if (!interaction) return null;
 
   return (
-    <>
-      <PlanSection
-        interaction={interaction}
-        isEditableLatestPlan={
-          stub.type === 'plan' &&
-          stub.status === INTERACTION_STATUSES.completed &&
-          stub.id === planEditor.latestCompletedPlanId &&
-          planEditor.planEditable
-        }
-        planEditor={planEditor}
-        planReviews={planReviews}
-      />
-      <EvaluateSection interaction={interaction} />
-      <BreakdownSection
-        interaction={interaction}
-        proposals={actions.latestBreakdownProposals}
-        onAccept={actions.handleAcceptBreakdown}
-        onReject={actions.handleRejectBreakdown}
-        accepting={actions.acceptBreakdownPending}
-        rejecting={actions.rejectBreakdownPending}
-      />
-      <RunSection interaction={interaction} task={task} />
-      <ReviewSection
-        interaction={interaction}
-        runReviews={runReviews}
-        latestCompletedRunStartedAt={latestCompletedRunStartedAt}
-      />
-      <RetroSection interaction={interaction} />
-      <MergeSection
-        interaction={interaction}
-        readOnly={readOnly}
-        tools={tools}
-        isLatestRunning={isLatestRunningMerge}
-        isLatestFailed={isLatestFailedMerge}
-        merge={merge}
-      />
-    </>
+    <StepContentCard
+      interaction={interaction}
+      task={task}
+      tools={tools}
+      readOnly={readOnly}
+      merge={merge}
+      isLatestRunningMerge={isLatestRunningMerge}
+      isLatestFailedMerge={isLatestFailedMerge}
+      actions={actions}
+    />
   );
 }
 
 export function TaskInteractionItems({
   stubs,
-  reviews,
   task,
   tools,
   readOnly,
-  expandedInteractions,
-  onToggleInteraction,
-  planEditor,
   merge,
 }: Props) {
-  const actions = useTaskActions(task);
-  const runStubs = useMemo(
-    () =>
-      stubs.filter((item) => item.type === 'code' || item.type === 'revise'),
-    [stubs],
-  );
+  const actions = useTaskActions();
   const mergeStubs = useMemo(
     () => stubs.filter((item) => item.type === 'merge'),
     [stubs],
-  );
-
-  const planStubIds = useMemo(
-    () =>
-      new Set(
-        stubs.filter((item) => item.type === 'plan').map((item) => item.id),
-      ),
-    [stubs],
-  );
-  const runStubIDs = useMemo(
-    () => new Set(runStubs.map((item) => item.id)),
-    [runStubs],
-  );
-
-  const planReviews = useMemo(
-    () =>
-      reviews.filter(
-        (review) =>
-          Boolean(review.interactionId) &&
-          planStubIds.has(String(review.interactionId)),
-      ),
-    [planStubIds, reviews],
-  );
-  const runReviews = useMemo(
-    () =>
-      reviews.filter(
-        (review) =>
-          Boolean(review.interactionId) &&
-          runStubIDs.has(String(review.interactionId)),
-      ),
-    [reviews, runStubIDs],
   );
 
   const latestFailedMergeId =
@@ -174,65 +84,72 @@ export function TaskInteractionItems({
     [...mergeStubs]
       .reverse()
       .find((item) => item.status === INTERACTION_STATUSES.running)?.id ?? null;
-  const latestCompletedRunStartedAt =
-    runStubs.find((item) => item.status === INTERACTION_STATUSES.completed)
-      ?.startedAt ?? null;
-  const latestCompletedRunStartedAtMS = latestCompletedRunStartedAt
-    ? Date.parse(latestCompletedRunStartedAt)
-    : NaN;
-  const hasReviewCutoff = Number.isFinite(latestCompletedRunStartedAtMS);
 
   const taskId = task.id;
 
+  // Group consecutive stubs that share a dotted parent (e.g. "implement.code" → "implement")
+  type Group = { parent: string | null; items: InteractionStub[] };
+  const groups = useMemo(() => {
+    const result: Group[] = [];
+    for (const item of stubs) {
+      const dot = (item.stepName ?? '').indexOf('.');
+      const parent = dot > 0 ? item.stepName!.slice(0, dot) : null;
+      const last = result[result.length - 1];
+      if (last && last.parent === parent) {
+        last.items.push(item);
+      } else {
+        result.push({ parent, items: [item] });
+      }
+    }
+    return result;
+  }, [stubs]);
+
+  const renderEntry = (item: InteractionStub) => (
+    <InteractionEntry
+      key={item.id}
+      taskId={taskId}
+      stub={item}
+      type={item.type}
+      name={item.stepName ?? item.type}
+      collapsible
+      showDiffSummary={item.type === 'code'}
+      canReset={
+        task.status !== TASK_STATUSES.running &&
+        item.status === INTERACTION_STATUSES.completed
+      }
+      onReset={(id) => actions.handleReset(id)}
+      onResetAndRun={(id) => actions.handleResetAndRun(id)}
+    >
+      <InteractionContent
+        taskId={taskId}
+        stub={item}
+        task={task}
+        tools={tools}
+        readOnly={readOnly}
+        merge={merge}
+        isLatestRunningMerge={item.id === latestRunningMergeId}
+        isLatestFailedMerge={item.id === latestFailedMergeId}
+      />
+    </InteractionEntry>
+  );
+
   return (
     <div className="flex flex-col gap-2">
-      {stubs.map((item) => {
-        if (
-          item.type === 'review' &&
-          hasReviewCutoff &&
-          Date.parse(item.startedAt) <= latestCompletedRunStartedAtMS
-        ) {
-          return null;
-        }
-        const isExpanded =
-          item.status === INTERACTION_STATUSES.running ||
-          expandedInteractions.has(item.id);
-        return (
-          <InteractionEntry
-            key={item.id}
-            stub={item}
-            type={item.type}
-            collapsible
-            showDiffSummary={item.type === 'code' || item.type === 'revise'}
-            expanded={isExpanded}
-            alwaysExpanded={item.status === INTERACTION_STATUSES.running}
-            onExpandedChange={() => onToggleInteraction(item.id)}
+      {groups.map((group, gi) =>
+        group.parent ? (
+          <div
+            key={`${group.parent}-${gi}`}
+            className="relative flex flex-col gap-2 border-l-2 border-accent/25 pl-3"
           >
-            <InteractionContent
-              taskId={taskId}
-              stub={item}
-              expanded={isExpanded}
-              task={task}
-              tools={tools}
-              readOnly={readOnly}
-              planEditor={planEditor}
-              merge={merge}
-              planReviews={planReviews.filter(
-                (review) => review.interactionId === item.id,
-              )}
-              runReviews={runReviews.filter(
-                (review) => review.interactionId === item.id,
-              )}
-              latestCompletedRunStartedAt={
-                latestCompletedRunStartedAt ?? undefined
-              }
-              isLatestRunningMerge={item.id === latestRunningMergeId}
-              isLatestFailedMerge={item.id === latestFailedMergeId}
-              actions={actions}
-            />
-          </InteractionEntry>
-        );
-      })}
+            <span className="absolute -left-px -top-1 bg-background px-1 text-[10px] font-medium uppercase tracking-wider text-muted">
+              {group.parent}
+            </span>
+            {group.items.map(renderEntry)}
+          </div>
+        ) : (
+          group.items.map(renderEntry)
+        ),
+      )}
     </div>
   );
 }

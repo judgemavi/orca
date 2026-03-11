@@ -1,15 +1,19 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
 import * as Collapsible from '@radix-ui/react-collapsible';
+import { useEffect, useState } from 'react';
+import { api } from '../api';
 import type { useMergeHandler } from '../hooks/useMergeHandler';
 import { controlClass } from '../lib/constants';
-import type { Interaction } from '../types';
+import type { Interaction, Task } from '../types';
 import { Button } from './Button';
+import { DiffViewer } from './DiffViewer';
 import { ToolModelSelector } from './ToolModelSelector';
 
 type MergeState = ReturnType<typeof useMergeHandler>;
 
 type Props = {
   interaction: Interaction;
+  task: Task;
   readOnly: boolean;
   tools: string[];
   isLatestRunning: boolean;
@@ -17,8 +21,49 @@ type Props = {
   merge: MergeState;
 };
 
+function MergeDiff({
+  interaction,
+  task,
+}: {
+  interaction: Interaction;
+  task: Task;
+}) {
+  const [diff, setDiff] = useState<string | null>(null);
+  const [filesChanged, setFilesChanged] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (interaction.status !== INTERACTION_STATUSES.completed) return;
+    if (!interaction.commitSha) return;
+    let cancelled = false;
+    api.getInteractionDiff(task.id, interaction.id).then((res) => {
+      if (!cancelled) {
+        setDiff(res.diff || null);
+        setFilesChanged(res.filesChanged);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [interaction.id, interaction.status, interaction.commitSha, task.id]);
+
+  if (!diff) return null;
+
+  return (
+    <DiffViewer
+      data={{
+        taskId: task.id,
+        title: `Merged: ${task.title}`,
+        diff,
+        filesChanged,
+        actions: [],
+      }}
+    />
+  );
+}
+
 export function MergeSection({
   interaction,
+  task,
   readOnly,
   tools,
   isLatestRunning,
@@ -29,6 +74,8 @@ export function MergeSection({
 
   return (
     <>
+      <MergeDiff interaction={interaction} task={task} />
+
       {isLatestRunning &&
         interaction.status === INTERACTION_STATUSES.running &&
         merge.mergeProgress && (

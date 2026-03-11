@@ -3,10 +3,9 @@ import { buildRoutes } from '../../src/api/routes';
 import type { DatabaseConnection } from '../../src/db/connection';
 import { EmbeddingRegistry } from '../../src/embedding/registry';
 import { JobQueue } from '../../src/queue/queue';
-import { ConfigStore } from '../../src/store/config';
 import { InteractionStore } from '../../src/store/interactions';
 import { MemoryStore } from '../../src/store/memory';
-import { TaskStore } from '../../src/store/tasks';
+import { WorkflowStore } from '../../src/workflow/store';
 import { createTestDB } from '../helpers/db';
 
 let conn: DatabaseConnection;
@@ -32,22 +31,19 @@ function stubRegistry() {
 beforeEach(async () => {
   conn = createTestDB();
   const sink = stubSink();
-  const taskStore = new TaskStore(conn.db, sink);
   const interactionStore = new InteractionStore(
     conn.db,
     '/tmp/test-interactions',
     sink,
   );
   const memoryStore = new MemoryStore(conn.db, sink);
-  const configStore = new ConfigStore(conn.db);
   const queue = new JobQueue(conn.db, sink);
   const embeddingRegistry = new EmbeddingRegistry();
 
   app = buildRoutes({
     db: conn.db,
     repoDir: '/tmp/test-repo',
-    taskStore,
-    configStore,
+    sink,
     interactionStore,
     memoryStore,
     registry: stubRegistry(),
@@ -55,15 +51,7 @@ beforeEach(async () => {
     executor: stubExecutor(),
     eventSink: sink,
     queue,
-  });
-
-  // Enable auto-run for chaining tests
-  await configStore.patch({
-    interactions: {
-      evaluate: { tool: 'claude', model: 'test', autoRun: true },
-      code: { tool: 'claude', model: 'test', autoRun: true },
-      merge: { tool: 'claude', model: 'test', autoRun: true },
-    },
+    workflowStore: new WorkflowStore(),
   });
 });
 
@@ -91,7 +79,7 @@ async function patch(path: string, body: unknown) {
   });
 }
 
-async function json(res: Response) {
+async function json(res: Response): Promise<any> {
   return res.json();
 }
 
@@ -118,7 +106,7 @@ describe('task lifecycle: create → deps → status transitions', () => {
     expect(jobs.some((j: any) => j.type === 'evaluate')).toBe(true);
   });
 
-  test('create task with deps does NOT enqueue evaluate', async () => {
+  test('create task with deps still enqueues evaluate', async () => {
     const depRes = await post('/tasks', { title: 'Dependency' });
     const dep = await json(depRes);
 
@@ -130,12 +118,14 @@ describe('task lifecycle: create → deps → status transitions', () => {
     const task = await json(res);
     expect(task.dependsOn).toEqual([dep.id]);
 
+    // Evaluate is always enqueued (deps gate later workflow steps, not evaluate)
     const queueRes = await api(`/queue?taskId=${task.id}`);
     const jobs = await json(queueRes);
-    expect(jobs).toHaveLength(0);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].type).toBe('evaluate');
   });
 
-  test('full dependency chain: A → B, merge A unblocks B', async () => {
+  test('full dependency chain: A → B, both get evaluate enqueued', async () => {
     // Create A (independent)
     const aRes = await post('/tasks', { title: 'Task A' });
     const a = await json(aRes);
@@ -147,11 +137,12 @@ describe('task lifecycle: create → deps → status transitions', () => {
     });
     const b = await json(bRes);
 
-    // B should have no jobs
+    // Both A and B get evaluate enqueued (deps gate workflow steps, not evaluate)
     const bJobsRes = await api(`/queue?taskId=${b.id}`);
-    expect(await json(bJobsRes)).toHaveLength(0);
+    const bJobs = await json(bJobsRes);
+    expect(bJobs).toHaveLength(1);
+    expect(bJobs[0].type).toBe('evaluate');
 
-    // Verify A has evaluate job
     const aJobsRes = await api(`/queue?taskId=${a.id}`);
     const aJobs = await json(aJobsRes);
     expect(aJobs.some((j: any) => j.type === 'evaluate')).toBe(true);
@@ -238,12 +229,12 @@ describe('config via API', () => {
     expect(res.status).toBe(200);
     const config = await json(res);
     expect(config.workers).toBeTruthy();
-    expect(config.interactions).toBeTruthy();
+    expect(config.orchestrator).toBeTruthy();
   });
 
-  test('PUT config patches and returns updated', async () => {
+  test('PATCH config patches and returns updated', async () => {
     const res = await api('/config', {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workers: { maxParallel: 8 } }),
     });

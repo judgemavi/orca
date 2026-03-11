@@ -38,16 +38,15 @@ export interface WorkerRunResult {
   signalCode: string | number | null;
   sessionID: string;
   events: ToolPluginEvent[];
-  inputTokens: number;
-  outputTokens: number;
-  estimatedCost: number;
   diff: string;
   filesChanged: string[];
+  commitSha: string;
   logPath: string;
   durationMS: number;
   timedOut: boolean;
   aborted: boolean;
   error?: string;
+  structuredOutput?: Record<string, unknown>;
 }
 
 export async function runTool(
@@ -80,7 +79,8 @@ export async function runTool(
     taskId: options.taskID,
     tool: options.driverName,
     model: options.model,
-    cmd: cmd.join(' '),
+    promptLength: options.prompt.length,
+    schemaPath: options.headlessOpts?.schemaPath ?? null,
     cwd: options.cwd,
   });
 
@@ -109,9 +109,6 @@ export async function runTool(
   };
 
   let sessionID = '';
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let estimatedCost = 0;
   const events: ToolPluginEvent[] = [];
   const emitLine = (stream: 'stdout' | 'stderr', line: string) => {
     const value = line.replace(/\r$/, '');
@@ -121,14 +118,6 @@ export async function runTool(
         events.push(event);
         if (event.type === 'session' && event.sessionID?.trim()) {
           sessionID = event.sessionID.trim();
-        }
-        if (event.type === 'cost' && event.cost) {
-          inputTokens += Math.max(0, Math.trunc(event.cost.inputTokens));
-          outputTokens += Math.max(0, Math.trunc(event.cost.outputTokens));
-          estimatedCost += Math.max(0, event.cost.totalCost);
-          if (event.sessionID?.trim()) {
-            sessionID = event.sessionID.trim();
-          }
         }
         if (options.onEvent) {
           void Promise.resolve(options.onEvent(event)).catch(() => {});
@@ -228,13 +217,53 @@ export async function runTool(
     durationMs: Date.now() - start,
     timedOut,
     aborted,
-    inputTokens,
-    outputTokens,
     ...(error ? { error } : {}),
   });
 
+  // Extract structured output when JSON schema was requested.
+  // Claude: single JSON response with { structured_output: {...} } envelope.
+  // Codex: streaming events where the last agent_message text IS the schema-conformant JSON.
+  let structuredOutput: Record<string, unknown> | undefined;
+  const hasSchema =
+    options.headlessOpts?.jsonSchema || options.headlessOpts?.schemaPath;
+  if (hasSchema && events.length > 0) {
+    const textEvents = events.filter((e) => e.type === 'text');
+    const fullText = textEvents.map((e) => e.text ?? '').join('');
+    try {
+      const jsonResponse = JSON.parse(fullText) as Record<string, unknown>;
+      // Claude envelope: { structured_output, session_id, usage, ... }
+      if (
+        jsonResponse.structured_output &&
+        typeof jsonResponse.structured_output === 'object'
+      ) {
+        structuredOutput = jsonResponse.structured_output as Record<
+          string,
+          unknown
+        >;
+      }
+      if (!sessionID && typeof jsonResponse.session_id === 'string') {
+        sessionID = jsonResponse.session_id;
+      }
+    } catch {
+      // Fall through — events already captured text
+    }
+
+    // Codex: last text event is the schema-conformant JSON directly
+    if (!structuredOutput && textEvents.length > 0) {
+      const lastText = (textEvents[textEvents.length - 1]!.text ?? '').trim();
+      try {
+        const parsed = JSON.parse(lastText) as Record<string, unknown>;
+        if (parsed && typeof parsed === 'object') {
+          structuredOutput = parsed;
+        }
+      } catch {
+        // Not JSON — fallback to parseStepOutcome in step-handler
+      }
+    }
+  }
+
   const commitMessage = buildCommitMessage(options.taskID, options.prompt);
-  const { diff, filesChanged } = await finalizeGitWorktree(
+  const { diff, filesChanged, commitSha } = await finalizeGitWorktree(
     options.cwd,
     commitMessage,
   );
@@ -244,16 +273,15 @@ export async function runTool(
     signalCode: child.signalCode,
     sessionID,
     events,
-    inputTokens,
-    outputTokens,
-    estimatedCost,
     diff,
     filesChanged,
+    commitSha,
     logPath,
     durationMS: Date.now() - start,
     timedOut,
     aborted,
     error,
+    structuredOutput,
   };
 }
 
@@ -336,7 +364,7 @@ function buildCommitMessage(taskID: string, prompt: string): string {
 async function finalizeGitWorktree(
   worktreePath: string,
   commitMessage: string,
-): Promise<{ diff: string; filesChanged: string[] }> {
+): Promise<{ diff: string; filesChanged: string[]; commitSha: string }> {
   await gitOutput(worktreePath, ['add', '-A']).catch(() => '');
   const committed = await gitOutput(worktreePath, [
     'commit',
@@ -346,21 +374,21 @@ async function finalizeGitWorktree(
     .then(() => true)
     .catch(() => false);
   if (!committed) {
-    return { diff: '', filesChanged: [] };
+    return { diff: '', filesChanged: [], commitSha: '' };
   }
 
-  const diff = await gitOutput(worktreePath, ['diff', 'HEAD~1..HEAD']).catch(
-    () => '',
-  );
-  const filesChangedRaw = await gitOutput(worktreePath, [
-    'diff',
-    'HEAD~1..HEAD',
-    '--name-only',
-  ]).catch(() => '');
+  const [diff, filesChangedRaw, commitSha] = await Promise.all([
+    gitOutput(worktreePath, ['diff', 'HEAD~1..HEAD']).catch(() => ''),
+    gitOutput(worktreePath, ['diff', 'HEAD~1..HEAD', '--name-only']).catch(
+      () => '',
+    ),
+    gitOutput(worktreePath, ['rev-parse', 'HEAD']).catch(() => ''),
+  ]);
 
   return {
     diff,
     filesChanged: normalizeList(filesChangedRaw.split('\n')),
+    commitSha: commitSha.trim(),
   };
 }
 

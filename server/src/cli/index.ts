@@ -1,13 +1,6 @@
 import { Command } from 'commander';
-import type { Executor } from '../executor/executor';
-import type { ToolPluginRegistry } from '../plugin/registry';
-import type { JobQueue } from '../queue/queue';
-import type { ConfigStore } from '../store/config';
-import type { InteractionStore } from '../store/interactions';
-import type { MemoryStore } from '../store/memory';
-import type { TaskStore } from '../store/tasks';
+import type { AppDeps } from '../types/deps';
 import { registerConfigCommands } from './commands/config';
-import { registerCostsCommand } from './commands/costs';
 import { registerMemoryCommands } from './commands/memory';
 import { registerOrcCommand } from './commands/orc';
 import { registerQueueCommands } from './commands/queue';
@@ -15,16 +8,7 @@ import { registerStatusCommand } from './commands/status';
 import { registerTaskCommands } from './commands/task';
 import { printError, setJSONMode } from './format';
 
-export async function runCLI(deps: {
-  repoDir: string;
-  configStore: ConfigStore;
-  taskStore: TaskStore;
-  interactionStore: InteractionStore;
-  memoryStore: MemoryStore;
-  registry: ToolPluginRegistry;
-  executor: Executor;
-  queue?: JobQueue;
-}) {
+export async function runCLI(deps: AppDeps) {
   const program = new Command();
 
   program.name('orca').description('Orca CLI').version('0.1.0');
@@ -44,34 +28,25 @@ export async function runCLI(deps: {
     .command('task')
     .alias('t')
     .description('Task operations');
-  registerTaskCommands(taskCmd, {
-    repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
-    interactionStore: deps.interactionStore,
-    configStore: deps.configStore,
-    queue: deps.queue!,
-  });
+  registerTaskCommands(taskCmd, deps);
 
   registerStatusCommand(program, {
     repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
+    db: deps.db,
     interactions: deps.interactionStore,
     memory: deps.memoryStore,
   });
-  registerConfigCommands(program, deps.configStore, deps.registry);
-  registerCostsCommand(program, deps.interactionStore);
+  registerConfigCommands(program, deps.db, deps.registry);
   registerOrcCommand(program, {
     repoDir: deps.repoDir,
-    configStore: deps.configStore,
+    db: deps.db,
     registry: deps.registry,
   });
   registerMemoryCommands(program, deps.repoDir, deps.memoryStore);
-  if (deps.queue) {
-    registerQueueCommands(program, {
-      queue: deps.queue,
-      taskStore: deps.taskStore,
-    });
-  }
+  registerQueueCommands(program, {
+    queue: deps.queue,
+    db: deps.db,
+  });
 
   // Global error handler — structured errors in JSON mode
   program.exitOverride();

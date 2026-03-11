@@ -4,17 +4,6 @@ const dtfDate = new Intl.DateTimeFormat(undefined, {
   month: 'short',
   day: '2-digit',
 });
-const nfCurrency = new Intl.NumberFormat(undefined, {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const nfCompact = new Intl.NumberFormat(undefined, {
-  notation: 'compact',
-  maximumFractionDigits: 1,
-});
-
 const TIME_RANGES: {
   limit: number;
   unit: Intl.RelativeTimeFormatUnit;
@@ -36,16 +25,6 @@ export function formatDuration(ms: number | undefined): string {
   const min = Math.floor(sec / 60);
   if (min < 1) return `${sec}s`;
   return `${min}m ${sec % 60}s`;
-}
-
-export function formatCost(value: number | undefined): string {
-  if (!Number.isFinite(value)) return nfCurrency.format(0);
-  return nfCurrency.format(value ?? 0);
-}
-
-export function formatTokens(value: number | undefined): string {
-  if (!Number.isFinite(value) || !value) return '0';
-  return nfCompact.format(value);
 }
 
 export function formatDate(iso: string): string {

@@ -1,7 +1,8 @@
+import { TASK_STATUSES } from '@orca/types';
+import type { OrcaDrizzleDB } from '../db/connection';
 import type { MemoryStore } from '../store/memory';
-import type { TaskStore } from '../store/tasks';
-import type { MemoryEntry } from '../types';
-import { TASK_STATUSES } from '../types';
+import * as taskStore from '../store/tasks';
+import type { MemoryEntry } from '../types/models';
 
 interface RetrievalBudgets {
   summary: number;
@@ -49,7 +50,7 @@ const DEFAULT_BUDGETS: RetrievalBudgets = {
 
 export async function retrieveBudgetedMemory(
   memory: MemoryStore,
-  tasks: TaskStore,
+  db: OrcaDrizzleDB,
   input: BudgetedRetrievalInput,
 ): Promise<BudgetedRetrievalResult> {
   const budgets: RetrievalBudgets = {
@@ -151,7 +152,7 @@ export async function retrieveBudgetedMemory(
   for (const entry of recencyMatches) seen.add(entry.id);
 
   // Siblings: related active tasks by file overlap
-  const siblingCandidatesTasks = (await tasks.list())
+  const siblingCandidatesTasks = (await taskStore.listTasks(db))
     .filter(
       (task) =>
         task.id !== (input.taskId ?? '') &&
@@ -162,21 +163,13 @@ export async function retrieveBudgetedMemory(
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, budgets.siblings * 3);
-  const siblingCandidates = (
-    await Promise.all(
-      siblingCandidatesTasks.map(async (task) => ({
-        task,
-        overlap: overlapCount(await tasks.getFilePaths(task.id), files),
-      })),
-    )
-  ).sort((a, b) => b.overlap - a.overlap);
-  const siblingTasks = siblingCandidates
+  const siblingTasks = siblingCandidatesTasks
     .slice(0, budgets.siblings)
     .map((task) => ({
-      id: task.task.id,
-      title: task.task.title,
-      status: task.task.status,
-      plan: (task.task.plan ?? '').trim(),
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      plan: '',
     }));
 
   // Bump retrieval counts for all returned entries (reinforcement signal)
@@ -204,7 +197,7 @@ export function buildMemoryContext(result: BudgetedRetrievalResult): string {
   ];
   const blocks: string[] = [];
 
-  if (result.summary && result.summary.content.trim()) {
+  if (result.summary?.content.trim()) {
     blocks.push(
       ['## Project Context', '', result.summary.content.trim()].join('\n'),
     );
@@ -227,9 +220,6 @@ export function buildMemoryContext(result: BudgetedRetrievalResult): string {
     const lines = ['## Related Active Tasks', ''];
     for (const [idx, task] of result.siblingTasks.entries()) {
       lines.push(`${idx + 1}. ${task.title} (${task.status})`);
-      if (task.plan) {
-        lines.push(`   - plan: ${firstLine(task.plan)}`);
-      }
     }
     blocks.push(lines.join('\n'));
   }
@@ -250,23 +240,4 @@ function dedupeEntries(entries: MemoryEntry[]): MemoryEntry[] {
 
 function normalizeList(items: string[]): string[] {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))];
-}
-
-function overlapCount(left: string[], right: string[]): number {
-  if (left.length === 0 || right.length === 0) return 0;
-  const normalized = new Set(right.map((path) => path.trim()).filter(Boolean));
-  if (normalized.size === 0) return 0;
-  let overlap = 0;
-  for (const path of left) {
-    if (normalized.has(path.trim())) overlap += 1;
-  }
-  return overlap;
-}
-
-function firstLine(value: string): string {
-  const line = value
-    .split('\n')
-    .map((item) => item.trim())
-    .find(Boolean);
-  return line ?? '';
 }

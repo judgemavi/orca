@@ -14,6 +14,7 @@ import {
   type SQL,
   sql,
 } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
 import {
@@ -24,17 +25,41 @@ import {
   tasks,
 } from '../db/schema';
 import type { VectorStore } from '../embedding/vector-store';
-import { genId } from '../shared/id';
 import { log } from '../shared/logger';
-import type { MemoryEntry, MemorySourceType, MemoryUsedByTask } from '../types';
+import type { MemoryUsedByTask } from '../types/api';
+import type { MemorySourceType } from '../types/constants';
+import type { MemoryEntry } from '../types/models';
+import {
+  type MemoryRow,
+  mapMemoryRow,
+  parseUsedMemoryIDs,
+} from './memory-mappers';
+import {
+  normalizePaths,
+  normalizeSourceType,
+  normalizeTags,
+  nullable,
+} from './memory-normalize';
+import { computeSalience } from './memory-ranking';
 import type {
   MemoryEntryInput,
   MemoryHealthSummary,
   MemoryListOptions,
-  MemoryUpdateFields,
 } from './types';
 
-type MemoryRow = typeof memoryEntries.$inferSelect;
+type MemoryUpdateFields = Partial<
+  Pick<
+    MemoryEntryInput,
+    | 'content'
+    | 'category'
+    | 'confidence'
+    | 'sourceType'
+    | 'stale'
+    | 'decayExempt'
+    | 'coveredAtCommit'
+    | 'tags'
+  >
+>;
 
 export class MemoryStore {
   private vectorStore: VectorStore | null = null;
@@ -44,7 +69,7 @@ export class MemoryStore {
     private readonly sink?: EventSink,
   ) {}
 
-  setVectorStore(vs: VectorStore): void {
+  setVectorStore(vs: VectorStore | null): void {
     this.vectorStore = vs;
   }
 
@@ -91,7 +116,7 @@ export class MemoryStore {
     if (!category) throw new Error('category required');
     if (!provenanceHash) throw new Error('provenanceHash required');
 
-    const id = input.id?.trim() || genId();
+    const id = input.id?.trim() || nanoid();
     const tags = normalizeTags(input.tags ?? []);
     const sourceType = normalizeSourceType(input.sourceType);
     const confidence = input.confidence ?? 1.0;
@@ -100,28 +125,29 @@ export class MemoryStore {
     const decayExempt = Boolean(input.decayExempt);
     const filePaths = normalizePaths(input.filePaths ?? []);
 
-    await this.db.transaction(async (tx) => {
-      await tx.insert(memoryEntries).values({
-        id,
-        content,
-        category,
-        tags: JSON.stringify(tags),
-        sourceTaskId: nullable(input.sourceTaskId),
-        sourceInteractionId: nullable(input.sourceInteractionId),
-        confidence,
-        provenanceHash,
-        supersededBy: nullable(input.supersededBy),
-        sourceType,
-        coveredAtCommit: covered,
-        stale,
-        decayExempt,
-        createdAt: sql`(CURRENT_TIMESTAMP)`,
-        updatedAt: sql`(CURRENT_TIMESTAMP)`,
-      });
+    this.db.transaction((tx) => {
+      tx.insert(memoryEntries)
+        .values({
+          id,
+          content,
+          category,
+          tags: JSON.stringify(tags),
+          sourceTaskId: nullable(input.sourceTaskId),
+          sourceInteractionId: nullable(input.sourceInteractionId),
+          confidence,
+          provenanceHash,
+          supersededBy: nullable(input.supersededBy),
+          sourceType,
+          coveredAtCommit: covered,
+          stale,
+          decayExempt,
+          createdAt: sql`(CURRENT_TIMESTAMP)`,
+          updatedAt: sql`(CURRENT_TIMESTAMP)`,
+        })
+        .run();
 
       for (const filePath of filePaths) {
-        await tx
-          .insert(memoryFileAssociations)
+        tx.insert(memoryFileAssociations)
           .values({
             memoryId: id,
             filePath,
@@ -131,7 +157,8 @@ export class MemoryStore {
               memoryFileAssociations.memoryId,
               memoryFileAssociations.filePath,
             ],
-          });
+          })
+          .run();
       }
     });
 
@@ -154,7 +181,7 @@ export class MemoryStore {
       .limit(1);
     const row = rows[0] ?? null;
     if (!row) return null;
-    const mapped = this.mapRow(row);
+    const mapped = mapMemoryRow(row);
     mapped.filePaths = await this.getFilePaths(id);
     return mapped;
   }
@@ -171,7 +198,7 @@ export class MemoryStore {
       .limit(1);
     const row = rows[0] ?? null;
     if (!row) return null;
-    const mapped = this.mapRow(row);
+    const mapped = mapMemoryRow(row);
     mapped.filePaths = await this.getFilePaths(mapped.id);
     return mapped;
   }
@@ -224,7 +251,7 @@ export class MemoryStore {
       .from(memoryEntries)
       .where(and(...conditions))
       .orderBy(asc(memoryEntries.createdAt));
-    const entries = rows.map((row) => this.mapRow(row));
+    const entries = rows.map((row) => mapMemoryRow(row));
     await this.loadFilePaths(entries);
     return entries;
   }
@@ -351,7 +378,7 @@ export class MemoryStore {
         ),
       );
 
-    const entries = rows.map((row) => this.mapRow(row as MemoryRow));
+    const entries = rows.map((row) => mapMemoryRow(row as MemoryRow));
     await this.loadFilePaths(entries);
 
     const scored = entries.map((entry) => ({
@@ -416,10 +443,9 @@ export class MemoryStore {
     const normalizedPaths = normalizePaths(paths);
     if (!normalizedEntryID || normalizedPaths.length === 0) return;
 
-    await this.db.transaction(async (tx) => {
+    this.db.transaction((tx) => {
       for (const filePath of normalizedPaths) {
-        await tx
-          .insert(memoryFileAssociations)
+        tx.insert(memoryFileAssociations)
           .values({
             memoryId: normalizedEntryID,
             filePath,
@@ -429,7 +455,8 @@ export class MemoryStore {
               memoryFileAssociations.memoryId,
               memoryFileAssociations.filePath,
             ],
-          });
+          })
+          .run();
       }
     });
   }
@@ -455,16 +482,16 @@ export class MemoryStore {
     if (!oldNormalized || !newNormalized || oldNormalized === newNormalized)
       return 0;
 
-    return this.db.transaction(async (tx) => {
-      const rows = await tx
+    return this.db.transaction((tx) => {
+      const rows = tx
         .select({ memoryId: memoryFileAssociations.memoryId })
         .from(memoryFileAssociations)
         .where(eq(memoryFileAssociations.filePath, oldNormalized))
-        .orderBy(asc(memoryFileAssociations.memoryId));
+        .orderBy(asc(memoryFileAssociations.memoryId))
+        .all();
 
       for (const row of rows) {
-        await tx
-          .insert(memoryFileAssociations)
+        tx.insert(memoryFileAssociations)
           .values({
             memoryId: row.memoryId,
             filePath: newNormalized,
@@ -474,13 +501,15 @@ export class MemoryStore {
               memoryFileAssociations.memoryId,
               memoryFileAssociations.filePath,
             ],
-          });
+          })
+          .run();
       }
 
-      const result = await tx
+      const result = tx
         .delete(memoryFileAssociations)
         .where(eq(memoryFileAssociations.filePath, oldNormalized))
-        .returning({ memoryId: memoryFileAssociations.memoryId });
+        .returning({ memoryId: memoryFileAssociations.memoryId })
+        .all();
       return result.length;
     });
   }
@@ -518,7 +547,7 @@ export class MemoryStore {
         ),
       )
       .orderBy(asc(memoryEntries.createdAt));
-    const entries = rows.map((row) => this.mapRow(row as MemoryRow));
+    const entries = rows.map((row) => mapMemoryRow(row as MemoryRow));
     await this.loadFilePaths(entries);
     return entries;
   }
@@ -529,7 +558,7 @@ export class MemoryStore {
       .from(memoryEntries)
       .where(eq(memoryEntries.sourceInteractionId, interactionId))
       .orderBy(asc(memoryEntries.createdAt));
-    const entries = rows.map((row) => this.mapRow(row as MemoryRow));
+    const entries = rows.map((row) => mapMemoryRow(row as MemoryRow));
     await this.loadFilePaths(entries);
     return entries;
   }
@@ -600,7 +629,7 @@ export class MemoryStore {
         and(isNull(memoryEntries.supersededBy), eq(memoryEntries.stale, true)),
       )
       .orderBy(asc(memoryEntries.updatedAt));
-    const entries = rows.map((row) => this.mapRow(row));
+    const entries = rows.map((row) => mapMemoryRow(row));
     await this.loadFilePaths(entries);
     return entries;
   }
@@ -614,7 +643,7 @@ export class MemoryStore {
         taskId: tasks.id,
         title: tasks.title,
         status: tasks.status,
-        qualityJson: taskInteractions.qualityJson,
+        output: taskInteractions.output,
       })
       .from(taskInteractions)
       .innerJoin(tasks, eq(tasks.id, taskInteractions.taskId))
@@ -625,7 +654,7 @@ export class MemoryStore {
     const out: MemoryUsedByTask[] = [];
     for (const row of rows) {
       if (seen.has(row.taskId)) continue;
-      const used = parseUsedMemoryIDs(row.qualityJson);
+      const used = parseUsedMemoryIDs(row.output);
       if (!used.includes(normalized)) continue;
       seen.add(row.taskId);
       out.push({
@@ -755,38 +784,38 @@ export class MemoryStore {
       .where(inArray(memoryEntries.id, normalized));
   }
 
-  private mapRow(row: MemoryRow): MemoryEntry {
-    return {
-      id: row.id,
-      content: row.content,
-      category: row.category as any,
-      tags: parseTags(row.tags),
-      sourceTaskId: row.sourceTaskId ?? undefined,
-      sourceInteractionId: row.sourceInteractionId ?? undefined,
-      sourceType: row.sourceType as MemorySourceType,
-      filePaths: [],
-      coveredAtCommit: (row.coveredAtCommit ?? '').trim(),
-      stale: Boolean(row.stale),
-      decayExempt: Boolean(row.decayExempt),
-      confidence: Number(row.confidence ?? 1),
-      retrievalCount: Number(row.retrievalCount ?? 0),
-      provenanceHash: row.provenanceHash,
-      supersededBy: row.supersededBy ?? undefined,
-      createdAt: String(row.createdAt),
-      updatedAt: String(row.updatedAt),
-    };
-  }
-
   private async loadFilePaths(entries: MemoryEntry[]): Promise<void> {
+    const ids = entries.map((entry) => entry.id.trim()).filter(Boolean);
+    if (ids.length === 0) return;
+
+    const rows = await this.db
+      .select({
+        memoryId: memoryFileAssociations.memoryId,
+        filePath: memoryFileAssociations.filePath,
+      })
+      .from(memoryFileAssociations)
+      .where(inArray(memoryFileAssociations.memoryId, ids))
+      .orderBy(
+        asc(memoryFileAssociations.memoryId),
+        asc(memoryFileAssociations.filePath),
+      );
+
+    const filePathsById = new Map<string, string[]>();
+    for (const row of rows) {
+      const filePaths = filePathsById.get(row.memoryId) ?? [];
+      filePaths.push(String(row.filePath));
+      filePathsById.set(row.memoryId, filePaths);
+    }
+
     for (const entry of entries) {
-      entry.filePaths = await this.getFilePaths(entry.id);
+      entry.filePaths = filePathsById.get(entry.id) ?? [];
     }
   }
 
   private async loadUsedMemoryIDsSince(cutoffISO: string): Promise<string[]> {
     const rows = await this.db
       .select({
-        qualityJson: taskInteractions.qualityJson,
+        output: taskInteractions.output,
       })
       .from(taskInteractions)
       .where(
@@ -798,97 +827,11 @@ export class MemoryStore {
 
     const seen = new Set<string>();
     for (const row of rows) {
-      for (const id of parseUsedMemoryIDs(row.qualityJson)) {
+      for (const id of parseUsedMemoryIDs(row.output)) {
         seen.add(id);
       }
     }
 
     return [...seen];
-  }
-}
-
-/**
- * Composite salience score blending similarity, confidence, reinforcement, and recency.
- * Weights: similarity 0.5, confidence 0.2, reinforcement 0.15, recency 0.15
- * Reinforcement uses log1p to dampen diminishing returns (10 retrievals ≈ 1.0, 0 ≈ 0).
- * Recency decays over 30 days — entries updated today score 1.0, 30+ days ago → ~0.
- */
-function computeSalience(
-  similarity: number,
-  confidence: number,
-  retrievalCount: number,
-  updatedAt: string,
-): number {
-  const reinforcement = Math.min(
-    1,
-    Math.log1p(retrievalCount) / Math.log1p(10),
-  );
-  const ageMs = Date.now() - new Date(updatedAt).getTime();
-  const recency = Math.max(0, 1 - ageMs / (30 * 24 * 60 * 60 * 1000));
-  return round2(
-    similarity * 0.5 + confidence * 0.2 + reinforcement * 0.15 + recency * 0.15,
-  );
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-function nullable(value: string | null | undefined): string | null {
-  const normalized = value?.trim() ?? '';
-  return normalized || null;
-}
-
-function normalizeSourceType(
-  value: string | null | undefined,
-): MemorySourceType {
-  const normalized = (value ?? 'retro').trim().toLowerCase();
-  if (normalized === 'retro' || normalized === 'explore') {
-    return normalized;
-  }
-  throw new Error(`invalid sourceType ${JSON.stringify(value)}`);
-}
-
-function normalizeTags(tags: string[]): string[] {
-  return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].sort(
-    (a, b) => a.localeCompare(b),
-  );
-}
-
-function normalizePaths(paths: string[]): string[] {
-  return [...new Set(paths.map((path) => path.trim()).filter(Boolean))].sort(
-    (a, b) => a.localeCompare(b),
-  );
-}
-
-function parseTags(raw: unknown): string[] {
-  if (Array.isArray(raw)) {
-    return raw.map((tag) => String(tag)).filter(Boolean);
-  }
-
-  if (typeof raw === 'string') {
-    if (!raw.trim()) return [];
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed.map((tag) => String(tag)).filter(Boolean);
-      }
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
-}
-
-function parseUsedMemoryIDs(raw: string | null | undefined): string[] {
-  if (!raw?.trim()) return [];
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const used = parsed.usedMemoryIds ?? parsed.used_memory_ids;
-    if (!Array.isArray(used)) return [];
-    return used.map((value) => String(value).trim()).filter(Boolean);
-  } catch {
-    return [];
   }
 }

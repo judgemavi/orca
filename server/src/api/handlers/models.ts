@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { ToolPluginRegistry } from '../../plugin/registry';
 import { availableTools, toolModels } from '../../plugin/registry';
-import type { ModelInfo } from '../../types';
+import type { ModelInfo } from '../../types/api';
 
 export function modelRoutes(registry: ToolPluginRegistry) {
   return new Hono().get('/config/models', (c) => {

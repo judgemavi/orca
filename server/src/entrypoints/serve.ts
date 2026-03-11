@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { DbChangePoller } from '../api/db-poller';
 import { buildRoutes } from '../api/routes';
 import { startHTTPServer } from '../api/server';
 import { createEventSink } from '../api/ws';
@@ -26,20 +25,12 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     sink: eventSink,
   });
 
-  registerJobHandlers(processor, {
-    repoDir,
-    configStore: ctx.configStore,
-    registry: ctx.registry,
-    taskStore: ctx.taskStore,
-    interactionStore: ctx.interactionStore,
-    memoryStore: ctx.memoryStore,
-    executor: ctx.executor,
-    sink: eventSink,
-    queue: ctx.queue,
-  });
+  registerJobHandlers(processor, { ...ctx, sink: eventSink });
+
+  await ctx.workflowStore.initSchemas(repoDir);
 
   await runStartupRecovery(
-    ctx.taskStore,
+    ctx.db,
     ctx.interactionStore,
     (event, data) => {
       log.info(event, (data as Record<string, unknown>) ?? {});
@@ -49,9 +40,6 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
 
   processor.start();
   writeDaemonPid(repoDir);
-
-  const poller = new DbChangePoller(ctx.database.db, eventSink);
-  poller.start();
 
   let shuttingDown = false;
   const shutdown = async () => {
@@ -65,7 +53,6 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     console.log('shutting down...');
 
     ctx.executor.stopAllTasks();
-    poller.stop();
     await processor.stop();
 
     const numProcs = trackedCount();
@@ -75,12 +62,13 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
     }
 
     await failInFlightForShutdown(
-      ctx.taskStore,
+      ctx.db,
       ctx.interactionStore,
       (event, data) => {
         log.info(event, (data as Record<string, unknown>) ?? {});
       },
     );
+    ctx.workflowStore.cleanup();
     clearDaemonPid(repoDir);
     ctx.database.close();
     console.log('shutdown complete');
@@ -90,21 +78,13 @@ export async function runServeEntrypoint(repoDir: string, port: number) {
   process.on('SIGTERM', shutdown);
 
   const app = buildRoutes({
+    ...ctx,
     db: ctx.database.db,
-    repoDir,
-    taskStore: ctx.taskStore,
-    configStore: ctx.configStore,
-    interactionStore: ctx.interactionStore,
-    memoryStore: ctx.memoryStore,
-    registry: ctx.registry,
-    embeddingRegistry: ctx.embeddingRegistry,
-    executor: ctx.executor,
     eventSink,
-    queue: ctx.queue,
   });
 
   startHTTPServer(app, port, {
-    configStore: ctx.configStore,
+    db: ctx.db,
     repoDir,
     registry: ctx.registry,
   });

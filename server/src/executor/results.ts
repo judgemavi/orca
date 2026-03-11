@@ -1,9 +1,10 @@
+import type { TaskStatus } from '@orca/types';
 import type { EventSink } from '../api/ws';
+import type { OrcaDrizzleDB } from '../db/connection';
 import type { ToolPluginEvent } from '../plugin/types';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
-import type { TaskStore } from '../store/tasks';
-import type { TaskStatus } from '../types';
+import { updateTaskStatus } from '../store/tasks';
 
 interface OutcomeInput {
   exitCode: number;
@@ -30,9 +31,6 @@ interface TaskRunResultRecord {
   exitCode: number;
   signalCode: string | number | null;
   sessionID: string;
-  inputTokens: number;
-  outputTokens: number;
-  estimatedCost: number;
   events: ToolPluginEvent[];
   logPath: string;
   durationMS: number;
@@ -40,6 +38,7 @@ interface TaskRunResultRecord {
   aborted: boolean;
   diff: string;
   filesChanged: string[];
+  commitSha?: string;
   error?: string;
 }
 
@@ -62,21 +61,19 @@ interface InteractionMemoryMeta {
 interface PersistTaskResultInput {
   taskID: string;
   interactionID: string;
-  runID: string;
   model: string;
   result: TaskRunResultRecord;
 }
 
 interface PersistSuccessfulTaskResultInput extends PersistTaskResultInput {
-  reviewID?: string;
   memoryMeta?: InteractionMemoryMeta;
 }
 
-interface ResultCoordinatorDeps {
-  taskStore: TaskStore;
+export interface ResultCoordinatorDeps {
+  db: OrcaDrizzleDB;
+  sink?: EventSink;
   interactionStore?: InteractionStore;
   memoryStore?: MemoryStore;
-  eventSink?: EventSink;
 }
 
 const BLOCKER_PATTERN =
@@ -134,160 +131,152 @@ function detectBlocker(output: string): string {
   return match?.[0]?.trim() ?? '';
 }
 
-export class ResultCoordinator {
-  constructor(private readonly deps: ResultCoordinatorDeps) {}
-
-  applyStopOverride(
-    taskID: string,
-    result: TaskRunResultRecord,
-    consumeStop: (taskID: string) => boolean,
-  ): TaskRunResultRecord {
-    if (!consumeStop(taskID)) {
-      return result;
-    }
-
-    return {
-      ...result,
-      status: 'stopped',
-      interactionStatus: 'failed',
-      aborted: true,
-      error: result.error || 'task stopped',
-    };
+export function applyStopOverride(
+  taskID: string,
+  result: TaskRunResultRecord,
+  consumeStop: (taskID: string) => boolean,
+): TaskRunResultRecord {
+  if (!consumeStop(taskID)) {
+    return result;
   }
 
-  buildFailedResult(input: FailedTaskRunInput): TaskRunResultRecord {
-    return {
-      taskID: input.taskID,
-      interactionType: input.interactionType,
-      toolName: input.toolName,
-      model: input.model,
-      status: input.status,
-      interactionStatus: 'failed',
-      exitCode: -1,
-      signalCode: null,
-      sessionID: '',
-      inputTokens: 0,
-      outputTokens: 0,
-      estimatedCost: 0,
-      events: [],
-      logPath: input.logPath,
-      durationMS: 0,
-      timedOut: false,
-      aborted: input.aborted,
-      diff: '',
-      filesChanged: [],
-      error: input.error,
-    };
-  }
+  return {
+    ...result,
+    status: 'stopped',
+    interactionStatus: 'failed',
+    aborted: true,
+    error: result.error || 'task stopped',
+  };
+}
 
-  async persistSuccess(input: PersistSuccessfulTaskResultInput): Promise<void> {
-    if (input.result.sessionID.trim()) {
-      await this.deps.taskStore.setSessionID(
-        input.taskID,
-        input.result.sessionID.trim(),
-      );
-    }
+export function buildFailedResult(
+  input: FailedTaskRunInput,
+): TaskRunResultRecord {
+  return {
+    taskID: input.taskID,
+    interactionType: input.interactionType,
+    toolName: input.toolName,
+    model: input.model,
+    status: input.status,
+    interactionStatus: 'failed',
+    exitCode: -1,
+    signalCode: null,
+    sessionID: '',
+    events: [],
+    logPath: input.logPath,
+    durationMS: 0,
+    timedOut: false,
+    aborted: input.aborted,
+    diff: '',
+    filesChanged: [],
+    error: input.error,
+  };
+}
 
-    await this.deps.taskStore.updateStatus(input.taskID, input.result.status);
-    this.reinforceMemoryConfidence(input.taskID, input.result.exitCode);
+export async function persistSuccess(
+  deps: ResultCoordinatorDeps,
+  input: PersistSuccessfulTaskResultInput,
+): Promise<void> {
+  await updateTaskStatus(deps.db, deps.sink, input.taskID, input.result.status);
+  reinforceMemoryConfidence(deps, input.taskID, input.result.exitCode);
 
-    if (input.reviewID && input.result.status === 'review') {
-      await this.deps.taskStore.addressReview(input.reviewID);
-    }
+  finishInteraction(
+    deps,
+    input.interactionID,
+    input.result,
+    input.model,
+    input.memoryMeta,
+  );
+}
 
-    this.finishInteraction(
-      input.interactionID,
-      input.result,
-      input.runID,
-      input.model,
-      input.memoryMeta,
-    );
-  }
+export async function persistFailure(
+  deps: ResultCoordinatorDeps,
+  input: PersistTaskResultInput,
+): Promise<void> {
+  await updateTaskStatus(deps.db, deps.sink, input.taskID, input.result.status);
+  finishInteraction(deps, input.interactionID, input.result, input.model);
+}
 
-  async persistFailure(input: PersistTaskResultInput): Promise<void> {
-    await this.deps.taskStore.updateStatus(input.taskID, input.result.status);
-    this.finishInteraction(
-      input.interactionID,
-      input.result,
-      input.runID,
-      input.model,
-    );
-  }
+function finishInteraction(
+  deps: ResultCoordinatorDeps,
+  interactionID: string,
+  result: TaskRunResultRecord,
+  model: string,
+  memoryMeta?: InteractionMemoryMeta,
+): void {
+  if (!interactionID || !deps.interactionStore) return;
 
-  private finishInteraction(
-    interactionID: string,
-    result: TaskRunResultRecord,
-    runID: string,
-    model: string,
-    memoryMeta?: InteractionMemoryMeta,
-  ): void {
-    if (!interactionID || !this.deps.interactionStore) return;
+  const data: Record<string, unknown> = {};
+  if (result.filesChanged?.length) data.filesChanged = result.filesChanged;
+  if (memoryMeta?.usedMemoryIds?.length)
+    data.usedMemoryIds = memoryMeta.usedMemoryIds;
+  if (memoryMeta?.usedProvenanceHashes?.length)
+    data.usedProvenanceHashes = memoryMeta.usedProvenanceHashes;
 
-    let qualityJson: string | null = null;
-    if (memoryMeta) {
-      const payload: Record<string, unknown> = {};
-      if (memoryMeta.usedMemoryIds?.length) {
-        payload.usedMemoryIds = memoryMeta.usedMemoryIds;
-      }
-      if (memoryMeta.usedProvenanceHashes?.length) {
-        payload.usedProvenanceHashes = memoryMeta.usedProvenanceHashes;
-      }
-      if (Object.keys(payload).length > 0) {
-        qualityJson = JSON.stringify(payload);
-      }
-    }
+  const outputJson =
+    Object.keys(data).length > 0
+      ? JSON.stringify({
+          result: result.interactionStatus === 'completed' ? 'success' : 'fail',
+          data,
+        })
+      : null;
 
-    void this.deps.interactionStore.finish(interactionID, {
-      status: result.interactionStatus,
-      error: result.error ?? null,
-      diff: result.diff || null,
-      qualityJson: qualityJson,
-      inputTokens: result.inputTokens,
-      outputTokens: result.outputTokens,
-      estimatedCost: result.estimatedCost,
-      exitCode: result.exitCode,
-      durationMs: result.durationMS,
-      runId: runID,
-      model,
-    });
-  }
+  void deps.interactionStore.finish(interactionID, {
+    status: result.interactionStatus,
+    error: result.error ?? null,
+    output: outputJson,
+    exitCode: result.exitCode,
+    durationMs: result.durationMS,
+    model,
+    commitSha: result.commitSha ?? null,
+    sessionId: result.sessionID ?? null,
+  });
+}
 
-  private reinforceMemoryConfidence(taskID: string, exitCode: number): void {
-    if (!this.deps.memoryStore || !this.deps.interactionStore) return;
+function reinforceMemoryConfidence(
+  deps: ResultCoordinatorDeps,
+  taskID: string,
+  exitCode: number,
+): void {
+  if (!deps.memoryStore || !deps.interactionStore) return;
 
-    void this.loadUsedMemoryIDs(taskID).then(async (ids) => {
-      if (ids.length === 0) return;
-      for (const id of ids) {
-        try {
-          if (exitCode === 0) {
-            await this.deps.memoryStore!.boostConfidence(id, 1.1);
-          } else {
-            await this.deps.memoryStore!.decayEntry(id, 0.9);
-          }
-        } catch {
-          // Ignore stale references.
-        }
-      }
-    });
-  }
-
-  private async loadUsedMemoryIDs(taskID: string): Promise<string[]> {
-    const seen = new Set<string>();
-    const planInteractions =
-      (await this.deps.interactionStore?.listByType(taskID, 'plan')) ?? [];
-    for (const interaction of planInteractions) {
-      const payload = interaction.qualityJson?.trim();
-      if (!payload) continue;
+  void loadUsedMemoryIDs(deps, taskID).then(async (ids) => {
+    if (ids.length === 0) return;
+    for (const id of ids) {
       try {
-        const parsed = JSON.parse(payload) as { usedMemoryIds?: string[] };
-        for (const id of parsed.usedMemoryIds ?? []) {
-          const normalized = String(id).trim();
-          if (normalized) seen.add(normalized);
+        if (exitCode === 0) {
+          await deps.memoryStore!.boostConfidence(id, 1.1);
+        } else {
+          await deps.memoryStore!.decayEntry(id, 0.9);
         }
       } catch {
-        // Ignore malformed quality payloads.
+        // Ignore stale references.
       }
     }
-    return [...seen];
+  });
+}
+
+async function loadUsedMemoryIDs(
+  deps: ResultCoordinatorDeps,
+  taskID: string,
+): Promise<string[]> {
+  const seen = new Set<string>();
+  const planInteractions =
+    (await deps.interactionStore?.listByStepName(taskID, 'plan')) ?? [];
+  for (const interaction of planInteractions) {
+    if (!interaction.output?.trim()) continue;
+    try {
+      const parsed = JSON.parse(interaction.output) as {
+        result?: string;
+        data?: { usedMemoryIds?: string[] };
+      };
+      for (const id of parsed.data?.usedMemoryIds ?? []) {
+        const normalized = String(id).trim();
+        if (normalized) seen.add(normalized);
+      }
+    } catch {
+      // Ignore malformed output payloads.
+    }
   }
+  return [...seen];
 }

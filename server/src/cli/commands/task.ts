@@ -1,58 +1,40 @@
+import { TASK_STATUSES, type TaskStatus } from '@orca/types';
 import type { Command } from 'commander';
 import { isAutoRun } from '../../config/config';
 import { isDaemonRunning } from '../../queue/lock';
-import type { JobQueue } from '../../queue/queue';
-import type { ConfigStore } from '../../store/config';
-import type { InteractionStore } from '../../store/interactions';
-import type { TaskStore } from '../../store/tasks';
-import type {
-  AutoRunOverrides,
-  InteractionType,
-  Task,
-  TaskStatus,
-} from '../../types';
-import { INTERACTION_TYPES } from '../../types';
+import { gitRun } from '../../shared/git';
+import * as configStore from '../../store/config';
+import * as taskStore from '../../store/tasks';
+import type { AutoRunOverrides } from '../../types/api';
+import type { AppDeps } from '../../types/deps';
+import { getStepOutput, hasStepOutput } from '../../workflow/context';
+import { completeStep, resolveStepMeta } from '../../workflow/engine';
+import { getTransitionEvents } from '../../workflow/paths';
+import type { AnyStateNode } from '../../workflow/paths';
+import type { StepMeta } from '../../workflow/types';
+import {
+  createSyntheticStepInteraction,
+  loadCurrentTaskStep,
+} from '../../workflow/step-actions';
 import { deleteTask } from '../../workflows/delete';
 import {
   acceptBreakdown,
-  approvePlan,
   loadProposedTasksFromInteraction,
   rejectBreakdown,
 } from '../../workflows/planning';
-import { approveTask } from '../../workflows/review';
+import { resetToStep } from '../../workflows/rewind';
 import {
   createTask,
   enqueueBreakdown,
+  enqueueCurrentStep,
   enqueueEvaluate,
-  enqueueMerge,
   provideInput,
-  requestChanges,
-  resumeTask,
   stopTask,
-  triggerReview,
   updateTask,
 } from '../../workflows/tasks';
 import { printJSON } from '../format';
-import {
-  allTasks,
-  confirm,
-  pendingTasks,
-  pickTask,
-  reviewTasks,
-  runningTasks,
-  stoppedTasks,
-  textInput,
-} from '../helpers';
 
-export interface TaskCommandDeps {
-  repoDir: string;
-  taskStore: TaskStore;
-  interactionStore: InteractionStore;
-  configStore: ConfigStore;
-  queue: JobQueue;
-}
-
-export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
+export function registerTaskCommands(task: Command, deps: AppDeps) {
   task
     .command('list')
     .alias('ls')
@@ -60,20 +42,20 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
     .action(async (opts: { status?: string }) => {
       const status = (opts.status ?? '').trim();
       const data = status
-        ? await deps.taskStore.listByStatus(status as TaskStatus)
-        : await deps.taskStore.list();
+        ? await taskStore.listTasks(deps.db, status as TaskStatus)
+        : await taskStore.listTasks(deps.db);
       printJSON(data);
     });
 
   task.command('ready').action(async () => {
-    printJSON(await deps.taskStore.getReady());
+    printJSON(await taskStore.getReadyTasks(deps.db));
   });
 
   task
     .command('get <id>')
     .alias('g')
     .action(async (id: string) => {
-      const taskItem = await deps.taskStore.get(id);
+      const taskItem = await taskStore.getTask(deps.db, id).catch(() => null);
       if (!taskItem) throw new Error(`task not found: ${id}`);
       printJSON(taskItem);
     });
@@ -81,7 +63,7 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
   task
     .command('create')
     .alias('new')
-    .option('-t, --title <title>', 'task title')
+    .requiredOption('-t, --title <title>', 'task title')
     .option('-d, --description <description>', 'task description', '')
     .option('--parent <parent>', 'parent task id')
     .option(
@@ -89,41 +71,24 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
       'comma-separated task IDs this task depends on',
     )
     .option(
-      '--disable-autorun <types>',
-      'comma-separated interaction types to disable auto-run (e.g. review,merge)',
+      '--disable-autorun <steps>',
+      'per-task override: comma-separated step names to disable auto-run (e.g. review,merge)',
     )
     .option(
-      '--enable-autorun <types>',
-      'comma-separated interaction types to enable auto-run',
+      '--enable-autorun <steps>',
+      'per-task override: comma-separated step names to enable auto-run',
     )
     .action(
       async (opts: {
-        title?: string;
+        title: string;
         description: string;
         parent?: string;
         dependsOn?: string;
         disableAutorun?: string;
         enableAutorun?: string;
       }) => {
-        let title = (opts.title ?? '').trim();
-        if (!title) {
-          title = await textInput('Task title', { required: true });
-        }
-
-        let description = opts.description;
-        if (!(opts.description ?? '').trim() && canPrompt()) {
-          description = await textInput('Task description (optional)');
-        }
-
-        let parent = (opts.parent ?? '').trim();
-        if (!parent && canPrompt()) {
-          const pickParent = await confirm('Attach to a parent task?', false);
-          if (pickParent) {
-            parent = (
-              await pickTask(deps.taskStore, 'Select parent task', allTasks)
-            ).id;
-          }
-        }
+        const title = opts.title.trim();
+        if (!title) throw new Error('--title is required');
 
         const dependsOn = (opts.dependsOn ?? '')
           .split(',')
@@ -139,8 +104,8 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
         const result = await createTask(
           {
             title,
-            description,
-            parentId: parent || null,
+            description: opts.description,
+            parentId: (opts.parent ?? '').trim() || null,
             dependsOn,
             autoRunOverrides:
               Object.keys(autoRunOverrides).length > 0
@@ -148,8 +113,10 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
                 : undefined,
           },
           {
-            taskStore: deps.taskStore,
+            db: deps.db,
+            sink: deps.sink,
             queue: serverUp ? deps.queue : undefined,
+            workflowStore: deps.workflowStore,
           },
         );
         printJSON({
@@ -171,16 +138,16 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
     .option('--status <status>', 'new status')
     .option('--session-id <sessionID>', 'set session id')
     .option(
-      '--disable-autorun <types>',
-      'comma-separated interaction types to disable auto-run',
+      '--disable-autorun <steps>',
+      'per-task override: comma-separated step names to disable auto-run',
     )
     .option(
-      '--enable-autorun <types>',
-      'comma-separated interaction types to enable auto-run',
+      '--enable-autorun <steps>',
+      'per-task override: comma-separated step names to enable auto-run',
     )
     .option(
-      '--reset-autorun [types]',
-      'clear overrides, inherit from config (comma-separated or "all")',
+      '--reset-autorun [steps]',
+      'clear per-task overrides, inherit from workflow def (comma-separated or "all")',
     )
     .action(
       async (
@@ -189,7 +156,6 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
           title?: string;
           description?: string;
           status?: string;
-          sessionId?: string;
           disableAutorun?: string;
           enableAutorun?: string;
           resetAutorun?: string | true;
@@ -197,7 +163,9 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
       ) => {
         let autoRunOverrides: AutoRunOverrides | undefined;
         if (opts.resetAutorun !== undefined) {
-          const existing = await deps.taskStore.get(id);
+          const existing = await taskStore
+            .getTask(deps.db, id)
+            .catch(() => null);
           autoRunOverrides = mergeAutoRunOverrides(
             existing?.autoRunOverrides ?? {},
             opts.disableAutorun,
@@ -218,211 +186,62 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
             title: opts.title,
             description: opts.description,
             status: opts.status,
-            sessionId: opts.sessionId,
             autoRunOverrides,
           },
           {
-            taskStore: deps.taskStore,
+            db: deps.db,
+            sink: deps.sink,
             queue: deps.queue,
-            configStore: deps.configStore,
           },
         );
         printJSON(updated);
       },
     );
 
-  task
-    .command('delete [id]')
-    .option('-y, --yes', 'skip confirmation')
-    .action(async (id: string | undefined, opts: { yes?: boolean }) => {
-      const taskID = await resolveTaskID({
-        id,
-        taskStore: deps.taskStore,
-        title: 'Select task to delete',
-        filter: allTasks,
-      });
-      if (!opts.yes) {
-        const ok = await confirm(`Delete task ${taskID}?`, false);
-        if (!ok) {
-          printJSON({ deleted: null, cancelled: true });
-          return;
-        }
-      }
-      const result = await deleteTask(taskID, {
-        repoDir: deps.repoDir,
-        taskStore: deps.taskStore,
-        interactions: deps.interactionStore,
-      });
-      printJSON({ deleted: result.taskId, cleanup: result.cleanup });
+  task.command('delete <id>').action(async (id: string) => {
+    const result = await deleteTask(id, {
+      repoDir: deps.repoDir,
+      db: deps.db,
+      sink: deps.sink,
+      interactions: deps.interactionStore,
     });
+    printJSON({ deleted: result.taskId, cleanup: result.cleanup });
+  });
 
-  task
-    .command('start [id]')
-    .alias('run')
-    .option('-T, --tool <tool>', 'tool override')
-    .option('-M, --model <model>', 'model override')
-    .action(
-      async (
-        id: string | undefined,
-        opts: { tool?: string; model?: string },
-      ) => {
-        const taskID = await resolveTaskID({
-          id,
-          taskStore: deps.taskStore,
-          title: 'Select task to start',
-          filter: pendingTasks,
-        });
-        const result = await enqueueEvaluate(taskID, opts, {
-          taskStore: deps.taskStore,
-          queue: deps.queue,
-        });
-        printJSON({ ...result, status: 'queued' });
-      },
-    );
-
-  task.command('stop [id]').action(async (id?: string) => {
-    const taskID = await resolveTaskID({
-      id,
-      taskStore: deps.taskStore,
-      title: 'Select running task to stop',
-      filter: runningTasks,
-    });
-    const result = await stopTask(taskID, {
-      taskStore: deps.taskStore,
+  task.command('stop <id>').action(async (id: string) => {
+    const result = await stopTask(id, {
+      db: deps.db,
+      sink: deps.sink,
       queue: deps.queue,
     });
     printJSON(result);
   });
 
   task
-    .command('resume [id]')
-    .option('-f, --feedback <feedback>', 'reviewer feedback', '')
+    .command('evaluate <id>')
     .option('-T, --tool <tool>', 'tool override')
     .option('-M, --model <model>', 'model override')
-    .action(
-      async (
-        id: string | undefined,
-        opts: { feedback?: string; tool?: string; model?: string },
-      ) => {
-        const taskID = await resolveTaskID({
-          id,
-          taskStore: deps.taskStore,
-          title: 'Select stopped task to resume',
-          filter: stoppedTasks,
-        });
-        let feedback = (opts.feedback ?? '').trim();
-        if (!feedback && canPrompt()) {
-          feedback = await textInput('Reviewer feedback for resume (optional)');
-        }
-        const result = await resumeTask(taskID, feedback, opts, {
-          taskStore: deps.taskStore,
-          queue: deps.queue,
-        });
-        printJSON({ ...result, status: 'queued' });
-      },
-    );
-
-  task.command('approve [id]').action(async (id?: string) => {
-    const taskID = await resolveTaskID({
-      id,
-      taskStore: deps.taskStore,
-      title: 'Select task to approve',
-      filter: reviewTasks,
+    .action(async (id: string, opts: { tool?: string; model?: string }) => {
+      const result = await enqueueEvaluate(id, opts, {
+        db: deps.db,
+        sink: deps.sink,
+        queue: deps.queue,
+      });
+      printJSON({ ...result, status: 'queued' });
     });
-    const updated = await approveTask(taskID, {
-      taskStore: deps.taskStore,
-      queue: deps.queue,
-      configStore: deps.configStore,
-    });
-    printJSON(updated);
-  });
-
-  task.command('approve-plan <id>').action(async (id: string) => {
-    const updated = await approvePlan(id, {
-      taskStore: deps.taskStore,
-      queue: deps.queue,
-      configStore: deps.configStore,
-    });
-    printJSON(updated);
-  });
 
   task
-    .command('request-changes [id]')
-    .alias('rc')
-    .option('-f, --feedback <feedback>', 'reviewer feedback')
+    .command('breakdown <id>')
     .option('-T, --tool <tool>', 'tool override')
     .option('-M, --model <model>', 'model override')
-    .action(
-      async (
-        id: string | undefined,
-        opts: { feedback?: string; tool?: string; model?: string },
-      ) => {
-        const taskID = await resolveTaskID({
-          id,
-          taskStore: deps.taskStore,
-          title: 'Select task to request changes',
-          filter: reviewTasks,
-        });
-        let feedback = (opts.feedback ?? '').trim();
-        if (!feedback) {
-          feedback = await textInput('Review feedback', { required: true });
-        }
-        const result = await requestChanges(taskID, feedback, {
-          taskStore: deps.taskStore,
-          interactionStore: deps.interactionStore,
-          queue: deps.queue,
-          tool: opts.tool,
-          model: opts.model,
-        });
-        printJSON({ ...result, status: 'queued' });
-      },
-    );
-
-  task
-    .command('evaluate [id]')
-    .option('-T, --tool <tool>', 'tool override')
-    .option('-M, --model <model>', 'model override')
-    .action(
-      async (
-        id: string | undefined,
-        opts: { tool?: string; model?: string },
-      ) => {
-        const taskID = await resolveTaskID({
-          id,
-          taskStore: deps.taskStore,
-          title: 'Select task to evaluate',
-          filter: allTasks,
-        });
-        const result = await enqueueEvaluate(taskID, opts, {
-          taskStore: deps.taskStore,
-          queue: deps.queue,
-        });
-        printJSON({ ...result, status: 'queued' });
-      },
-    );
-
-  task
-    .command('breakdown [id]')
-    .option('-T, --tool <tool>', 'tool override')
-    .option('-M, --model <model>', 'model override')
-    .action(
-      async (
-        id: string | undefined,
-        opts: { tool?: string; model?: string },
-      ) => {
-        const taskID = await resolveTaskID({
-          id,
-          taskStore: deps.taskStore,
-          title: 'Select task to break down',
-          filter: pendingTasks,
-        });
-        const result = await enqueueBreakdown(taskID, opts, {
-          taskStore: deps.taskStore,
-          queue: deps.queue,
-        });
-        printJSON({ ...result, status: 'queued' });
-      },
-    );
+    .action(async (id: string, opts: { tool?: string; model?: string }) => {
+      const result = await enqueueBreakdown(id, opts, {
+        db: deps.db,
+        sink: deps.sink,
+        queue: deps.queue,
+      });
+      printJSON({ ...result, status: 'queued' });
+    });
 
   task
     .command('accept-breakdown [id]')
@@ -436,11 +255,12 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
       });
       if (proposed.length === 0) {
         throw new Error(
-          'No proposed tasks found for interaction ' + operationID,
+          `No proposed tasks found for interaction ${operationID}`,
         );
       }
       const accepted = await acceptBreakdown(parentID, proposed, {
-        taskStore: deps.taskStore,
+        db: deps.db,
+        sink: deps.sink,
         queue: deps.queue,
       });
       printJSON({
@@ -464,32 +284,74 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
     });
 
   task
-    .command('provide-input [id]')
-    .option('--answer <answer>', 'answer to pending question')
-    .action(async (id: string | undefined, opts: { answer?: string }) => {
-      const taskID = await resolveTaskID({
-        id,
-        taskStore: deps.taskStore,
-        title: 'Select task with pending question',
-        filter: stoppedTasks,
-      });
-      const taskItem = await deps.taskStore.get(taskID);
-      if (!taskItem) throw new Error(`task not found: ${taskID}`);
-      if (!taskItem.pendingQuestion) {
-        throw new Error('task has no pending question');
-      }
-      console.log(`Question: ${taskItem.pendingQuestion}`);
+    .command('reset <id>')
+    .description(
+      'Reset task to a previous interaction (deletes later interactions, reverts git)',
+    )
+    .requiredOption('--interaction <interactionId>', 'interaction to reset to')
+    .option('--run', 'also enqueue the step for re-execution')
+    .action(
+      async (id: string, opts: { interaction: string; run?: boolean }) => {
+        const result = await resetToStep(
+          { taskId: id, interactionId: opts.interaction, enqueue: opts.run },
+          {
+            interactionStore: deps.interactionStore,
+            queue: deps.queue,
+            repoDir: deps.repoDir,
+            db: deps.db,
+          },
+        );
+        printJSON(result);
+      },
+    );
 
-      let answer = (opts.answer ?? '').trim();
-      if (!answer) {
-        if (!canPrompt())
-          throw new Error('--answer is required in non-interactive mode');
-        answer = await textInput('Your answer', { required: true });
+  task
+    .command('diff <id>')
+    .description('Show git diff for an interaction (from commitSha)')
+    .requiredOption(
+      '--interaction <interactionId>',
+      'interaction to get diff for',
+    )
+    .action(async (id: string, opts: { interaction: string }) => {
+      const interaction = await deps.interactionStore.get(opts.interaction);
+      if (!interaction || interaction.taskId !== id) {
+        throw new Error('interaction not found');
       }
+      const sha = interaction.commitSha?.trim();
+      if (!sha) {
+        printJSON({ diff: '', filesChanged: [] });
+        return;
+      }
+      try {
+        const [diffResult, namesResult] = await Promise.all([
+          gitRun(deps.repoDir, ['diff', `${sha}~1..${sha}`]),
+          gitRun(deps.repoDir, ['diff', `${sha}~1..${sha}`, '--name-only']),
+        ]);
+        printJSON({
+          diff: diffResult.exitCode === 0 ? diffResult.stdout : '',
+          filesChanged:
+            namesResult.exitCode === 0
+              ? namesResult.stdout
+                  .split('\n')
+                  .map((f: string) => f.trim())
+                  .filter(Boolean)
+              : [],
+        });
+      } catch {
+        printJSON({ diff: '', filesChanged: [] });
+      }
+    });
 
-      const result = await provideInput(taskID, answer, {
-        taskStore: deps.taskStore,
+  task
+    .command('provide-input <id>')
+    .requiredOption('--answer <answer>', 'answer to pending question')
+    .action(async (id: string, opts: { answer: string }) => {
+      const result = await provideInput(id, opts.answer, {
+        db: deps.db,
+        sink: deps.sink,
         queue: deps.queue,
+        workflowStore: deps.workflowStore,
+        interactionStore: deps.interactionStore,
       });
       printJSON(result);
     });
@@ -520,15 +382,27 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
       ) => {
         let targets: Set<string>;
         if (opts.auto) {
-          const config = await deps.configStore.load();
+          const config = await configStore.loadConfig(deps.db);
+          const compiled = deps.workflowStore.resolve();
           const waitStatuses: string[] = ['failed', 'stopped'];
-          if (!isAutoRun(config, 'review')) {
-            waitStatuses.push('review');
-          } else if (!isAutoRun(config, 'merge')) {
-            waitStatuses.push('approved');
-          } else {
-            waitStatuses.push('merged');
+          let gated = false;
+          const rootNode = compiled.machine.root as unknown as AnyStateNode;
+          for (const [name, child] of Object.entries(rootNode.states ?? {})) {
+            if (child.type === 'final') continue;
+            const meta = (child.meta ?? {}) as StepMeta;
+            if (
+              !isAutoRun({
+                config,
+                stepName: name,
+                stepAutoRun: meta.autoRun,
+              })
+            ) {
+              waitStatuses.push('stopped');
+              gated = true;
+              break;
+            }
           }
+          if (!gated) waitStatuses.push('merged');
           targets = new Set(waitStatuses);
         } else {
           targets = new Set(
@@ -538,6 +412,14 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
               .filter(Boolean),
           );
         }
+        const knownStatuses = new Set(Object.values(TASK_STATUSES) as string[]);
+        const statusTargets = new Set<string>();
+        const stepTargets = new Set<string>();
+        for (const t of targets) {
+          if (knownStatuses.has(t)) statusTargets.add(t);
+          else stepTargets.add(t);
+        }
+
         const timeoutMs =
           Math.max(1, Number.parseInt(opts.timeout, 10) || 600) * 1000;
         const pollMs = Math.max(500, Number.parseInt(opts.poll, 10) || 3000);
@@ -547,21 +429,40 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
 
         while (Date.now() < deadline) {
           const tasks = watchAny
-            ? await deps.taskStore.list()
-            : await Promise.all(watchIds.map((id) => deps.taskStore.get(id)));
+            ? await taskStore.listTasks(deps.db)
+            : await Promise.all(
+                watchIds.map((id) =>
+                  taskStore.getTask(deps.db, id).catch(() => null),
+                ),
+              );
 
           for (const t of tasks) {
             if (!t) continue;
-            if (targets.has(t.status)) {
+            if (statusTargets.has(t.status)) {
               printJSON({ timedOut: false, task: t });
               return;
+            }
+            for (const step of stepTargets) {
+              const interactions = await deps.interactionStore.listByType(
+                t.id,
+                step,
+              );
+              if (interactions.length === 0) continue;
+              const latest = interactions[0];
+              const anyRunning = interactions.some(
+                (ix) => ix.status === 'running',
+              );
+              if (latest?.status === 'completed' && !anyRunning) {
+                printJSON({ timedOut: false, task: t, completedStep: step });
+                return;
+              }
             }
           }
 
           await new Promise((r) => setTimeout(r, pollMs));
         }
 
-        const allTasksList = await deps.taskStore.list();
+        const allTasksList = await taskStore.listTasks(deps.db);
         const counts = {
           queued: 0,
           running: 0,
@@ -591,10 +492,6 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
       },
     );
 
-  task.command('reviews <id>').action(async (id: string) => {
-    printJSON(await deps.taskStore.listReviews(id));
-  });
-
   task
     .command('interactions <id>')
     .option('--type <type>', 'type filter')
@@ -610,97 +507,203 @@ export function registerTaskCommands(task: Command, deps: TaskCommandDeps) {
   depsCmd
     .command('add <id> <dependsOn>')
     .action(async (id: string, dependsOn: string) => {
-      await deps.taskStore.addDependency(id, dependsOn);
-      printJSON(await deps.taskStore.get(id));
+      await taskStore.addDependency(deps.db, deps.sink, id, dependsOn);
+      printJSON(await taskStore.getTask(deps.db, id).catch(() => null));
     });
   depsCmd
     .command('remove <id> <dependsOn>')
     .action(async (id: string, dependsOn: string) => {
-      await deps.taskStore.removeDependency(id, dependsOn);
-      printJSON(await deps.taskStore.get(id));
+      await taskStore.removeDependency(deps.db, deps.sink, id, dependsOn);
+      printJSON(await taskStore.getTask(deps.db, id).catch(() => null));
     });
 
-  const planCmd = task.command('plan').description('Task plan commands');
-  planCmd.command('get <id>').action(async (id: string) => {
-    printJSON({ taskId: id, plan: await deps.taskStore.getPlan(id) });
-  });
-  planCmd
-    .command('set <id>')
-    .option('--text <text>', 'plan text')
-    .option('--file <path>', 'read plan text from file')
-    .action(async (id: string, opts: { text?: string; file?: string }) => {
-      const fromText = (opts.text ?? '').trim();
-      let fromFile = '';
-      if (opts.file?.trim()) {
-        fromFile = (await Bun.file(opts.file.trim()).text()).trim();
+  const stepCmd = task.command('step').description('Workflow step commands');
+  stepCmd
+    .command('output <id> <stepName>')
+    .description('Get output from a completed workflow step')
+    .action(async (id: string, stepName: string) => {
+      const output = await getStepOutput(id, stepName, deps.interactionStore);
+      printJSON({ taskId: id, stepName, output });
+    });
+
+  task
+    .command('complete-step <id>')
+    .alias('cs')
+    .description('Complete current step with a specific outcome/branch')
+    .requiredOption('-o, --outcome <outcome>', 'branch/outcome name')
+    .option('--output <text>', 'output text to forward as feedback')
+    .action(async (id: string, opts: { outcome: string; output?: string }) => {
+      if (await deps.interactionStore.hasRunningForTask(id)) {
+        throw new Error('a step is currently running — wait for it to complete');
       }
-      const content = fromText || fromFile;
-      await deps.taskStore.setPlan(id, content);
-      printJSON({ taskId: id, plan: content });
-    });
+      const t = await taskStore.getTask(deps.db, id).catch(() => null);
+      if (!t) throw new Error(`task not found: ${id}`);
+      if (!t.currentStep) throw new Error('task has no current step');
 
-  task
-    .command('merge [id]')
-    .alias('mg')
-    .description('Merge a task into integration branch')
-    .action(async (id?: string) => {
-      const taskID = await resolveTaskID({
+      const compiled = deps.workflowStore.resolve(t.workflow ?? undefined);
+      let stepMeta: StepMeta | undefined;
+      try {
+        stepMeta = resolveStepMeta(compiled.machine, t.currentStep).meta;
+      } catch {
+        stepMeta = undefined;
+      }
+
+      if (stepMeta?.type !== 'decision') {
+        const has = await hasStepOutput(
+          id,
+          t.currentStep,
+          deps.interactionStore,
+        );
+        if (!has) {
+          throw new Error(
+            `no completed output for step "${t.currentStep}" — run the step first`,
+          );
+        }
+      }
+
+      if (stepMeta?.type === 'decision') {
+        const has = await hasStepOutput(
+          id,
+          t.currentStep,
+          deps.interactionStore,
+        );
+        if (!has) {
+          const ix = await deps.interactionStore.begin({
+            taskId: id,
+            type: t.currentStep,
+            tool: 'manual',
+          });
+          await deps.interactionStore.finish(ix.id, {
+            status: 'completed',
+            output: JSON.stringify({
+              result: opts.outcome,
+              output: opts.output ?? '',
+            }),
+            durationMs: 0,
+          });
+        }
+      }
+
+      const result = await completeStep(
         id,
-        taskStore: deps.taskStore,
-        title: 'Select task to merge',
-        filter: (t) => t.status === 'approved' || t.status === 'review',
-      });
-      const result = await enqueueMerge(taskID, {
-        taskStore: deps.taskStore,
-        queue: deps.queue,
-      });
-      printJSON({ ...result, status: 'queued' });
+        opts.outcome,
+        {
+          db: deps.db,
+          sink: deps.sink,
+          queue: deps.queue,
+          workflowStore: deps.workflowStore,
+        },
+        opts.output ? { output: opts.output } : undefined,
+      );
+      printJSON({ taskId: id, outcome: opts.outcome, ...result });
     });
 
   task
-    .command('ai-review [id]')
-    .alias('ar')
-    .option('-T, --tool <tool>', 'review tool')
-    .option('-M, --model <model>', 'review model')
-    .option('--prompt <prompt>', 'additional review instructions')
+    .command('manual-step <id>')
+    .alias('ms')
+    .description('Manually provide output for a context or decision step')
+    .requiredOption('--output <text>', 'the output text')
+    .option('-o, --outcome <outcome>', 'outcome/branch name')
+    .action(async (id: string, opts: { output: string; outcome?: string }) => {
+      if (await deps.interactionStore.hasRunningForTask(id)) {
+        throw new Error('a step is currently running — wait for it to complete');
+      }
+      const { currentStep, step, stateNode } = await loadCurrentTaskStep(id, {
+        db: deps.db,
+        workflowStore: deps.workflowStore,
+      });
+      if (step.type !== 'context' && step.type !== 'decision') {
+        throw new Error(
+          `step "${currentStep}" (type: ${step.type}) does not support manual entry`,
+        );
+      }
+
+      const branchNames = stateNode ? getTransitionEvents(stateNode) : [];
+      const outcome = opts.outcome ?? branchNames[0] ?? 'done';
+      const interactionId = await createSyntheticStepInteraction(
+        deps.interactionStore,
+        {
+          taskId: id,
+          stepName: currentStep,
+          outcome,
+          output: opts.output,
+        },
+      );
+
+      const result = await completeStep(id, outcome, {
+        db: deps.db,
+        sink: deps.sink,
+        queue: deps.queue,
+        workflowStore: deps.workflowStore,
+      });
+
+      printJSON({
+        taskId: id,
+        interactionId,
+        step: currentStep,
+        outcome,
+        ...result,
+      });
+    });
+
+  stepCmd
+    .command('list <id>')
+    .alias('ls')
+    .description('List workflow steps for a task')
+    .action(async (id: string) => {
+      const t = await taskStore.getTask(deps.db, id).catch(() => null);
+      if (!t) throw new Error(`task not found: ${id}`);
+
+      const compiled = await deps.workflowStore.resolve(
+        t.workflow ?? undefined,
+      );
+      const steps: Record<string, { type: string; executor: string | null }> =
+        {};
+      const rootNode = compiled.machine.root as unknown as AnyStateNode;
+      for (const [name, child] of Object.entries(rootNode.states ?? {})) {
+        if (child.type === 'final') continue;
+        const meta = (child.meta ?? {}) as StepMeta;
+        steps[name] = { type: meta.type ?? 'unknown', executor: meta.executor ?? null };
+      }
+      printJSON({
+        taskId: id,
+        workflow: compiled.name,
+        currentStep: t.currentStep,
+        steps,
+      });
+    });
+
+  task
+    .command('run-step <id>')
+    .alias('rs')
+    .description('Enqueue the current workflow step for execution')
+    .option('-T, --tool <tool>', 'tool override')
+    .option('-M, --model <model>', 'model override')
+    .option('--prompt <prompt>', 'additional instructions')
+    .option('-f, --feedback <feedback>', 'feedback when resuming a stopped task')
     .action(
       async (
-        id: string | undefined,
-        opts: { tool?: string; model?: string; prompt?: string },
+        id: string,
+        opts: {
+          tool?: string;
+          model?: string;
+          prompt?: string;
+          feedback?: string;
+        },
       ) => {
-        const taskID = await resolveTaskID({
+        const result = await enqueueCurrentStep(
           id,
-          taskStore: deps.taskStore,
-          title: 'Select task for AI review',
-          filter: reviewTasks,
-        });
-        const result = await triggerReview(taskID, opts, {
-          taskStore: deps.taskStore,
-          interactionStore: deps.interactionStore,
-          queue: deps.queue,
-        });
+          {
+            prompt: opts.prompt ?? '',
+            tool: opts.tool ?? '',
+            model: opts.model ?? '',
+            ...(opts.feedback ? { feedback: opts.feedback } : {}),
+          },
+          { db: deps.db, sink: deps.sink, queue: deps.queue },
+        );
         printJSON({ ...result, status: 'queued' });
       },
     );
-}
-
-async function resolveTaskID(input: {
-  id?: string;
-  taskStore: TaskStore;
-  title: string;
-  filter: (task: Task) => boolean;
-}): Promise<string> {
-  const taskID = (input.id ?? '').trim();
-  if (taskID) return taskID;
-  if (!canPrompt()) {
-    throw new Error('task id required in non-interactive mode');
-  }
-  const picked = await pickTask(input.taskStore, input.title, input.filter);
-  return picked.id;
-}
-
-function canPrompt(): boolean {
-  return Boolean(process.stdin.isTTY) && !Bun.argv.includes('--json');
 }
 
 function parseAutoRunOverrides(
@@ -708,14 +711,13 @@ function parseAutoRunOverrides(
   enable?: string,
 ): AutoRunOverrides {
   const overrides: AutoRunOverrides = {};
-  const validTypes = new Set<string>(INTERACTION_TYPES);
   for (const raw of (disable ?? '').split(',')) {
-    const type = raw.trim() as InteractionType;
-    if (type && validTypes.has(type)) overrides[type] = false;
+    const step = raw.trim();
+    if (step) overrides[step] = false;
   }
   for (const raw of (enable ?? '').split(',')) {
-    const type = raw.trim() as InteractionType;
-    if (type && validTypes.has(type)) overrides[type] = true;
+    const step = raw.trim();
+    if (step) overrides[step] = true;
   }
   return overrides;
 }
@@ -726,25 +728,24 @@ function mergeAutoRunOverrides(
   enable?: string,
   reset?: string | true,
 ): AutoRunOverrides {
-  const validTypes = new Set<string>(INTERACTION_TYPES);
   let result = { ...existing };
 
   if (reset === true || reset === 'all' || reset === '') {
     result = {};
   } else if (reset) {
     for (const raw of reset.split(',')) {
-      const type = raw.trim() as InteractionType;
-      if (type && validTypes.has(type)) delete result[type];
+      const step = raw.trim();
+      if (step) delete result[step];
     }
   }
 
   for (const raw of (disable ?? '').split(',')) {
-    const type = raw.trim() as InteractionType;
-    if (type && validTypes.has(type)) result[type] = false;
+    const step = raw.trim();
+    if (step) result[step] = false;
   }
   for (const raw of (enable ?? '').split(',')) {
-    const type = raw.trim() as InteractionType;
-    if (type && validTypes.has(type)) result[type] = true;
+    const step = raw.trim();
+    if (step) result[step] = true;
   }
   return result;
 }

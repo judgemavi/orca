@@ -1,11 +1,27 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { EventSink } from '../../../src/api/ws';
 import type { TestContext } from '../../helpers/db';
 import { createTestContext } from '../../helpers/db';
 
 let ctx: TestContext;
+let events: Array<{ type: string; data: unknown }>;
+
+async function createTask(id: string) {
+  await ctx.taskStore.create({ id, title: `Task ${id}` });
+}
 
 beforeEach(() => {
-  ctx = createTestContext();
+  events = [];
+  const sink: EventSink = {
+    broadcast: (type, data) => {
+      events.push({ type, data });
+    },
+    list: () => [],
+    alerts: () => [],
+    since: () => [],
+    subscribe: () => () => {},
+  };
+  ctx = createTestContext(sink);
 });
 
 afterEach(() => {
@@ -14,6 +30,7 @@ afterEach(() => {
 
 describe('JobQueue.enqueue', () => {
   test('creates a queued job', async () => {
+    await createTask('task-1');
     const job = await ctx.queue.enqueue({ type: 'evaluate', taskId: 'task-1' });
     expect(job.id).toBeTruthy();
     expect(job.type).toBe('evaluate');
@@ -45,6 +62,8 @@ describe('JobQueue.enqueue', () => {
 
 describe('JobQueue.claim', () => {
   test('claims queued jobs by priority then createdAt', async () => {
+    await createTask('low-pri');
+    await createTask('high-pri');
     await ctx.queue.enqueue({ type: 'evaluate', taskId: 'low-pri' }); // pri 3
     await ctx.queue.enqueue({ type: 'code', taskId: 'high-pri' }); // pri 0
 
@@ -55,7 +74,10 @@ describe('JobQueue.claim', () => {
     expect(claimed[0]!.status).toBe('running');
   });
 
-  test('respects maxParallel limit', async () => {
+  test('respects limit parameter', async () => {
+    await createTask('t1');
+    await createTask('t2');
+    await createTask('t3');
     await ctx.queue.enqueue({ type: 'code', taskId: 't1' });
     await ctx.queue.enqueue({ type: 'code', taskId: 't2' });
     await ctx.queue.enqueue({ type: 'code', taskId: 't3' });
@@ -63,22 +85,19 @@ describe('JobQueue.claim', () => {
     const first = await ctx.queue.claim(1);
     expect(first).toHaveLength(1);
 
-    // Already 1 running, maxParallel=2 → claim 1 more
+    // Claim up to 2 more (concurrency is handled by p-queue, not the queue)
     const second = await ctx.queue.claim(2);
-    expect(second).toHaveLength(1);
+    expect(second).toHaveLength(2);
   });
 
-  test('returns empty when nothing queued', async () => {
-    expect(await ctx.queue.claim(5)).toEqual([]);
-  });
-
-  test('returns empty when at max parallel', async () => {
+  test('skips already-running jobs', async () => {
     await ctx.queue.enqueue({ type: 'code' });
-    await ctx.queue.claim(1); // now 1 running
+    await ctx.queue.claim(1); // now running
 
     await ctx.queue.enqueue({ type: 'code' });
-    const claimed = await ctx.queue.claim(1); // max=1, already 1 running
-    expect(claimed).toEqual([]);
+    const claimed = await ctx.queue.claim(5);
+    // Only the new queued job is claimed, not the already-running one
+    expect(claimed).toHaveLength(1);
   });
 });
 
@@ -127,6 +146,8 @@ describe('JobQueue.cancel', () => {
 
 describe('JobQueue.cancelForTask', () => {
   test('cancels all queued jobs for a task', async () => {
+    await createTask('task-1');
+    await createTask('task-2');
     await ctx.queue.enqueue({ type: 'evaluate', taskId: 'task-1' });
     await ctx.queue.enqueue({ type: 'code', taskId: 'task-1' });
     await ctx.queue.enqueue({ type: 'code', taskId: 'task-2' });
@@ -142,6 +163,8 @@ describe('JobQueue.cancelForTask', () => {
 
 describe('JobQueue.list', () => {
   test('lists jobs with filters', async () => {
+    await createTask('t1');
+    await createTask('t2');
     await ctx.queue.enqueue({ type: 'evaluate', taskId: 't1' });
     await ctx.queue.enqueue({ type: 'code', taskId: 't2' });
 
@@ -176,6 +199,31 @@ describe('JobQueue.drain', () => {
 
     const queued = await ctx.queue.list({ status: 'queued' });
     expect(queued).toEqual([]);
+  });
+
+  test('emits queue.job.cancelled for each cancelled job', async () => {
+    await createTask('task-1');
+    await createTask('task-2');
+    const first = await ctx.queue.enqueue({ type: 'code', taskId: 'task-1' });
+    const second = await ctx.queue.enqueue({
+      type: 'evaluate',
+      taskId: 'task-2',
+    });
+
+    events = [];
+    const drained = await ctx.queue.drain();
+
+    expect(drained).toBe(2);
+    expect(events).toEqual([
+      {
+        type: 'queue.job.cancelled',
+        data: { jobId: first.id, type: 'code', taskId: 'task-1' },
+      },
+      {
+        type: 'queue.job.cancelled',
+        data: { jobId: second.id, type: 'evaluate', taskId: 'task-2' },
+      },
+    ]);
   });
 
   test('does not cancel running jobs', async () => {

@@ -1,7 +1,8 @@
+import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/types';
+import type { OrcaDrizzleDB } from '../db/connection';
 import type { JobQueue } from '../queue/queue';
 import type { InteractionStore } from '../store/interactions';
-import type { TaskStore } from '../store/tasks';
-import { INTERACTION_STATUSES, TASK_STATUSES } from '../types';
+import * as taskStore from '../store/tasks';
 
 interface RecoverySummary {
   interactionsFailed: number;
@@ -10,7 +11,7 @@ interface RecoverySummary {
 }
 
 export async function failInFlightForShutdown(
-  taskStore: TaskStore,
+  db: OrcaDrizzleDB,
   interactions: InteractionStore,
   log: (event: string, data?: Record<string, unknown>) => void = () => {},
 ): Promise<RecoverySummary> {
@@ -29,12 +30,11 @@ export async function failInFlightForShutdown(
     interactionsFailed += 1;
 
     if (item.taskId?.trim() && item.type === 'code') {
-      const task = await taskStore.get(item.taskId);
+      const task = await taskStore.getTask(db, item.taskId);
       if (task && task.status === TASK_STATUSES.running) {
-        const next = task.sessionId?.trim()
-          ? TASK_STATUSES.stopped
-          : TASK_STATUSES.failed;
-        await taskStore.updateStatus(task.id, next);
+        const sessionId = await interactions.getLatestSessionId(task.id);
+        const next = sessionId ? TASK_STATUSES.stopped : TASK_STATUSES.failed;
+        await taskStore.updateTask(db, undefined, task.id, { status: next });
         if (next === TASK_STATUSES.stopped) tasksStopped += 1;
         else tasksFailed += 1;
       }
@@ -47,12 +47,11 @@ export async function failInFlightForShutdown(
     });
   }
 
-  const runningTasks = await taskStore.listByStatus(TASK_STATUSES.running);
+  const runningTasks = await taskStore.listTasks(db, TASK_STATUSES.running);
   for (const task of runningTasks) {
-    const next = task.sessionId?.trim()
-      ? TASK_STATUSES.stopped
-      : TASK_STATUSES.failed;
-    await taskStore.updateStatus(task.id, next);
+    const sessionId = await interactions.getLatestSessionId(task.id);
+    const next = sessionId ? TASK_STATUSES.stopped : TASK_STATUSES.failed;
+    await taskStore.updateTask(db, undefined, task.id, { status: next });
     if (next === TASK_STATUSES.stopped) tasksStopped += 1;
     else tasksFailed += 1;
     log('shutdown.recovery.task.reset', {
@@ -73,7 +72,7 @@ export async function failInFlightForShutdown(
 }
 
 export async function runStartupRecovery(
-  taskStore: TaskStore,
+  db: OrcaDrizzleDB,
   interactions: InteractionStore,
   log: (event: string, data?: Record<string, unknown>) => void = () => {},
   queue?: JobQueue,
@@ -105,12 +104,11 @@ export async function runStartupRecovery(
     }
   } else {
     // Without queue: fall back to resetting task statuses directly
-    const runningTasks = await taskStore.listByStatus(TASK_STATUSES.running);
+    const runningTasks = await taskStore.listTasks(db, TASK_STATUSES.running);
     for (const task of runningTasks) {
-      const next = task.sessionId?.trim()
-        ? TASK_STATUSES.stopped
-        : TASK_STATUSES.failed;
-      await taskStore.updateStatus(task.id, next);
+      const sessionId = await interactions.getLatestSessionId(task.id);
+      const next = sessionId ? TASK_STATUSES.stopped : TASK_STATUSES.failed;
+      await taskStore.updateTask(db, undefined, task.id, { status: next });
 
       if (next === TASK_STATUSES.stopped) tasksStopped += 1;
       else tasksFailed += 1;
@@ -119,7 +117,7 @@ export async function runStartupRecovery(
         taskId: task.id,
         fromStatus: TASK_STATUSES.running,
         toStatus: next,
-        resumable: Boolean(task.sessionId?.trim()),
+        resumable: Boolean(sessionId),
       });
     }
   }

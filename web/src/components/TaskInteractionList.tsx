@@ -1,11 +1,9 @@
-import { INTERACTION_STATUSES } from '@orca/server/types';
-import { useCallback, useEffect, useState } from 'react';
+import * as Accordion from '@radix-ui/react-accordion';
+import { useMemo } from 'react';
 import { useTaskDetailContext } from '../context/TaskDetailContext';
-import { useTaskReviewsQuery } from '../hooks/queries';
-import { useInteractionStubsQuery } from '../hooks/useInteractions';
+import { useInteractionsQuery } from '../hooks/useInteractions';
 import { useMergeHandler } from '../hooks/useMergeHandler';
-import { usePlanEditor } from '../hooks/usePlanEditor';
-import { InteractionDetailProvider } from './InteractionDetailContext';
+import type { InteractionStub } from '../types';
 import { TaskInteractionItems } from './TaskInteractionItems';
 
 interface Props {
@@ -14,74 +12,50 @@ interface Props {
 }
 
 export function TaskInteractionList({ taskId, readOnly = false }: Props) {
-  const { task, tools, activeLogId, setActiveLogId, isOperationRunning } =
-    useTaskDetailContext();
+  const { task, tools, isOperationRunning } = useTaskDetailContext();
 
-  const stubsQuery = useInteractionStubsQuery(taskId);
-  const reviewsQuery = useTaskReviewsQuery(taskId);
-  const stubs = stubsQuery.data ?? [];
-  const reviews = reviewsQuery.data ?? [];
+  const { data: interactions, isLoading } = useInteractionsQuery(taskId);
 
-  const [expandedInteractions, setExpandedInteractions] = useState<Set<string>>(
-    new Set(),
-  );
-
-  const planEditor = usePlanEditor({ taskId, task, stubs, readOnly });
   const merge = useMergeHandler({
     taskId,
     taskStatus: task.status,
     isOperationRunning,
   });
 
-  const latestCompletedId =
-    [...stubs]
-      .reverse()
-      .find((item) => item.status === INTERACTION_STATUSES.completed)?.id ??
-    null;
-
-  useEffect(() => {
-    setExpandedInteractions(
-      latestCompletedId ? new Set([latestCompletedId]) : new Set(),
-    );
-  }, [latestCompletedId]);
-
-  const onToggleLog = useCallback(
-    (id: string) => setActiveLogId(activeLogId === id ? null : id),
-    [activeLogId, setActiveLogId],
+  const interactionStubs = useMemo<InteractionStub[]>(
+    () =>
+      (interactions ?? []).map((interaction) => {
+        const stub = interaction as InteractionStub;
+        return {
+          ...stub,
+          stepName: stub.stepName ?? undefined,
+          memoryCount: stub.memoryCount ?? undefined,
+          previousInteractionId: stub.previousInteractionId ?? undefined,
+          commitSha: stub.commitSha ?? undefined,
+          sessionId: stub.sessionId ?? undefined,
+        };
+      }),
+    [interactions],
   );
 
-  const toggleInteraction = (id: string) => {
-    setExpandedInteractions((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   return (
-    <InteractionDetailProvider value={{ activeLogId, onToggleLog }}>
-      <div className="flex flex-col gap-4 rounded-lg bg-surface p-4">
-        {stubsQuery.isLoading && (
-          <div className="text-xs">Loading interactions...</div>
-        )}
-        {!stubsQuery.isLoading && stubs.length === 0 && (
-          <div className="text-xs">No interactions yet.</div>
-        )}
-        {!stubsQuery.isLoading && stubs.length > 0 && (
-          <TaskInteractionItems
-            stubs={stubs}
-            reviews={reviews}
-            task={task}
-            tools={tools}
-            readOnly={readOnly}
-            expandedInteractions={expandedInteractions}
-            onToggleInteraction={toggleInteraction}
-            planEditor={planEditor}
-            merge={merge}
-          />
-        )}
-      </div>
-    </InteractionDetailProvider>
+    <Accordion.Root
+      type="multiple"
+      className="flex flex-col gap-4 rounded-lg bg-surface p-4"
+    >
+      {isLoading && <div className="text-xs">Loading interactions...</div>}
+      {!isLoading && interactions?.length === 0 && (
+        <div className="text-xs">No interactions yet.</div>
+      )}
+      {!isLoading && interactionStubs.length > 0 && (
+        <TaskInteractionItems
+          stubs={interactionStubs}
+          task={task}
+          tools={tools}
+          readOnly={readOnly}
+          merge={merge}
+        />
+      )}
+    </Accordion.Root>
   );
 }

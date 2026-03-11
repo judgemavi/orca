@@ -1,11 +1,5 @@
 import type { ProposedTask } from '../types';
 
-interface PlanSection {
-  key: string;
-  title: string;
-  content: string;
-}
-
 interface ParsedEvaluation {
   complexity?: string;
   needsBreakdown: boolean;
@@ -17,16 +11,6 @@ interface ParsedBreakdown {
   proposed: ProposedTask[];
   accepted?: boolean;
   rejected?: boolean;
-}
-
-export function parseJSONText(text: string): unknown | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -55,91 +39,6 @@ function asNumberArray(value: unknown): number[] {
     if (Number.isFinite(parsed)) out.push(Math.trunc(parsed as number));
   }
   return out;
-}
-
-function canonicalSectionTitle(rawTitle: string): string {
-  const normalized = rawTitle
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]+/g, '');
-
-  if (normalized === 'approach' || normalized === 'strategy') return 'Approach';
-  if (normalized === 'files' || normalized === 'file changes') return 'Files';
-  if (normalized === 'steps' || normalized === 'implementation steps') {
-    return 'Steps';
-  }
-  if (normalized === 'edge cases' || normalized === 'edge case') {
-    return 'Edge Cases';
-  }
-  if (normalized === 'tests' || normalized === 'testing') return 'Tests';
-
-  return rawTitle.trim();
-}
-
-function sectionSortWeight(title: string): number {
-  switch (title.toLowerCase()) {
-    case 'approach':
-      return 0;
-    case 'files':
-      return 1;
-    case 'steps':
-      return 2;
-    case 'edge cases':
-      return 3;
-    case 'tests':
-      return 4;
-    default:
-      return 100;
-  }
-}
-
-export function parsePlanSections(text: string): PlanSection[] {
-  const trimmed = text.trim();
-  if (!trimmed) return [];
-
-  const source = trimmed.replace(/\r\n/g, '\n');
-  const headingRe = /^##\s+(.+)$/gm;
-  const headings: Array<{
-    title: string;
-    headingStart: number;
-    contentStart: number;
-  }> = [];
-
-  for (const match of source.matchAll(headingRe)) {
-    const matchText = match[0];
-    const title = (match[1] ?? '').trim();
-    const index = match.index ?? -1;
-    if (index < 0 || !matchText) continue;
-    headings.push({
-      title,
-      headingStart: index,
-      contentStart: index + matchText.length,
-    });
-  }
-
-  if (headings.length === 0) {
-    return [{ key: 'plan', title: 'Plan', content: source }];
-  }
-
-  const parsed: PlanSection[] = headings
-    .map((heading, index) => {
-      const nextHeadingStart =
-        index + 1 < headings.length
-          ? headings[index + 1]?.headingStart
-          : source.length;
-      const content = source
-        .slice(heading.contentStart, nextHeadingStart)
-        .trim();
-      const title = canonicalSectionTitle(heading.title);
-      return {
-        key: `${title.toLowerCase().replace(/\s+/g, '_')}-${index}`,
-        title,
-        content: content || '_No details provided._',
-      };
-    })
-    .sort((a, b) => sectionSortWeight(a.title) - sectionSortWeight(b.title));
-
-  return parsed;
 }
 
 export function parseEvaluationPayload(

@@ -6,17 +6,16 @@ import {
   useInteractionStream,
   useInteractionsQuery,
 } from '../hooks/useInteractions';
+import { formatDuration } from '../lib/format';
+import { Button } from './Button';
 import { LogViewer } from './LogViewer';
 
 interface Props {
   taskId: string;
   interactionId: string;
-  onClose: () => void;
 }
 
-import { formatCost, formatDuration, formatTokens } from '../lib/format';
-
-export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
+export function InteractionLogPanel({ taskId, interactionId }: Props) {
   const interactionsQuery = useInteractionsQuery(taskId);
 
   const selectedInteraction = useMemo(
@@ -52,12 +51,10 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
     : 'Interaction Log';
 
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
+    <Dialog.Root>
+      <Dialog.Trigger asChild>
+        <Button className="px-2 py-0.5 text-xs">log</Button>
+      </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-100 bg-black/60 backdrop-blur-sm" />
         <Dialog.Content className="fixed inset-0 z-100 flex items-center justify-center p-4">
@@ -97,13 +94,6 @@ export function InteractionLogPanel({ taskId, interactionId, onClose }: Props) {
             </div>
 
             <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border-subtle px-5 py-3 text-xs text-muted">
-              <span>
-                Tokens: {formatTokens(selectedInteraction?.inputTokens)} in /{' '}
-                {formatTokens(selectedInteraction?.outputTokens)} out
-              </span>
-              <span>
-                Cost: {formatCost(selectedInteraction?.estimatedCost)}
-              </span>
               <span>
                 Duration:{' '}
                 {formatDuration(

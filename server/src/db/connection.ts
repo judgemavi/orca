@@ -1,10 +1,11 @@
 import { Database } from 'bun:sqlite';
-import { sql } from 'drizzle-orm';
-import { type BunSQLiteDatabase, drizzle } from 'drizzle-orm/bun-sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { drizzle, type SQLiteBunDatabase } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import * as schema from './schema';
 
-export type OrcaDrizzleDB = BunSQLiteDatabase<typeof schema>;
+export type OrcaDrizzleDB = SQLiteBunDatabase<typeof schema>;
 
 interface OpenDatabaseOptions {
   repoDir: string;
@@ -23,17 +24,16 @@ export function openDatabase(options: OpenDatabaseOptions): DatabaseConnection {
     options.migrationsFolder ??
     new URL('../../drizzle', import.meta.url).pathname;
 
+  ensureDatabaseParentDir(dbPath);
+
   const sqlite = new Database(dbPath, { create: true });
   sqlite.exec('PRAGMA journal_mode = WAL');
   sqlite.exec('PRAGMA busy_timeout = 5000');
   sqlite.exec('PRAGMA foreign_keys = ON');
 
-  const db = drizzle(sqlite, { schema });
+  const db = drizzle({ client: sqlite, schema });
 
   migrate(db, { migrationsFolder });
-
-  // Change-tracking triggers (drizzle can't generate these)
-  createChangelogTriggers(db);
 
   return {
     db,
@@ -43,34 +43,10 @@ export function openDatabase(options: OpenDatabaseOptions): DatabaseConnection {
   };
 }
 
-const TRACKED_TABLES = [
-  { table: 'tasks', idCol: 'id' },
-  { table: 'task_interactions', idCol: 'id' },
-  { table: 'task_reviews', idCol: 'id' },
-  { table: 'jobs', idCol: 'id' },
-  { table: 'memory_entries', idCol: 'id' },
-  { table: 'config', idCol: 'key' },
-] as const;
-
-function createChangelogTriggers(db: OrcaDrizzleDB) {
-  for (const { table, idCol } of TRACKED_TABLES) {
-    for (const action of ['insert', 'update', 'delete'] as const) {
-      const ref = action === 'delete' ? 'OLD' : 'NEW';
-      const name = `${table}_after_${action}`;
-      const timing =
-        action === 'delete'
-          ? 'AFTER DELETE'
-          : action === 'insert'
-            ? 'AFTER INSERT'
-            : 'AFTER UPDATE';
-      db.run(
-        sql.raw(`
-        CREATE TRIGGER IF NOT EXISTS ${name} ${timing} ON ${table}
-        BEGIN
-          INSERT INTO _changelog(table_name, row_id, action) VALUES ('${table}', ${ref}.${idCol}, '${action}');
-        END
-      `),
-      );
-    }
+function ensureDatabaseParentDir(dbPath: string) {
+  if (!dbPath || dbPath === ':memory:' || dbPath.startsWith('file:')) {
+    return;
   }
+
+  mkdirSync(dirname(dbPath), { recursive: true });
 }

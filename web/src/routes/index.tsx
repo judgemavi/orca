@@ -21,6 +21,18 @@ import type { Task } from '../types';
 const columnHelper = createColumnHelper<Task>();
 
 const columns = [
+  columnHelper.accessor('id', {
+    header: 'ID',
+    cell: (info) => (
+      <Link
+        to="/$taskId"
+        className="block font-mono text-[11px]"
+        params={{ taskId: info.getValue() }}
+      >
+        {info.getValue()}
+      </Link>
+    ),
+  }),
   columnHelper.accessor('title', {
     header: 'Task',
     cell: (info) => info.getValue(),
@@ -31,7 +43,25 @@ const columns = [
   }),
   columnHelper.accessor('dependsOn', {
     header: 'Dependencies',
-    cell: (info) => info.getValue(),
+    cell: (info) => {
+      const deps = info.getValue();
+      if (!deps || deps.length === 0)
+        return <span className="text-muted">—</span>;
+      return (
+        <div className="flex flex-col gap-0.5">
+          {deps.map((depId) => (
+            <Link
+              key={depId}
+              to="/$taskId"
+              params={{ taskId: depId }}
+              className="font-mono text-[11px] text-accent hover:underline"
+            >
+              {depId}
+            </Link>
+          ))}
+        </div>
+      );
+    },
   }),
   columnHelper.accessor('createdAt', {
     header: 'Created',
@@ -97,20 +127,7 @@ function Page() {
             <TableRow key={row.id}>
               {row.getVisibleCells().map((cell) => (
                 <TableCell key={cell.id}>
-                  {cell.column.id === 'title' ? (
-                    <Link
-                      to="/$taskId"
-                      className="block"
-                      params={{ taskId: row.original.id }}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </Link>
-                  ) : (
-                    flexRender(cell.column.columnDef.cell, cell.getContext())
-                  )}
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </TableCell>
               ))}
             </TableRow>

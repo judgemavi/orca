@@ -1,68 +1,16 @@
 import type { MemoryCategory, MemorySourceType } from './constants';
-
 import type { MemoryEntry } from './models';
-export interface InteractionConfig {
-  tool: string;
-  model: string;
-  autoRun: boolean;
-}
-
-export type InteractionType =
-  | 'evaluate'
-  | 'breakdown'
-  | 'plan'
-  | 'code'
-  | 'review'
-  | 'merge'
-  | 'retro'
-  | 'explore';
-
-export const INTERACTION_TYPES: InteractionType[] = [
+// System interaction types — not workflow steps, system-controlled
+export const SYSTEM_INTERACTION_TYPES = [
   'evaluate',
   'breakdown',
-  'plan',
-  'code',
-  'review',
   'merge',
   'retro',
   'explore',
-];
+] as const;
+export type SystemInteractionType = (typeof SYSTEM_INTERACTION_TYPES)[number];
 
-export type AutoRunOverrides = Partial<Record<InteractionType, boolean>>;
-
-export interface Config {
-  project: {
-    name: string;
-    integrationBranch: string;
-    worktreeDir: string;
-  };
-  tools: string[];
-  interactions: Record<InteractionType, InteractionConfig>;
-  orchestrator: {
-    tool: string;
-    model: string;
-    mode: 'cli' | 'mcp';
-  };
-  workers: { maxParallel: number };
-  monitor: {
-    stuckCheckIntervalMs: number;
-    maxStuckCycles: number;
-    conflictCheckIntervalMs: number;
-  };
-  postMerge?: {
-    enabled?: boolean;
-    retro?: boolean;
-    memorySync?: boolean;
-  };
-  cost?: {
-    budgetUsd?: number;
-  };
-  embeddings?: {
-    provider: string;
-    [key: string]: unknown;
-  };
-  logging: { level: string; file: string; maxSize: string };
-}
+export type AutoRunOverrides = Record<string, boolean>;
 
 export interface ModelInfo {
   id: string;
@@ -123,7 +71,6 @@ export interface ProjectStatus {
   contextExists: boolean;
   contextStale: boolean;
   contextAgeMinutes: number;
-  totalCost: number;
   runningOperations: number;
   lastSyncedCommit: string;
   currentCommit: string;

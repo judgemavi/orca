@@ -6,9 +6,9 @@ import {
   refreshMemoryEntries,
   syncMemoryWithGit,
 } from '../../domain/memory-sync';
+import { memoryRefreshSchema, memoryUpdateSchema } from '../../schemas/memory';
 import type { MemoryStore } from '../../store/memory';
-import type { MemoryCategory, MemorySourceType } from '../../types';
-import { memoryRefreshSchema, memoryUpdateSchema } from '../schemas';
+import type { MemoryCategory, MemorySourceType } from '../../types/constants';
 import { asBoolean } from './utils';
 
 interface MemoryListQuery {

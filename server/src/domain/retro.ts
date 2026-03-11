@@ -1,12 +1,18 @@
 import { createHash } from 'node:crypto';
+import type { OrcaDrizzleDB } from '../db/connection';
+import type { Config, TaskEntry } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import { loadPrompt } from '../prompts/loader';
+import { gitRun } from '../shared/git';
 import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
-import type { TaskStore } from '../store/tasks';
-import type { Config, MemoryCategory, MemoryEntry, Task } from '../types';
+import * as taskStore from '../store/tasks';
+import type { MemoryCategory } from '../types/constants';
+import type { MemoryEntry } from '../types/models';
 import { runTool } from '../worker/worker';
+import { retroSchema } from '../workflow/schema';
+import type { WorkflowStore } from '../workflow/store';
 import { extractJSONArray, formatTemplate, resolveExecution } from './llm';
 
 interface RetroSummary {
@@ -33,11 +39,12 @@ interface RetroResult {
 
 interface RetroDeps {
   repoDir: string;
-  taskStore: TaskStore;
+  db: OrcaDrizzleDB;
   interactionStore: InteractionStore;
   memoryStore: MemoryStore;
   config?: Config;
   registry?: ToolPluginRegistry;
+  workflowStore?: WorkflowStore;
   toolOverride?: string;
   modelOverride?: string;
 }
@@ -46,7 +53,7 @@ export async function runRetro(
   taskID: string,
   deps: RetroDeps,
 ): Promise<RetroResult> {
-  const task = await deps.taskStore.get(taskID);
+  const task = await taskStore.getTask(deps.db, taskID);
   if (!task) throw new Error(`task not found: ${taskID}`);
 
   const execution = resolveExecution({
@@ -54,7 +61,6 @@ export async function runRetro(
     registry: deps.registry,
     toolOverride: deps.toolOverride ?? '',
     modelOverride: deps.modelOverride ?? '',
-    interactionType: 'retro',
   });
 
   if (!execution) {
@@ -90,18 +96,29 @@ export async function runRetro(
   });
 
   try {
+    const retroSchemaPath =
+      deps.workflowStore?.getSystemSchemaPath('retro') ?? undefined;
+
     const { result, interactionId } = await runInteraction(
       {
         taskId: taskID,
-        taskRunId: `retro-${taskID.slice(0, 8)}`,
         type: 'retro',
         prompt,
         toolOverride: deps.toolOverride ?? '',
         modelOverride: deps.modelOverride ?? '',
         exitErrorLabel: 'retro',
+        jsonSchema: retroSchema,
+        schemaPath: retroSchemaPath,
       },
       async (output, context) => {
-        const entries = extractJSONArray<RetroMemoryEntry>(output) ?? [];
+        const structured = context.runResult.structuredOutput;
+        const fromSchema = Array.isArray(structured?.entries)
+          ? (structured.entries as RetroMemoryEntry[])
+          : Array.isArray(structured)
+            ? (structured as RetroMemoryEntry[])
+            : null;
+        const entries =
+          fromSchema ?? extractJSONArray<RetroMemoryEntry>(output) ?? [];
         const normalized = normalizeRetroEntries(entries);
 
         for (const entry of normalized) {
@@ -140,9 +157,12 @@ export async function runRetro(
         };
       },
       (parsed) => ({
-        qualityJson: JSON.stringify({
-          entriesCreated: parsed.memoryEntries.length,
-          summary: parsed.summary,
+        output: JSON.stringify({
+          result: 'completed',
+          data: {
+            entriesCreated: parsed.memoryEntries.length,
+            summary: parsed.summary,
+          },
         }),
       }),
     );
@@ -163,6 +183,22 @@ export async function runRetro(
   }
 }
 
+async function reconstructDiff(
+  repoDir: string,
+  commitSha?: string,
+): Promise<string> {
+  if (!commitSha) return '';
+  try {
+    const result = await gitRun(repoDir, [
+      'diff',
+      `${commitSha}~1..${commitSha}`,
+    ]);
+    return result.exitCode === 0 ? result.stdout : '';
+  } catch {
+    return '';
+  }
+}
+
 function errorInteractionID(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') return undefined;
   const id = (error as { interactionId?: unknown }).interactionId;
@@ -171,7 +207,9 @@ function errorInteractionID(error: unknown): string | undefined {
   return normalized || undefined;
 }
 
-function buildRetroSummary(task: Pick<Task, 'title' | 'status'>): RetroSummary {
+function buildRetroSummary(
+  task: Pick<TaskEntry, 'title' | 'status'>,
+): RetroSummary {
   return {
     highlights: [
       `Task ${task.title.trim() || 'untitled'} reached status ${task.status}.`,
@@ -192,58 +230,82 @@ interface RetroContext {
 
 async function collectRetroContext(
   deps: RetroDeps,
-  task: Task,
+  task: TaskEntry,
 ): Promise<RetroContext> {
   const interactions = await deps.interactionStore.list(task.id);
 
-  const planDiffs = interactions
-    .filter((i) => i.type === 'plan' && i.diff)
-    .map((i) => i.diff!)
-    .join('\n---\n');
+  // Reconstruct all diffs from commitSha on-demand
+  const planDiffParts: string[] = [];
+  for (const ix of interactions.filter((i) => i.type === 'context')) {
+    const diff = await reconstructDiff(deps.repoDir, ix.commitSha ?? undefined);
+    if (diff) planDiffParts.push(diff);
+  }
+  const planDiffs = planDiffParts.join('\n---\n');
 
-  const runDiffs = interactions
-    .filter((i) => i.type === 'code' && i.diff)
-    .map((i) => i.diff!)
-    .join('\n---\n');
+  const codeDiffs: string[] = [];
+  for (const ix of interactions.filter((i) => i.type === 'code')) {
+    const diff = await reconstructDiff(deps.repoDir, ix.commitSha ?? undefined);
+    if (diff) codeDiffs.push(diff);
+  }
+  const runDiffs = codeDiffs.join('\n---\n');
 
-  const reviews = await deps.taskStore.listReviews(task.id);
-  const reviewFeedback = reviews
-    .map((r) => r.feedback?.trim())
+  const reviewFeedback = interactions
+    .filter((i) => i.type === 'decision' && i.output)
+    .map((i) => {
+      try {
+        const parsed = JSON.parse(i.output!) as {
+          data?: { feedback?: string };
+        };
+        return parsed.data?.feedback?.trim() ?? '';
+      } catch {
+        return '';
+      }
+    })
     .filter(Boolean)
     .join('\n---\n');
 
-  const planReviewFeedback = reviews
-    .filter(
-      (r) =>
-        (r as any).type === 'plan' ||
-        r.feedback?.toLowerCase().includes('plan'),
-    )
-    .map((r) => r.feedback?.trim())
+  const planReviewFeedback = interactions
+    .filter((i) => i.output)
+    .map((i) => {
+      try {
+        const parsed = JSON.parse(i.output!) as {
+          data?: { feedback?: string };
+        };
+        const fb = parsed.data?.feedback?.trim() ?? '';
+        return fb.toLowerCase().includes('plan') ? fb : '';
+      } catch {
+        return '';
+      }
+    })
     .filter(Boolean)
     .join('\n---\n');
 
-  const planInteractions = interactions.filter((i) => i.type === 'plan');
+  const planInteractions = interactions.filter((i) => i.type === 'context');
   const usedMemoryIDs: string[] = [];
   const usedProvenanceHashes: string[] = [];
   const usedMemoryContent: string[] = [];
 
   for (const pi of planInteractions) {
-    if (!pi.qualityJson) continue;
+    if (!pi.output) continue;
     try {
-      const parsed = JSON.parse(pi.qualityJson) as {
-        memory?: {
-          entries?: Array<{
-            id?: string;
-            provenanceHash?: string;
-            content?: string;
-          }>;
+      const parsed = JSON.parse(pi.output) as {
+        result?: string;
+        data?: {
+          memory?: {
+            entries?: Array<{
+              id?: string;
+              provenanceHash?: string;
+              content?: string;
+            }>;
+          };
+          usedMemoryIds?: string[];
         };
-        usedMemoryIds?: string[];
       };
-      if (parsed.usedMemoryIds) {
-        usedMemoryIDs.push(...parsed.usedMemoryIds);
+      const data = parsed.data ?? {};
+      if (data.usedMemoryIds) {
+        usedMemoryIDs.push(...data.usedMemoryIds);
       }
-      for (const entry of parsed.memory?.entries ?? []) {
+      for (const entry of data.memory?.entries ?? []) {
         if (entry.id) usedMemoryIDs.push(entry.id);
         if (entry.provenanceHash)
           usedProvenanceHashes.push(entry.provenanceHash);
@@ -265,7 +327,7 @@ async function collectRetroContext(
   };
 }
 
-export function retroProvenanceHash(
+function retroProvenanceHash(
   planDiffs: string,
   runDiffs: string,
   reviewFeedback: string,
@@ -280,7 +342,7 @@ export function retroProvenanceHash(
 
 async function buildRetroPrompt(
   deps: RetroDeps,
-  task: Task,
+  task: TaskEntry,
   ctx: RetroContext,
 ): Promise<string> {
   const template = await loadPrompt(deps.repoDir, 'retro');
@@ -303,7 +365,7 @@ async function buildRetroPrompt(
 
 async function loadRelatedMemory(
   memoryStore: MemoryStore,
-  task: Task,
+  task: Pick<TaskEntry, 'title'>,
 ): Promise<string> {
   const entries = await memoryStore
     .search(task.title, 10)
@@ -317,7 +379,7 @@ async function loadRelatedMemory(
     .join('\n');
 }
 
-export function normalizeRetroEntries(
+function normalizeRetroEntries(
   entries: RetroMemoryEntry[],
 ): RetroMemoryEntry[] {
   const validCategories = new Set([

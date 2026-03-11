@@ -1,3 +1,6 @@
+import { TASK_STATUSES } from '@orca/types';
+import type { EventSink } from '../api/ws';
+import type { OrcaDrizzleDB } from '../db/connection';
 import {
   type MergeResult,
   mergeTaskWithGit,
@@ -8,34 +11,38 @@ import {
   triggerPostMergeHooks,
 } from '../domain/post-merge';
 import type { ToolPluginRegistry } from '../plugin/registry';
-import { unblockDependents } from '../queue/chain';
 import type { JobQueue } from '../queue/queue';
-import type { ConfigStore } from '../store/config';
+import * as configStore from '../store/config';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
-import type { TaskStore } from '../store/tasks';
-import { TASK_STATUSES } from '../types';
+import * as taskStore from '../store/tasks';
+import {
+  resumeUnblockedTask,
+  type WorkflowEngineDeps,
+} from '../workflow/engine';
+import type { WorkflowStore } from '../workflow/store';
 
 interface MergeWorkflowDeps {
   repoDir: string;
-  taskStore: TaskStore;
-  configStore: ConfigStore;
+  db: OrcaDrizzleDB;
+  sink?: EventSink;
   interactions: InteractionStore;
   memoryStore: MemoryStore;
   registry?: ToolPluginRegistry;
-  sink?: PostMergeEventSink;
+  postMergeSink?: PostMergeEventSink;
   queue?: JobQueue;
+  workflowStore?: WorkflowStore;
 }
 
 export async function mergeTask(
   taskID: string,
   deps: MergeWorkflowDeps,
 ): Promise<MergeResult> {
-  const config = await deps.configStore.load();
+  const config = await configStore.loadConfig(deps.db);
   const baseDeps = {
     repoDir: deps.repoDir,
     integrationBranch: config.project.integrationBranch,
-    taskStore: deps.taskStore,
+    db: deps.db,
   };
 
   const result = deps.registry
@@ -49,28 +56,42 @@ export async function mergeTask(
     : await mergeTaskWithGit(taskID, baseDeps);
 
   if (result.status !== TASK_STATUSES.merged) {
-    await deps.taskStore.updateStatus(taskID, TASK_STATUSES.failed);
+    await taskStore.updateTaskStatus(
+      deps.db,
+      deps.sink,
+      taskID,
+      TASK_STATUSES.failed,
+    );
     return result;
   }
 
-  await deps.taskStore.updateStatus(taskID, TASK_STATUSES.merged);
+  await taskStore.updateTaskStatus(
+    deps.db,
+    deps.sink,
+    taskID,
+    TASK_STATUSES.merged,
+  );
   triggerPostMergeHooks(taskID, {
     repoDir: deps.repoDir,
-    taskStore: deps.taskStore,
+    db: deps.db,
+    sink: deps.postMergeSink,
     interactions: deps.interactions,
     memoryStore: deps.memoryStore,
-    configStore: deps.configStore,
     registry: deps.registry,
-    sink: deps.sink,
     queue: deps.queue,
   });
 
-  if (deps.queue) {
-    await unblockDependents(taskID, {
-      configStore: deps.configStore,
-      taskStore: deps.taskStore,
+  if (deps.queue && deps.workflowStore) {
+    const eDeps: WorkflowEngineDeps = {
+      db: deps.db,
+      sink: deps.sink,
       queue: deps.queue,
-    });
+      workflowStore: deps.workflowStore,
+    };
+    const unblocked = await taskStore.getUnblockedDependents(deps.db, taskID);
+    for (const task of unblocked) {
+      await resumeUnblockedTask(task, eDeps);
+    }
   }
 
   return result;

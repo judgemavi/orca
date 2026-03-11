@@ -4,10 +4,11 @@ import type { OrcaDrizzleDB } from '../../db/connection';
 import type { EmbeddingRegistry } from '../../embedding/registry';
 import type { EmbeddingConfig } from '../../embedding/types';
 import { VectorStore } from '../../embedding/vector-store';
+import { configPatchSchema } from '../../schemas/config';
 import { log } from '../../shared/logger';
-import type { ConfigStore } from '../../store/config';
+import * as configStore from '../../store/config';
 import type { MemoryStore } from '../../store/memory';
-import { configPatchSchema } from '../schemas';
+import type { EventSink } from '../ws';
 import { killActivePTY } from './orchestrator';
 
 function embeddingConfigChanged(
@@ -25,17 +26,21 @@ function embeddingConfigChanged(
 }
 
 export function configRoutes(
-  configStore: ConfigStore,
+  db: OrcaDrizzleDB,
   embeddingRegistry: EmbeddingRegistry,
   memoryStore: MemoryStore,
-  db: OrcaDrizzleDB,
+  sink?: EventSink,
 ) {
   return new Hono()
-    .get('/config', async (c) => c.json(await configStore.load()))
-    .put('/config', zValidator('json', configPatchSchema), async (c) => {
+    .get('/config', async (c) => c.json(await configStore.loadConfig(db)))
+    .get('/config/embedding-providers', async (c) => {
+      return c.json(embeddingRegistry.providers());
+    })
+    .patch('/config', zValidator('json', configPatchSchema), async (c) => {
       const patch = c.req.valid('json');
-      const prevConfig = await configStore.load();
-      const updated = await configStore.patch(patch);
+      const prevConfig = await configStore.loadConfig(db);
+      await configStore.patchConfig(db, sink, patch);
+      const updated = await configStore.loadConfig(db);
       if (patch.orchestrator) {
         const killed = killActivePTY();
         if (killed) log.info('orchestrator config changed, killed active PTY');
@@ -44,11 +49,10 @@ export function configRoutes(
         patch.embeddings !== undefined &&
         embeddingConfigChanged(prevConfig.embeddings, updated.embeddings)
       ) {
-        // Re-initialize embedding provider and re-embed in background
         queueMicrotask(async () => {
           try {
             if (!updated.embeddings?.provider) {
-              memoryStore.setVectorStore(null as any);
+              memoryStore.setVectorStore(null);
               log.info('embeddings disabled');
               return;
             }
@@ -67,8 +71,5 @@ export function configRoutes(
         });
       }
       return c.json(updated);
-    })
-    .get('/config/embedding-providers', (c) => {
-      return c.json(embeddingRegistry.providers());
     });
 }

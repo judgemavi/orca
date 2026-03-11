@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { EmbeddingRegistry } from '../../src/embedding/registry';
 import { buildRoutes } from '../../src/api/routes';
+import { WorkflowStore } from '../../src/workflow/store';
 import { type E2EEnv, createE2EEnv } from '../helpers/e2e-env';
 
 let env: E2EEnv;
@@ -11,7 +12,7 @@ const api = (path: string, init?: RequestInit) =>
 
 const json = async (path: string, init?: RequestInit) => {
   const res = await api(path, init);
-  return { status: res.status, body: await res.json() };
+  return { status: res.status, body: (await res.json()) as Record<string, any> };
 };
 
 const post = (path: string, data: unknown) =>
@@ -42,8 +43,6 @@ beforeEach(async () => {
   app = buildRoutes({
     db: env.conn.db,
     repoDir: env.repoDir,
-    taskStore: env.taskStore,
-    configStore: env.configStore,
     interactionStore: env.interactionStore,
     memoryStore: env.memoryStore,
     registry: env.registry,
@@ -51,6 +50,7 @@ beforeEach(async () => {
     executor: env.executor,
     eventSink: env.sink,
     queue: env.queue,
+    workflowStore: new WorkflowStore(),
   });
 });
 
@@ -141,9 +141,10 @@ describe('task creation with deps', () => {
     expect(status).toBe(201);
     expect(body.dependsOn).toContain(dep.id);
 
-    // Should NOT auto-enqueue (has deps)
+    // Evaluate is always enqueued (deps gate later workflow steps, not evaluate)
     const jobs = await env.queue.list({ taskId: body.id });
-    expect(jobs.length).toBe(0);
+    expect(jobs.length).toBe(1);
+    expect(jobs[0]!.type).toBe('evaluate');
   });
 
   test('POST /tasks with autoRunOverrides persists them', async () => {
@@ -166,13 +167,13 @@ describe('workflow endpoints', () => {
     expect(status).toBe(400);
   });
 
-  test('POST /tasks/:id/request-changes requires review status', async () => {
-    const task = await env.taskStore.create({ title: 'Not in review' });
+  test('POST /tasks/:id/request-changes requires current step', async () => {
+    const task = await env.taskStore.create({ title: 'No step' });
     const { status, body } = await post(`/tasks/${task.id}/request-changes`, {
       feedback: 'fix it',
     });
     expect(status).toBe(400);
-    expect(body.error).toContain('review');
+    expect(body.error).toContain('no current step');
   });
 
   test('POST /tasks/:id/request-changes requires feedback', async () => {
@@ -194,11 +195,11 @@ describe('workflow endpoints', () => {
     expect(body.error).toContain('no pending question');
   });
 
-  test('POST /tasks/:id/ai-review on non-review task returns 400', async () => {
-    const task = await env.taskStore.create({ title: 'Not review' });
-    const { status, body } = await post(`/tasks/${task.id}/ai-review`, {});
+  test('POST /tasks/:id/step/run on task without current step returns 400', async () => {
+    const task = await env.taskStore.create({ title: 'No step' });
+    const { status, body } = await post(`/tasks/${task.id}/step/run`, {});
     expect(status).toBe(400);
-    expect(body.error).toContain('review');
+    expect(body.error).toContain('no current step');
   });
 });
 
@@ -226,18 +227,13 @@ describe('interaction query filtering', () => {
 // Config: PUT /config persists and affects subsequent reads
 // ---------------------------------------------------------------------------
 describe('config persistence', () => {
-  test('PUT /config patches and subsequent GET reflects changes', async () => {
-    const { status } = await put('/config', {
-      interactions: {
-        code: { tool: 'claude', model: 'custom-model', autoRun: false },
-      },
+  test('PATCH /config patches and subsequent GET reflects changes', async () => {
+    const { status } = await patchReq('/config', {
+      autoRun: false,
     });
     expect(status).toBe(200);
 
     const { body } = await json('/config');
-    expect(body.interactions.code.model).toBe('custom-model');
-    expect(body.interactions.code.autoRun).toBe(false);
-    // Other interaction types should remain unchanged
-    expect(body.interactions.evaluate.autoRun).toBe(true);
+    expect(body.autoRun).toBe(false);
   });
 });

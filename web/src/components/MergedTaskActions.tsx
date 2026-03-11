@@ -1,4 +1,3 @@
-import { useTaskDetailContext } from '../context/TaskDetailContext';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { Button } from './Button';
 import { TaskActionsLayout } from './TaskActionsLayout';
@@ -8,8 +7,7 @@ interface Props {
 }
 
 export function MergedTaskActions({ onClose }: Props) {
-  const { task } = useTaskDetailContext();
-  const actions = useTaskActions(task);
+  const actions = useTaskActions();
 
   return (
     <TaskActionsLayout

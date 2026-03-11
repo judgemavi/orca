@@ -38,22 +38,17 @@ Used provenance hashes:
 
 ## Instructions
 
-Produce a JSON array of memory entries. Each item must follow:
-{"content": string, "category": "pattern"|"pitfall"|"preference"|"convention", "tags": string[], "confidence": float, "supersedes"?: string, "file_paths"?: string[]}
-
-Example response:
-[{"content":"Validate config paths before writing files","category":"pitfall","tags":["config","validation"],"confidence":0.85}]
+Produce memory entries from this completed task. Each entry should capture a durable, reusable engineering insight.
 
 Rules:
-- Output JSON array only. No markdown fences. No extra text.
 - `confidence` must be between 0.0 and 1.0.
 - Keep each `content` concrete and reusable across similar tasks.
 - `tags` should be short, lowercase, and specific.
-- Include relevant `file_paths` that this memory applies to. Use repository-root-relative paths only. Extract these from the diffs above — include paths that are semantically relevant to the insight, not every file touched.
-- Entries are stored with source_type="retro" and file_paths are validated against tracked git files.
-- Return `[]` when there is no useful memory to add.
+- Include relevant `filePaths` that this memory applies to. Use repository-root-relative paths only. Extract these from the diffs above — include paths that are semantically relevant to the insight, not every file touched.
+- Entries are stored with source_type="retro" and filePaths are validated against tracked git files.
+- Return an empty array when there is no useful memory to add.
 
 Do not rephrase existing memory:
 - Do not restate ideas already represented by the listed used memory IDs or used provenance hashes.
 - Emit only net-new insights, or stronger corrections of outdated memory.
-- Set `supersedes` only when the new item intentionally replaces an existing entry ID.
+- Set `supersedes` only when the new item intentionally replaces an existing entry ID. Set to null otherwise.

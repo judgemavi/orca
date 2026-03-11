@@ -1,4 +1,5 @@
-import { defaultConfig, resolveModel, resolveTool } from '../config/config';
+import { resolveModel, resolveTool } from '../config/config';
+import type { Config } from '../db/schema';
 import {
   fallbackToolPluginRegistry,
   type ToolPluginRegistry,
@@ -6,14 +7,12 @@ import {
 } from '../plugin/registry';
 import type { ToolPlugin, ToolPluginEvent } from '../plugin/types';
 import { camelizeKeys } from '../shared/camelize';
-import type { Config } from '../types';
 
 interface ResolveExecutionInput {
   config?: Config;
   registry?: ToolPluginRegistry;
   toolOverride?: string;
   modelOverride?: string;
-  interactionType?: string;
 }
 
 interface ResolvedExecution {
@@ -27,18 +26,13 @@ interface ResolvedExecution {
 export function resolveExecution(
   input: ResolveExecutionInput,
 ): ResolvedExecution | null {
-  const config = input.config ?? defaultConfig();
+  const config = input.config;
+  if (!config) return null;
   const registry = input.registry ?? fallbackToolPluginRegistry();
   const toolOverride = input.toolOverride ?? '';
   const modelOverride = input.modelOverride ?? '';
 
-  const interactionType = input.interactionType?.trim() || '';
-
-  let toolName = resolveTool(
-    config,
-    toolOverride,
-    interactionType || undefined,
-  );
+  let toolName = resolveTool(config, toolOverride);
   let plugin = toolDefinition(registry, toolName);
 
   if (!plugin) {
@@ -50,13 +44,7 @@ export function resolveExecution(
     if (!plugin) return null;
   }
 
-  let model = resolveModel(
-    config,
-    registry,
-    toolName,
-    modelOverride,
-    interactionType || undefined,
-  ).trim();
+  let model = resolveModel(config, registry, toolName, modelOverride).trim();
   if (!model) {
     model = plugin.models()[0]?.trim() ?? '';
   }

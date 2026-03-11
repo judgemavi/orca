@@ -1,5 +1,6 @@
+import { nanoid } from 'nanoid';
 import { toErrorMessage } from '../../shared/errors';
-import { genId } from '../../shared/id';
+import type { KnownWSEventType } from '../../types/events';
 import type { EventSink } from '../ws';
 
 export function safeErrorMessage(error: unknown): string {
@@ -8,7 +9,7 @@ export function safeErrorMessage(error: unknown): string {
 
 export function broadcast(
   sink: EventSink,
-  type: string,
+  type: KnownWSEventType,
   data: Record<string, unknown>,
 ): void {
   sink.broadcast(type, {
@@ -24,5 +25,5 @@ export function asBoolean(value: string | undefined): boolean {
 }
 
 export function randomID(prefix = ''): string {
-  return prefix ? `${prefix}-${genId()}` : genId();
+  return prefix ? `${prefix}-${nanoid()}` : nanoid();
 }

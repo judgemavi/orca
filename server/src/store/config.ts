@@ -1,51 +1,62 @@
+import deepmerge from 'deepmerge';
 import { eq } from 'drizzle-orm';
 import type { EventSink } from '../api/ws';
-import {
-  defaultConfig,
-  mergePatchConfig,
-  validateConfig,
-} from '../config/config';
 import type { OrcaDrizzleDB } from '../db/connection';
-import { config as configTable } from '../db/schema';
-import type { Config } from '../types';
+import {
+  CONFIG_KEY,
+  type Config,
+  configSchema,
+  config as configTable,
+  DEFAULT_CONFIG,
+} from '../db/schema';
 
-const CONFIG_KEY = 'config';
+type DeepPartial<T> =
+  T extends Array<infer U>
+    ? DeepPartial<U>[]
+    : T extends object
+      ? { [K in keyof T]?: DeepPartial<T[K]> }
+      : T;
 
-export class ConfigStore {
-  constructor(
-    private readonly db: OrcaDrizzleDB,
-    private readonly sink?: EventSink,
-  ) {}
-
-  async load(): Promise<Config> {
-    const rows = await this.db
-      .select({ value: configTable.value })
-      .from(configTable)
-      .where(eq(configTable.key, CONFIG_KEY))
-      .limit(1);
-    const row = rows[0] ?? null;
-    if (!row) return defaultConfig();
-    const parsed = JSON.parse(row.value) as Config;
-    return validateConfig(parsed);
+export async function loadConfig(db: OrcaDrizzleDB): Promise<Config> {
+  const rows = await db
+    .select()
+    .from(configTable)
+    .where(eq(configTable.key, CONFIG_KEY))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    const config = configSchema.parse(structuredClone(DEFAULT_CONFIG));
+    await saveConfig(db, undefined, config);
+    return config;
   }
+  return configSchema.parse(row.value);
+}
 
-  async save(config: Config): Promise<Config> {
-    const validated = validateConfig(config);
-    const value = JSON.stringify(validated);
-    await this.db
-      .insert(configTable)
-      .values({ key: CONFIG_KEY, value })
-      .onConflictDoUpdate({
-        target: configTable.key,
-        set: { value },
-      });
-    this.sink?.broadcast('config.updated', validated);
-    return validated;
-  }
+export async function saveConfig(
+  db: OrcaDrizzleDB,
+  sink: EventSink | undefined,
+  config: Config,
+): Promise<void> {
+  const parsedConfig = configSchema.parse(config);
+  const rows = await db
+    .insert(configTable)
+    .values({ key: CONFIG_KEY, value: parsedConfig })
+    .onConflictDoUpdate({
+      target: configTable.key,
+      set: { value: parsedConfig },
+    })
+    .returning();
+  const row = rows[0];
+  if (!row) throw new Error('config not found');
+  sink?.broadcast('config.updated', row.value);
+}
 
-  async patch(rawPatch: unknown): Promise<Config> {
-    const current = await this.load();
-    const next = mergePatchConfig(current, rawPatch);
-    return this.save(next);
-  }
+export async function patchConfig(
+  db: OrcaDrizzleDB,
+  sink: EventSink | undefined,
+  config: DeepPartial<Config>,
+): Promise<void> {
+  const current = await loadConfig(db);
+  const next = configSchema.parse(deepmerge(current, config));
+  await saveConfig(db, sink, next);
 }

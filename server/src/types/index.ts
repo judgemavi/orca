@@ -1,4 +1,20 @@
-export type { EmbeddingConfigField } from '../embedding/types';
+export type {
+  InteractionStatus,
+  JobStatus,
+  JobType,
+  TaskStatus,
+} from '@orca/types';
+export {
+  INTERACTION_STATUSES,
+  JOB_PRIORITIES,
+  JOB_STATUSES,
+  JOB_TYPES,
+  TASK_STATUSES,
+} from '@orca/types';
+
+export type { Config } from '../db/schema';
+export type { EmbeddingConfig, EmbeddingConfigField } from '../embedding/types';
+
 export * from './api';
 export * from './constants';
 export * from './events';

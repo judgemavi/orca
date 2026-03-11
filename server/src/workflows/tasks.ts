@@ -1,10 +1,17 @@
-import { resumeChain } from '../queue/chain';
+import { JOB_PRIORITIES, TASK_STATUSES, type TaskStatus } from '@orca/types';
+import { nanoid } from 'nanoid';
+import type { EventSink } from '../api/ws';
+import type { OrcaDrizzleDB } from '../db/connection';
+import type {
+  CreateTaskInput as DBCreateTaskInput,
+  UpdateTaskInput as DBUpdateTaskInput,
+  TaskEntry,
+} from '../db/schema';
 import type { JobQueue } from '../queue/queue';
-import type { ConfigStore } from '../store/config';
 import type { InteractionStore } from '../store/interactions';
-import type { TaskStore } from '../store/tasks';
-import type { AutoRunOverrides, Task, TaskStatus } from '../types';
-import { INTERACTION_STATUSES, JOB_PRIORITIES, TASK_STATUSES } from '../types';
+import * as questionStore from '../store/questions';
+import * as taskStore from '../store/tasks';
+import type { WorkflowStore } from '../workflow/store';
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -18,7 +25,7 @@ const BLOCKED_MANUAL_STATUSES = new Set<TaskStatus>([
   'review',
 ]);
 
-export function validateManualStatusTransition(
+function validateManualStatusTransition(
   current: TaskStatus,
   next: string,
 ): string | null {
@@ -41,13 +48,15 @@ export function validateManualStatusTransition(
 // ---------------------------------------------------------------------------
 
 interface TaskWorkflowDeps {
-  taskStore: TaskStore;
+  db: OrcaDrizzleDB;
+  sink?: EventSink;
   queue?: JobQueue;
-  configStore?: ConfigStore;
+  workflowStore?: WorkflowStore;
 }
 
 interface EnqueueDeps {
-  taskStore: TaskStore;
+  db: OrcaDrizzleDB;
+  sink?: EventSink;
   queue: JobQueue;
 }
 
@@ -61,113 +70,108 @@ interface EnqueueResult {
   jobId: string;
 }
 
-function requireQueue(deps: { queue?: JobQueue }): JobQueue {
-  if (!deps.queue) throw new Error('queue is required (is daemon running?)');
-  return deps.queue;
-}
-
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
 
-export interface CreateTaskInput {
-  id?: string;
-  title: string;
-  description?: string;
-  parentId?: string | null;
-  dependsOn?: string[];
-  autoRunOverrides?: AutoRunOverrides;
-}
+type CreateTaskInput = Pick<
+  DBCreateTaskInput,
+  | 'id'
+  | 'title'
+  | 'description'
+  | 'parentId'
+  | 'dependsOn'
+  | 'autoRunOverrides'
+  | 'workflow'
+>;
 
 export async function createTask(
   input: CreateTaskInput,
   deps: TaskWorkflowDeps,
-): Promise<Task> {
-  const task = await deps.taskStore.create({
-    id: input.id,
+): Promise<TaskEntry> {
+  const { db, sink } = deps;
+  const id = input.id ?? nanoid();
+
+  await taskStore.createTask(db, sink, {
+    id,
     title: input.title,
     description: input.description ?? '',
     parentId: input.parentId ?? null,
-    autoRunOverrides: input.autoRunOverrides,
+    autoRunOverrides: input.autoRunOverrides ?? {},
+    workflow: input.workflow,
+    dependsOn: input.dependsOn,
   });
 
-  const hasDeps = Array.isArray(input.dependsOn) && input.dependsOn.length > 0;
-  if (hasDeps) {
-    const cleaned = input.dependsOn!.map((v) => v.trim()).filter(Boolean);
-    await deps.taskStore.updateDependencies(task.id, cleaned);
-  }
+  const created = await taskStore.getTask(db, id);
 
-  if (deps.queue && !hasDeps) {
+  if (deps.queue) {
     await deps.queue.enqueue({
       type: 'evaluate',
-      taskId: task.id,
+      taskId: created.id,
       priority: JOB_PRIORITIES.evaluate,
     });
   }
 
-  return (await deps.taskStore.get(task.id))!;
+  return created;
 }
 
 // ---------------------------------------------------------------------------
 // Update
 // ---------------------------------------------------------------------------
 
-export interface UpdateTaskInput {
+type UpdateTaskInput = {
   taskId: string;
-  title?: string;
-  description?: string;
-  plan?: string;
-  status?: string;
-  sessionId?: string | null;
   dependsOn?: string[];
-  autoRunOverrides?: AutoRunOverrides;
-}
+} & Pick<
+  Partial<DBUpdateTaskInput>,
+  'title' | 'description' | 'status' | 'autoRunOverrides'
+>;
 
 export async function updateTask(
   input: UpdateTaskInput,
   deps: TaskWorkflowDeps,
-): Promise<Task> {
-  const existing = await deps.taskStore.get(input.taskId);
+): Promise<TaskEntry> {
+  const { db, sink } = deps;
+
+  const existing = await taskStore.getTask(db, input.taskId).catch(() => null);
   if (!existing) throw new Error(`task not found: ${input.taskId}`);
 
   if (input.status !== undefined) {
-    const err = validateManualStatusTransition(existing.status, input.status);
+    const err = validateManualStatusTransition(
+      existing.status as TaskStatus,
+      input.status,
+    );
     if (err) throw new Error(err);
   }
 
   if (Array.isArray(input.dependsOn)) {
     const cleaned = input.dependsOn.map((v) => v.trim()).filter(Boolean);
-    await deps.taskStore.updateDependencies(input.taskId, cleaned);
+    const currentDeps = existing.dependsOn ?? [];
+    const toRemove = currentDeps.filter((d) => !cleaned.includes(d));
+    const toAdd = cleaned.filter((d) => !currentDeps.includes(d));
+    for (const depId of toRemove) {
+      await taskStore.removeDependency(db, sink, input.taskId, depId);
+    }
+    for (const depId of toAdd) {
+      await taskStore.addDependency(db, sink, input.taskId, depId);
+    }
   }
 
-  await deps.taskStore.update(input.taskId, {
+  await taskStore.updateTask(db, sink, input.taskId, {
     title: input.title,
     description: input.description,
-    plan: input.plan,
     status: input.status as TaskStatus | undefined,
-    sessionId: input.sessionId,
     autoRunOverrides: input.autoRunOverrides,
   });
 
-  const updated = await deps.taskStore.get(input.taskId);
-  if (!updated) throw new Error(`task not found: ${input.taskId}`);
-
-  if (input.status && deps.queue && deps.configStore) {
-    await resumeChain(input.taskId, input.status as TaskStatus, {
-      configStore: deps.configStore,
-      taskStore: deps.taskStore,
-      queue: deps.queue,
-    });
-  }
-
-  return updated;
+  return await taskStore.getTask(db, input.taskId);
 }
 
 // ---------------------------------------------------------------------------
 // Provide input (answer pending question)
 // ---------------------------------------------------------------------------
 
-export interface ProvideInputResult {
+interface ProvideInputResult {
   taskId: string;
   jobId?: string;
 }
@@ -175,26 +179,34 @@ export interface ProvideInputResult {
 export async function provideInput(
   taskId: string,
   answer: string,
-  deps: TaskWorkflowDeps,
+  deps: TaskWorkflowDeps & {
+    interactionStore: InteractionStore;
+  },
 ): Promise<ProvideInputResult> {
-  const task = await deps.taskStore.get(taskId);
+  const { db, sink } = deps;
+
+  const task = await taskStore.getTask(db, taskId).catch(() => null);
   if (!task) throw new Error(`task not found: ${taskId}`);
-  if (!task.pendingQuestion) {
+
+  let question: Awaited<ReturnType<typeof questionStore.getPendingForTask>>;
+  try {
+    question = await questionStore.getPendingForTask(db, taskId);
+  } catch {
     throw new Error('task has no pending question');
   }
 
   const trimmed = answer.trim();
   if (!trimmed) throw new Error('answer is required');
 
-  const updatedDescription = task.description
-    ? `${task.description}\n\n---\n**User clarification:** ${trimmed}`
-    : `**User clarification:** ${trimmed}`;
+  await questionStore.answerQuestion(db, question.id, trimmed);
 
-  await deps.taskStore.update(taskId, {
-    description: updatedDescription,
-    pendingQuestion: null,
-    status: 'pending',
-  });
+  let resumeSessionID: string | undefined;
+  if (question.interactionId) {
+    const interaction = await deps.interactionStore.get(question.interactionId);
+    resumeSessionID = interaction?.sessionId ?? undefined;
+  }
+
+  await taskStore.updateTask(db, sink, taskId, { status: 'pending' });
 
   let jobId: string | undefined;
   if (deps.queue) {
@@ -202,6 +214,10 @@ export async function provideInput(
       type: 'evaluate',
       taskId,
       priority: JOB_PRIORITIES.evaluate,
+      payload: {
+        feedback: trimmed,
+        ...(resumeSessionID ? { resumeSessionID } : {}),
+      },
     });
     jobId = job.id;
   }
@@ -210,89 +226,25 @@ export async function provideInput(
 }
 
 // ---------------------------------------------------------------------------
-// Request changes (review rejection → enqueue code)
+// Enqueue current step
 // ---------------------------------------------------------------------------
 
-export async function requestChanges(
+export async function enqueueCurrentStep(
   taskId: string,
-  feedback: string,
-  deps: {
-    taskStore: TaskStore;
-    interactionStore: InteractionStore;
-    queue: JobQueue;
-    interactionId?: string;
-    tool?: string;
-    model?: string;
-  },
-): Promise<EnqueueResult & { reviewId: string }> {
-  const trimmed = feedback.trim();
-  if (!trimmed) throw new Error('feedback is required');
-
-  const task = await deps.taskStore.get(taskId);
-  if (!task) throw new Error(`task not found: ${taskId}`);
-  if (task.status !== TASK_STATUSES.review) {
-    throw new Error('task must be in review status to request changes');
-  }
-
-  const reviewId = await deps.taskStore.addReview(
-    taskId,
-    trimmed,
-    deps.interactionId ?? '',
-  );
-  await deps.interactionStore.supersedeReviewInteractions(taskId);
-
-  const { id: jobId } = await deps.queue.enqueue({
-    type: 'code',
-    taskId,
-    priority: JOB_PRIORITIES.code,
-    payload: { tool: deps.tool ?? '', model: deps.model ?? '' },
-  });
-
-  return { taskId, jobId, reviewId };
-}
-
-// ---------------------------------------------------------------------------
-// Trigger AI review (enqueue review job)
-// ---------------------------------------------------------------------------
-
-export async function triggerReview(
-  taskId: string,
-  opts: ToolModelOpts & { prompt?: string },
-  deps: {
-    taskStore: TaskStore;
-    interactionStore: InteractionStore;
-    queue: JobQueue;
-  },
+  payload: Record<string, unknown> | undefined,
+  deps: EnqueueDeps,
 ): Promise<EnqueueResult> {
-  const task = await deps.taskStore.get(taskId);
-  if (!task) throw new Error(`task not found: ${taskId}`);
-  if (task.status !== TASK_STATUSES.review) {
-    throw new Error(
-      `task must be in review status, got ${JSON.stringify(task.status)}`,
-    );
-  }
-
-  const codeInteractions = await deps.interactionStore.listByType(
-    taskId,
-    'code',
-  );
-  const latest = codeInteractions.find(
-    (ix) =>
-      ix.status === INTERACTION_STATUSES.completed && Boolean(ix.diff?.trim()),
-  );
-  if (!latest?.diff?.trim()) {
-    throw new Error('no completed run interaction with diff found');
-  }
+  const task = await taskStore.getTask(deps.db, taskId).catch(() => {
+    throw new Error(`task not found: ${taskId}`);
+  });
+  if (!task.currentStep) throw new Error('task has no current step');
 
   const { id: jobId } = await deps.queue.enqueue({
-    type: 'review',
+    type: task.currentStep,
     taskId,
-    priority: JOB_PRIORITIES.review,
-    payload: {
-      prompt: opts.prompt ?? '',
-      tool: opts.tool ?? '',
-      model: opts.model ?? '',
-    },
+    priority:
+      JOB_PRIORITIES[task.currentStep as keyof typeof JOB_PRIORITIES] ?? 5,
+    payload,
   });
 
   return { taskId, jobId };
@@ -325,33 +277,15 @@ export async function enqueueBreakdown(
   opts: ToolModelOpts,
   deps: EnqueueDeps,
 ): Promise<EnqueueResult> {
-  const task = await deps.taskStore.get(taskId);
-  if (!task) throw new Error(`task not found: ${taskId}`);
+  await taskStore.getTask(deps.db, taskId).catch(() => {
+    throw new Error(`task not found: ${taskId}`);
+  });
 
   const { id: jobId } = await deps.queue.enqueue({
     type: 'breakdown',
     taskId,
     priority: JOB_PRIORITIES.breakdown,
     payload: { tool: opts.tool ?? '', model: opts.model ?? '' },
-  });
-  return { taskId, jobId };
-}
-
-// ---------------------------------------------------------------------------
-// Enqueue merge
-// ---------------------------------------------------------------------------
-
-export async function enqueueMerge(
-  taskId: string,
-  deps: EnqueueDeps,
-): Promise<EnqueueResult> {
-  const task = await deps.taskStore.get(taskId);
-  if (!task) throw new Error(`task not found: ${taskId}`);
-
-  const { id: jobId } = await deps.queue.enqueue({
-    type: 'merge',
-    taskId,
-    priority: JOB_PRIORITIES.merge,
   });
   return { taskId, jobId };
 }
@@ -364,44 +298,18 @@ export async function stopTask(
   taskId: string,
   deps: EnqueueDeps,
 ): Promise<{ taskId: string; status: string }> {
-  const task = await deps.taskStore.get(taskId);
-  if (!task) throw new Error(`task not found: ${taskId}`);
+  const { db, sink } = deps;
+
+  const task = await taskStore.getTask(db, taskId).catch(() => {
+    throw new Error(`task not found: ${taskId}`);
+  });
 
   await deps.queue.cancelForTask(taskId);
 
   if (task.status === 'running') {
-    await deps.taskStore.updateStatus(taskId, TASK_STATUSES.stopped);
+    await taskStore.updateTaskStatus(db, sink, taskId, TASK_STATUSES.stopped);
   }
 
   return { taskId, status: 'stopped' };
 }
 
-// ---------------------------------------------------------------------------
-// Resume task (enqueue code with feedback to continue from session)
-// ---------------------------------------------------------------------------
-
-export async function resumeTask(
-  taskId: string,
-  feedback: string,
-  opts: ToolModelOpts,
-  deps: EnqueueDeps,
-): Promise<EnqueueResult> {
-  const task = await deps.taskStore.get(taskId);
-  if (!task) throw new Error(`task not found: ${taskId}`);
-  if (task.status !== TASK_STATUSES.stopped) {
-    throw new Error(`task ${taskId} is "${task.status}", not "stopped"`);
-  }
-
-  const { id: jobId } = await deps.queue.enqueue({
-    type: 'code',
-    taskId,
-    priority: JOB_PRIORITIES.code,
-    payload: {
-      feedback: feedback.trim(),
-      tool: opts.tool ?? '',
-      model: opts.model ?? '',
-    },
-  });
-
-  return { taskId, jobId };
-}

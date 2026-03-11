@@ -47,17 +47,11 @@ beforeEach(async () => {
   program.name('orca').exitOverride();
 
   const taskCmd = program.command('task').alias('t');
-  registerTaskCommands(taskCmd, {
-    repoDir: env.repoDir,
-    taskStore: env.taskStore,
-    interactionStore: env.interactionStore,
-    configStore: env.configStore,
-    queue: env.queue,
-  });
-  registerConfigCommands(program, env.configStore, env.registry);
+  registerTaskCommands(taskCmd, env);
+  registerConfigCommands(program, env.db, env.registry);
   registerQueueCommands(program, {
     queue: env.queue,
-    taskStore: env.taskStore,
+    db: env.db,
   });
 });
 
@@ -70,7 +64,7 @@ afterEach(async () => {
 // Orchestrator workflow: create task w/ deps via CLI flags
 // ---------------------------------------------------------------------------
 describe('orchestrator workflow via CLI', () => {
-  test('create with --depends-on wires deps and skips auto-evaluate', async () => {
+  test('create with --depends-on wires deps correctly', async () => {
     const dep = await env.taskStore.create({ title: 'Prerequisite' });
 
     const created = (await run(
@@ -86,11 +80,6 @@ describe('orchestrator workflow via CLI', () => {
     // Task should have dep wired
     const task = await env.taskStore.get(created.id as string);
     expect(task!.dependsOn).toContain(dep.id);
-
-    // Should NOT auto-enqueue evaluate (has unmet deps)
-    await new Promise((r) => setTimeout(r, 500));
-    const jobs = await env.queue.list({ taskId: created.id as string });
-    expect(jobs.length).toBe(0);
   });
 
   test('create with --disable-autorun sets per-task overrides', async () => {
@@ -107,22 +96,26 @@ describe('orchestrator workflow via CLI', () => {
     expect(task!.autoRunOverrides).toEqual({ review: false, merge: false });
   });
 
-  test('plan set → approve-plan → chain continues from planned', async () => {
-    // Disable code auto-run so chain stops at planned after approve
-    await env.configStore.patch({
-      interactions: {
-        code: { tool: 'claude', model: 'mock-model', autoRun: false },
-      },
+  test('step output returns output from interaction', async () => {
+    const task = await env.taskStore.create({
+      title: 'Plan flow',
+      autoRunOverrides: { code: false },
     });
 
-    const task = await env.taskStore.create({ title: 'Plan flow' });
+    // Seed a plan interaction (type=context, stepName=plan matches workflow preset)
+    const ix = await env.interactionStore.begin({
+      taskId: task.id,
+      type: 'context',
+      stepName: 'plan',
+      tool: 'test',
+    });
+    await env.interactionStore.finish(ix.id, {
+      status: 'completed',
+      output: JSON.stringify({ result: 'approved', output: '## Step 1\nDo X' }),
+    });
 
-    await run('task', 'plan', 'set', task.id, '--text', '## Step 1\nDo X');
-    await run('task', 'approve-plan', task.id);
-
-    const updated = await env.taskStore.get(task.id);
-    expect(updated!.status).toBe('planned');
-    expect(updated!.plan).toContain('Step 1');
+    const result = await run('task', 'step', 'output', task.id, 'plan') as { output: string };
+    expect(result.output).toContain('Step 1');
   });
 
   test('deps add/remove modifies task dependencies', async () => {
@@ -151,17 +144,17 @@ describe('orchestrator workflow via CLI', () => {
       'evaluate',
     )) as Array<{ type: string }>;
     expect(evalOnly.length).toBe(1);
-    expect(evalOnly[0].type).toBe('evaluate');
+    expect(evalOnly[0]!.type).toBe('evaluate');
 
-    const planOnly = (await run(
+    const contextOnly = (await run(
       'task',
       'interactions',
       task.id,
       '--type',
-      'plan',
+      'context',
     )) as Array<{ type: string }>;
-    expect(planOnly.length).toBe(1);
-    expect(planOnly[0].type).toBe('plan');
+    expect(contextOnly.length).toBe(1);
+    expect(contextOnly[0]!.type).toBe('context');
   }, 20_000);
 });
 
@@ -175,13 +168,15 @@ describe('CLI error handling', () => {
 
   test('delete nonexistent task throws with "not found"', async () => {
     await expect(
-      run('task', 'delete', 'ghost-id', '-y'),
+      run('task', 'delete', 'ghost-id'),
     ).rejects.toThrow('not found');
   });
 
-  test('approve-plan on task without plan fails', async () => {
-    const task = await env.taskStore.create({ title: 'No plan' });
-    await expect(run('task', 'approve-plan', task.id)).rejects.toThrow();
+  test('complete-step on task without current step fails', async () => {
+    const task = await env.taskStore.create({ title: 'No step' });
+    await expect(
+      run('task', 'complete-step', task.id, '-o', 'approved'),
+    ).rejects.toThrow();
   });
 });
 

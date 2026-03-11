@@ -1,42 +1,22 @@
 export interface HeadlessOpts {
-  mcpServer?: MCPServerDef;
   allowedTools?: string[] | string;
-}
-
-export interface MCPServerDef {
-  command: string;
-  args: string[];
-  cwd: string;
+  jsonSchema?: Record<string, unknown>;
+  schemaPath?: string;
 }
 
 export interface InteractiveOpts {
   model: string;
   systemPrompt: string;
   allowedTools: string[];
-  mcpServers: Record<string, MCPServerDef>;
   repoDir: string;
 }
 
-export interface ToolPluginCost {
-  inputTokens: number;
-  outputTokens: number;
-  totalCost: number;
-}
-
 export interface ToolPluginEvent {
-  type:
-    | 'text'
-    | 'tool_use'
-    | 'tool_result'
-    | 'cost'
-    | 'session'
-    | 'status'
-    | 'error';
+  type: 'text' | 'tool_use' | 'tool_result' | 'session' | 'status' | 'error';
   text?: string;
   toolName?: string;
   toolInput?: unknown;
   toolResult?: unknown;
-  cost?: ToolPluginCost;
   sessionID?: string;
   toolUseID?: string;
   isError?: boolean;

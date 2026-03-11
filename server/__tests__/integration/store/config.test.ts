@@ -1,41 +1,44 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { TestContext } from '../../helpers/db';
-import { createTestContext } from '../../helpers/db';
+import type { OrcaDrizzleDB } from '../../../src/db/connection';
+import {
+  loadConfig,
+  patchConfig,
+  saveConfig,
+} from '../../../src/store/config';
+import { createTestDB } from '../../helpers/db';
 
-let ctx: TestContext;
+let db: OrcaDrizzleDB;
+let closeFn: () => void;
 
 beforeEach(() => {
-  ctx = createTestContext();
+  const conn = createTestDB();
+  db = conn.db;
+  closeFn = conn.close;
 });
 
 afterEach(() => {
-  ctx.close();
+  closeFn();
 });
 
 describe('ConfigStore', () => {
-  test('load returns default config on fresh db', async () => {
-    const config = await ctx.configStore.load();
-    expect(config).toBeTruthy();
-    expect(config.workers).toBeTruthy();
-    expect(config.interactions).toBeTruthy();
-  });
-
   test('save and load roundtrip', async () => {
-    const config = await ctx.configStore.load();
+    const config = await loadConfig(db);
     config.workers.maxParallel = 5;
-    await ctx.configStore.save(config);
+    await saveConfig(db, undefined, config);
 
-    const loaded = await ctx.configStore.load();
+    const loaded = await loadConfig(db);
     expect(loaded.workers.maxParallel).toBe(5);
   });
 
   test('patch merges partial config', async () => {
-    const patched = await ctx.configStore.patch({
+    await patchConfig(db, undefined, {
       workers: { maxParallel: 10 },
     });
+
+    const patched = await loadConfig(db);
     expect(patched.workers.maxParallel).toBe(10);
 
     // Other fields still present
-    expect(patched.interactions).toBeTruthy();
+    expect(patched.orchestrator).toBeTruthy();
   });
 });

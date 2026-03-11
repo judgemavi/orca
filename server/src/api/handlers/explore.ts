@@ -1,17 +1,30 @@
 import { zValidator } from '@hono/zod-validator';
+import { JOB_PRIORITIES } from '@orca/types';
 import { Hono } from 'hono';
+import type { OrcaDrizzleDB } from '../../db/connection';
 import {
   listTrackedFiles,
   readExploreContext,
   writeExploreContext,
 } from '../../domain/explore';
 import type { JobQueue } from '../../queue/queue';
-import { JOB_PRIORITIES } from '../../types';
-import { exploreContextSchema, exploreSchema } from '../schemas';
+import { exploreContextSchema, exploreSchema } from '../../schemas/explore';
+import * as configStore from '../../store/config';
 
-export function exploreRoutes(repoDir: string, queue: JobQueue) {
+export function exploreRoutes(
+  repoDir: string,
+  queue: JobQueue,
+  db?: OrcaDrizzleDB,
+) {
   return new Hono()
     .post('/memory/explore', zValidator('json', exploreSchema), async (c) => {
+      if (db) {
+        const config = await configStore.loadConfig(db);
+        if (config.memory?.enabled === false) {
+          return c.json({ error: 'memory is disabled' }, 400);
+        }
+      }
+
       const tracked = await listTrackedFiles(repoDir);
       if (tracked.length === 0) {
         return c.json({

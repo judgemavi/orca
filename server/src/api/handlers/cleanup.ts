@@ -1,9 +1,11 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import type { OrcaDrizzleDB } from '../../db/connection';
+import type { TaskEntry } from '../../db/schema';
 import { cleanupTaskArtifacts } from '../../domain/task-cleanup';
+import { cleanupSchema } from '../../schemas/cleanup';
 import { gitRun } from '../../shared/git';
-import type { TaskStore } from '../../store/tasks';
-import { cleanupSchema } from '../schemas';
+import * as taskStore from '../../store/tasks';
 import type { EventSink } from '../ws';
 import { asyncOp } from './async-op';
 import { broadcast } from './utils';
@@ -16,7 +18,7 @@ interface WorktreeEntry {
 
 export function cleanupRoutes(deps: {
   repoDir: string;
-  taskStore: TaskStore;
+  db: OrcaDrizzleDB;
   sink: EventSink;
 }) {
   return new Hono().post(
@@ -25,7 +27,7 @@ export function cleanupRoutes(deps: {
     async (c) => {
       const body = c.req.valid('json');
       const dryRun = Boolean(body.dryRun);
-      const stale = await listStaleTaskWorktrees(deps.repoDir, deps.taskStore);
+      const stale = await listStaleTaskWorktrees(deps.repoDir, deps.db);
 
       if (dryRun) {
         return c.json({
@@ -79,7 +81,7 @@ export function cleanupRoutes(deps: {
 
 async function listStaleTaskWorktrees(
   repoDir: string,
-  taskStore: TaskStore,
+  db: OrcaDrizzleDB,
 ): Promise<WorktreeEntry[]> {
   const listed = await listWorktrees(repoDir);
   const stale: WorktreeEntry[] = [];
@@ -88,8 +90,10 @@ async function listStaleTaskWorktrees(
     if (!item.taskID) continue;
     if (!item.branch.startsWith('orca/task-')) continue;
 
-    const task = await taskStore.get(item.taskID);
-    if (!task) {
+    let task: TaskEntry | null = null;
+    try {
+      task = await taskStore.getTask(db, item.taskID);
+    } catch {
       stale.push(item);
       continue;
     }

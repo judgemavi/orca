@@ -9,7 +9,6 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { Button } from '../components/Button';
-import { InteractionLogPanel } from '../components/InteractionLogPanel';
 import { StatusBadge } from '../components/StatusBadge';
 import { TaskActionsBar } from '../components/TaskActionsBar';
 import { TaskInteractionList } from '../components/TaskInteractionList';
@@ -26,6 +25,7 @@ import {
   useTasksQuery,
 } from '../hooks/queries';
 import { useDependencyManager } from '../hooks/useDependencyManager';
+import { TaskActionsProvider } from '../hooks/useTaskActions';
 import { controlClass } from '../lib/constants';
 import type { Config, Task } from '../types';
 
@@ -142,49 +142,51 @@ function TaskDetailContent({
       tools={tools}
       isOperationRunning={isRunning}
     >
-      <div className="flex flex-1 overflow-hidden">
-        <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-6 py-4">
-          <div className="mb-3 flex items-center justify-between">
-            <Link
-              to="/"
-              className="rounded border border-border-subtle px-3 py-1.5 text-xs font-medium "
-            >
-              ← Back to tasks
-            </Link>
-            {task.status !== 'running' &&
-              task.status !== 'merged' &&
-              task.status !== 'broken_down' && (
-                <Button
-                  variant="destructive"
-                  className="text-xs"
-                  onClick={() => void handleDelete()}
-                  disabled={deleteMutation.isPending}
-                >
-                  {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-                </Button>
-              )}
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow">
-            <div className="shrink-0 px-4 pt-4">
-              <TaskDetailForm
-                form={form}
-                isEditable={isEditable}
-                saving={saving}
-                task={task}
-              />
+      <TaskActionsProvider>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden px-6 py-4">
+            <div className="mb-3 flex items-center justify-between">
+              <Link
+                to="/"
+                className="rounded border border-border-subtle px-3 py-1.5 text-xs font-medium "
+              >
+                ← Back to tasks
+              </Link>
+              {task.status !== 'running' &&
+                task.status !== 'merged' &&
+                task.status !== 'broken_down' && (
+                  <Button
+                    variant="destructive"
+                    className="text-xs"
+                    onClick={() => void handleDelete()}
+                    disabled={deleteMutation.isPending}
+                  >
+                    {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+                  </Button>
+                )}
             </div>
 
-            <TaskTimelineLayout />
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow">
+              <div className="shrink-0 px-4 pt-4">
+                <TaskDetailForm
+                  form={form}
+                  isEditable={isEditable}
+                  saving={saving}
+                  task={task}
+                />
+              </div>
 
-            <TaskActionsBar
-              onClose={() => {
-                void navigate({ to: '/', search: {} });
-              }}
-            />
+              <TaskTimelineLayout />
+
+              <TaskActionsBar
+                onClose={() => {
+                  void navigate({ to: '/', search: {} });
+                }}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      </TaskActionsProvider>
     </TaskDetailProvider>
   );
 }
@@ -236,23 +238,13 @@ function TaskDetailForm({
                 </h1>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-                <span className="font-mono text-[11px]">
-                  {task.id.slice(0, 8)}
-                </span>
+                <span className="font-mono text-[11px]">{task.id}</span>
                 <span>·</span>
                 <span>{dependencyCount} dependencies</span>
                 <span>·</span>
                 <span>
                   {task.status} {formatRelativeTime(task.updatedAt)}
                 </span>
-                {task.sessionId && (
-                  <>
-                    <span>·</span>
-                    <span className="font-mono text-[11px]">
-                      session {task.sessionId}
-                    </span>
-                  </>
-                )}
               </div>
               {!isExpanded && description && (
                 <p className="mt-1 line-clamp-2 text-xs text-muted">
@@ -272,7 +264,7 @@ function TaskDetailForm({
                           <span className="truncate">
                             {depTask?.title || 'Unknown task'}
                           </span>
-                          <span className="font-mono">{depId.slice(0, 6)}</span>
+                          <span className="font-mono">{depId}</span>
                         </span>
                       );
                     })}
@@ -357,7 +349,7 @@ function TaskDetailForm({
                           <span className="max-w-70 truncate">
                             {depTask?.title || 'Unknown task'}
                           </span>
-                          <span className="font-mono">{depId.slice(0, 8)}</span>
+                          <span className="font-mono">{depId}</span>
                         </span>
                       );
                     })}
@@ -381,7 +373,7 @@ function TaskDetailForm({
                         <option value="">Select task dependency...</option>
                         {dependencyChoices.map((choice) => (
                           <option key={choice.id} value={choice.id}>
-                            {choice.title} ({choice.id.slice(0, 8)})
+                            {choice.title} ({choice.id})
                           </option>
                         ))}
                       </select>
@@ -430,20 +422,11 @@ function TaskDetailForm({
 }
 
 function TaskTimelineLayout() {
-  const { activeLogId, task, setActiveLogId } = useTaskDetailContext();
+  const { task } = useTaskDetailContext();
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
       <TaskInteractionList taskId={task.id} />
-      {activeLogId && (
-        <InteractionLogPanel
-          taskId={task.id}
-          interactionId={activeLogId}
-          onClose={() => {
-            setActiveLogId(null);
-          }}
-        />
-      )}
     </div>
   );
 }

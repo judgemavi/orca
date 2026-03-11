@@ -2,32 +2,34 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DatabaseConnection } from '../../../src/db/connection';
+import type { OrcaDrizzleDB } from '../../../src/db/connection';
 import { InteractionStore } from '../../../src/store/interactions';
-import { TaskStore } from '../../../src/store/tasks';
+import { createTask } from '../../../src/store/tasks';
 import { createTestDB } from '../../helpers/db';
 
-let conn: DatabaseConnection;
+let db: OrcaDrizzleDB;
+let closeFn: () => void;
 let store: InteractionStore;
-let tasks: TaskStore;
 let tmpDir: string;
 
 beforeEach(async () => {
-  conn = createTestDB();
+  const conn = createTestDB();
+  db = conn.db;
+  closeFn = conn.close;
   tmpDir = await mkdtemp(join(tmpdir(), 'orca-test-'));
-  store = new InteractionStore(conn.db, tmpDir);
-  tasks = new TaskStore(conn.db);
+  store = new InteractionStore(db, tmpDir);
 });
 
 afterEach(async () => {
-  conn.close();
+  closeFn();
   await rm(tmpDir, { recursive: true, force: true });
 });
 
 /** Helper: create a task and return its id */
 async function makeTask(title = 'test task'): Promise<string> {
-  const t = await tasks.create({ title });
-  return t.id;
+  const id = `task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  await createTask(db, undefined, { id, title });
+  return id;
 }
 
 describe('begin', () => {
@@ -104,27 +106,20 @@ describe('finish', () => {
 
   test('sets optional fields', async () => {
     const { id } = await store.begin({ type: 'code', tool: 'claude' });
+    const outputJson = JSON.stringify({ result: 'success', data: { diff: '+added\n-removed' } });
     await store.finish(id, {
       status: 'failed',
       error: 'boom',
-      diff: '+added\n-removed',
+      output: outputJson,
       exitCode: 1,
       durationMs: 500,
-      inputTokens: 100,
-      outputTokens: 50,
-      estimatedCost: 0.01,
-      runId: 'run-1',
       model: 'claude-4',
     });
     const ix = await store.get(id);
     expect(ix!.error).toBe('boom');
-    expect(ix!.diff).toBe('+added\n-removed');
+    expect(ix!.output).toBe(outputJson);
     expect(ix!.exitCode).toBe(1);
     expect(ix!.durationMs).toBe(500);
-    expect(ix!.inputTokens).toBe(100);
-    expect(ix!.outputTokens).toBe(50);
-    expect(ix!.estimatedCost).toBe(0.01);
-    expect(ix!.runId).toBe('run-1');
     expect(ix!.model).toBe('claude-4');
   });
 
@@ -155,7 +150,7 @@ describe('listByType', () => {
     await store.begin({ taskId: tid, type: 'review', tool: 'b' });
     const results = await store.listByType(tid, 'code');
     expect(results).toHaveLength(1);
-    expect(results[0].type).toBe('code');
+    expect(results[0]!.type).toBe('code');
   });
 });
 
@@ -166,10 +161,10 @@ describe('listByStatus', () => {
     await store.finish(id, { status: 'completed' });
     const running = await store.listByStatus('running');
     expect(running).toHaveLength(1);
-    expect(running[0].tool).toBe('b');
+    expect(running[0]!.tool).toBe('b');
     const completed = await store.listByStatus('completed');
     expect(completed).toHaveLength(1);
-    expect(completed[0].id).toBe(id);
+    expect(completed[0]!.id).toBe(id);
   });
 });
 
@@ -179,9 +174,9 @@ describe('listStubs', () => {
     await store.begin({ taskId: tid, type: 'code', tool: 'claude' });
     const stubs = await store.listStubs(tid);
     expect(stubs).toHaveLength(1);
-    expect(stubs[0].id).toBeTruthy();
-    expect(stubs[0].type).toBe('code');
-    expect(stubs[0].tool).toBe('claude');
+    expect(stubs[0]!.id).toBeTruthy();
+    expect(stubs[0]!.type).toBe('code');
+    expect(stubs[0]!.tool).toBe('claude');
     expect((stubs[0] as any).logPath).toBeUndefined();
   });
 });
@@ -211,105 +206,6 @@ describe('isRunning', () => {
   });
 });
 
-describe('projectTotal', () => {
-  test('sums estimatedCost across all interactions', async () => {
-    const { id: id1 } = await store.begin({ type: 'code', tool: 'a' });
-    const { id: id2 } = await store.begin({ type: 'review', tool: 'b' });
-    await store.finish(id1, { status: 'completed', estimatedCost: 0.05 });
-    await store.finish(id2, { status: 'completed', estimatedCost: 0.1 });
-    expect(await store.projectTotal()).toBeCloseTo(0.15);
-  });
-
-  test('returns 0 with no interactions', async () => {
-    expect(await store.projectTotal()).toBe(0);
-  });
-});
-
-describe('runTotal', () => {
-  test('sums estimatedCost for a specific runId', async () => {
-    const { id: id1 } = await store.begin({ type: 'code', tool: 'a' });
-    const { id: id2 } = await store.begin({ type: 'review', tool: 'b' });
-    const { id: id3 } = await store.begin({ type: 'code', tool: 'c' });
-    await store.finish(id1, {
-      status: 'completed',
-      estimatedCost: 0.05,
-      runId: 'run-1',
-    });
-    await store.finish(id2, {
-      status: 'completed',
-      estimatedCost: 0.1,
-      runId: 'run-1',
-    });
-    await store.finish(id3, {
-      status: 'completed',
-      estimatedCost: 0.2,
-      runId: 'run-2',
-    });
-    expect(await store.runTotal('run-1')).toBeCloseTo(0.15);
-    expect(await store.runTotal('run-2')).toBeCloseTo(0.2);
-  });
-});
-
-describe('runSummary', () => {
-  test('groups by tool with token/cost sums', async () => {
-    const { id: id1 } = await store.begin({ type: 'code', tool: 'claude' });
-    const { id: id2 } = await store.begin({ type: 'review', tool: 'claude' });
-    const { id: id3 } = await store.begin({ type: 'code', tool: 'grep' });
-    await store.finish(id1, {
-      status: 'completed',
-      runId: 'r1',
-      inputTokens: 100,
-      outputTokens: 50,
-      estimatedCost: 0.01,
-    });
-    await store.finish(id2, {
-      status: 'completed',
-      runId: 'r1',
-      inputTokens: 200,
-      outputTokens: 80,
-      estimatedCost: 0.02,
-    });
-    await store.finish(id3, {
-      status: 'completed',
-      runId: 'r1',
-      inputTokens: 10,
-      outputTokens: 5,
-      estimatedCost: 0.001,
-    });
-    const summary = await store.runSummary('r1');
-    expect(summary).toHaveLength(2);
-    const claude = summary.find((s) => s.tool === 'claude')!;
-    expect(claude.inputTokens).toBe(300);
-    expect(claude.outputTokens).toBe(130);
-    expect(claude.cost).toBeCloseTo(0.03);
-    const grep = summary.find((s) => s.tool === 'grep')!;
-    expect(grep.inputTokens).toBe(10);
-  });
-});
-
-describe('projectSummary', () => {
-  test('groups by tool across all interactions', async () => {
-    const { id: id1 } = await store.begin({ type: 'code', tool: 'claude' });
-    const { id: id2 } = await store.begin({ type: 'review', tool: 'claude' });
-    await store.finish(id1, {
-      status: 'completed',
-      inputTokens: 100,
-      outputTokens: 50,
-      estimatedCost: 0.01,
-    });
-    await store.finish(id2, {
-      status: 'completed',
-      inputTokens: 200,
-      outputTokens: 80,
-      estimatedCost: 0.02,
-    });
-    const summary = await store.projectSummary();
-    expect(summary).toHaveLength(1);
-    expect(summary[0].inputTokens).toBe(300);
-    expect(summary[0].cost).toBeCloseTo(0.03);
-  });
-});
-
 describe('markStaleAsFailed', () => {
   test('marks all running interactions as failed', async () => {
     const { id: id1 } = await store.begin({ type: 'code', tool: 'a' });
@@ -326,56 +222,6 @@ describe('markStaleAsFailed', () => {
   });
 });
 
-describe('listRuns', () => {
-  test('groups by runId with aggregated stats', async () => {
-    const { id: id1 } = await store.begin({ type: 'code', tool: 'a' });
-    const { id: id2 } = await store.begin({ type: 'review', tool: 'b' });
-    await store.finish(id1, {
-      status: 'completed',
-      runId: 'run-1',
-      inputTokens: 100,
-      outputTokens: 50,
-      estimatedCost: 0.05,
-    });
-    await store.finish(id2, {
-      status: 'completed',
-      runId: 'run-1',
-      inputTokens: 200,
-      outputTokens: 80,
-      estimatedCost: 0.1,
-    });
-    const runs = await store.listRuns();
-    expect(runs).toHaveLength(1);
-    expect(runs[0].runId).toBe('run-1');
-    expect(runs[0].interactions).toBe(2);
-    expect(runs[0].inputTokens).toBe(300);
-    expect(runs[0].outputTokens).toBe(130);
-    expect(runs[0].cost).toBeCloseTo(0.15);
-  });
-
-  test('excludes interactions without runId', async () => {
-    const { id } = await store.begin({ type: 'code', tool: 'a' });
-    await store.finish(id, { status: 'completed', estimatedCost: 0.05 });
-    const runs = await store.listRuns();
-    expect(runs).toHaveLength(0);
-  });
-});
-
-describe('findRunIDsByPrefix', () => {
-  test('finds run IDs matching prefix', async () => {
-    const { id: id1 } = await store.begin({ type: 'code', tool: 'a' });
-    const { id: id2 } = await store.begin({ type: 'review', tool: 'b' });
-    await store.finish(id1, { status: 'completed', runId: 'run-abc-123' });
-    await store.finish(id2, { status: 'completed', runId: 'run-xyz-456' });
-    const matches = await store.findRunIDsByPrefix('run-abc');
-    expect(matches).toEqual(['run-abc-123']);
-  });
-
-  test('returns empty for empty prefix', async () => {
-    expect(await store.findRunIDsByPrefix('')).toEqual([]);
-  });
-});
-
 describe('listOperations', () => {
   test('returns running interactions by default', async () => {
     const { id: id1 } = await store.begin({ type: 'code', tool: 'a' });
@@ -383,7 +229,7 @@ describe('listOperations', () => {
     await store.finish(id1, { status: 'completed' });
     const ops = await store.listOperations();
     expect(ops).toHaveLength(1);
-    expect(ops[0].status).toBe('running');
+    expect(ops[0]!.status).toBe('running');
   });
 
   test('returns all with all flag', async () => {

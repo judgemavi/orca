@@ -1,8 +1,5 @@
 import { INTERACTION_STATUSES } from '@orca/server/types';
-import {
-  parseBreakdownPayload,
-  parseJSONText,
-} from '../lib/orchestratorRichContent';
+import { parseBreakdownPayload } from '../lib/orchestratorRichContent';
 import type { Interaction, ProposedTask } from '../types';
 import { BreakdownCard } from './BreakdownCard';
 import { Button } from './Button';
@@ -15,6 +12,18 @@ type Props = {
   accepting?: boolean;
   rejecting?: boolean;
 };
+
+function extractBreakdownData(
+  output?: string | null,
+): Record<string, unknown> | null {
+  if (!output?.trim()) return null;
+  try {
+    const parsed = JSON.parse(output) as { data?: Record<string, unknown> };
+    return parsed.data ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export function BreakdownSection({
   interaction,
@@ -66,7 +75,7 @@ export function BreakdownSection({
   }
 
   const result = parseBreakdownPayload(
-    parseJSONText(interaction.qualityJson ?? ''),
+    extractBreakdownData(interaction.output),
   );
   if (!result) return null;
 
