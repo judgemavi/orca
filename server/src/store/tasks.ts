@@ -93,15 +93,6 @@ export async function updateTask(
   sink?.broadcast('task.updated', id);
 }
 
-export async function updateTaskStatus(
-  db: OrcaDrizzleDB,
-  sink: EventSink | undefined,
-  id: string,
-  status: TaskStatus,
-): Promise<void> {
-  await updateTask(db, sink, id, { status });
-}
-
 export async function deleteTask(
   db: OrcaDrizzleDB,
   sink: EventSink | undefined,

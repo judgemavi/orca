@@ -24,12 +24,12 @@ import {
 } from '../../workflows/planning';
 import { resetToStep } from '../../workflows/rewind';
 import {
+  cancelQueuedTask,
   createTask,
   enqueueBreakdown,
   enqueueCurrentStep,
   enqueueEvaluate,
   provideInput,
-  stopTask,
   updateTask,
 } from '../../workflows/tasks';
 import { printJSON } from '../format';
@@ -209,7 +209,7 @@ export function registerTaskCommands(task: Command, deps: AppDeps) {
   });
 
   task.command('stop <id>').action(async (id: string) => {
-    const result = await stopTask(id, {
+    const result = await cancelQueuedTask(id, {
       db: deps.db,
       sink: deps.sink,
       queue: deps.queue,

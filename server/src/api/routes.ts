@@ -9,7 +9,6 @@ import { eventRoutes } from './handlers/events';
 import { exploreRoutes } from './handlers/explore';
 import { interactionRoutes } from './handlers/interactions';
 import { memoryRoutes } from './handlers/memory';
-import { mergeRoutes } from './handlers/merge';
 import { modelRoutes } from './handlers/models';
 import { monitorRoutes } from './handlers/monitor';
 import { orchestratorRoutes } from './handlers/orchestrator';
@@ -72,14 +71,6 @@ function taskGroup(deps: RouteDeps) {
 
 function dataGroup(deps: RouteDeps) {
   return new Hono()
-    .route(
-      '/',
-      mergeRoutes({
-        db: deps.db,
-        sink: deps.eventSink,
-        queue: deps.queue,
-      }),
-    )
     .route('/', memoryRoutes(deps.repoDir, deps.memoryStore))
     .route('/', exploreRoutes(deps.repoDir, deps.queue, deps.db))
     .route(

@@ -53,10 +53,6 @@ export class Monitor {
     this.taskIDs.clear();
   }
 
-  recordOutput(_taskID: string): void {
-    // Stuck detection is based on worktree-diff progress.
-  }
-
   finish(taskID: string): void {
     this.taskIDs.delete(taskID);
   }

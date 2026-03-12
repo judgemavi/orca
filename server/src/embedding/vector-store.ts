@@ -113,10 +113,6 @@ export class VectorStore {
     return rows.length;
   }
 
-  existingIds(): Set<string> {
-    return new Set<string>();
-  }
-
   async existingIdsAsync(): Promise<Set<string>> {
     const rows = await this.db
       .select({ id: memoryEntries.id })

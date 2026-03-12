@@ -22,8 +22,8 @@ function makeTaskFacade(conn: DatabaseConnection) {
       taskStoreFns.listTasks(db, status),
     update: (id: string, fields: Parameters<typeof taskStoreFns.updateTask>[3]) =>
       taskStoreFns.updateTask(db, undefined, id, fields),
-    updateStatus: (id: string, status: Parameters<typeof taskStoreFns.updateTaskStatus>[3]) =>
-      taskStoreFns.updateTaskStatus(db, undefined, id, status),
+    updateStatus: (id: string, status: Parameters<typeof taskStoreFns.updateTask>[3]['status']) =>
+      taskStoreFns.updateTask(db, undefined, id, { status }),
     delete: (id: string) => taskStoreFns.deleteTask(db, undefined, id),
   };
 }

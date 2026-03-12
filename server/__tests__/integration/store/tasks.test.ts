@@ -12,7 +12,6 @@ import {
   removeDependency,
   setDependencies,
   updateTask,
-  updateTaskStatus,
 } from '../../../src/store/tasks';
 import { createTestDB } from '../../helpers/db';
 
@@ -170,7 +169,7 @@ describe('TaskStore.update', () => {
 describe('TaskStore.updateStatus', () => {
   test('updates task status', async () => {
     await createTask(db, undefined, { id: 'upd-st', title: 'Task' });
-    await updateTaskStatus(db, undefined, 'upd-st', 'planned');
+    await updateTask(db, undefined, 'upd-st', { status: 'planned' });
     const fetched = await getTask(db, 'upd-st');
     expect(fetched.status).toBe('planned');
   });

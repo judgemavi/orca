@@ -1,9 +1,7 @@
-import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import type { OrcaDrizzleDB } from '../../db/connection';
 import type { TaskEntry } from '../../db/schema';
 import { cleanupTaskArtifacts } from '../../domain/task-cleanup';
-import { cleanupSchema } from '../../schemas/cleanup';
 import { gitRun } from '../../shared/git';
 import * as taskStore from '../../store/tasks';
 import type { EventSink } from '../ws';
@@ -21,62 +19,48 @@ export function cleanupRoutes(deps: {
   db: OrcaDrizzleDB;
   sink: EventSink;
 }) {
-  return new Hono().post(
-    '/cleanup',
-    zValidator('json', cleanupSchema),
-    async (c) => {
-      const body = c.req.valid('json');
-      const dryRun = Boolean(body.dryRun);
-      const stale = await listStaleTaskWorktrees(deps.repoDir, deps.db);
+  return new Hono().post('/cleanup', async (c) => {
+    const stale = await listStaleTaskWorktrees(deps.repoDir, deps.db);
 
-      if (dryRun) {
-        return c.json({
-          removed: stale.length,
-          worktrees: stale.map((entry) => entry.branch || entry.path),
-          dryRun: true,
-        });
-      }
+    asyncOp(deps.sink, {
+      started: {
+        name: 'cleanup.started',
+      },
+      completed: {
+        name: 'cleanup.completed',
+        payload: ({ result }) => result,
+      },
+      run: async () => {
+        const removed: string[] = [];
+        const warnings: string[] = [];
 
-      asyncOp(deps.sink, {
-        started: {
-          name: 'cleanup.started',
-        },
-        completed: {
-          name: 'cleanup.completed',
-          payload: ({ result }) => result,
-        },
-        run: async () => {
-          const removed: string[] = [];
-          const warnings: string[] = [];
-
-          for (const entry of stale) {
-            const cleanup = await cleanupTaskArtifacts({
-              repoDir: deps.repoDir,
-              taskID: entry.taskID,
+        for (const entry of stale) {
+          const cleanup = await cleanupTaskArtifacts({
+            repoDir: deps.repoDir,
+            taskID: entry.taskID,
+          });
+          if (cleanup.worktreeRemoved || cleanup.removedBranches.length > 0) {
+            removed.push(entry.taskID);
+            broadcast(deps.sink, 'cleanup.progress', {
+              taskId: entry.taskID,
+              branch: entry.branch,
             });
-            if (cleanup.worktreeRemoved || cleanup.removedBranches.length > 0) {
-              removed.push(entry.taskID);
-              broadcast(deps.sink, 'cleanup.progress', {
-                taskId: entry.taskID,
-                branch: entry.branch,
-              });
-            }
-            if (cleanup.warnings.length > 0) {
-              warnings.push(...cleanup.warnings);
-            }
           }
+          if (cleanup.warnings.length > 0) {
+            warnings.push(...cleanup.warnings);
+          }
+        }
 
-          return {
-            removed: removed.length,
-            taskIds: removed,
-            warnings,
-          };
-        },
-      });
+        return {
+          removed: removed.length,
+          taskIds: removed,
+          warnings,
+        };
+      },
+    });
 
-      return c.json({ status: 'running' }, 202);
-    },
-  );
+    return c.json({ status: 'running' }, 202);
+  });
 }
 
 async function listStaleTaskWorktrees(

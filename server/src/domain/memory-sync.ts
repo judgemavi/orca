@@ -5,6 +5,7 @@ import { gitOutput } from '../shared/git';
 import { createInteractionRunner } from '../shared/interaction-runner';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
+import { normalizePaths } from '../store/memory-normalize';
 import type { MemoryRefreshResult, MemorySyncResult } from '../types/api';
 import type { MemoryEntry } from '../types/models';
 import { runTool } from '../worker/worker';
@@ -628,12 +629,6 @@ function refreshProvenanceHash(
 
 async function fileExists(repoDir: string, filePath: string): Promise<boolean> {
   return Bun.file(`${repoDir}/${filePath}`).exists();
-}
-
-function normalizePaths(paths: string[]): string[] {
-  return [...new Set(paths.map((path) => path.trim()).filter(Boolean))].sort(
-    (a, b) => a.localeCompare(b),
-  );
 }
 
 function emptyIfBlank(value: string): string {

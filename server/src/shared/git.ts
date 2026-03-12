@@ -78,6 +78,20 @@ export async function gitRunWithRefLockRetry(
   return retryResult;
 }
 
+export async function gitRunStrict(
+  cwd: string,
+  args: string[],
+  allowFailure = false,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const result = await gitRun(cwd, args);
+  const { stdout, stderr } = result;
+  const code = result.exitCode;
+  if (!allowFailure && code !== 0) {
+    throw new Error(stderr || stdout || `git ${args.join(' ')} failed`);
+  }
+  return { code, stdout, stderr };
+}
+
 export async function gitOutput(cwd: string, args: string[]): Promise<string> {
   const result = await gitRun(cwd, args);
   if (result.exitCode !== 0) {

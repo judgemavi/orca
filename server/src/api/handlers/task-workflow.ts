@@ -15,6 +15,7 @@ import {
   toolModelSchema,
   updateInteractionOutputSchema,
 } from '../../schemas/workflow';
+import { toErrorMessage } from '../../shared/errors';
 import type { InteractionStore } from '../../store/interactions';
 import * as questionStore from '../../store/questions';
 import * as taskStore from '../../store/tasks';
@@ -47,7 +48,7 @@ import {
   provideInput,
 } from '../../workflows/tasks';
 import type { EventSink } from '../ws';
-import { broadcast, safeErrorMessage } from './utils';
+import { broadcast } from './utils';
 
 export function taskWorkflowRoutes(deps: {
   repoDir: string;
@@ -626,7 +627,7 @@ async function assertNoRunningInteraction(
 }
 
 function errorResponse(c: Context, error: unknown) {
-  const message = safeErrorMessage(error);
+  const message = toErrorMessage(error);
   if (message.startsWith('task not found:')) {
     return c.json({ error: 'task not found' }, 404);
   }

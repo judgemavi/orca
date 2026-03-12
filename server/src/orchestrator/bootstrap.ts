@@ -1,6 +1,6 @@
 import { resolveModel } from '../config/config';
 import type { OrcaDrizzleDB } from '../db/connection';
-import { type ToolPluginRegistry, toolDefinition } from '../plugin/registry';
+import type { ToolPluginRegistry } from '../plugin/registry';
 import type { ToolPlugin } from '../plugin/types';
 import { loadPrompt } from '../prompts/loader';
 import { loadConfig } from '../store/config';
@@ -26,7 +26,7 @@ export async function resolveSupervisor(
 ): Promise<SupervisorResolution> {
   const config = await loadConfig(db);
   const toolName = config.orchestrator.tool || 'claude';
-  const plugin = toolDefinition(registry, toolName);
+  const plugin = registry.get(toolName) ?? null;
   if (!plugin) {
     throw new Error(`supervisor tool not available: ${toolName}`);
   }

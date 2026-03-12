@@ -4,9 +4,9 @@ import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
 import {
   formatRefLockContentionError,
+  gitRunStrict as gitRun,
   gitRunWithRefLockRetry,
   isRefLockErrorResult,
-  gitRun as sharedGitRun,
 } from '../shared/git';
 import type { InteractionStore } from '../store/interactions';
 import * as taskStore from '../store/tasks';
@@ -60,13 +60,6 @@ async function assertTaskMergeable(
   }
 }
 
-export async function mergeTaskWithGit(
-  taskID: string,
-  deps: IntegratorDeps,
-): Promise<MergeResult> {
-  return mergeTaskWithGitUnlocked(taskID, deps);
-}
-
 export interface ConflictResolutionDeps extends IntegratorDeps {
   config: Config;
   registry: ToolPluginRegistry;
@@ -79,7 +72,7 @@ export async function mergeWithConflictResolution(
   deps: ConflictResolutionDeps,
 ): Promise<MergeResult> {
   return mergeWithConflictResolutionUnlocked(taskID, deps, {
-    mergeTaskWithGitUnlocked,
+    mergeTaskWithGitUnlocked: mergeTaskWithGit,
     resolveTaskBranch,
     rollbackMergedCommit,
     cleanupTaskWorktree,
@@ -87,7 +80,7 @@ export async function mergeWithConflictResolution(
   });
 }
 
-async function mergeTaskWithGitUnlocked(
+export async function mergeTaskWithGit(
   taskID: string,
   deps: IntegratorDeps,
 ): Promise<MergeResult> {
@@ -341,19 +334,4 @@ async function rollbackMergedCommit(
   ]);
   if (reset.code === 0) return undefined;
   return reset.stderr || reset.stdout || 'git reset --hard HEAD~1 failed';
-}
-
-async function gitRun(
-  cwd: string,
-  args: string[],
-  allowFailure = false,
-): Promise<{ code: number; stdout: string; stderr: string }> {
-  const result = await sharedGitRun(cwd, args);
-  const stdout = result.stdout;
-  const stderr = result.stderr;
-  const code = result.exitCode;
-  if (!allowFailure && code !== 0) {
-    throw new Error(stderr || stdout || `git ${args.join(' ')} failed`);
-  }
-  return { code, stdout, stderr };
 }

@@ -12,7 +12,7 @@ import { InteractionStore } from '../../../src/store/interactions';
 import {
   createTask,
   getTask,
-  updateTaskStatus,
+  updateTask,
 } from '../../../src/store/tasks';
 import { createTestDB } from '../../helpers/db';
 
@@ -39,7 +39,7 @@ afterEach(async () => {
 describe('failInFlightForShutdown', () => {
   test('running code interaction + running task without sessionId → interaction failed, task failed', async () => {
     await createTask(db, undefined, { id: 'task-1', title: 'test task' });
-    await updateTaskStatus(db, undefined, 'task-1', 'running');
+    await updateTask(db, undefined, 'task-1', { status: 'running' });
     await interactions.begin({ taskId: 'task-1', type: 'code', tool: 'claude' });
 
     const result = await failInFlightForShutdown(db, interactions);
@@ -54,7 +54,7 @@ describe('failInFlightForShutdown', () => {
 
   test('running code interaction + running task with sessionId → task stopped', async () => {
     await createTask(db, undefined, { id: 'task-2', title: 'test task' });
-    await updateTaskStatus(db, undefined, 'task-2', 'running');
+    await updateTask(db, undefined, 'task-2', { status: 'running' });
     const prevIx = await interactions.begin({ taskId: 'task-2', type: 'code', tool: 'claude' });
     await interactions.finish(prevIx.id, { status: 'completed', sessionId: 'sess-123' });
     await interactions.begin({ taskId: 'task-2', type: 'code', tool: 'claude' });
@@ -91,9 +91,9 @@ describe('failInFlightForShutdown', () => {
 
   test('multiple running interactions → all counted', async () => {
     await createTask(db, undefined, { id: 'task-4', title: 'task 1' });
-    await updateTaskStatus(db, undefined, 'task-4', 'running');
+    await updateTask(db, undefined, 'task-4', { status: 'running' });
     await createTask(db, undefined, { id: 'task-5', title: 'task 2' });
-    await updateTaskStatus(db, undefined, 'task-5', 'running');
+    await updateTask(db, undefined, 'task-5', { status: 'running' });
 
     await interactions.begin({ taskId: 'task-4', type: 'code', tool: 'claude' });
     await interactions.begin({ taskId: 'task-5', type: 'code', tool: 'claude' });
@@ -108,7 +108,7 @@ describe('failInFlightForShutdown', () => {
 
   test('calls log callback with events', async () => {
     await createTask(db, undefined, { id: 'task-6', title: 'logged task' });
-    await updateTaskStatus(db, undefined, 'task-6', 'running');
+    await updateTask(db, undefined, 'task-6', { status: 'running' });
     await interactions.begin({ taskId: 'task-6', type: 'code', tool: 'claude' });
 
     const events: Array<{ event: string; data?: Record<string, unknown> }> = [];
@@ -153,7 +153,7 @@ describe('runStartupRecovery', () => {
 
   test('running task without sessionId → failed (no queue)', async () => {
     await createTask(db, undefined, { id: 'task-r2', title: 'test task' });
-    await updateTaskStatus(db, undefined, 'task-r2', 'running');
+    await updateTask(db, undefined, 'task-r2', { status: 'running' });
 
     const result = await runStartupRecovery(db, interactions);
 
@@ -166,7 +166,7 @@ describe('runStartupRecovery', () => {
 
   test('running task with sessionId → stopped (no queue)', async () => {
     await createTask(db, undefined, { id: 'task-r3', title: 'test task' });
-    await updateTaskStatus(db, undefined, 'task-r3', 'running');
+    await updateTask(db, undefined, 'task-r3', { status: 'running' });
     const prevIx = await interactions.begin({ taskId: 'task-r3', type: 'code', tool: 'claude' });
     await interactions.finish(prevIx.id, { status: 'completed', sessionId: 'sess-abc' });
 
@@ -181,7 +181,7 @@ describe('runStartupRecovery', () => {
 
   test('with queue → calls requeueRunning instead of resetting tasks', async () => {
     await createTask(db, undefined, { id: 'task-r4', title: 'test task' });
-    await updateTaskStatus(db, undefined, 'task-r4', 'running');
+    await updateTask(db, undefined, 'task-r4', { status: 'running' });
 
     // When queue is provided, tasks are NOT reset directly — requeueRunning handles it
     const result = await runStartupRecovery(db, interactions, undefined, queue);

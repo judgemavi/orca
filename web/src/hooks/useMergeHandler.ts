@@ -18,12 +18,7 @@ export function useMergeHandler({
   isOperationRunning,
 }: Args) {
   const mergeTaskMutation = useMutation({
-    mutationFn: (args: {
-      taskId: string;
-      mode?: string;
-      tool?: string;
-      model?: string;
-    }) => api.mergeTask(args.taskId, args.mode),
+    mutationFn: (args: { taskId: string }) => api.mergeTask(args.taskId),
   });
 
   const [mergeProgress, setMergeProgress] = useState<string | null>(null);
@@ -116,12 +111,7 @@ export function useMergeHandler({
   const onAutoResolve = async () => {
     setMergeProgress('Auto-resolve queued...');
     try {
-      await mergeTaskMutation.mutateAsync({
-        taskId,
-        mode: 'auto',
-        tool: mergeTool || undefined,
-        model: mergeModel || undefined,
-      });
+      await mergeTaskMutation.mutateAsync({ taskId });
     } catch {
       setMergeProgress(null);
     }

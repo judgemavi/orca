@@ -53,8 +53,8 @@ function makeTaskFacade(conn: DatabaseConnection, sink?: EventSink) {
       taskStoreFns.listTasks(db, status),
     update: (id: string, fields: Parameters<typeof taskStoreFns.updateTask>[3]) =>
       taskStoreFns.updateTask(db, sink, id, fields),
-    updateStatus: (id: string, status: Parameters<typeof taskStoreFns.updateTaskStatus>[3]) =>
-      taskStoreFns.updateTaskStatus(db, sink, id, status),
+    updateStatus: (id: string, status: Parameters<typeof taskStoreFns.updateTask>[3]['status']) =>
+      taskStoreFns.updateTask(db, sink, id, { status }),
     delete: (id: string) => taskStoreFns.deleteTask(db, sink, id),
     addDependency: (taskId: string, dependsOnId: string) =>
       taskStoreFns.addDependency(db, sink, taskId, dependsOnId),

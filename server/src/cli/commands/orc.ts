@@ -5,7 +5,7 @@ import {
   ORCHESTRATOR_ALLOWED_TOOLS,
   resolveSupervisor,
 } from '../../orchestrator/bootstrap';
-import { type ToolPluginRegistry, toolDefinition } from '../../plugin/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import * as configStore from '../../store/config';
 
 export function registerOrcCommand(
@@ -36,7 +36,7 @@ async function runOrcInteractive(
 ): Promise<void> {
   const resolved = await resolveSupervisor(deps.db, deps.registry);
   const toolName = (opts.tool ?? '').trim() || resolved.toolName;
-  const tool = toolDefinition(deps.registry, toolName);
+  const tool = deps.registry.get(toolName) ?? null;
   if (!tool) {
     throw new Error(`supervisor tool not available: ${toolName}`);
   }

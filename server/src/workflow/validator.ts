@@ -2,7 +2,6 @@ import type { AnyStateMachine } from 'xstate';
 import { createMachine } from 'xstate';
 import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
-import { availableTools, toolModels } from '../plugin/registry';
 import { SYSTEM_INTERACTION_TYPES } from '../types/api';
 import type { AnyStateNode } from './paths';
 import type {
@@ -222,14 +221,14 @@ function validateStateNodes(
     }
 
     if (meta.executor === 'tool' && meta.tool) {
-      const tools = availableTools(registry);
+      const tools = registry.available();
       if (!tools.includes(meta.tool)) {
         errors.push({
           step: fullPath,
           message: `tool "${meta.tool}" not available`,
         });
       } else if (meta.model) {
-        const models = toolModels(registry, meta.tool);
+        const models = registry.get(meta.tool)?.models() ?? [];
         if (models.length > 0 && !models.includes(meta.model)) {
           errors.push({
             step: fullPath,

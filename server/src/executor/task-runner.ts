@@ -2,7 +2,6 @@ import type { TaskStatus } from '@orca/types';
 import { resolveModel, resolveTool } from '../config/config';
 import type { Config } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
-import { toolDefinition } from '../plugin/registry';
 import type {
   HeadlessOpts,
   ToolPlugin,
@@ -69,7 +68,7 @@ export function resolveTaskExecution(
   modelOverride: string,
 ): ResolvedTaskExecution {
   const toolName = resolveTool(config, toolOverride);
-  const plugin = toolDefinition(registry, toolName);
+  const plugin = registry.get(toolName) ?? null;
   if (!plugin) {
     throw new Error(`tool not available: ${toolName}`);
   }

@@ -1,6 +1,5 @@
 import { type Config, CURRENT_SCHEMA_VERSION } from '../db/schema';
 import type { ToolPluginRegistry } from '../plugin/registry';
-import { availableTools, toolModels } from '../plugin/registry';
 import type { AutoRunOverrides } from '../types/api';
 
 export function sanitizeConfig(
@@ -8,7 +7,7 @@ export function sanitizeConfig(
   registry: ToolPluginRegistry,
 ): string[] {
   const changes: string[] = [];
-  const tools = availableTools(registry);
+  const tools = registry.available();
   if (tools.length === 0) {
     throw new Error(
       'no available tools configured (binary check filtered all tools)',
@@ -81,7 +80,7 @@ export function sanitizeConfig(
     );
     config.orchestrator.tool = fallbackTool;
   }
-  const orchModels = toolModels(registry, config.orchestrator.tool);
+  const orchModels = registry.get(config.orchestrator.tool)?.models() ?? [];
   if (
     orchModels.length > 0 &&
     !orchModels.includes(config.orchestrator.model)
@@ -107,7 +106,7 @@ export function validateDefaults(
   config: Config,
   registry: ToolPluginRegistry,
 ): void {
-  const tools = availableTools(registry);
+  const tools = registry.available();
   if (!tools.includes(config.orchestrator.tool)) {
     throw new Error(
       `orchestrator.tool ${JSON.stringify(config.orchestrator.tool)} not found`,
@@ -128,7 +127,7 @@ export function resolveModel(
   override: string,
 ): string {
   if (override.trim()) return override;
-  return toolModels(registry, toolName)[0] ?? '';
+  return registry.get(toolName)?.models()[0] ?? '';
 }
 
 /**

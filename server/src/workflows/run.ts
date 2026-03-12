@@ -6,14 +6,6 @@ import type { TaskRunResult } from '../executor/task-runner';
 import type { InteractionStore } from '../store/interactions';
 import * as taskStore from '../store/tasks';
 
-export interface RunOpts {
-  toolOverride?: string;
-  modelOverride?: string;
-  context?: string;
-}
-
-type TaskResult = TaskRunResult;
-
 type RunWorkflowError = Error & { status: 400 | 404 };
 
 function runWorkflowError(
@@ -35,9 +27,9 @@ export async function resumeTask(
   db: OrcaDrizzleDB,
   taskID: string,
   feedback = '',
-  opts: RunOpts = {},
+  opts: RunOptions = {},
   interactionStore?: InteractionStore,
-): Promise<TaskResult> {
+): Promise<TaskRunResult> {
   const normalizedTaskID = taskID.trim();
   if (!normalizedTaskID) {
     throw runWorkflowError('task id required', 400);
@@ -64,11 +56,7 @@ export async function resumeTask(
     );
   }
 
-  return await executor.resumeTask(
-    normalizedTaskID,
-    feedback,
-    toRunOptions(opts),
-  );
+  return await executor.resumeTask(normalizedTaskID, feedback, opts);
 }
 
 export async function stopTask(
@@ -98,12 +86,4 @@ export async function stopTask(
     }
     throw error;
   }
-}
-
-function toRunOptions(opts: RunOpts): RunOptions {
-  return {
-    toolOverride: opts.toolOverride ?? '',
-    modelOverride: opts.modelOverride ?? '',
-    context: opts.context ?? '',
-  };
 }

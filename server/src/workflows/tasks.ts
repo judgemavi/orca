@@ -301,10 +301,35 @@ export async function enqueueBreakdown(
 }
 
 // ---------------------------------------------------------------------------
-// Stop task (cancel queue + update status)
+// Resolve step job type + priority
 // ---------------------------------------------------------------------------
 
-export async function stopTask(
+export async function resolveStepJob(
+  db: OrcaDrizzleDB,
+  taskID: string,
+  workflowStore?: WorkflowStore,
+): Promise<{ type: string; priority: number }> {
+  const task = await taskStore.getTask(db, taskID).catch(() => null);
+  if (task?.currentStep) {
+    let priority = 5;
+    if (workflowStore) {
+      try {
+        const compiled = workflowStore.resolve(task.workflow ?? undefined);
+        priority =
+          resolveStepMeta(compiled.machine, task.currentStep).meta.priority ??
+          5;
+      } catch {}
+    }
+    return { type: task.currentStep, priority };
+  }
+  return { type: 'evaluate', priority: SYSTEM_JOB_PRIORITIES.evaluate };
+}
+
+// ---------------------------------------------------------------------------
+// Cancel queued task (cancel queue jobs + update status)
+// ---------------------------------------------------------------------------
+
+export async function cancelQueuedTask(
   taskId: string,
   deps: EnqueueDeps,
 ): Promise<{ taskId: string; status: string }> {

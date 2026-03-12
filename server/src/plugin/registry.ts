@@ -74,24 +74,6 @@ export function fallbackToolPluginRegistry(): ToolPluginRegistry {
   return new ToolPluginRegistry(true);
 }
 
-export function availableTools(registry: ToolPluginRegistry): string[] {
-  return registry.available();
-}
-
-export function toolModels(
-  registry: ToolPluginRegistry,
-  name: string,
-): string[] {
-  return registry.get(name)?.models() ?? [];
-}
-
-export function toolDefinition(
-  registry: ToolPluginRegistry,
-  name: string,
-): ToolPlugin | null {
-  return registry.get(name) ?? null;
-}
-
 function isPlugin(value: unknown): value is ToolPlugin {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as ToolPlugin;

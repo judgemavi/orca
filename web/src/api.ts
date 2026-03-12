@@ -227,12 +227,17 @@ export const api = {
   },
 
   // Run / Start / Stop
-  startTasks: (
-    taskIds?: string[],
+  startTask: (
+    taskId: string,
     tool?: string,
     model?: string,
-  ): Promise<{ status: string; taskIds: string[]; jobIds: string[] }> =>
-    unwrap(client.tasks.start.$post({ json: { taskIds, tool, model } })),
+  ): Promise<{ status: string; taskId: string; jobId: string }> =>
+    unwrap(
+      client.tasks[':id'].start.$post({
+        param: { id: taskId },
+        json: { tool, model },
+      }),
+    ),
   stopTask: (id: string): Promise<{ taskId: string; status: string }> =>
     unwrap(client.tasks[':id'].stop.$post({ param: { id } })),
   resumeTask: (
@@ -245,18 +250,13 @@ export const api = {
         json: opts ?? {},
       }),
     ),
-  cancelTask: (id: string): Promise<{ taskId: string; status: string }> =>
-    unwrap(client.tasks[':id'].cancel.$post({ param: { id } })),
-
-  // Merge (global merge removed — use mergeTask per task)
   mergeTask: (
     taskId: string,
-    mode?: string,
-  ): Promise<{ jobId: string; taskId: string; status: string }> =>
+  ): Promise<{ status: string; taskId: string; jobId: string }> =>
     unwrap(
-      client.tasks[':id'].merge.$post({
+      client.tasks[':id'].start.$post({
         param: { id: taskId },
-        json: { mode },
+        json: {},
       }),
     ),
 

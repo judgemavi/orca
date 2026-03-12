@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import type { ToolPluginRegistry } from '../../plugin/registry';
-import { availableTools, toolModels } from '../../plugin/registry';
 import type { ModelInfo } from '../../types/api';
 
 export function modelRoutes(registry: ToolPluginRegistry) {
@@ -9,16 +8,21 @@ export function modelRoutes(registry: ToolPluginRegistry) {
     if (requested) {
       return c.json({
         tools: {
-          [requested]: toModelInfo(requested, toolModels(registry, requested)),
+          [requested]: toModelInfo(
+            requested,
+            registry.get(requested)?.models() ?? [],
+          ),
         },
       });
     }
 
     const tools = Object.fromEntries(
-      availableTools(registry).map((tool) => [
-        tool,
-        toModelInfo(tool, toolModels(registry, tool)),
-      ]),
+      registry
+        .available()
+        .map((tool) => [
+          tool,
+          toModelInfo(tool, registry.get(tool)?.models() ?? []),
+        ]),
     );
     return c.json({ tools });
   });

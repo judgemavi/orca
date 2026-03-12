@@ -1,11 +1,6 @@
 import { nanoid } from 'nanoid';
-import { toErrorMessage } from '../../shared/errors';
 import type { KnownWSEventType } from '../../types/events';
 import type { EventSink } from '../ws';
-
-export function safeErrorMessage(error: unknown): string {
-  return toErrorMessage(error);
-}
 
 export function broadcast(
   sink: EventSink,

@@ -85,7 +85,7 @@ function useTaskActionsState(task: Task) {
 
   const startTaskMutation = useMutation({
     mutationFn: (args: { taskId: string; tool?: string; model?: string }) =>
-      api.startTasks([args.taskId], args.tool, args.model),
+      api.startTask(args.taskId, args.tool, args.model),
   });
   const approveMutation = useMutation({
     mutationFn: (taskId: string) => api.approveTask(taskId),

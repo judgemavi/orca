@@ -1,9 +1,9 @@
 import type { TaskStatus } from '@orca/types';
 import type { TaskEntry } from '../db/schema';
+import { ensureTaskWorktree } from '../domain/worktree';
 import { ORCHESTRATOR_ALLOWED_TOOLS } from '../orchestrator/bootstrap';
 import { toErrorMessage } from '../shared/errors';
 import { getTask, updateTask } from '../store/tasks';
-import { ensureTaskWorktree } from './batch';
 import { buildTaskContextSection } from './context';
 import {
   applyStopOverride,
@@ -103,7 +103,12 @@ export async function executeTaskRun(input: {
     .trim();
 
   try {
-    const worktreePath = await ensureTaskWorktree(deps, task);
+    const worktreePath = await ensureTaskWorktree({
+      repoDir: deps.repoDir,
+      worktreeDir: deps.config.project.worktreeDir,
+      integrationBranch: deps.config.project.integrationBranch,
+      task,
+    });
 
     const result = await runTask({
       taskID: task.id,
@@ -126,9 +131,6 @@ export async function executeTaskRun(input: {
         allowedTools: ORCHESTRATOR_ALLOWED_TOOLS,
       },
       signal: controller.signal,
-      onOutputLine: () => {
-        options.monitor?.recordOutput(task.id);
-      },
     });
 
     const finalized = applyStopOverride(task.id, result, (id) =>

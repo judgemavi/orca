@@ -4,7 +4,7 @@ import type { Config } from '../../db/schema';
 import { ensureIntegrationBranch } from '../../domain/worktree';
 import { OllamaEmbeddingPlugin } from '../../embedding/ollama';
 import type { EmbeddingPlugin } from '../../embedding/types';
-import { fallbackToolPluginRegistry, toolModels } from '../../plugin/registry';
+import { fallbackToolPluginRegistry } from '../../plugin/registry';
 import { gitRun as sharedGitRun } from '../../shared/git';
 import { loadConfig } from '../../store/config';
 import {
@@ -138,7 +138,7 @@ export async function runInitCommand(
             enabledTools.map((name) => ({ label: name, value: name })),
             pickDefault(enabledTools, defaults.orchestrator.tool),
           );
-  const orchModels = toolModels(registry, orchestratorTool);
+  const orchModels = registry.get(orchestratorTool)?.models() ?? [];
   const orchestratorModel = autoYes
     ? (options.orchestratorModel ??
       pickDefault(orchModels, defaults.orchestrator.model))

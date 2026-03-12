@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { gitRun as sharedGitRun } from '../shared/git';
+import { gitOutput, gitRunStrict as gitRun } from '../shared/git';
 import type { Task } from '../types/models';
 
 function resolveWorktreeRoot(repoDir: string, configuredPath: string): string {
@@ -56,10 +56,10 @@ export async function ensureIntegrationBranch(
   branch: string,
 ): Promise<void> {
   const exists = await gitRun(repoDir, ['rev-parse', '--verify', branch], true);
-  if (exists.exitCode === 0) return;
+  if (exists.code === 0) return;
 
   const create = await gitRun(repoDir, ['branch', branch], true);
-  if (create.exitCode !== 0 && !/already exists/i.test(create.stderr)) {
+  if (create.code !== 0 && !/already exists/i.test(create.stderr)) {
     throw new Error(
       `failed to create integration branch ${JSON.stringify(branch)}: ${create.stderr}`,
     );
@@ -112,40 +112,18 @@ export async function ensureTaskWorktree(input: {
     true,
   );
 
-  if (added.exitCode === 0) return worktreePath;
+  if (added.code === 0) return worktreePath;
 
   const branchFallback = await gitRun(
     input.repoDir,
     ['worktree', 'add', worktreePath, branchName],
     true,
   );
-  if (branchFallback.exitCode === 0) return worktreePath;
+  if (branchFallback.code === 0) return worktreePath;
 
   throw new Error(
     `failed to create worktree for task ${input.task.id}: ${added.stderr || branchFallback.stderr}`,
   );
-}
-
-async function gitRun(
-  repoDir: string,
-  args: string[],
-  allowFailure = false,
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const result = await sharedGitRun(repoDir, args);
-  const stdout = result.stdout;
-  const stderr = result.stderr;
-  const exitCode = result.exitCode;
-  if (!allowFailure && exitCode !== 0) {
-    throw new Error(
-      stderr || `git ${args.join(' ')} failed with exit code ${exitCode}`,
-    );
-  }
-  return { exitCode, stdout, stderr };
-}
-
-async function gitOutput(repoDir: string, args: string[]): Promise<string> {
-  const result = await gitRun(repoDir, args);
-  return result.stdout;
 }
 
 function trimTrailingSlash(p: string): string {

@@ -47,7 +47,6 @@ export const provideInputSchema = z.object({
 });
 
 export const runRequestSchema = z.object({
-  taskIds: dependsOnSchema,
   tool: optionalNonEmptyTrimmedString,
   model: optionalNonEmptyTrimmedString,
   context: optionalStringField,

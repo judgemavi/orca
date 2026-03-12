@@ -72,7 +72,7 @@ export async function evaluateTaskWorkflow(
   taskID: string,
   deps: EvaluateTaskWorkflowDeps,
 ): Promise<EvaluateTaskWorkflowResult> {
-  const task = await getTask(taskID, deps.db);
+  const task = await taskStore.getTask(deps.db, taskID);
   const config = await configStore.loadConfig(deps.db);
 
   return await evaluateTask(task, {
@@ -100,7 +100,7 @@ export async function breakdownTask(
 
   let task: TaskEntry | null = null;
   if (taskID) {
-    task = await getTask(taskID, deps.db);
+    task = await taskStore.getTask(deps.db, taskID);
   }
 
   const title = task?.title ?? goal;
@@ -153,7 +153,7 @@ export async function acceptBreakdown(
 ): Promise<AcceptBreakdownResult> {
   const normalizedParentID = (parentID ?? '').trim();
   if (normalizedParentID) {
-    await getTask(normalizedParentID, deps.db);
+    await taskStore.getTask(deps.db, normalizedParentID);
   }
 
   const normalizedProposals = normalizeProposedTasks(proposals);
@@ -300,12 +300,4 @@ function canRunLLMBreakdown(
   registry: ToolPluginRegistry;
 } {
   return Boolean(deps.repoDir && deps.interactions && deps.registry);
-}
-
-async function getTask(taskID: string, db: OrcaDrizzleDB): Promise<TaskEntry> {
-  try {
-    return await taskStore.getTask(db, taskID);
-  } catch {
-    throw new Error(`task not found: ${taskID}`);
-  }
 }

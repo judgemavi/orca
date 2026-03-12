@@ -1,10 +1,6 @@
 import type { Command } from 'commander';
 import type { OrcaDrizzleDB } from '../../db/connection';
-import {
-  availableTools,
-  type ToolPluginRegistry,
-  toolModels,
-} from '../../plugin/registry';
+import type { ToolPluginRegistry } from '../../plugin/registry';
 import * as configStore from '../../store/config';
 import { printJSON } from '../format';
 
@@ -28,14 +24,13 @@ export function registerConfigCommands(
     .action((opts: { tool?: string }) => {
       const tool = (opts.tool ?? '').trim();
       if (tool) {
-        printJSON({ [tool]: toolModels(registry, tool) });
+        printJSON({ [tool]: registry.get(tool)?.models() ?? [] });
         return;
       }
       const data = Object.fromEntries(
-        availableTools(registry).map((name) => [
-          name,
-          toolModels(registry, name),
-        ]),
+        registry
+          .available()
+          .map((name) => [name, registry.get(name)?.models() ?? []]),
       );
       printJSON(data);
     });

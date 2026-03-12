@@ -341,15 +341,6 @@ export class MemoryStore {
     return this.vectorSearch(query, limit, []);
   }
 
-  async searchExcluding(
-    query: string,
-    limit: number,
-    excludeHashes: string[],
-  ): Promise<MemoryEntry[]> {
-    const scored = await this.vectorSearch(query, limit, excludeHashes);
-    return scored.map((s) => s.entry);
-  }
-
   private async vectorSearch(
     query: string,
     limit: number,

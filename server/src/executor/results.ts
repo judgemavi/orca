@@ -1,10 +1,10 @@
 import type { TaskStatus } from '@orca/types';
 import type { EventSink } from '../api/ws';
 import type { OrcaDrizzleDB } from '../db/connection';
-import type { ToolPluginEvent } from '../plugin/types';
 import type { InteractionStore } from '../store/interactions';
 import type { MemoryStore } from '../store/memory';
 import * as taskStore from '../store/tasks';
+import type { TaskRunResult } from './task-runner';
 
 interface OutcomeInput {
   exitCode: number;
@@ -18,27 +18,6 @@ interface OutcomeInput {
 interface OutcomeResult {
   taskStatus: TaskStatus;
   interactionStatus: 'completed' | 'failed';
-  error?: string;
-}
-
-interface TaskRunResultRecord {
-  taskID: string;
-  interactionType: string;
-  toolName: string;
-  model: string;
-  status: TaskStatus;
-  interactionStatus: 'completed' | 'failed';
-  exitCode: number;
-  signalCode: string | number | null;
-  sessionID: string;
-  events: ToolPluginEvent[];
-  logPath: string;
-  durationMS: number;
-  timedOut: boolean;
-  aborted: boolean;
-  diff: string;
-  filesChanged: string[];
-  commitSha?: string;
   error?: string;
 }
 
@@ -62,7 +41,7 @@ interface PersistTaskResultInput {
   taskID: string;
   interactionID: string;
   model: string;
-  result: TaskRunResultRecord;
+  result: TaskRunResult;
 }
 
 interface PersistSuccessfulTaskResultInput extends PersistTaskResultInput {
@@ -133,9 +112,9 @@ function detectBlocker(output: string): string {
 
 export function applyStopOverride(
   taskID: string,
-  result: TaskRunResultRecord,
+  result: TaskRunResult,
   consumeStop: (taskID: string) => boolean,
-): TaskRunResultRecord {
+): TaskRunResult {
   if (!consumeStop(taskID)) {
     return result;
   }
@@ -149,9 +128,7 @@ export function applyStopOverride(
   };
 }
 
-export function buildFailedResult(
-  input: FailedTaskRunInput,
-): TaskRunResultRecord {
+export function buildFailedResult(input: FailedTaskRunInput): TaskRunResult {
   return {
     taskID: input.taskID,
     interactionType: input.interactionType,
@@ -218,7 +195,7 @@ async function persistResultStatus(
 function finishInteraction(
   deps: ResultCoordinatorDeps,
   interactionID: string,
-  result: TaskRunResultRecord,
+  result: TaskRunResult,
   model: string,
   memoryMeta?: InteractionMemoryMeta,
 ): void {

@@ -3,7 +3,6 @@ import type { Config } from '../db/schema';
 import {
   fallbackToolPluginRegistry,
   type ToolPluginRegistry,
-  toolDefinition,
 } from '../plugin/registry';
 import type { ToolPlugin, ToolPluginEvent } from '../plugin/types';
 import { camelizeKeys } from '../shared/camelize';
@@ -33,14 +32,14 @@ export function resolveExecution(
   const modelOverride = input.modelOverride ?? '';
 
   let toolName = resolveTool(config, toolOverride);
-  let plugin = toolDefinition(registry, toolName);
+  let plugin = registry.get(toolName) ?? null;
 
   if (!plugin) {
     const fallbackTool =
       registry.available()[0] ?? registry.registered()[0] ?? '';
     if (!fallbackTool) return null;
     toolName = fallbackTool;
-    plugin = toolDefinition(registry, toolName);
+    plugin = registry.get(toolName) ?? null;
     if (!plugin) return null;
   }
 

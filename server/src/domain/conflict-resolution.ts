@@ -1,6 +1,5 @@
 import { INTERACTION_STATUSES, TASK_STATUSES } from '@orca/types';
 import { resolveModel, resolveTool } from '../config/config';
-import { toolDefinition } from '../plugin/registry';
 import { loadPrompt } from '../prompts/loader';
 import {
   formatRefLockContentionError,
@@ -81,7 +80,7 @@ export async function mergeWithConflictResolutionUnlocked(
   }
 
   const toolName = resolveTool(deps.config, '');
-  const plugin = toolDefinition(deps.registry, toolName);
+  const plugin = deps.registry.get(toolName) ?? null;
   if (!plugin) {
     return failed(`merge tool not available: ${toolName}`);
   }
