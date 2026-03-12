@@ -19,8 +19,6 @@ export function startHTTPServer(
     registry: ToolPluginRegistry;
   },
 ) {
-  const orchestratorSockets = new Set<OrchestratorWebSocket>();
-
   const server = Bun.serve<OrchestratorWSData>({
     port,
     idleTimeout: 255,
@@ -45,14 +43,12 @@ export function startHTTPServer(
     },
     websocket: {
       open(ws: OrchestratorWebSocket) {
-        orchestratorSockets.add(ws);
         onOrchestratorWSOpen(ws);
       },
       message(_: OrchestratorWebSocket, message: string | Buffer<ArrayBuffer>) {
         onOrchestratorWSMessage(message);
       },
       close(ws: OrchestratorWebSocket) {
-        orchestratorSockets.delete(ws);
         onOrchestratorWSClose(ws);
       },
     },

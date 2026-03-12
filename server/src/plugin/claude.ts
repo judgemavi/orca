@@ -99,7 +99,7 @@ export class ClaudePlugin implements ToolPlugin {
   }
 
   parseEvent(line: Buffer): ToolPluginEvent | null {
-    const raw = line.toString('utf8').replace(/\r/g, '').trim();
+    const raw = line.toString('utf8').replaceAll('\r', '').trim();
     if (!raw) return null;
 
     const parsed = parseJSON(raw);
@@ -107,14 +107,17 @@ export class ClaudePlugin implements ToolPlugin {
       return { type: 'text', text: raw, raw };
     }
 
-    const event = unwrapStreamEnvelope(parsed);
+    const event = unwrapStreamEnvelope(parsed) as Record<
+      string,
+      unknown
+    > | null;
     if (!event || typeof event !== 'object') {
       return { type: 'text', text: raw, raw };
     }
 
-    const type = asString((event as any).type);
+    const type = asString(event.type);
     if (type === 'content_block_delta') {
-      const delta = (event as any).delta;
+      const delta = event.delta as Record<string, unknown> | undefined;
       const deltaType = asString(delta?.type);
       if (deltaType === 'text_delta') {
         const text = asString(delta?.text);
@@ -136,7 +139,7 @@ export class ClaudePlugin implements ToolPlugin {
     }
 
     if (type === 'content_block_start') {
-      const block = (event as any).content_block;
+      const block = event.content_block as Record<string, unknown> | undefined;
       const blockType = asString(block?.type);
       const key = toolKey(event);
       if (blockType === 'tool_use') {
@@ -186,7 +189,8 @@ export class ClaudePlugin implements ToolPlugin {
     }
 
     if (type === 'assistant') {
-      const content = (event as any).message?.content;
+      const msg = event.message as Record<string, unknown> | undefined;
+      const content = msg?.content;
       if (Array.isArray(content)) {
         const texts: string[] = [];
         for (const block of content) {
@@ -198,7 +202,7 @@ export class ClaudePlugin implements ToolPlugin {
           return { type: 'text', text: texts.join(''), raw };
         }
       }
-      const resultText = asString((event as any).message?.content);
+      const resultText = asString(msg?.content);
       if (resultText) {
         return { type: 'text', text: resultText, raw };
       }
@@ -206,7 +210,7 @@ export class ClaudePlugin implements ToolPlugin {
     }
 
     if (type === 'result') {
-      const sessionID = asString((event as any).session_id);
+      const sessionID = asString(event.session_id);
       if (!sessionID) return null;
       return { type: 'session', sessionID, raw };
     }
@@ -241,8 +245,9 @@ function dedupe(values: string[]): string[] {
 }
 
 function toolKey(parsed: unknown): string {
-  const obj = parsed as any;
-  return asString(obj.content_block?.id) || String(obj.index ?? '');
+  const obj = parsed as Record<string, unknown>;
+  const block = obj.content_block as Record<string, unknown> | undefined;
+  return asString(block?.id) || String(obj.index ?? '');
 }
 
 function unwrapStreamEnvelope(parsed: unknown): unknown {

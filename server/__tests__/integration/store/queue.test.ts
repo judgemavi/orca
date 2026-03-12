@@ -67,7 +67,7 @@ describe('JobQueue.claim', () => {
     await ctx.queue.enqueue({ type: 'retro', taskId: 'low-pri' }); // pri 6
     await ctx.queue.enqueue({ type: 'evaluate', taskId: 'high-pri' }); // pri 3
 
-    const claimed = await ctx.queue.claim(2);
+    const claimed = await ctx.queue.claimNext(2);
     expect(claimed).toHaveLength(2);
     expect(claimed[0]!.taskId).toBe('high-pri');
     expect(claimed[1]!.taskId).toBe('low-pri');
@@ -82,20 +82,20 @@ describe('JobQueue.claim', () => {
     await ctx.queue.enqueue({ type: 'code', taskId: 't2' });
     await ctx.queue.enqueue({ type: 'code', taskId: 't3' });
 
-    const first = await ctx.queue.claim(1);
+    const first = await ctx.queue.claimNext(1);
     expect(first).toHaveLength(1);
 
     // Claim up to 2 more (concurrency is handled by p-queue, not the queue)
-    const second = await ctx.queue.claim(2);
+    const second = await ctx.queue.claimNext(2);
     expect(second).toHaveLength(2);
   });
 
   test('skips already-running jobs', async () => {
     await ctx.queue.enqueue({ type: 'code' });
-    await ctx.queue.claim(1); // now running
+    await ctx.queue.claimNext(1); // now running
 
     await ctx.queue.enqueue({ type: 'code' });
-    const claimed = await ctx.queue.claim(5);
+    const claimed = await ctx.queue.claimNext(5);
     // Only the new queued job is claimed, not the already-running one
     expect(claimed).toHaveLength(1);
   });
@@ -104,7 +104,7 @@ describe('JobQueue.claim', () => {
 describe('JobQueue.complete', () => {
   test('marks job as completed', async () => {
     const job = await ctx.queue.enqueue({ type: 'code' });
-    const [claimed] = await ctx.queue.claim(1);
+    const [claimed] = await ctx.queue.claimNext(1);
     await ctx.queue.complete(claimed!.id, { output: 'done' });
 
     const fetched = await ctx.queue.get(job.id);
@@ -117,7 +117,7 @@ describe('JobQueue.complete', () => {
 describe('JobQueue.fail', () => {
   test('marks job as failed with error', async () => {
     const job = await ctx.queue.enqueue({ type: 'code' });
-    await ctx.queue.claim(1);
+    await ctx.queue.claimNext(1);
     await ctx.queue.fail(job.id, 'something broke');
 
     const fetched = await ctx.queue.get(job.id);
@@ -138,7 +138,7 @@ describe('JobQueue.cancel', () => {
 
   test('cannot cancel a running job', async () => {
     await ctx.queue.enqueue({ type: 'code' });
-    const [claimed] = await ctx.queue.claim(1);
+    const [claimed] = await ctx.queue.claimNext(1);
     const cancelled = await ctx.queue.cancel(claimed!.id);
     expect(cancelled).toBe(false);
   });
@@ -180,7 +180,7 @@ describe('JobQueue.counts', () => {
   test('returns status counts', async () => {
     await ctx.queue.enqueue({ type: 'code' });
     await ctx.queue.enqueue({ type: 'code' });
-    const [claimed] = await ctx.queue.claim(1);
+    const [claimed] = await ctx.queue.claimNext(1);
     await ctx.queue.complete(claimed!.id);
 
     const counts = await ctx.queue.counts();
@@ -228,7 +228,7 @@ describe('JobQueue.drain', () => {
 
   test('does not cancel running jobs', async () => {
     await ctx.queue.enqueue({ type: 'code' });
-    await ctx.queue.claim(1);
+    await ctx.queue.claimNext(1);
     await ctx.queue.enqueue({ type: 'code' });
 
     const drained = await ctx.queue.drain();
@@ -242,7 +242,7 @@ describe('JobQueue.drain', () => {
 describe('JobQueue.requeueRunning', () => {
   test('moves running jobs back to queued', async () => {
     await ctx.queue.enqueue({ type: 'code' });
-    await ctx.queue.claim(1);
+    await ctx.queue.claimNext(1);
 
     const requeued = await ctx.queue.requeueRunning();
     expect(requeued).toBe(1);

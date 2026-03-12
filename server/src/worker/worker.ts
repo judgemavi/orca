@@ -418,7 +418,7 @@ function filteredEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 }
 
 function extractTaskTitle(prompt: string): string {
-  const normalized = prompt.replace(/\r/g, '');
+  const normalized = prompt.replaceAll('\r', '');
   const taskMatch = normalized.match(
     /(?:^|\n)## Task\s*\n+([\s\S]*?)(?:\n## |\n---\n|$)/,
   );

@@ -79,7 +79,7 @@ export function interactionRoutes(deps: InteractionRouteDeps) {
         start(controller) {
           for (const line of lines) {
             if (!line.trim()) continue;
-            const payload = line.replace(/\r/g, '');
+            const payload = line.replaceAll('\r', '');
             controller.enqueue(`data: ${payload}\n\n`);
           }
           controller.enqueue('event: done\ndata: {}\n\n');
@@ -149,7 +149,7 @@ export function interactionRoutes(deps: InteractionRouteDeps) {
 
 function stripAnsi(value: string): string {
   // biome-ignore lint: regex is safe
-  return value.replace(/\u001b\[[0-9;]*m/g, '');
+  return value.replaceAll(/\u001b\[[0-9;]*m/g, '');
 }
 
 function sortByLinkedList<

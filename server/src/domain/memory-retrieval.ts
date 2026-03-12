@@ -206,9 +206,11 @@ export function buildMemoryContext(result: BudgetedRetrievalResult): string {
   if (entries.length > 0) {
     const lines = ['## Memory Context', ''];
     for (const [idx, entry] of entries.entries()) {
-      lines.push(`${idx + 1}. ${entry.content.trim()}`);
-      lines.push(`   - category: ${entry.category}`);
-      lines.push(`   - confidence: ${entry.confidence.toFixed(2)}`);
+      lines.push(
+        `${idx + 1}. ${entry.content.trim()}`,
+        `   - category: ${entry.category}`,
+        `   - confidence: ${entry.confidence.toFixed(2)}`,
+      );
       if (entry.filePaths?.length) {
         lines.push(`   - files: ${entry.filePaths.join(', ')}`);
       }

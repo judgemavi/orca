@@ -73,8 +73,8 @@ export function handleOrchestratorUpgrade(
   const url = new URL(request.url);
   if (url.pathname !== '/api/v1/orchestrator') return false;
 
-  const cols = parseInt(url.searchParams.get('cols') || '80', 10);
-  const rows = parseInt(url.searchParams.get('rows') || '24', 10);
+  const cols = Number.parseInt(url.searchParams.get('cols') || '80', 10);
+  const rows = Number.parseInt(url.searchParams.get('rows') || '24', 10);
 
   return serverRef.upgrade(request, {
     data: { db, repoDir, registry, cols, rows },

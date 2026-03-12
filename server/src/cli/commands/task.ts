@@ -658,9 +658,7 @@ export function registerTaskCommands(task: Command, deps: AppDeps) {
       const t = await taskStore.getTask(deps.db, id).catch(() => null);
       if (!t) throw new Error(`task not found: ${id}`);
 
-      const compiled = await deps.workflowStore.resolve(
-        t.workflow ?? undefined,
-      );
+      const compiled = deps.workflowStore.resolve(t.workflow ?? undefined);
       const steps: Record<string, { type: string; executor: string | null }> =
         {};
       const rootNode = compiled.machine.root as unknown as AnyStateNode;

@@ -47,19 +47,3 @@ export const SYSTEM_JOB_PRIORITIES: Record<SystemJobType, number> = {
   explore: 5,
   retro: 6,
 };
-
-/** @deprecated Use SYSTEM_JOB_PRIORITIES for system jobs; workflow step priorities are in StepMeta.priority */
-export const JOB_PRIORITIES: Record<string, number> = {
-  ...SYSTEM_JOB_PRIORITIES,
-};
-
-/** @deprecated Use SYSTEM_JOB_TYPES; workflow steps are dynamic */
-export const JOB_TYPES = {
-  ...SYSTEM_JOB_TYPES,
-  code: 'code',
-  plan: 'plan',
-  review: 'review',
-  merge: 'merge',
-} as const;
-
-export type JobType = string;

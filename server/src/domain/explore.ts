@@ -186,8 +186,8 @@ async function buildExplorePrompt(
 
   const goal = query.trim();
   if (goal) {
-    parts.push(`## User Goal\n\n${goal}`);
     parts.push(
+      `## User Goal\n\n${goal}`,
       'Incorporate the goal into your analysis by calling out what already supports it and what is missing.',
     );
   }

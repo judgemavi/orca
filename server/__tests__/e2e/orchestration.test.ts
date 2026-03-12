@@ -411,7 +411,7 @@ describe('queue behavior', () => {
     await env.queue.enqueue({ type: 'evaluate', taskId: high.id, priority: 10 });
 
     // Claim 1 — should get the high-priority job
-    const claimed = await env.queue.claim(1);
+    const claimed = await env.queue.claimNext(1);
     expect(claimed).toHaveLength(1);
     expect(claimed[0]!.taskId).toBe(high.id);
   }, 10_000);

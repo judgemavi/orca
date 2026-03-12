@@ -88,13 +88,6 @@ export class JobQueue {
   }
 
   /**
-   * @deprecated Use claimNext instead. Kept for test compatibility.
-   */
-  async claim(limit: number): Promise<Job[]> {
-    return this.claimNext(limit);
-  }
-
-  /**
    * Claim up to `limit` queued jobs, marking them as running.
    * Concurrency control is handled by the processor (p-queue), not here.
    */

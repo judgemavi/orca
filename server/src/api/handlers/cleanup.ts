@@ -129,7 +129,7 @@ async function listWorktrees(repoDir: string): Promise<WorktreeEntry[]> {
 function extractTaskID(branch: string, path: string): string {
   const source = branch.startsWith('orca/task-')
     ? branch.slice('orca/'.length)
-    : (path.replace(/\/+$/g, '').split('/').pop() ?? '');
+    : (path.replaceAll(/\/+$/g, '').split('/').pop() ?? '');
   const match = source.match(/^task-([^-]+)(?:--.*)?$/);
   return match?.[1] ?? '';
 }

@@ -42,3 +42,4 @@ dist-ssr
 .tasks/
 .orca/
 *.tsbuildinfo
+.scannerwork/

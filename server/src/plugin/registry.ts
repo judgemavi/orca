@@ -49,7 +49,7 @@ export class ToolPluginRegistry {
       .sort((a, b) => a.localeCompare(b));
 
     for (const file of candidates) {
-      const absolute = `${normalized.replace(/\/+$/g, '')}/${file}`;
+      const absolute = `${normalized.replace(/\/+$/, '')}/${file}`;
       const mod = await import(pathToFileURL(absolute).href);
       const maybe = mod.default ?? mod.plugin ?? mod.Plugin ?? mod;
       if (!isPlugin(maybe)) {

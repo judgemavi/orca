@@ -95,7 +95,7 @@ function DecisionContent({ interaction }: { interaction: Interaction }) {
                   : 'bg-amber-500/15 text-amber-700',
             ].join(' ')}
           >
-            {result.replace(/_/g, ' ')}
+            {result.replaceAll('_', ' ')}
           </span>
         )}
         {interaction.tool && interaction.tool !== 'manual' && (

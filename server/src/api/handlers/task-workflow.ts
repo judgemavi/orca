@@ -66,9 +66,7 @@ export function taskWorkflowRoutes(deps: {
       const task = await taskStore.getTask(db, taskID).catch(() => null);
       if (!task) return c.json({ error: 'task not found' }, 404);
 
-      const compiled = await deps.workflowStore.resolve(
-        task.workflow ?? undefined,
-      );
+      const compiled = deps.workflowStore.resolve(task.workflow ?? undefined);
 
       type StepInfo = {
         type: string;
@@ -107,9 +105,7 @@ export function taskWorkflowRoutes(deps: {
       if (!task) return c.json({ error: 'task not found' }, 404);
       if (!task.currentStep) return c.json({ step: null });
 
-      const compiled = await deps.workflowStore.resolve(
-        task.workflow ?? undefined,
-      );
+      const compiled = deps.workflowStore.resolve(task.workflow ?? undefined);
       let stepMeta: StepMeta;
       let stateNode: AnyStateNode;
       try {
@@ -165,9 +161,7 @@ export function taskWorkflowRoutes(deps: {
           throw new Error(`no completed output for step "${task.currentStep}"`);
         }
 
-        const compiled = await deps.workflowStore.resolve(
-          task.workflow ?? undefined,
-        );
+        const compiled = deps.workflowStore.resolve(task.workflow ?? undefined);
         let branchNames: string[] = [];
         try {
           const resolved = resolveStepMeta(compiled.machine, task.currentStep);

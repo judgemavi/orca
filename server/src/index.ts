@@ -93,7 +93,7 @@ async function detectRepoDir(startDir: string): Promise<string> {
 }
 
 function parentDir(path: string): string {
-  const normalized = path.replace(/\/+$/g, '');
+  const normalized = path.replace(/\/+$/, '');
   const index = normalized.lastIndexOf('/');
   if (index <= 0) return '/';
   return normalized.slice(0, index);

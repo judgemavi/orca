@@ -155,8 +155,8 @@ async function runWatch(
     const f = counts.failed ?? 0;
     lines.push(
       `── orca ── queued:${q} running:${r} done:${c} failed:${f} ── ${new Date().toLocaleTimeString()} ──`,
+      '',
     );
-    lines.push('');
 
     const tasksByStatus = new Map<string, TaskEntry[]>();
     for (const task of tasks) {
@@ -192,8 +192,7 @@ async function runWatch(
     }
 
     if (activeJobs.length > 0) {
-      lines.push('');
-      lines.push('Jobs:');
+      lines.push('', 'Jobs:');
       for (const job of activeJobs) {
         const id = job.id.slice(0, 8);
         const taskId = job.taskId ? job.taskId.slice(0, 7) : '-';
@@ -206,8 +205,7 @@ async function runWatch(
     }
 
     if (recentDone.length > 0) {
-      lines.push('');
-      lines.push('Recent:');
+      lines.push('', 'Recent:');
       for (const job of recentDone) {
         const id = job.id.slice(0, 8);
         const taskId = job.taskId ? job.taskId.slice(0, 7) : '-';

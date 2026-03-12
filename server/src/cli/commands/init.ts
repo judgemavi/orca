@@ -422,7 +422,7 @@ async function runGit(
 }
 
 function baseName(path: string): string {
-  const normalized = path.replace(/\/+$/g, '');
+  const normalized = path.replace(/\/+$/, '');
   const idx = normalized.lastIndexOf('/');
   if (idx < 0) return normalized;
   return normalized.slice(idx + 1);

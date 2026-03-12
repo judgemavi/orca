@@ -265,9 +265,9 @@ export function StepActions() {
 }
 
 function branchLabel(name: string): string {
-  return name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  return name.replaceAll('_', ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
 function fieldLabel(name: string): string {
-  return `${name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())}…`;
+  return `${name.replaceAll('_', ' ').replace(/^\w/, (c) => c.toUpperCase())}…`;
 }

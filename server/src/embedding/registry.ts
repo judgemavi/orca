@@ -54,7 +54,7 @@ export class EmbeddingRegistry {
       .sort();
 
     for (const file of candidates) {
-      const absolute = `${normalized.replace(/\/+$/g, '')}/${file}`;
+      const absolute = `${normalized.replace(/\/+$/, '')}/${file}`;
       const mod = await import(pathToFileURL(absolute).href);
       const maybe = mod.default ?? mod.plugin ?? mod.Plugin ?? mod;
       if (!isEmbeddingPlugin(maybe)) {

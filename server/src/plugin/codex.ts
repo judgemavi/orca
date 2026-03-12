@@ -65,37 +65,38 @@ async function codexInteractiveArgs(opts: InteractiveOpts): Promise<string[]> {
 }
 
 function codexParseEvent(line: Buffer): ToolPluginEvent | null {
-  const raw = line.toString('utf8').replace(/\r/g, '').trim();
+  const raw = line.toString('utf8').replaceAll('\r', '').trim();
   if (!raw) return null;
 
-  const parsed = parseJSON(raw);
+  const parsed = parseJSON(raw) as Record<string, unknown> | null;
   if (!parsed || typeof parsed !== 'object') {
     return { type: 'text', text: raw, raw };
   }
 
-  const type = asString((parsed as any).type);
+  const item = parsed.item as Record<string, unknown> | undefined;
+  const type = asString(parsed.type);
   if (type === 'thread.started') {
-    const sessionID = asString((parsed as any).thread_id);
+    const sessionID = asString(parsed.thread_id);
     if (!sessionID) return null;
     return { type: 'session', sessionID, raw };
   }
 
   if (type === 'item.started') {
-    const itemType = asString((parsed as any).item?.type);
+    const itemType = asString(item?.type);
     if (itemType !== 'mcp_tool_call') return null;
     return {
       type: 'tool_use',
-      toolName: asString((parsed as any).item?.name) || 'tool',
-      toolInput: (parsed as any).item?.input ?? {},
-      toolUseID: asString((parsed as any).item?.id),
+      toolName: asString(item?.name) || 'tool',
+      toolInput: (item?.input as Record<string, unknown>) ?? {},
+      toolUseID: asString(item?.id),
       raw,
     };
   }
 
   if (type === 'item.completed') {
-    const itemType = asString((parsed as any).item?.type);
+    const itemType = asString(item?.type);
     if (itemType === 'agent_message') {
-      const text = pickMessageText((parsed as any).item);
+      const text = pickMessageText(item);
       if (!text) return null;
       const separated = text.endsWith('\n') ? text : `${text}\n`;
       return { type: 'text', text: separated, raw };
@@ -103,11 +104,13 @@ function codexParseEvent(line: Buffer): ToolPluginEvent | null {
     if (itemType === 'mcp_tool_call') {
       return {
         type: 'tool_result',
-        toolName: asString((parsed as any).item?.name),
+        toolName: asString(item?.name),
         toolResult:
-          (parsed as any).item?.output ?? (parsed as any).item?.result ?? {},
-        toolUseID: asString((parsed as any).item?.id),
-        isError: Boolean((parsed as any).item?.is_error),
+          (item?.output as Record<string, unknown>) ??
+          (item?.result as Record<string, unknown>) ??
+          {},
+        toolUseID: asString(item?.id),
+        isError: Boolean(item?.is_error),
         raw,
       };
     }

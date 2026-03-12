@@ -42,7 +42,7 @@ function slugify(value: string): string {
     }
   }
 
-  out = out.replace(/-+$/g, '');
+  out = out.replace(/-+$/, '');
   if (out.length <= 50) return out;
 
   const clipped = out.slice(0, 50);
@@ -127,5 +127,5 @@ export async function ensureTaskWorktree(input: {
 }
 
 function trimTrailingSlash(p: string): string {
-  return p.replace(/\/+$/g, '');
+  return p.replace(/\/+$/, '');
 }
